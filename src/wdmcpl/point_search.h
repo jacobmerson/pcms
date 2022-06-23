@@ -20,12 +20,21 @@ namespace detail
 Kokkos::Crs<LO, Kokkos::DefaultExecutionSpace, void, LO>
 construct_intersection_map(Omega_h::Mesh& mesh, const UniformGrid& grid);
 } // namespace detail
+[[nodiscard]]
+KOKKOS_FUNCTION
 Omega_h::Vector<3> barycentric_from_global(
   const Omega_h::Vector<2>& point, const Omega_h::Matrix<2, 3>& vertex_coords);
 
 [[nodiscard]] KOKKOS_FUNCTION bool triangle_intersects_bbox(
   const Omega_h::Matrix<2, 3>& coords, const AABBox<2>& bbox);
 
+// not as efficient as storing array of id and array of xi but much more
+// convenient to use. If this become bottle neck, id and xi can be changed
+// to array storage
+struct GridSearchResult {
+  LO id;
+  std::array<double,3> xi;
+};
 class GridPointSearch
 {
   using CandidateMapT =
@@ -41,8 +50,7 @@ public:
    * id will be a negative number and (TODO) will return a negative id of the
    * closest element
    */
-  std::pair<LO, Omega_h::Vector<dim + 1>> operator()(
-    Omega_h::Vector<dim> point);
+  Kokkos::View<GridSearchResult*> operator()(Kokkos::View<Real*[2]> global_points);
 
 private:
   Omega_h::Mesh mesh_;

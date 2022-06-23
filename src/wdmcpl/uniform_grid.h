@@ -18,7 +18,9 @@ public:
   [[nodiscard]] LO GetNumCells() const { return std::accumulate(divisions.begin(),divisions.end(), 1, std::multiplies<LO>{});}
   /// return the grid cell ID that the input point is inside or closest to if
   /// the point lies outside
-  [[nodiscard]] LO ClosestCellID(const Omega_h::Vector<dim>& point) const
+  [[nodiscard]]
+  KOKKOS_INLINE_FUNCTION
+  LO ClosestCellID(const Omega_h::Vector<dim>& point) const
   {
     std::array<Real, dim> distance_within_grid{point[0] - bot_left[0],
                                                point[1] - bot_left[1]};
@@ -37,7 +39,9 @@ public:
     }
     return GetCellIndex(indexes[0], indexes[1]);
   }
-  [[nodiscard]] AABBox<dim> GetCellBBOX(LO idx) const
+  [[nodiscard]] 
+  KOKKOS_INLINE_FUNCTION
+  AABBox<dim> GetCellBBOX(LO idx) const
   {
     auto [i, j] = GetTwoDCellIndex(idx);
     std::array<Real, dim> half_width = {edge_length[0] / (2.0 * divisions[0]),
@@ -47,11 +51,14 @@ public:
                      .half_width = half_width};
     return bbox;
   }
-  [[nodiscard]] std::array<LO, 2> GetTwoDCellIndex(LO idx) const
+  [[nodiscard]] KOKKOS_INLINE_FUNCTION 
+  std::array<LO, 2> GetTwoDCellIndex(LO idx) const
   {
     return {idx / divisions[0], idx % divisions[0]};
   }
-  [[nodiscard]] LO GetCellIndex(LO i, LO j) const
+  [[nodiscard]] 
+  KOKKOS_INLINE_FUNCTION
+  LO GetCellIndex(LO i, LO j) const
   {
     OMEGA_H_CHECK(i >= 0 && j >= 0 && i < divisions[1] && j < divisions[0]);
     return i * divisions[0] + j;

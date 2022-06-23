@@ -2,10 +2,13 @@
 #include <wdmcpl/point_search.h>
 #include <Omega_h_mesh.hpp>
 #include <Omega_h_build.hpp>
+#include <Kokkos_Core.hpp>
 
 using wdmcpl::AABBox;
 using wdmcpl::barycentric_from_global;
 using wdmcpl::UniformGrid;
+
+extern Omega_h::Library* omega_h_library;
 
 TEST_CASE("global to local")
 {
@@ -100,16 +103,22 @@ TEST_CASE("Triangle BBox Intersection Regression")
           true);
 }
 
+template <typename... T> struct dependent_always_false : std::false_type {};
+
+template <typename T>
+void print_template_type() {
+  static_assert(dependent_always_false<T>::value);
+}
+
 template <typename T>
 bool num_candidates_within_range(const T& intersection_map, wdmcpl::LO min,
                                  wdmcpl::LO max)
 {
   using size_type = typename T::size_type;
-  using memory_space = typename T::memory_space;
-  using MinMax = Kokkos::MinMax<size_type, memory_space>;
-  using result_type = typename MinMax::value_type;
+  using reducer_type = Kokkos::MinMax<double, Kokkos::HostSpace>;
+  using result_type = typename reducer_type::value_type;
   result_type result;
-  Kokkos::parallel_reduce(
+  Kokkos::parallel_reduce("Reduction",
     intersection_map.numRows(),
     KOKKOS_LAMBDA(const int i, result_type& update) {
       auto num_candidates = intersection_map.row_map(i + 1) - intersection_map.row_map(i);
@@ -118,16 +127,15 @@ bool num_candidates_within_range(const T& intersection_map, wdmcpl::LO min,
       if (num_candidates < update.min_val)
         update.min_val = num_candidates;
     },
-    MinMax{result});
+    reducer_type(result));
+  std::cout<<result.min_val<<" "<<result.max_val<<"\n";
   return (result.min_val >= min) && (result.max_val <= max);
 }
-//extern Omega_h::Library omega_h_library;
 
 TEST_CASE("construct intersection map")
 {
-  //auto world = omega_h_library.world();
-  auto lib = Omega_h::Library{};
-  auto world = lib.world();
+  auto* lib = omega_h_library;
+  auto world = lib->world();
   auto mesh =
     Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 10, 10, 0, false);
   REQUIRE(mesh.dim() == 2);
@@ -151,31 +159,52 @@ TEST_CASE("construct intersection map")
 }
 TEST_CASE("uniform grid search") {
   using wdmcpl::GridPointSearch;
-  auto lib = Omega_h::Library{};
-  auto world = lib.world();
+  //auto lib = Omega_h::Library{};
+  auto* lib = omega_h_library;
+  auto world = lib->world();
   auto mesh =
     Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 10, 10, 0, false);
   GridPointSearch search{mesh,10,10};
   SECTION("global coordinate within mesh")
   {
-    auto [idx,coords] = search({0,0});
-    REQUIRE(idx == 0);
-    REQUIRE(coords[0] == Approx(1));
-    REQUIRE(coords[1] == Approx(0));
-    REQUIRE(coords[2] == Approx(0));
-    std::tie(idx,coords) = search({0.55,0.54});
-    REQUIRE(idx == 91);
-    REQUIRE(coords[0] == Approx(0.5));
-    REQUIRE(coords[1] == Approx(0.1));
-    REQUIRE(coords[2] == Approx(0.4));
+    Kokkos::View<wdmcpl::Real*[2]> points("points",2);
+    Kokkos::parallel_for(1, KOKKOS_LAMBDA(size_t) {
+      points(0,0) = 0;
+      points(0,1) = 0;
+      points(1,0) = 0.55;
+      points(1,1) = 0.54;
+        });
+    auto result = search(points);
+    //auto host_result = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace{}, result);
+    //auto host_result = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, result);
+    auto host_result = Kokkos::create_mirror_view(result);
+    Kokkos::deep_copy(host_result,result);
+    REQUIRE(host_result(0).id == 0);
+    REQUIRE(host_result(0).xi[0] == Approx(1));
+    REQUIRE(host_result(0).xi[1] == Approx(0));
+    REQUIRE(host_result(0).xi[2] == Approx(0));
+    REQUIRE(host_result(1).id == 91);
+    REQUIRE(host_result(1).xi[0] == Approx(0.5));
+    REQUIRE(host_result(1).xi[1] == Approx(0.1));
+    REQUIRE(host_result(1).xi[2] == Approx(0.4));
 
   }
   SECTION("Global coordinate outisde mesh", "[!mayfail]") {
-    auto out_of_bounds = search({100,100});
-    auto top_left = search({1,1});
-    REQUIRE(-1*out_of_bounds.first == top_left.first);
-    out_of_bounds = search({-1,-1});
-    auto bot_left = search({0,0});
-    REQUIRE(-1*out_of_bounds.first == bot_left.first);
+    Kokkos::View<wdmcpl::Real*[2]> points("points",4);
+    points(0,0) = 100;
+    points(0,1) = 100;
+    points(1,0) = 1;
+    points(1,1) = 1;
+    points(2,0) = -1;
+    points(2,1) = -1;
+    points(3,0) = 0;
+    points(3,1) = 0;
+    auto result = search(points);
+    auto host_result = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace{}, result);
+
+    // point outside top right
+    REQUIRE(-1*host_result(0).id == host_result(1).id);
+    // point outside bottom left
+    REQUIRE(-1*host_result(2).id == host_result(3).id);
   }
 }
