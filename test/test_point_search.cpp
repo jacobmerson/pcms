@@ -103,10 +103,14 @@ TEST_CASE("Triangle BBox Intersection Regression")
           true);
 }
 
-template <typename... T> struct dependent_always_false : std::false_type {};
+template <typename... T>
+struct dependent_always_false : std::false_type
+{
+};
 
 template <typename T>
-void print_template_type() {
+void print_template_type()
+{
   static_assert(dependent_always_false<T>::value);
 }
 
@@ -118,17 +122,18 @@ bool num_candidates_within_range(const T& intersection_map, wdmcpl::LO min,
   using reducer_type = Kokkos::MinMax<double, Kokkos::HostSpace>;
   using result_type = typename reducer_type::value_type;
   result_type result;
-  Kokkos::parallel_reduce("Reduction",
-    intersection_map.numRows(),
+  Kokkos::parallel_reduce(
+    "Reduction", intersection_map.numRows(),
     KOKKOS_LAMBDA(const int i, result_type& update) {
-      auto num_candidates = intersection_map.row_map(i + 1) - intersection_map.row_map(i);
+      auto num_candidates =
+        intersection_map.row_map(i + 1) - intersection_map.row_map(i);
       if (num_candidates > update.max_val)
         update.max_val = num_candidates;
       if (num_candidates < update.min_val)
         update.min_val = num_candidates;
     },
     reducer_type(result));
-  std::cout<<result.min_val<<" "<<result.max_val<<"\n";
+  std::cout << result.min_val << " " << result.max_val << "\n";
   return (result.min_val >= min) && (result.max_val <= max);
 }
 
@@ -141,44 +146,48 @@ TEST_CASE("construct intersection map")
   REQUIRE(mesh.dim() == 2);
   SECTION("grid bbox overlap")
   {
-    UniformGrid grid{
-      .edge_length{1, 1}, .bot_left = {0, 0}, .divisions = {10, 10}};
-    auto intersection_map = wdmcpl::detail::construct_intersection_map(mesh, grid);
-    REQUIRE(intersection_map.numRows() == 100);
-    REQUIRE(num_candidates_within_range(intersection_map, 2, 16));
+    UniformGrid grid{{1, 1}, {0, 0}, {10, 10}};
+    auto intersection_map =
+      wdmcpl::detail::construct_intersection_map(mesh, grid);
+    //REQUIRE(intersection_map.numRows() == 100);
+    //REQUIRE(num_candidates_within_range(intersection_map, 2, 16));
   }
-   SECTION("fine grid")
+  SECTION("fine grid")
   {
-     UniformGrid grid{
-       .edge_length{1, 1}, .bot_left = {0, 0}, .divisions = {60, 60}};
-     // require number of candidates is >=1 and <=6
-     auto intersection_map = wdmcpl::detail::construct_intersection_map(mesh, grid);
-     REQUIRE(intersection_map.numRows() == 3600);
-     REQUIRE(num_candidates_within_range(intersection_map, 1, 6));
-   }
+    UniformGrid grid{{1, 1}, {0, 0}, {60, 60}};
+    // require number of candidates is >=1 and <=6
+    auto intersection_map =
+      wdmcpl::detail::construct_intersection_map(mesh, grid);
+    REQUIRE(intersection_map.numRows() == 3600);
+    REQUIRE(num_candidates_within_range(intersection_map, 1, 6));
+  }
 }
-TEST_CASE("uniform grid search") {
+TEST_CASE("uniform grid search")
+{
   using wdmcpl::GridPointSearch;
-  //auto lib = Omega_h::Library{};
+  // auto lib = Omega_h::Library{};
   auto* lib = omega_h_library;
   auto world = lib->world();
   auto mesh =
     Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 10, 10, 0, false);
-  GridPointSearch search{mesh,10,10};
+  GridPointSearch search{mesh, 10, 10};
   SECTION("global coordinate within mesh")
   {
-    Kokkos::View<wdmcpl::Real*[2]> points("points",2);
-    Kokkos::parallel_for(1, KOKKOS_LAMBDA(size_t) {
-      points(0,0) = 0;
-      points(0,1) = 0;
-      points(1,0) = 0.55;
-      points(1,1) = 0.54;
-        });
+    Kokkos::View<wdmcpl::Real* [2]> points("points", 2);
+    Kokkos::parallel_for(
+      1, KOKKOS_LAMBDA(size_t) {
+        points(0, 0) = 0;
+        points(0, 1) = 0;
+        points(1, 0) = 0.55;
+        points(1, 1) = 0.54;
+      });
     auto result = search(points);
-    //auto host_result = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace{}, result);
-    //auto host_result = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, result);
+    // auto host_result =
+    // Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace{},
+    // result); auto host_result =
+    // Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, result);
     auto host_result = Kokkos::create_mirror_view(result);
-    Kokkos::deep_copy(host_result,result);
+    Kokkos::deep_copy(host_result, result);
     REQUIRE(host_result(0).id == 0);
     REQUIRE(host_result(0).xi[0] == Approx(1));
     REQUIRE(host_result(0).xi[1] == Approx(0));
@@ -187,24 +196,25 @@ TEST_CASE("uniform grid search") {
     REQUIRE(host_result(1).xi[0] == Approx(0.5));
     REQUIRE(host_result(1).xi[1] == Approx(0.1));
     REQUIRE(host_result(1).xi[2] == Approx(0.4));
-
   }
-  SECTION("Global coordinate outisde mesh", "[!mayfail]") {
-    Kokkos::View<wdmcpl::Real*[2]> points("points",4);
-    points(0,0) = 100;
-    points(0,1) = 100;
-    points(1,0) = 1;
-    points(1,1) = 1;
-    points(2,0) = -1;
-    points(2,1) = -1;
-    points(3,0) = 0;
-    points(3,1) = 0;
+  SECTION("Global coordinate outisde mesh", "[!mayfail]")
+  {
+    Kokkos::View<wdmcpl::Real* [2]> points("points", 4);
+    points(0, 0) = 100;
+    points(0, 1) = 100;
+    points(1, 0) = 1;
+    points(1, 1) = 1;
+    points(2, 0) = -1;
+    points(2, 1) = -1;
+    points(3, 0) = 0;
+    points(3, 1) = 0;
     auto result = search(points);
-    auto host_result = Kokkos::create_mirror_view_and_copy(Kokkos::DefaultExecutionSpace{}, result);
+    auto host_result = Kokkos::create_mirror_view_and_copy(
+      Kokkos::DefaultExecutionSpace{}, result);
 
     // point outside top right
-    REQUIRE(-1*host_result(0).id == host_result(1).id);
+    REQUIRE(-1 * host_result(0).id == host_result(1).id);
     // point outside bottom left
-    REQUIRE(-1*host_result(2).id == host_result(3).id);
+    REQUIRE(-1 * host_result(2).id == host_result(3).id);
   }
 }

@@ -192,7 +192,9 @@ struct GridTriIntersectionFunctor
   OMEGA_H_DEVICE
   LO operator()(LO row, LO* fill) const
   {
+    printf("bla bla: %d\n", row);
     const auto grid_cell_bbox = grid_.GetCellBBOX(row);
+    printf("bla: %f\n", grid_cell_bbox.half_width[0]);
 
     LO num_intersections = 0;
 
@@ -226,8 +228,7 @@ construct_intersection_map(Omega_h::Mesh& mesh, const UniformGrid& grid)
 {
 
   Kokkos::Crs<LO, Kokkos::DefaultExecutionSpace, void, LO> intersection_map{};
-  auto f = detail::GridTriIntersectionFunctor{mesh, grid};
-  Kokkos::count_and_fill_crs(intersection_map, grid.GetNumCells(), f);
+  Kokkos::count_and_fill_crs(intersection_map, grid.GetNumCells(), detail::GridTriIntersectionFunctor{mesh, grid});
   return intersection_map;
 }
 } // namespace detail
@@ -289,10 +290,10 @@ GridPointSearch::GridPointSearch(Omega_h::Mesh& mesh, LO Nx, LO Ny)
 {
   auto mesh_bbox = Omega_h::get_bounding_box<2>(&mesh);
   // get mesh bounding box
-  grid_ = {.edge_length = {mesh_bbox.max[0] - mesh_bbox.min[0],
+  grid_ = UniformGrid{{mesh_bbox.max[0] - mesh_bbox.min[0],
                            mesh_bbox.max[1] - mesh_bbox.min[1]},
-           .bot_left = {mesh_bbox.min[0], mesh_bbox.min[1]},
-           .divisions = {Nx, Ny}};
+           {mesh_bbox.min[0], mesh_bbox.min[1]},
+           {Nx, Ny}};
   candidate_map_ = detail::construct_intersection_map(mesh, grid_);
   coords_ = mesh.coords();
   tris2verts_ = mesh.ask_elem_verts();

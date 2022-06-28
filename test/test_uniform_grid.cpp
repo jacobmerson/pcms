@@ -5,8 +5,7 @@ using wdmcpl::UniformGrid;
 
 TEST_CASE("uniform grid")
 {
-  UniformGrid uniform_grid{
-    .edge_length = {10, 12}, .bot_left = {0, 0}, .divisions = {10, 12}};
+  UniformGrid uniform_grid{{10, 12}, {0, 0}, {10, 12}};
   REQUIRE(uniform_grid.GetNumCells() == 120);
   // Omega_h::Vector<2> point{0,0};
   SECTION("Closest Cell ID")
@@ -34,16 +33,18 @@ TEST_CASE("uniform grid")
       }
     }
   }
-  SECTION("GetTwoDCellIndex") {
-    auto [i,j] = uniform_grid.GetTwoDCellIndex(0);
+  SECTION("GetTwoDCellIndex")
+  {
+    auto [i, j] = uniform_grid.GetTwoDCellIndex(0);
     REQUIRE(i == 0);
     REQUIRE(j == 0);
-    auto [k,l] = uniform_grid.GetTwoDCellIndex(119);
+    auto [k, l] = uniform_grid.GetTwoDCellIndex(119);
     REQUIRE(k == 11);
     REQUIRE(l == 9);
   }
-  SECTION("GetCellIndex") {
-    REQUIRE(0 == uniform_grid.GetCellIndex(0,0));
-    REQUIRE(119 == uniform_grid.GetCellIndex(11,9));
+  SECTION("GetCellIndex")
+  {
+    REQUIRE(0 == uniform_grid.GetCellIndex(0, 0));
+    REQUIRE(119 == uniform_grid.GetCellIndex(11, 9));
   }
 }
