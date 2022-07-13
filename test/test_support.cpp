@@ -346,6 +346,7 @@ OutMsg prepareAppOutMessage(Omega_h::Mesh& mesh, const redev::ClassPtn& partitio
   out.offset.resize(destRankCounts.size()+1);
   out.dest.resize(destRankCounts.size());
   out.offset[0] = 0;
+  // isn't this just an exclusive scan for the offset?
   int i = 1;
   for(auto rankCount : destRankCounts) {
     out.dest[i-1] = rankCount.first;

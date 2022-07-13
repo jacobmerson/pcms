@@ -98,6 +98,9 @@ tri_mpi_test(TESTNAME test_twoClientOverlap_d3d_28p
   NAME2 client0 EXE2 ./test_twoClientOverlap PROCS2 16 ARGS2 0 ${d3d16p} ignored
   NAME3 client1 EXE3 ./test_twoClientOverlap PROCS3 8 ARGS3 1 ${d3d8p} ignored)
 
+add_executable(proxy_coupling XGCProxy.cpp test_proxy_coupling.cpp)
+target_link_libraries(proxy_coupling PUBLIC wdmcpl::wdmcpl)
+
 # unit tests
 find_package(Catch2 2 REQUIRED)
 message(STATUS "Found Catch2: ${Catch2_DIR} (found version ${Catch2_VERSION})")
