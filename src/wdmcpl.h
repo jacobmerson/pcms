@@ -54,6 +54,7 @@ using FieldData =
 struct MeshPartitionData
 {
   redev::Redev redev;
+  MPI_Comm mpi_comm;
 };
 // Coupler needs to have both a standalone mesh definitions to setup rdv comms
 // and a list of fields
@@ -78,14 +79,71 @@ public:
     mesh_partitions_.emplace(
       std::move(name),
       MeshPartitionData{
-        .redev = redev::Redev(comm, std::move(partition), process_type_)});
+        .redev = redev::Redev(comm, std::move(partition), process_type_),
+        .mpi_comm = comm
+      });
   }
 
+private:
+  struct OutMsg  {
+    redev::LOs dest;
+    redev::LOs offset;
+  };
+  // given a partition return a map of ranks and the number of entities on those
+  // ranks
+  template <typename Func>
+  OutMsg construct_out_message(std::string_view name, Field* field, const redev::Partition& partition, Func&& map_func)
+  {
+    std::map<int,int> dest_rank_counts = map_func(name, field, partition);
+    OutMsg out;
+    //create dest and offsets arrays from degree array
+    out.offset.resize(dest_rank_counts.size()+1);
+    out.dest.resize(dest_rank_counts.size());
+    out.offset[0] = 0;
+    // isn't this just an exclusive scan for the offset?
+    int i = 1;
+    for(auto rankCount : dest_rank_counts) {
+      out.dest[i-1] = rankCount.first;
+      out.offset[i] = out.offset[i-1]+rankCount.second;
+      i++;
+    }
+    return out;
+  }
+  OutMsg construct_out_message(int rank, int nproc, const redev::InMessageLayout& in) {
+
+    //auto nAppProcs = Omega_h::divide_no_remainder(in.srcRanks.size(),static_cast<size_t>(nproc));
+    auto nAppProcs = in.srcRanks.size()/static_cast<size_t>(nproc);
+    //build dest and offsets arrays from incoming message metadata
+    redev::LOs senderDeg(nAppProcs);
+    for(size_t i=0; i<nAppProcs-1; i++) {
+      senderDeg[i] = in.srcRanks[(i+1)*nproc+rank] - in.srcRanks[i*nproc+rank];
+    }
+    const auto totInMsgs = in.offset[rank+1]-in.offset[rank];
+    senderDeg[nAppProcs-1] = totInMsgs - in.srcRanks[(nAppProcs-1)*nproc+rank];
+    OutMsg out;
+    for(size_t i=0; i<nAppProcs; i++) {
+      if(senderDeg[i] > 0) {
+        out.dest.push_back(i);
+      }
+    }
+    redev::GO sum = 0;
+    for(auto deg : senderDeg) { //exscan over values > 0
+      if(deg>0) {
+        out.offset.push_back(sum);
+        sum+=deg;
+      }
+    }
+    out.offset.push_back(sum);
+    return out;
+  }
+
+
+public:
   // register_field sets up a rdv::BidirectionalComm on the given mesh rdv
   // object for the field
-  template <typename T>
+  template <typename T, typename Func>
   void add_field(std::string_view mesh_partition_name, std::string field_name,
-                 Field* field)
+                 Field* field, Func&& rank_count_func)
   {
     auto it = fields_.find(field_name);
     if (it != fields_.end()) {
@@ -99,12 +157,25 @@ public:
     transport_name.append(mesh_partition_name).append(field_name);
     auto comm = mesh_partition.redev.CreateAdiosClient<T>(
       transport_name, params, transport_type);
+
+    if(process_type_ == redev::ProcessType::Client) {
+      auto out_message = construct_out_message(field_name,field, mesh_partition.redev.GetPartition(), rank_count_func);
+      comm.SetOutMessageLayout(out_message.dest, out_message.offset);
+    }
+    else {
+      int rank, nproc;
+      MPI_Comm_rank(mesh_partition.mpi_comm, &rank);
+      MPI_Comm_size(mesh_partition.mpi_comm, &nproc);
+      auto out_message = construct_out_message(rank, nproc, comm.GetInMessageLayout());
+      comm.SetOutMessageLayout(out_message.dest, out_message.offset);
+    }
+
     fields_.emplace(std::move(field_name), FieldDataT<T>{
-                                             .field = field,
-                                             .comm_buffer = {},
-                                             .comm = std::move(comm),
-                                             .buffer_size_needs_update = true,
-                                           });
+      .field = field,
+      .comm_buffer = {},
+      .comm = std::move(comm),
+      .buffer_size_needs_update = true,
+    });
   }
   /**
    * Gather the field from the rendezvous server and deserialize it into the
@@ -118,7 +189,7 @@ public:
   void GatherField(std::string_view name, Func&& deserializer)
   {
     std::visit(
-      [&deserializer,name](auto&& field) {
+      [&deserializer, name](auto&& field) {
         auto data = field.comm.Recv();
         const auto buffer =
           nonstd::span<const typename decltype(data)::value_type>(data);
@@ -144,7 +215,8 @@ public:
   void ScatterField(std::string_view name, Func&& serializer)
   {
     std::visit(
-      [&serializer,name](auto&& field) {
+      [&serializer, name](auto&& field) {
+        // TODO: if the field size needs to be updated also need to update the out message layouts
         if (field.buffer_size_needs_update) {
           // pass empty buffer to serializer for first pass of algorithm
           const auto buffer =

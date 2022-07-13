@@ -99,7 +99,7 @@ tri_mpi_test(TESTNAME test_twoClientOverlap_d3d_28p
   NAME3 client1 EXE3 ./test_twoClientOverlap PROCS3 8 ARGS3 1 ${d3d8p} ignored)
 
 add_executable(proxy_coupling XGCProxy.cpp test_proxy_coupling.cpp)
-target_link_libraries(proxy_coupling PUBLIC wdmcpl::wdmcpl)
+target_link_libraries(proxy_coupling PUBLIC wdmcpl::wdmcpl test_support)
 
 # unit tests
 find_package(Catch2 2 REQUIRED)
