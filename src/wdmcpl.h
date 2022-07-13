@@ -68,7 +68,7 @@ public:
   }
   // register mesh sets up the rdv object for the mesh in question including
   // the partitioning
-  void add_mesh_partition(std::string name, MPI_Comm comm,
+  void AddMeshPartition(std::string name, MPI_Comm comm,
                           redev::Partition partition)
   {
     auto it = mesh_partitions_.find(name);
@@ -142,7 +142,7 @@ public:
   // register_field sets up a rdv::BidirectionalComm on the given mesh rdv
   // object for the field
   template <typename T, typename Func>
-  void add_field(std::string_view mesh_partition_name, std::string field_name,
+  void AddField(std::string_view mesh_partition_name, std::string field_name,
                  Field* field, Func&& rank_count_func)
   {
     auto it = fields_.find(field_name);
@@ -186,7 +186,7 @@ public:
    * @param deserializer
    */
   template <typename Func>
-  void GatherField(std::string_view name, Func&& deserializer)
+  void ReceiveField(std::string_view name, Func&& deserializer)
   {
     std::visit(
       [&deserializer, name](auto&& field) {
@@ -212,7 +212,7 @@ public:
    * counting pass.
    */
   template <typename Func>
-  void ScatterField(std::string_view name, Func&& serializer)
+  void SendField(std::string_view name, Func&& serializer)
   {
     std::visit(
       [&serializer, name](auto&& field) {
@@ -242,7 +242,7 @@ private:
     auto it = fields_.find(std::string(name));
     if (it == fields_.end()) {
       std::cerr << "Field must be registered with coupler. (You forgot a call "
-                   "to add_field)\n";
+                   "to AddField)\n";
       std::exit(EXIT_FAILURE);
     }
     return it->second;
@@ -252,7 +252,7 @@ private:
     auto it = mesh_partitions_.find(std::string(name));
     if (it == mesh_partitions_.end()) {
       std::cerr << "Mesh partition must be registered with coupler. (You "
-                   "forgot a call to add_mesh_partition)\n";
+                   "forgot a call to AddMeshPartition)\n";
       std::exit(EXIT_FAILURE);
     }
     return it->second;
