@@ -8,6 +8,7 @@
 #include "wdmcpl/external/span.h"
 #include "wdmcpl/types.h"
 #include <variant>
+#include <numeric>
 
 namespace wdmcpl
 {
@@ -57,6 +58,7 @@ struct MeshPartitionData
   redev::Redev redev;
   MPI_Comm mpi_comm;
 };
+using ReversePartitionMap = std::map<wdmcpl::LO, std::vector<wdmcpl::LO>>;
 // Coupler needs to have both a standalone mesh definitions to setup rdv comms
 // and a list of fields
 // in the server it also needs sets of fields that will be combined
@@ -92,27 +94,25 @@ private:
   };
   // given a partition return a map of ranks and the number of entities on those
   // ranks
-  template <typename Func>
-  OutMsg construct_out_message(std::string_view name, Field* field,
-                               const redev::Partition& partition,
-                               Func&& map_func)
+  OutMsg ConstructOutMessage(const ReversePartitionMap& reverse_partition)
   {
-    std::map<int, int> dest_rank_counts = map_func(name, field, partition);
     OutMsg out;
-    // create dest and offsets arrays from degree array
-    out.offset.resize(dest_rank_counts.size() + 1);
-    out.dest.resize(dest_rank_counts.size());
-    out.offset[0] = 0;
-    // isn't this just an exclusive scan for the offset?
-    int i = 1;
-    for (auto rankCount : dest_rank_counts) {
-      out.dest[i - 1] = rankCount.first;
-      out.offset[i] = out.offset[i - 1] + rankCount.second;
-      i++;
+    redev::LOs counts;
+    counts.reserve(reverse_partition.size());
+    out.dest.clear();
+    out.dest.reserve(reverse_partition.size());
+    // number of entries for each rank
+    for (auto& rank : reverse_partition) {
+      out.dest.push_back(rank.first);
+      counts.push_back(rank.second.size());
     }
+    out.offset.resize(counts.size() + 1);
+    out.offset[0] = 0;
+    std::inclusive_scan(counts.begin(), counts.end(),
+                        std::next(out.offset.begin(), 1));
     return out;
   }
-  OutMsg construct_out_message(int rank, int nproc,
+  OutMsg ConstructOutMessage(int rank, int nproc,
                                const redev::InMessageLayout& in)
   {
 
@@ -166,16 +166,16 @@ public:
       transport_name, params, transport_type);
 
     if (process_type_ == redev::ProcessType::Client) {
-      auto out_message = construct_out_message(
-        field_name, field, mesh_partition.redev.GetPartition(),
-        rank_count_func);
+      const auto reverse_partition =
+        rank_count_func(field_name, field, mesh_partition.redev.GetPartition());
+      auto out_message = ConstructOutMessage(reverse_partition);
       comm.SetOutMessageLayout(out_message.dest, out_message.offset);
     } else {
       int rank, nproc;
       MPI_Comm_rank(mesh_partition.mpi_comm, &rank);
       MPI_Comm_size(mesh_partition.mpi_comm, &nproc);
       auto out_message =
-        construct_out_message(rank, nproc, comm.GetInMessageLayout());
+        ConstructOutMessage(rank, nproc, comm.GetInMessageLayout());
       comm.SetOutMessageLayout(out_message.dest, out_message.offset);
     }
 

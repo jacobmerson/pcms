@@ -28,10 +28,10 @@ struct DeserializeOmegaH
   Omega_h::Mesh& mesh;
 };
 
-struct OmegaHPartitionRankCount
+struct OmegaHReversePartition
 {
-  OmegaHPartitionRankCount(Omega_h::Mesh& mesh) : mesh(mesh) {}
-  std::map<int, int> operator()(std::string_view, wdmcpl::Field*,
+  OmegaHReversePartition(Omega_h::Mesh& mesh) : mesh(mesh) {}
+  wdmcpl::ReversePartitionMap operator()(std::string_view, wdmcpl::Field*,
                                 const redev::Partition& partition)
   {
     auto ohComm = mesh.comm();
@@ -49,11 +49,8 @@ struct OmegaHPartitionRankCount
     auto isOverlap_h = Omega_h::HostRead(isOverlap);
     // count number of vertices going to each destination process by calling
     // getRank - degree array
-    std::map<int, int> destRankCounts;
-    auto ranks = std::visit([](auto&& p) { return p.GetRanks(); }, partition);
-    for (auto rank : ranks) {
-      destRankCounts[rank] = 0;
-    }
+    wdmcpl::ReversePartitionMap reverse_partition;
+    wdmcpl::LO count = 0;
     for (auto i = 0; i < classIds_h.size(); i++) {
       if (isOverlap_h[i]) {
         auto dr = std::visit(
@@ -69,11 +66,10 @@ struct OmegaHPartitionRankCount
               return 0;
             }},
           partition);
-        assert(destRankCounts.count(dr));
-        destRankCounts[dr]++;
+        reverse_partition[dr].push_back(count++);
       }
     }
-    return destRankCounts;
+    return reverse_partition;
   }
   Omega_h::Mesh& mesh;
 };
@@ -96,7 +92,7 @@ void xgc_delta_f(MPI_Comm comm, Omega_h::Mesh& mesh)
   wdmcpl::Coupler cpl("proxy_couple", wdmcpl::ProcessType::Client);
   cpl.AddMeshPartition("xgc", comm, redev::ClassPtn{});
   cpl.AddField<wdmcpl::Real>("xgc", "delta_f_density", nullptr,
-                             OmegaHPartitionRankCount{mesh});
+                             OmegaHReversePartition{mesh});
   cpl.SendField("delta_f_density", SerializeOmegaH{mesh});
   // get updated field data from coupling server
   cpl.ReceiveField("delta_f_density", DeserializeOmegaH{mesh});
@@ -106,7 +102,7 @@ void xgc_total_f(MPI_Comm comm, Omega_h::Mesh& mesh)
   wdmcpl::Coupler cpl("proxy_couple", wdmcpl::ProcessType::Client);
   cpl.AddMeshPartition("xgc", comm, redev::ClassPtn{});
   cpl.AddField<wdmcpl::Real>("xgc", "total_f_density", nullptr,
-                             OmegaHPartitionRankCount{mesh});
+                             OmegaHReversePartition{mesh});
   cpl.SendField("total_f_density", SerializeOmegaH{mesh});
   // get updated field data from coupling server
   cpl.ReceiveField("total_f_density", DeserializeOmegaH{mesh});
@@ -117,7 +113,7 @@ void coupler(MPI_Comm comm, Omega_h::Mesh& mesh, std::string_view cpn_file)
   wdmcpl::Coupler cpl("proxy_couple", wdmcpl::ProcessType::Server);
   cpl.AddMeshPartition("xgc", comm, setupServerPartition(mesh, cpn_file));
   cpl.AddField<wdmcpl::Real>("xgc", "density", nullptr,
-                             OmegaHPartitionRankCount{mesh});
+                             OmegaHReversePartition{mesh});
   // Gather Field
   {
     cpl.ReceiveField("delta_f_density", DeserializeOmegaH{mesh});
