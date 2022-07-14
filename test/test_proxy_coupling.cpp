@@ -12,7 +12,7 @@ struct SerializeOmegaH
 {
   SerializeOmegaH(Omega_h::Mesh& mesh) : mesh(mesh) {}
   template<typename T>
-  int operator()(std::string_view, wdmcpl::Field*, nonstd::span<T>)
+  int operator()(std::string_view, wdmcpl::Field*, nonstd::span<T>,nonstd::span<const wdmcpl::LO>)
   {
   }
   Omega_h::Mesh mesh;
@@ -22,7 +22,7 @@ struct DeserializeOmegaH
   DeserializeOmegaH(Omega_h::Mesh& mesh) : mesh(mesh) {}
   template <typename T>
   void operator()(std::string_view, wdmcpl::Field*,
-                  nonstd::span<const T>)
+                  nonstd::span<const T>, nonstd::span<const wdmcpl::LO> )
   {
   }
   Omega_h::Mesh& mesh;

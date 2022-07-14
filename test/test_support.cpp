@@ -361,8 +361,8 @@ OutMsg prepareAppOutMessage(Omega_h::Mesh& mesh, const redev::ClassPtn& partitio
     auto dr = out.dest[i];
     destRankIdx[dr] = out.offset[i];
   }
-  auto gids = mesh.globals(0);
-  auto gids_h = Omega_h::HostRead(gids);
+  //auto gids = mesh.globals(0);
+  //auto gids_h = Omega_h::HostRead(gids);
   out.permute.resize(out.offset.back());
   int j=0;
   for(auto i=0; i<classIds_h.size(); i++) {

@@ -44,6 +44,7 @@ struct FieldDataT
 {
   Field* field;
   std::vector<T> comm_buffer;
+  std::vector<wdmcpl::LO> message_permutation;
   redev::BidirectionalComm<T> comm;
   bool buffer_size_needs_update;
 };
@@ -69,7 +70,7 @@ public:
   // register mesh sets up the rdv object for the mesh in question including
   // the partitioning
   void AddMeshPartition(std::string name, MPI_Comm comm,
-                          redev::Partition partition)
+                        redev::Partition partition)
   {
     auto it = mesh_partitions_.find(name);
     if (it != mesh_partitions_.end()) {
@@ -80,70 +81,76 @@ public:
       std::move(name),
       MeshPartitionData{
         .redev = redev::Redev(comm, std::move(partition), process_type_),
-        .mpi_comm = comm
-      });
+        .mpi_comm = comm});
   }
 
 private:
-  struct OutMsg  {
+  struct OutMsg
+  {
     redev::LOs dest;
     redev::LOs offset;
   };
   // given a partition return a map of ranks and the number of entities on those
   // ranks
   template <typename Func>
-  OutMsg construct_out_message(std::string_view name, Field* field, const redev::Partition& partition, Func&& map_func)
+  OutMsg construct_out_message(std::string_view name, Field* field,
+                               const redev::Partition& partition,
+                               Func&& map_func)
   {
-    std::map<int,int> dest_rank_counts = map_func(name, field, partition);
+    std::map<int, int> dest_rank_counts = map_func(name, field, partition);
     OutMsg out;
-    //create dest and offsets arrays from degree array
-    out.offset.resize(dest_rank_counts.size()+1);
+    // create dest and offsets arrays from degree array
+    out.offset.resize(dest_rank_counts.size() + 1);
     out.dest.resize(dest_rank_counts.size());
     out.offset[0] = 0;
     // isn't this just an exclusive scan for the offset?
     int i = 1;
-    for(auto rankCount : dest_rank_counts) {
-      out.dest[i-1] = rankCount.first;
-      out.offset[i] = out.offset[i-1]+rankCount.second;
+    for (auto rankCount : dest_rank_counts) {
+      out.dest[i - 1] = rankCount.first;
+      out.offset[i] = out.offset[i - 1] + rankCount.second;
       i++;
     }
     return out;
   }
-  OutMsg construct_out_message(int rank, int nproc, const redev::InMessageLayout& in) {
+  OutMsg construct_out_message(int rank, int nproc,
+                               const redev::InMessageLayout& in)
+  {
 
-    //auto nAppProcs = Omega_h::divide_no_remainder(in.srcRanks.size(),static_cast<size_t>(nproc));
-    auto nAppProcs = in.srcRanks.size()/static_cast<size_t>(nproc);
-    //build dest and offsets arrays from incoming message metadata
+    // auto nAppProcs =
+    // Omega_h::divide_no_remainder(in.srcRanks.size(),static_cast<size_t>(nproc));
+    auto nAppProcs = in.srcRanks.size() / static_cast<size_t>(nproc);
+    // build dest and offsets arrays from incoming message metadata
     redev::LOs senderDeg(nAppProcs);
-    for(size_t i=0; i<nAppProcs-1; i++) {
-      senderDeg[i] = in.srcRanks[(i+1)*nproc+rank] - in.srcRanks[i*nproc+rank];
+    for (size_t i = 0; i < nAppProcs - 1; i++) {
+      senderDeg[i] =
+        in.srcRanks[(i + 1) * nproc + rank] - in.srcRanks[i * nproc + rank];
     }
-    const auto totInMsgs = in.offset[rank+1]-in.offset[rank];
-    senderDeg[nAppProcs-1] = totInMsgs - in.srcRanks[(nAppProcs-1)*nproc+rank];
+    const auto totInMsgs = in.offset[rank + 1] - in.offset[rank];
+    senderDeg[nAppProcs - 1] =
+      totInMsgs - in.srcRanks[(nAppProcs - 1) * nproc + rank];
     OutMsg out;
-    for(size_t i=0; i<nAppProcs; i++) {
-      if(senderDeg[i] > 0) {
+    for (size_t i = 0; i < nAppProcs; i++) {
+      if (senderDeg[i] > 0) {
         out.dest.push_back(i);
       }
     }
     redev::GO sum = 0;
-    for(auto deg : senderDeg) { //exscan over values > 0
-      if(deg>0) {
+    for (auto deg : senderDeg) { // exscan over values > 0
+      if (deg > 0) {
         out.offset.push_back(sum);
-        sum+=deg;
+        sum += deg;
       }
     }
     out.offset.push_back(sum);
     return out;
   }
 
-
 public:
   // register_field sets up a rdv::BidirectionalComm on the given mesh rdv
   // object for the field
   template <typename T, typename Func>
   void AddField(std::string_view mesh_partition_name, std::string field_name,
-                 Field* field, Func&& rank_count_func)
+                Field* field, Func&& rank_count_func)
   {
     auto it = fields_.find(field_name);
     if (it != fields_.end()) {
@@ -158,24 +165,26 @@ public:
     auto comm = mesh_partition.redev.CreateAdiosClient<T>(
       transport_name, params, transport_type);
 
-    if(process_type_ == redev::ProcessType::Client) {
-      auto out_message = construct_out_message(field_name,field, mesh_partition.redev.GetPartition(), rank_count_func);
+    if (process_type_ == redev::ProcessType::Client) {
+      auto out_message = construct_out_message(
+        field_name, field, mesh_partition.redev.GetPartition(),
+        rank_count_func);
       comm.SetOutMessageLayout(out_message.dest, out_message.offset);
-    }
-    else {
+    } else {
       int rank, nproc;
       MPI_Comm_rank(mesh_partition.mpi_comm, &rank);
       MPI_Comm_size(mesh_partition.mpi_comm, &nproc);
-      auto out_message = construct_out_message(rank, nproc, comm.GetInMessageLayout());
+      auto out_message =
+        construct_out_message(rank, nproc, comm.GetInMessageLayout());
       comm.SetOutMessageLayout(out_message.dest, out_message.offset);
     }
 
     fields_.emplace(std::move(field_name), FieldDataT<T>{
-      .field = field,
-      .comm_buffer = {},
-      .comm = std::move(comm),
-      .buffer_size_needs_update = true,
-    });
+                                             .field = field,
+                                             .comm_buffer = {},
+                                             .comm = std::move(comm),
+                                             .buffer_size_needs_update = true,
+                                           });
   }
   /**
    * Gather the field from the rendezvous server and deserialize it into the
@@ -193,8 +202,11 @@ public:
         auto data = field.comm.Recv();
         const auto buffer =
           nonstd::span<const typename decltype(data)::value_type>(data);
+        const auto permutation = nonstd::span<
+          const typename decltype(field.message_permutation)::value_type>(
+          field.message_permutation);
         // load data into the field based on user specified function/functor
-        deserializer(name, field.field, buffer);
+        deserializer(name, field.field, buffer, permutation);
       },
       find_field_or_error(name));
   }
@@ -216,16 +228,22 @@ public:
   {
     std::visit(
       [&serializer, name](auto&& field) {
-        // TODO: if the field size needs to be updated also need to update the out message layouts
+        // TODO: if the field size needs to be updated also need to update the
+        // out message layout and permutation arrays
         if (field.buffer_size_needs_update) {
           // pass empty buffer to serializer for first pass of algorithm
           const auto buffer =
             nonstd::span<typename decltype(field.comm_buffer)::value_type>{};
-          auto n = serializer(name, field.field, buffer);
+          const auto permutation = nonstd::span<
+            const typename decltype(field.message_permutation)::value_type>{};
+          auto n = serializer(name, field.field, buffer, permutation);
           field.comm_buffer.resize(n);
         }
         auto buffer = nonstd::span(field.comm_buffer);
-        serializer(name, field.field, buffer);
+        const auto permutation = nonstd::span<
+          const typename decltype(field.message_permutation)::value_type>(
+          field.message_permutation);
+        serializer(name, field.field, buffer, permutation);
 
         field.comm.Send(field.comm_buffer.data());
       },
