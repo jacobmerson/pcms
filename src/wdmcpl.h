@@ -65,8 +65,10 @@ struct OutMsg
   redev::LOs dest;
   redev::LOs offset;
 };
-// given a partition return a map of ranks and the number of entities on those
-// ranks
+
+// reverse partition is a map that has the partition rank as a key
+// and the values are an vector where each entry is the index into
+// the array of data to send
 OutMsg ConstructOutMessage(const ReversePartitionMap& reverse_partition)
 {
   OutMsg out;
@@ -84,6 +86,24 @@ OutMsg ConstructOutMessage(const ReversePartitionMap& reverse_partition)
   std::inclusive_scan(counts.begin(), counts.end(),
                       std::next(out.offset.begin(), 1));
   return out;
+}
+// note this function can be parallelized by making use of the offsets
+redev::LOs ConstructPermutation(const ReversePartitionMap& reverse_partition)
+{
+
+  auto num_entries = std::transform_reduce(
+    reverse_partition.begin(), reverse_partition.end(), 0, std::plus<LO>(),
+    [](const std::pair<const LO, std::vector<LO>>& v) {
+      return v.second.size();
+    });
+  redev::LOs permutation(num_entries);
+  LO entry = 0;
+  for (auto& rank : reverse_partition) {
+    for(auto& idx : rank.second) {
+      permutation[idx] = entry++;
+    }
+  }
+  return permutation;
 }
 OutMsg ConstructOutMessage(int rank, int nproc,
                            const redev::InMessageLayout& in)
@@ -163,11 +183,13 @@ public:
     auto comm = mesh_partition.redev.CreateAdiosClient<T>(
       transport_name, params, transport_type);
 
+    redev::LOs permutation;
     if (process_type_ == redev::ProcessType::Client) {
       const auto reverse_partition =
         rank_count_func(field_name, field, mesh_partition.redev.GetPartition());
       auto out_message = ConstructOutMessage(reverse_partition);
       comm.SetOutMessageLayout(out_message.dest, out_message.offset);
+      permutation = ConstructPermutation(reverse_partition);
     } else {
       int rank, nproc;
       MPI_Comm_rank(mesh_partition.mpi_comm, &rank);
@@ -182,6 +204,7 @@ public:
                                              .comm_buffer = {},
                                              .comm = std::move(comm),
                                              .buffer_size_needs_update = true,
+                                             .message_permutation = permutation
                                            });
   }
   /**
