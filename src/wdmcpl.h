@@ -59,6 +59,64 @@ struct MeshPartitionData
   MPI_Comm mpi_comm;
 };
 using ReversePartitionMap = std::map<wdmcpl::LO, std::vector<wdmcpl::LO>>;
+
+struct OutMsg
+{
+  redev::LOs dest;
+  redev::LOs offset;
+};
+// given a partition return a map of ranks and the number of entities on those
+// ranks
+OutMsg ConstructOutMessage(const ReversePartitionMap& reverse_partition)
+{
+  OutMsg out;
+  redev::LOs counts;
+  counts.reserve(reverse_partition.size());
+  out.dest.clear();
+  out.dest.reserve(reverse_partition.size());
+  // number of entries for each rank
+  for (auto& rank : reverse_partition) {
+    out.dest.push_back(rank.first);
+    counts.push_back(rank.second.size());
+  }
+  out.offset.resize(counts.size() + 1);
+  out.offset[0] = 0;
+  std::inclusive_scan(counts.begin(), counts.end(),
+                      std::next(out.offset.begin(), 1));
+  return out;
+}
+OutMsg ConstructOutMessage(int rank, int nproc,
+                           const redev::InMessageLayout& in)
+{
+
+  // auto nAppProcs =
+  // Omega_h::divide_no_remainder(in.srcRanks.size(),static_cast<size_t>(nproc));
+  auto nAppProcs = in.srcRanks.size() / static_cast<size_t>(nproc);
+  // build dest and offsets arrays from incoming message metadata
+  redev::LOs senderDeg(nAppProcs);
+  for (size_t i = 0; i < nAppProcs - 1; i++) {
+    senderDeg[i] =
+      in.srcRanks[(i + 1) * nproc + rank] - in.srcRanks[i * nproc + rank];
+  }
+  const auto totInMsgs = in.offset[rank + 1] - in.offset[rank];
+  senderDeg[nAppProcs - 1] =
+    totInMsgs - in.srcRanks[(nAppProcs - 1) * nproc + rank];
+  OutMsg out;
+  for (size_t i = 0; i < nAppProcs; i++) {
+    if (senderDeg[i] > 0) {
+      out.dest.push_back(i);
+    }
+  }
+  redev::GO sum = 0;
+  for (auto deg : senderDeg) { // exscan over values > 0
+    if (deg > 0) {
+      out.offset.push_back(sum);
+      sum += deg;
+    }
+  }
+  out.offset.push_back(sum);
+  return out;
+}
 // Coupler needs to have both a standalone mesh definitions to setup rdv comms
 // and a list of fields
 // in the server it also needs sets of fields that will be combined
@@ -86,66 +144,6 @@ public:
         .mpi_comm = comm});
   }
 
-private:
-  struct OutMsg
-  {
-    redev::LOs dest;
-    redev::LOs offset;
-  };
-  // given a partition return a map of ranks and the number of entities on those
-  // ranks
-  OutMsg ConstructOutMessage(const ReversePartitionMap& reverse_partition)
-  {
-    OutMsg out;
-    redev::LOs counts;
-    counts.reserve(reverse_partition.size());
-    out.dest.clear();
-    out.dest.reserve(reverse_partition.size());
-    // number of entries for each rank
-    for (auto& rank : reverse_partition) {
-      out.dest.push_back(rank.first);
-      counts.push_back(rank.second.size());
-    }
-    out.offset.resize(counts.size() + 1);
-    out.offset[0] = 0;
-    std::inclusive_scan(counts.begin(), counts.end(),
-                        std::next(out.offset.begin(), 1));
-    return out;
-  }
-  OutMsg ConstructOutMessage(int rank, int nproc,
-                               const redev::InMessageLayout& in)
-  {
-
-    // auto nAppProcs =
-    // Omega_h::divide_no_remainder(in.srcRanks.size(),static_cast<size_t>(nproc));
-    auto nAppProcs = in.srcRanks.size() / static_cast<size_t>(nproc);
-    // build dest and offsets arrays from incoming message metadata
-    redev::LOs senderDeg(nAppProcs);
-    for (size_t i = 0; i < nAppProcs - 1; i++) {
-      senderDeg[i] =
-        in.srcRanks[(i + 1) * nproc + rank] - in.srcRanks[i * nproc + rank];
-    }
-    const auto totInMsgs = in.offset[rank + 1] - in.offset[rank];
-    senderDeg[nAppProcs - 1] =
-      totInMsgs - in.srcRanks[(nAppProcs - 1) * nproc + rank];
-    OutMsg out;
-    for (size_t i = 0; i < nAppProcs; i++) {
-      if (senderDeg[i] > 0) {
-        out.dest.push_back(i);
-      }
-    }
-    redev::GO sum = 0;
-    for (auto deg : senderDeg) { // exscan over values > 0
-      if (deg > 0) {
-        out.offset.push_back(sum);
-        sum += deg;
-      }
-    }
-    out.offset.push_back(sum);
-    return out;
-  }
-
-public:
   // register_field sets up a rdv::BidirectionalComm on the given mesh rdv
   // object for the field
   template <typename T, typename Func>
