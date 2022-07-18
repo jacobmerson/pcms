@@ -12,7 +12,6 @@
 
 namespace wdmcpl
 {
-
 // Span cast is needed to go to/from buffers to typed data
 template <typename T, typename T2>
 std::span<T> span_cast(std::span<T2> spn)
@@ -328,7 +327,7 @@ public:
           field.message_permutation);
         serializer(name, field.field, buffer, permutation);
 
-        field.comm.Send(field.comm_buffer.data());
+        field.comm.Send(buffer.data());
       },
       find_field_or_error(name));
   }
@@ -336,13 +335,16 @@ public:
 private:
   std::string name_;
   ProcessType process_type_;
-  std::unordered_map<std::string, FieldData> fields_;
   std::unordered_map<std::string, MeshPartitionData> mesh_partitions_;
+  // Field data must be constructed/destructed after MeshPartitionData that
+  // includes the Redev instance (since FieldData contains a Comm object
+  // that requires Redev)
+  std::unordered_map<std::string, FieldData> fields_;
   FieldData& find_field_or_error(std::string_view name)
   {
     auto it = fields_.find(std::string(name));
     if (it == fields_.end()) {
-      std::cerr << "Field must be registered with coupler. (You forgot a call "
+      std::cerr << "Field " <<name<<" must be registered with coupler. (You forgot a call "
                    "to AddField)\n";
       std::exit(EXIT_FAILURE);
     }
