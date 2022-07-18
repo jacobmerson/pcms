@@ -103,9 +103,31 @@ redev::LOs ConstructPermutation(const ReversePartitionMap& reverse_partition)
   redev::LOs permutation(num_entries);
   LO entry = 0;
   for (auto& rank : reverse_partition) {
-    for(auto& idx : rank.second) {
+    for (auto& idx : rank.second) {
       permutation[idx] = entry++;
     }
+  }
+  return permutation;
+}
+/**
+ *
+ * @param local_gids local gids are the mesh GIDs in local mesh iteration order
+ * @param received_gids received GIDs are the GIDS in the order of the incomming
+ * message1
+ * @return permutation array such that GIDS(Permutation[i]) = msgs
+ */
+redev::LOs ConstructPermutation(const std::vector<wdmcpl::GO>& local_gids,
+                                const std::vector<wdmcpl::GO>& received_gids)
+{
+  REDEV_ALWAYS_ASSERT(local_gids.size() == received_gids.size());
+  std::map<wdmcpl::GO, wdmcpl::LO> global_to_local_ids;
+  for (wdmcpl::LO i = 0; i < local_gids.size(); ++i) {
+    global_to_local_ids[local_gids[i]] = i;
+  }
+  redev::LOs permutation;
+  permutation.reserve(local_gids.size());
+  for (auto gid : received_gids) {
+    permutation.push_back(global_to_local_ids[gid]);
   }
   return permutation;
 }
@@ -142,6 +164,14 @@ OutMsg ConstructOutMessage(int rank, int nproc,
   out.offset.push_back(sum);
   return out;
 }
+
+template <typename T>
+bool HasDuplicates(std::vector<T> v)
+{
+  std::sort(v.begin(), v.end());
+  auto it = std::adjacent_find(v.begin(), v.end());
+  return it != v.end();
+}
 // Coupler needs to have both a standalone mesh definitions to setup rdv comms
 // and a list of fields
 // in the server it also needs sets of fields that will be combined
@@ -171,9 +201,15 @@ public:
 
   // register_field sets up a rdv::BidirectionalComm on the given mesh rdv
   // object for the field
-  template <typename T, typename Func>
+  // GlobalIDFunc gives a list of global IDs in mesh iteration order
+  // rank_count_func gives the ReversePartitionMap on the clients
+  // TODO: decide...function objects can become regular types if field sizes are
+  // static
+  // FIXME: rank_count_func is only needed on client
+  template <typename T, typename Func, typename GlobalIDFunc>
   void AddField(std::string_view mesh_partition_name, std::string field_name,
-                Field* field, Func&& rank_count_func)
+                Field* field, Func&& rank_count_func,
+                GlobalIDFunc&& global_id_func)
   {
     auto it = fields_.find(field_name);
     if (it != fields_.end()) {
@@ -181,37 +217,57 @@ public:
       std::exit(EXIT_FAILURE);
     }
     auto& mesh_partition = find_mesh_partition_or_error(mesh_partition_name);
-    adios2::Params params{ {"Streaming", "On"}, {"OpenTimeoutSecs", "12"}};
+    adios2::Params params{{"Streaming", "On"}, {"OpenTimeoutSecs", "12"}};
     auto transport_type = redev::TransportType::BP4;
     std::string transport_name = name_;
     transport_name.append(mesh_partition_name).append(field_name);
     auto comm = mesh_partition.redev.CreateAdiosClient<T>(
       transport_name, params, transport_type);
 
+    // set up GID comm to do setup phase and get the
+    // FIXME: use  one directional comm instead of the adios bidirectional comm
+    auto gid_comm = mesh_partition.redev.CreateAdiosClient<wdmcpl::GO>(
+      transport_name + "_gids", params, transport_type);
+
+    auto gids = global_id_func(field_name, field);
     redev::LOs permutation;
     if (process_type_ == redev::ProcessType::Client) {
       const ReversePartitionMap reverse_partition =
         rank_count_func(field_name, field, mesh_partition.redev.GetPartition());
       auto out_message = ConstructOutMessage(reverse_partition);
       comm.SetOutMessageLayout(out_message.dest, out_message.offset);
+      gid_comm.SetOutMessageLayout(out_message.dest, out_message.offset);
       permutation = ConstructPermutation(reverse_partition);
+      // use permutation array to send the gids
+      std::vector<wdmcpl::GO> gid_msgs(gids.size());
+      REDEV_ALWAYS_ASSERT(gids.size() == permutation.size());
+      for (int i = 0; i < gids.size(); ++i) {
+        gid_msgs[permutation[i]] = gids[i];
+      }
+      gid_comm.Send(gid_msgs.data());
     } else {
+      auto recv_gids = gid_comm.Recv();
       int rank, nproc;
       MPI_Comm_rank(mesh_partition.mpi_comm, &rank);
       MPI_Comm_size(mesh_partition.mpi_comm, &nproc);
-      const auto in_message_layout = comm.GetInMessageLayout();
-      auto out_message =
-        ConstructOutMessage(rank, nproc, in_message_layout);
+      // we require that the layout for the gids and the message are the same
+      const auto in_message_layout = gid_comm.GetInMessageLayout();
+      auto out_message = ConstructOutMessage(rank, nproc, in_message_layout);
       comm.SetOutMessageLayout(out_message.dest, out_message.offset);
+      // construct server permutation array
+      // Verify that there are no duplicate entries in the received
+      // data. Duplicate data indicates that sender is not sending data from
+      // only the owned rank
+      REDEV_ALWAYS_ASSERT(!HasDuplicates(recv_gids));
+      permutation = ConstructPermutation(gids, recv_gids);
     }
 
-    fields_.emplace(std::move(field_name), FieldDataT<T>{
-                                             .field = field,
-                                             .comm_buffer = {},
-                                             .message_permutation = permutation,
-                                             .comm = std::move(comm),
-                                             .buffer_size_needs_update = true
-                                           });
+    fields_.emplace(std::move(field_name),
+                    FieldDataT<T>{.field = field,
+                                  .comm_buffer = {},
+                                  .message_permutation = permutation,
+                                  .comm = std::move(comm),
+                                  .buffer_size_needs_update = true});
   }
   /**
    * Gather the field from the rendezvous server and deserialize it into the
