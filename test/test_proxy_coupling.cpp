@@ -277,9 +277,9 @@ void xgc_total_f(MPI_Comm comm, Omega_h::Mesh& mesh)
   wdmcpl::Coupler cpl("proxy_couple", wdmcpl::ProcessType::Client);
   cpl.AddMeshPartition("xgc", comm, redev::ClassPtn{});
   auto is_overlap_h = markMeshOverlapRegion(mesh);
-  cpl.AddField<wdmcpl::Real>("xgc", "tf_gids", nullptr,
-                             OmegaHReversePartition{mesh},
-                             OmegaHGids{mesh, is_overlap_h});
+  cpl.AddField<wdmcpl::GO>("xgc", "tf_gids", nullptr,
+                           OmegaHReversePartition{mesh},
+                           OmegaHGids{mesh, is_overlap_h});
   cpl.SendField("tf_gids", SerializeOmegaHGids{mesh, is_overlap_h});
   // get updated field data from coupling server
   cpl.ReceiveField("tf_gids", DeserializeOmegaH{mesh, is_overlap_h});
@@ -291,25 +291,13 @@ void coupler(MPI_Comm comm, Omega_h::Mesh& mesh, std::string_view cpn_file)
 
   cpl.AddMeshPartition("xgc", comm, setupServerPartition(mesh, cpn_file));
   auto is_overlap_h = markMeshOverlapRegion(mesh);
-  cpl.AddField<wdmcpl::GO>("xgc", "tf_gids", nullptr,
-                           OmegaHReversePartition{mesh},
-                           OmegaHGids{mesh, is_overlap_h});
-  cpl.AddField<wdmcpl::GO>("xgc", "df_gids", nullptr,
-                           OmegaHReversePartition{mesh},
-                           OmegaHGids{mesh, is_overlap_h});
   std::cerr<<"DOne adding fields\n";
   std::vector<wdmcpl::GO> delta_f_gids;
   std::vector<wdmcpl::GO> total_f_gids;
   std::cerr<<"Receiving\n";
-  cpl.ReceiveField("df_gids",
-                   [&delta_f_gids](std::string_view name, wdmcpl::Field* field,
-                                   auto buffer,
-                                   nonstd::span<const wdmcpl::LO> permutation) {
-                     delta_f_gids.resize(buffer.size());
-                     for (int i = 0; i < buffer.size(); ++i) {
-                       delta_f_gids[i] = buffer[permutation[i]];
-                     }
-                   });
+  cpl.AddField<wdmcpl::GO>("xgc", "tf_gids", nullptr,
+                           OmegaHReversePartition{mesh},
+                           OmegaHGids{mesh, is_overlap_h});
   cpl.ReceiveField("tf_gids",
                    [&total_f_gids](std::string_view name, wdmcpl::Field* field,
                                    auto buffer,
@@ -319,19 +307,6 @@ void coupler(MPI_Comm comm, Omega_h::Mesh& mesh, std::string_view cpn_file)
                        total_f_gids[i] = buffer[permutation[i]];
                      }
                    });
-  std::cerr<<"Sending\n";
-  cpl.SendField("df_gids",
-                [&delta_f_gids](std::string_view name, wdmcpl::Field* field,
-                                auto buffer,
-                                nonstd::span<const wdmcpl::LO> permutation) {
-                  if (buffer.size() >= 0) {
-                    for (int i = 0; i < buffer.size(); ++i) {
-                      buffer[permutation[i]] = delta_f_gids[i];
-                    }
-                  }
-                  return delta_f_gids.size();
-                });
-  std::cerr<<"Send total-f\n";
   cpl.SendField("tf_gids",
                 [&total_f_gids](std::string_view name, wdmcpl::Field* field,
                                 auto buffer,
@@ -342,6 +317,29 @@ void coupler(MPI_Comm comm, Omega_h::Mesh& mesh, std::string_view cpn_file)
                     }
                   }
                   return total_f_gids.size();
+                });
+cpl.AddField<wdmcpl::GO>("xgc", "df_gids", nullptr,
+                         OmegaHReversePartition{mesh},
+                         OmegaHGids{mesh, is_overlap_h});
+  cpl.ReceiveField("df_gids",
+                   [&delta_f_gids](std::string_view name, wdmcpl::Field* field,
+                                   auto buffer,
+                                   nonstd::span<const wdmcpl::LO> permutation) {
+                     delta_f_gids.resize(buffer.size());
+                     for (int i = 0; i < buffer.size(); ++i) {
+                       delta_f_gids[i] = buffer[permutation[i]];
+                     }
+                   });
+  cpl.SendField("df_gids",
+                [&delta_f_gids](std::string_view name, wdmcpl::Field* field,
+                                auto buffer,
+                                nonstd::span<const wdmcpl::LO> permutation) {
+                  if (buffer.size() >= 0) {
+                    for (int i = 0; i < buffer.size(); ++i) {
+                      buffer[permutation[i]] = delta_f_gids[i];
+                    }
+                  }
+                  return delta_f_gids.size();
                 });
 }
 

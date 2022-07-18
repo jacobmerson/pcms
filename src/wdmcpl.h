@@ -219,7 +219,7 @@ public:
     adios2::Params params{{"Streaming", "On"}, {"OpenTimeoutSecs", "12"}};
     auto transport_type = redev::TransportType::BP4;
     std::string transport_name = name_;
-    transport_name.append(mesh_partition_name).append(field_name);
+    transport_name.append("_").append(mesh_partition_name).append("_").append(field_name);
     auto comm = mesh_partition.redev.CreateAdiosClient<T>(
       transport_name, params, transport_type);
 
@@ -279,14 +279,17 @@ public:
   template <typename Func>
   void ReceiveField(std::string_view name, Func&& deserializer)
   {
+    std::cerr<<name<<"\n";
     std::visit(
       [&deserializer, name](auto&& field) {
+        std::cerr<<"Receive\n";
         auto data = field.comm.Recv();
         const auto buffer =
           nonstd::span<const typename decltype(data)::value_type>(data);
         const auto permutation = nonstd::span<
           const typename decltype(field.message_permutation)::value_type>(
           field.message_permutation);
+        std::cerr<<"Deserializing\n";
         // load data into the field based on user specified function/functor
         deserializer(name, field.field, buffer, permutation);
       },
@@ -308,6 +311,7 @@ public:
   template <typename Func>
   void SendField(std::string_view name, Func&& serializer)
   {
+    std::cerr<<name<<"\n";
     std::visit(
       [&serializer, name](auto&& field) {
         // TODO: if the field size needs to be updated also need to update the
@@ -326,7 +330,7 @@ public:
           const typename decltype(field.message_permutation)::value_type>(
           field.message_permutation);
         serializer(name, field.field, buffer, permutation);
-
+        std::cerr<<"Sending data\n";
         field.comm.Send(buffer.data());
       },
       find_field_or_error(name));
