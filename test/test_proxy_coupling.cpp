@@ -291,10 +291,8 @@ void coupler(MPI_Comm comm, Omega_h::Mesh& mesh, std::string_view cpn_file)
 
   cpl.AddMeshPartition("xgc", comm, setupServerPartition(mesh, cpn_file));
   auto is_overlap_h = markMeshOverlapRegion(mesh);
-  std::cerr<<"DOne adding fields\n";
   std::vector<wdmcpl::GO> delta_f_gids;
   std::vector<wdmcpl::GO> total_f_gids;
-  std::cerr<<"Receiving\n";
   cpl.AddField<wdmcpl::GO>("xgc", "tf_gids", nullptr,
                            OmegaHReversePartition{mesh},
                            OmegaHGids{mesh, is_overlap_h});

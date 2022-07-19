@@ -279,17 +279,14 @@ public:
   template <typename Func>
   void ReceiveField(std::string_view name, Func&& deserializer)
   {
-    std::cerr<<name<<"\n";
     std::visit(
       [&deserializer, name](auto&& field) {
-        std::cerr<<"Receive\n";
         auto data = field.comm.Recv();
         const auto buffer =
           nonstd::span<const typename decltype(data)::value_type>(data);
         const auto permutation = nonstd::span<
           const typename decltype(field.message_permutation)::value_type>(
           field.message_permutation);
-        std::cerr<<"Deserializing\n";
         // load data into the field based on user specified function/functor
         deserializer(name, field.field, buffer, permutation);
       },
@@ -311,7 +308,6 @@ public:
   template <typename Func>
   void SendField(std::string_view name, Func&& serializer)
   {
-    std::cerr<<name<<"\n";
     std::visit(
       [&serializer, name](auto&& field) {
         // TODO: if the field size needs to be updated also need to update the
@@ -330,7 +326,6 @@ public:
           const typename decltype(field.message_permutation)::value_type>(
           field.message_permutation);
         serializer(name, field.field, buffer, permutation);
-        std::cerr<<"Sending data\n";
         field.comm.Send(buffer.data());
       },
       find_field_or_error(name));
