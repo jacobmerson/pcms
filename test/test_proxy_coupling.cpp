@@ -252,6 +252,38 @@ void xgc_total_f(MPI_Comm comm, Omega_h::Mesh& mesh)
   // get updated field data from coupling server
   cpl.ReceiveField("tf_gids", DeserializeOmegaH{mesh, is_overlap_h});
 }
+struct DeserializeServer
+{
+  DeserializeServer(std::vector < wdmcpl::GO> & v) : v_(v) {};
+  void operator()(std::string_view name, wdmcpl::Field* field,
+                  auto buffer,
+                  nonstd::span<const wdmcpl::LO> permutation) {
+    v_.resize(buffer.size());
+    for (int i = 0; i < buffer.size(); ++i) {
+      v_[i] = buffer[permutation[i]];
+    }
+  }
+private:
+  std::vector<wdmcpl::GO>& v_;
+};
+struct SerializeServer {
+  SerializeServer(std::vector<wdmcpl::GO> & v) : v_(v) {};
+
+  int operator()(std::string_view name, wdmcpl::Field* field,
+  auto buffer,
+    nonstd::span<const wdmcpl::LO> permutation)
+  {
+    if (buffer.size() >= 0) {
+      for (int i = 0; i < buffer.size(); ++i) {
+        buffer[permutation[i]] = v_[i];
+      }
+    }
+    return v_.size();
+  }
+
+private:
+  std::vector<wdmcpl::GO>& v_;
+};
 void coupler(MPI_Comm comm, Omega_h::Mesh& mesh, std::string_view cpn_file)
 {
 
@@ -264,49 +296,13 @@ void coupler(MPI_Comm comm, Omega_h::Mesh& mesh, std::string_view cpn_file)
   cpl.AddField<wdmcpl::GO>("xgc", "tf_gids", nullptr,
                            OmegaHReversePartition{mesh},
                            OmegaHGids{mesh, is_overlap_h});
-  cpl.ReceiveField("tf_gids",
-                   [&total_f_gids](std::string_view name, wdmcpl::Field* field,
-                                   auto buffer,
-                                   nonstd::span<const wdmcpl::LO> permutation) {
-                     total_f_gids.resize(buffer.size());
-                     for (int i = 0; i < buffer.size(); ++i) {
-                       total_f_gids[i] = buffer[permutation[i]];
-                     }
-                   });
-  cpl.SendField("tf_gids",
-                [&total_f_gids](std::string_view name, wdmcpl::Field* field,
-                                auto buffer,
-                                nonstd::span<const wdmcpl::LO> permutation) {
-                  if (buffer.size() >= 0) {
-                    for (int i = 0; i < buffer.size(); ++i) {
-                      buffer[permutation[i]] = total_f_gids[i];
-                    }
-                  }
-                  return total_f_gids.size();
-                });
-cpl.AddField<wdmcpl::GO>("xgc", "df_gids", nullptr,
-                         OmegaHReversePartition{mesh},
-                         OmegaHGids{mesh, is_overlap_h});
-  cpl.ReceiveField("df_gids",
-                   [&delta_f_gids](std::string_view name, wdmcpl::Field* field,
-                                   auto buffer,
-                                   nonstd::span<const wdmcpl::LO> permutation) {
-                     delta_f_gids.resize(buffer.size());
-                     for (int i = 0; i < buffer.size(); ++i) {
-                       delta_f_gids[i] = buffer[permutation[i]];
-                     }
-                   });
-  cpl.SendField("df_gids",
-                [&delta_f_gids](std::string_view name, wdmcpl::Field* field,
-                                auto buffer,
-                                nonstd::span<const wdmcpl::LO> permutation) {
-                  if (buffer.size() >= 0) {
-                    for (int i = 0; i < buffer.size(); ++i) {
-                      buffer[permutation[i]] = delta_f_gids[i];
-                    }
-                  }
-                  return delta_f_gids.size();
-                });
+  cpl.ReceiveField("tf_gids", DeserializeServer(total_f_gids));
+  cpl.SendField("tf_gids", SerializeServer(total_f_gids));
+  cpl.AddField<wdmcpl::GO>("xgc", "df_gids", nullptr,
+                           OmegaHReversePartition{mesh},
+                           OmegaHGids{mesh, is_overlap_h});
+  cpl.ReceiveField("df_gids", DeserializeServer(delta_f_gids));
+  cpl.SendField("df_gids", SerializeServer(delta_f_gids));
 }
 
 int main(int argc, char** argv)
