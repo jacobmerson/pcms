@@ -12,18 +12,6 @@
 
 namespace wdmcpl
 {
-// Span cast is needed to go to/from buffers to typed data
-template <typename T, typename T2>
-std::span<T> span_cast(std::span<T2> spn)
-{
-  return {reinterpret_cast<T*>(spn.data()), spn.size_bytes() / sizeof(T)};
-}
-template <typename T, typename T2>
-std::span<const T> span_cast(std::span<const T2> spn)
-{
-  return {reinterpret_cast<const T*>(spn.data()), spn.size_bytes() / sizeof(T)};
-}
-
 using ProcessType = redev::ProcessType;
 enum class MeshType
 {
