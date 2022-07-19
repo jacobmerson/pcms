@@ -230,8 +230,8 @@ redev::ClassPtn setupServerPartition(Omega_h::Mesh& mesh,
 
 void xgc_delta_f(MPI_Comm comm, Omega_h::Mesh& mesh)
 {
-  wdmcpl::Coupler cpl("proxy_couple", wdmcpl::ProcessType::Client);
-  cpl.AddMeshPartition("xgc", comm, redev::ClassPtn{});
+  wdmcpl::Coupler cpl("proxy_couple", wdmcpl::ProcessType::Client, comm,
+                      redev::ClassPtn{});
   auto is_overlap_h = markMeshOverlapRegion(mesh);
   cpl.AddField<wdmcpl::GO>("xgc", "df_gids", nullptr,
                            OmegaHReversePartition{mesh},
@@ -242,8 +242,8 @@ void xgc_delta_f(MPI_Comm comm, Omega_h::Mesh& mesh)
 }
 void xgc_total_f(MPI_Comm comm, Omega_h::Mesh& mesh)
 {
-  wdmcpl::Coupler cpl("proxy_couple", wdmcpl::ProcessType::Client);
-  cpl.AddMeshPartition("xgc", comm, redev::ClassPtn{});
+  wdmcpl::Coupler cpl("proxy_couple", wdmcpl::ProcessType::Client, comm,
+                      redev::ClassPtn{});
   auto is_overlap_h = markMeshOverlapRegion(mesh);
   cpl.AddField<wdmcpl::GO>("xgc", "tf_gids", nullptr,
                            OmegaHReversePartition{mesh},
@@ -292,9 +292,8 @@ private:
 void coupler(MPI_Comm comm, Omega_h::Mesh& mesh, std::string_view cpn_file)
 {
 
-  wdmcpl::Coupler cpl("proxy_couple", wdmcpl::ProcessType::Server);
-
-  cpl.AddMeshPartition("xgc", comm, setupServerPartition(mesh, cpn_file));
+  wdmcpl::Coupler cpl("proxy_couple", wdmcpl::ProcessType::Server, comm,
+                      setupServerPartition(mesh, cpn_file));
   auto is_overlap_h = markMeshOverlapRegion(mesh);
   std::vector<wdmcpl::GO> delta_f_gids;
   std::vector<wdmcpl::GO> total_f_gids;

@@ -40,11 +40,6 @@ struct FieldDataT
 using FieldData =
   std::variant<FieldDataT<Real>, FieldDataT<LO>, FieldDataT<GO>>;
 
-struct MeshPartitionData
-{
-  redev::Redev redev;
-  MPI_Comm mpi_comm;
-};
 /**
  * Key: result of partition object i.e. rank that the data is sent to on host
  * Value: Vector of local index (ordered) and global ID
@@ -165,25 +160,13 @@ bool HasDuplicates(std::vector<T> v)
 class Coupler
 {
 public:
-  Coupler(std::string name, ProcessType process_type)
-    : name_(std::move(name)), process_type_(process_type)
+  Coupler(std::string name, ProcessType process_type, MPI_Comm comm,
+          redev::Partition partition)
+    : name_(std::move(name)),
+      process_type_(process_type),
+      mpi_comm_(comm),
+      redev_({comm, std::move(partition), process_type_})
   {
-  }
-  // register mesh sets up the rdv object for the mesh in question including
-  // the partitioning
-  void AddMeshPartition(std::string name, MPI_Comm comm,
-                        redev::Partition partition)
-  {
-    auto it = mesh_partitions_.find(name);
-    if (it != mesh_partitions_.end()) {
-      std::cerr << "Mesh with this name" << name << "already exists!\n";
-      std::exit(EXIT_FAILURE);
-    }
-    mesh_partitions_.emplace(
-      std::move(name),
-      MeshPartitionData{
-        .redev = redev::Redev(comm, std::move(partition), process_type_),
-        .mpi_comm = comm});
   }
 
   // register_field sets up a rdv::BidirectionalComm on the given mesh rdv
@@ -203,24 +186,23 @@ public:
       std::cerr << "Field with this name" << field_name << "already exists!\n";
       std::exit(EXIT_FAILURE);
     }
-    auto& mesh_partition = find_mesh_partition_or_error(mesh_partition_name);
     adios2::Params params{{"Streaming", "On"}, {"OpenTimeoutSecs", "12"}};
     auto transport_type = redev::TransportType::BP4;
     std::string transport_name = name_;
-    transport_name.append("_").append(mesh_partition_name).append("_").append(field_name);
-    auto comm = mesh_partition.redev.CreateAdiosClient<T>(
-      transport_name, params, transport_type);
+    transport_name.append("_").append(field_name);
+    auto comm =
+      redev_.CreateAdiosClient<T>(transport_name, params, transport_type);
 
     // set up GID comm to do setup phase and get the
     // FIXME: use  one directional comm instead of the adios bidirectional comm
-    auto gid_comm = mesh_partition.redev.CreateAdiosClient<wdmcpl::GO>(
+    auto gid_comm = redev_.CreateAdiosClient<wdmcpl::GO>(
       transport_name + "_gids", params, transport_type);
 
     auto gids = global_id_func(field_name, field);
     redev::LOs permutation;
     if (process_type_ == redev::ProcessType::Client) {
       const ReversePartitionMap reverse_partition =
-        rank_count_func(field_name, field, mesh_partition.redev.GetPartition());
+        rank_count_func(field_name, field, redev_.GetPartition());
       auto out_message = ConstructOutMessage(reverse_partition);
       comm.SetOutMessageLayout(out_message.dest, out_message.offset);
       gid_comm.SetOutMessageLayout(out_message.dest, out_message.offset);
@@ -235,8 +217,8 @@ public:
     } else {
       auto recv_gids = gid_comm.Recv();
       int rank, nproc;
-      MPI_Comm_rank(mesh_partition.mpi_comm, &rank);
-      MPI_Comm_size(mesh_partition.mpi_comm, &nproc);
+      MPI_Comm_rank(mpi_comm_, &rank);
+      MPI_Comm_size(mpi_comm_, &nproc);
       // we require that the layout for the gids and the message are the same
       const auto in_message_layout = gid_comm.GetInMessageLayout();
       auto out_message = ConstructOutMessage(rank, nproc, in_message_layout);
@@ -322,27 +304,20 @@ public:
 private:
   std::string name_;
   ProcessType process_type_;
-  std::unordered_map<std::string, MeshPartitionData> mesh_partitions_;
-  // Field data must be constructed/destructed after MeshPartitionData that
-  // includes the Redev instance (since FieldData contains a Comm object
+  MPI_Comm mpi_comm_;
+  redev::Redev redev_;
+
+  // Field data must be constructed/destructed after Redev
+  // (since FieldData contains a Comm object
   // that requires Redev)
   std::unordered_map<std::string, FieldData> fields_;
   FieldData& find_field_or_error(std::string_view name)
   {
     auto it = fields_.find(std::string(name));
     if (it == fields_.end()) {
-      std::cerr << "Field " <<name<<" must be registered with coupler. (You forgot a call "
+      std::cerr << "Field " << name
+                << " must be registered with coupler. (You forgot a call "
                    "to AddField)\n";
-      std::exit(EXIT_FAILURE);
-    }
-    return it->second;
-  }
-  MeshPartitionData& find_mesh_partition_or_error(std::string_view name)
-  {
-    auto it = mesh_partitions_.find(std::string(name));
-    if (it == mesh_partitions_.end()) {
-      std::cerr << "Mesh partition must be registered with coupler. (You "
-                   "forgot a call to AddMeshPartition)\n";
       std::exit(EXIT_FAILURE);
     }
     return it->second;
