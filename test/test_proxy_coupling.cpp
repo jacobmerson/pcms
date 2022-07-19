@@ -254,24 +254,29 @@ void xgc_total_f(MPI_Comm comm, Omega_h::Mesh& mesh)
 }
 struct DeserializeServer
 {
-  DeserializeServer(std::vector < wdmcpl::GO> & v) : v_(v) {};
+  DeserializeServer(std::vector<wdmcpl::GO>& v) : v_(v){};
+  template <typename T>
   void operator()(std::string_view name, wdmcpl::Field* field,
-                  auto buffer,
-                  nonstd::span<const wdmcpl::LO> permutation) {
+                  nonstd::span<const T> buffer,
+                  nonstd::span<const wdmcpl::LO> permutation)
+  {
     v_.resize(buffer.size());
     for (int i = 0; i < buffer.size(); ++i) {
       v_[i] = buffer[permutation[i]];
     }
   }
+
 private:
   std::vector<wdmcpl::GO>& v_;
 };
-struct SerializeServer {
-  SerializeServer(std::vector<wdmcpl::GO> & v) : v_(v) {};
+struct SerializeServer
+{
+  SerializeServer(std::vector<wdmcpl::GO>& v) : v_(v){};
 
+  template <typename T>
   int operator()(std::string_view name, wdmcpl::Field* field,
-  auto buffer,
-    nonstd::span<const wdmcpl::LO> permutation)
+                 nonstd::span<T> buffer,
+                 nonstd::span<const wdmcpl::LO> permutation)
   {
     if (buffer.size() >= 0) {
       for (int i = 0; i < buffer.size(); ++i) {
