@@ -3,7 +3,7 @@
 #include <wdmcpl.h>
 #include <wdmcpl/types.h>
 #include <Omega_h_file.hpp>
-#include <OMega_h_for.hpp>
+#include <Omega_h_for.hpp>
 #include <redev_variant_tools.h>
 #include "test_support.h"
 
@@ -238,6 +238,7 @@ void xgc_delta_f(MPI_Comm comm, Omega_h::Mesh& mesh)
     "gids", OmegaHGids{mesh, is_overlap_h}, OmegaHReversePartition{mesh},
     SerializeOmegaHGids{mesh, is_overlap_h},
     DeserializeOmegaH{mesh, is_overlap_h});
+
   df_gid_field.Send();
   df_gid_field.Receive();
 }
