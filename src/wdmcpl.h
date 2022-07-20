@@ -201,10 +201,51 @@ public:
     transport_name = transport_name.append("_gids");
     gid_comm_ = redev_.CreateAdiosClient<wdmcpl::GO>(transport_name,
                                                     params, transport_type);
+    UpdateLayout();
+  }
 
-    // TODO: everything below here should go into Update() becaues it needs to
-    // get called every time the mesh is updated. For updating w/o errors client
-    // needs to send message to server that mesh has been updated/adapted
+  FieldCommunicatorT(const FieldCommunicatorT&) = delete;
+  FieldCommunicatorT(FieldCommunicatorT&&) = default;
+  FieldCommunicatorT& operator=(const FieldCommunicatorT&) = delete;
+  FieldCommunicatorT& operator=(FieldCommunicatorT&&) = default;
+
+  void Send() override { Send(serializer_); }
+  void Receive() override { Receive(deserializer_); }
+  /*
+   *  Provide templated Send/Recv so that lambda/functor with local data could
+   *  be used if desired
+   */
+  template <typename Serializer>
+  void Send(Serializer&& serializer)
+  {
+    auto n = serializer(name_, {}, {});
+    if(comm_buffer_.size() != n) {
+      UpdateLayout();
+      REDEV_ALWAYS_ASSERT(comm_buffer_.size() == n);
+    }
+
+    auto buffer = nonstd::span(comm_buffer_);
+    const auto permutation = nonstd::span<const typename decltype(message_permutation_)::value_type>(message_permutation_);
+    serializer(name_, buffer, permutation);
+    comm_.Send(buffer.data());
+  }
+  template <typename Deserializer>
+  void Receive(Deserializer&& deserializer)
+  {
+    auto data = comm_.Recv();
+    const auto buffer =
+      nonstd::span<const T>(data);
+    static_assert(std::is_same_v<T, typename decltype(data)::value_type>);
+    const auto permutation = nonstd::span<const typename decltype(message_permutation_)::value_type>(message_permutation_);
+    // load data into the field based on user specified function/functor
+    deserializer(name_, buffer, permutation);
+  }
+
+  /** update the permutation array and buffer sizes upon mesh change
+   * @WARNING this function mut be called on *both* the client and server after
+   * any modifications on the client
+   */
+  void UpdateLayout() {
     auto gids = global_id_function_(name_);
     if (redev_.GetProcessType() == redev::ProcessType::Client) {
       const ReversePartitionMap reverse_partition =
@@ -237,52 +278,8 @@ public:
       REDEV_ALWAYS_ASSERT(!HasDuplicates(recv_gids));
       message_permutation_ = ConstructPermutation(gids, recv_gids);
     }
-    // should call buffer.resize(message_permutation.size());
+    comm_buffer_.resize(message_permutation_.size());
   }
-
-  FieldCommunicatorT(const FieldCommunicatorT&) = delete;
-  FieldCommunicatorT(FieldCommunicatorT&&) = default;
-  FieldCommunicatorT& operator=(const FieldCommunicatorT&) = delete;
-  FieldCommunicatorT& operator=(FieldCommunicatorT&&) = default;
-
-  void Send() override { Send(serializer_); }
-  void Receive() override { Receive(deserializer_); }
-  /*
-   *  Provide templated Send/Recv so that lambda/functor with local data could
-   *  be used if desired
-   */
-  template <typename Serializer>
-  void Send(Serializer&& serializer)
-  {
-    // TODO: if the field size needs to be updated also need to update the
-    // out message layout and permutation arrays
-    if (buffer_size_needs_update_) {
-      // pass empty buffer to serializer for first pass of algorithm
-      const auto buffer = nonstd::span<T>{};
-      const auto permutation = nonstd::span<const typename decltype(message_permutation_)::value_type>{};
-      auto n = serializer(name_, buffer, permutation);
-      comm_buffer_.resize(n);
-      //buffer_size_needs_update_ = false;
-    }
-    auto buffer = nonstd::span(comm_buffer_);
-    const auto permutation = nonstd::span<const typename decltype(message_permutation_)::value_type>(message_permutation_);
-    serializer(name_, buffer, permutation);
-    comm_.Send(buffer.data());
-  }
-  template <typename Deserializer>
-  void Receive(Deserializer&& deserializer)
-  {
-    auto data = comm_.Recv();
-    const auto buffer =
-      nonstd::span<const T>(data);
-    static_assert(std::is_same_v<T, typename decltype(data)::value_type>);
-    const auto permutation = nonstd::span<const typename decltype(message_permutation_)::value_type>(message_permutation_);
-    // load data into the field based on user specified function/functor
-    deserializer(name_, buffer, permutation);
-  }
-
-  /// update the permutation array and buffer sizes upon mesh change
-  void Update();
 
 private:
   MPI_Comm mpi_comm_;
