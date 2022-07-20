@@ -296,6 +296,48 @@ private:
   redev::Redev& redev_;
   std::string name_;
 };
+
+class Application {
+public:
+  Application(std::string name, redev::Redev& redev, MPI_Comm mpi_comm) :
+ name_(std::move(name)), redev_(redev), mpi_comm_(mpi_comm) {}
+  // Copy is deleted to prevent user from not grabbing a reference. This class
+  // is intended to be used with data stored in the coupler
+  Application(const Application&) = delete;
+  Application& operator=(const Application& ) = delete;
+  // moving can/should be enabled. Errors due to reference to redev_. Can probably
+  // wrap that in reference_wrapper to solve the compiler errors.
+  Application(Application&&) = delete;
+  Application& operator=(Application&&) = delete;
+  template <typename T>
+  FieldCommunicatorT<T>& AddField(std::string field_name, GlobalIDFunction global_id_function,
+                                  ReversePartitionMapFunction reverse_partition_map_function,
+                                  SerializerFunction<T> serializer,
+                                  DeserializerFunction<T> deserializer)
+  {
+    auto [it, inserted] = fields_.template try_emplace(
+      field_name,
+      std::make_unique<FieldCommunicatorT<T>>(field_name,
+                                              redev_,
+                                              mpi_comm_,
+                                              global_id_function,
+                                              reverse_partition_map_function,
+                                              serializer, deserializer, name_
+      ));
+    if (!inserted) {
+      std::cerr << "Field with this name" << field_name << "already exists!\n";
+      std::exit(EXIT_FAILURE);
+    }
+    REDEV_ALWAYS_ASSERT(it->second != nullptr);
+    return static_cast<FieldCommunicatorT<T>&>(*(it->second));
+  }
+private:
+  redev::Redev& redev_;
+  MPI_Comm mpi_comm_;
+  std::string name_;
+
+  std::unordered_map<std::string, std::unique_ptr<FieldCommunicator>> fields_;
+};
 // Coupler needs to have both a standalone mesh definitions to setup rdv comms
 // and a list of fields
 // in the server it also needs sets of fields that will be combined
@@ -310,6 +352,17 @@ public:
       redev_({comm, std::move(partition), process_type_})
   {
   }
+  Application& AddApplication(std::string_view name) {
+    std::string prefixed_name = name_;
+    prefixed_name.append("_").append(name);
+    auto [it, inserted] = applications_.template try_emplace(std::string(name),
+                                                             prefixed_name, redev_, mpi_comm_);
+    if (!inserted) {
+      std::cerr << "Application with name" << name << "already exists!\n";
+      std::exit(EXIT_FAILURE);
+    }
+    return it->second;
+  }
 
   // register_field sets up a rdv::BidirectionalComm on the given mesh rdv
   // object for the field
@@ -318,51 +371,13 @@ public:
   // TODO: decide...function objects can become regular types if field sizes are
   // static
   // FIXME: rank_count_func is only needed on client
-  template <typename T>
-  FieldCommunicatorT<T>& AddField(std::string field_name, GlobalIDFunction global_id_function,
-                ReversePartitionMapFunction reverse_partition_map_function,
-                SerializerFunction<T> serializer,
-                DeserializerFunction<T> deserializer)
-  {
-    auto [it, inserted] = fields_.template try_emplace(
-      field_name,
-      std::make_unique<FieldCommunicatorT<T>>(field_name,
-                                              redev_,
-                                              mpi_comm_,
-                                              global_id_function,
-                                              reverse_partition_map_function,
-                                              serializer, deserializer, name_
-                                              ));
-    if (!inserted) {
-      std::cerr << "Field with this name" << field_name << "already exists!\n";
-      std::exit(EXIT_FAILURE);
-    }
-    REDEV_ALWAYS_ASSERT(it->second != nullptr);
-    return static_cast<FieldCommunicatorT<T>&>(*(it->second));
-  }
 
 private:
   std::string name_;
   ProcessType process_type_;
   MPI_Comm mpi_comm_;
   redev::Redev redev_;
-
-  // Field data must be constructed/destructed after Redev
-  // (since FieldData contains a Comm object
-  // that requires Redev)
-  std::unordered_map<std::string, std::unique_ptr<FieldCommunicator>> fields_;
-  FieldCommunicator& find_field_or_error(std::string_view name)
-  {
-    auto it = fields_.find(std::string(name));
-    if (it == fields_.end()) {
-      std::cerr << "Field " << name
-                << " must be registered with coupler. (You forgot a call "
-                   "to AddField)\n";
-      std::exit(EXIT_FAILURE);
-    }
-    REDEV_ALWAYS_ASSERT(it->second != nullptr);
-    return *(it->second);
-  }
+  std::unordered_map<std::string, Application> applications_;
 };
 } // namespace wdmcpl
 
