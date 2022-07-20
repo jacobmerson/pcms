@@ -9,37 +9,11 @@
 #include "wdmcpl/types.h"
 #include <variant>
 #include <numeric>
+#include <functional>
 
 namespace wdmcpl
 {
 using ProcessType = redev::ProcessType;
-enum class MeshType
-{
-  Structured,
-  Unstructured
-};
-class Field
-{};
-
-class Mesh
-{
-  MeshType type_;
-  std::unordered_map<std::string, Field> fields;
-};
-
-template <typename T>
-struct FieldDataT
-{
-  Field* field;
-  std::vector<T> comm_buffer;
-  std::vector<wdmcpl::LO> message_permutation;
-  redev::BidirectionalComm<T> comm;
-  bool buffer_size_needs_update;
-};
-// This must be same order as Type enum
-using FieldData =
-  std::variant<FieldDataT<Real>, FieldDataT<LO>, FieldDataT<GO>>;
-
 /**
  * Key: result of partition object i.e. rank that the data is sent to on host
  * Value: Vector of local index (ordered) and global ID
@@ -154,6 +128,177 @@ bool HasDuplicates(std::vector<T> v)
   auto it = std::adjacent_find(v.begin(), v.end());
   return it != v.end();
 }
+
+/**
+ * serializer the serializer is an invocable that takes a Field* and a
+ * span of one of the wdmcpl data types. It is used in a two pass algorithm,
+ * so the implimenter must check the size of the buffer that is passed in. If
+ * the buffer has a size of 0, routine must not write any data into the
+ * buffer. The serializer invocable must return the number of entries to be
+ * serialized. Note, this algorithm is not guaranteed to call the first
+ * counting pass.
+ * */
+template <typename T>
+using SerializerFunction = std::function<int(std::string_view, nonstd::span<T>,
+                                             nonstd::span<const wdmcpl::LO>)>;
+template <typename T>
+using DeserializerFunction = std::function<void(
+  std::string_view, nonstd::span<const T>, nonstd::span<const wdmcpl::LO>)>;
+using ReversePartitionMapFunction =
+  std::function<ReversePartitionMap(std::string_view, const redev::Partition&)>;
+using GlobalIDFunction =
+  std::function<std::vector<wdmcpl::GO>(std::string_view)>;
+
+class FieldCommunicator
+{
+public:
+  virtual void Send() = 0;
+  virtual void Receive() = 0;
+  virtual ~FieldCommunicator() = default;
+};
+
+// Plan is to have AdiosFieldCommunicator and BaneshFieldCommunicator
+// Note: This class specifically does not take reference to an instance of the
+// coupler to avoid tight coupling that would otherwise ensue.
+//
+// TODO question for @cwsmith
+// Would the communicator rather take some type of Field object either
+// inheritance or type erased that user could inherit from? Nice thing about the
+// function objects is that someone can pass in a lambda if they want quick and
+// dirty.
+template <typename T>
+class FieldCommunicatorT : public FieldCommunicator
+{
+public:
+  FieldCommunicatorT(
+    std::string name, redev::Redev& redev, MPI_Comm mpi_comm,
+    GlobalIDFunction global_id_function,
+    ReversePartitionMapFunction reverse_partition_map_function,
+    SerializerFunction<T> serializer, DeserializerFunction<T> deserializer,
+    std::string_view name_prefix = "",
+    redev::TransportType transport_type = redev::TransportType::BP4,
+    adios2::Params params = adios2::Params{{"Streaming", "On"},
+                                           {"OpenTimeoutSecs", "12"}})
+    : mpi_comm_(mpi_comm),
+      comm_buffer_{},
+      message_permutation_{},
+      buffer_size_needs_update_{true},
+      reverse_partition_map_function_{
+        std::move(reverse_partition_map_function)},
+      global_id_function_{std::move(global_id_function)},
+      serializer_{std::move(serializer)},
+      deserializer_{std::move(deserializer)},
+      redev_{redev},
+      name_{std::move(name)}
+
+  {
+
+    std::string transport_name = std::string(name_prefix);
+    transport_name.append("_").append(name_);
+    comm_ = redev_.CreateAdiosClient<T>(transport_name, params, transport_type);
+    // set up GID comm to do setup phase and get the
+    // FIXME: use  one directional comm instead of the adios bidirectional comm
+    transport_name = transport_name.append("_gids");
+    gid_comm_ = redev_.CreateAdiosClient<wdmcpl::GO>(transport_name,
+                                                    params, transport_type);
+
+    // TODO: everything below here should go into Update() becaues it needs to
+    // get called every time the mesh is updated. For updating w/o errors client
+    // needs to send message to server that mesh has been updated/adapted
+    auto gids = global_id_function_(name_);
+    if (redev_.GetProcessType() == redev::ProcessType::Client) {
+      const ReversePartitionMap reverse_partition =
+        reverse_partition_map_function_(name_, redev_.GetPartition());
+
+      auto out_message = ConstructOutMessage(reverse_partition);
+      comm_.SetOutMessageLayout(out_message.dest, out_message.offset);
+      gid_comm_.SetOutMessageLayout(out_message.dest, out_message.offset);
+      message_permutation_ = ConstructPermutation(reverse_partition);
+      // use permutation array to send the gids
+      std::vector<wdmcpl::GO> gid_msgs(gids.size());
+      REDEV_ALWAYS_ASSERT(gids.size() == message_permutation_.size());
+      for (int i = 0; i < gids.size(); ++i) {
+        gid_msgs[message_permutation_[i]] = gids[i];
+      }
+      gid_comm_.Send(gid_msgs.data());
+    } else {
+      auto recv_gids = gid_comm_.Recv();
+      int rank, nproc;
+      MPI_Comm_rank(mpi_comm_, &rank);
+      MPI_Comm_size(mpi_comm_, &nproc);
+      // we require that the layout for the gids and the message are the same
+      const auto in_message_layout = gid_comm_.GetInMessageLayout();
+      auto out_message = ConstructOutMessage(rank, nproc, in_message_layout);
+      comm_.SetOutMessageLayout(out_message.dest, out_message.offset);
+      // construct server permutation array
+      // Verify that there are no duplicate entries in the received
+      // data. Duplicate data indicates that sender is not sending data from
+      // only the owned rank
+      REDEV_ALWAYS_ASSERT(!HasDuplicates(recv_gids));
+      message_permutation_ = ConstructPermutation(gids, recv_gids);
+    }
+    // should call buffer.resize(message_permutation.size());
+  }
+
+  FieldCommunicatorT(const FieldCommunicatorT&) = delete;
+  FieldCommunicatorT(FieldCommunicatorT&&) = default;
+  FieldCommunicatorT& operator=(const FieldCommunicatorT&) = delete;
+  FieldCommunicatorT& operator=(FieldCommunicatorT&&) = default;
+
+  void Send() override { Send(serializer_); }
+  void Receive() override { Receive(deserializer_); }
+  /*
+   *  Provide templated Send/Recv so that lambda/functor with local data could
+   *  be used if desired
+   */
+  template <typename Serializer>
+  void Send(Serializer&& serializer)
+  {
+    // TODO: if the field size needs to be updated also need to update the
+    // out message layout and permutation arrays
+    if (buffer_size_needs_update_) {
+      // pass empty buffer to serializer for first pass of algorithm
+      const auto buffer = nonstd::span<T>{};
+      const auto permutation = nonstd::span<const typename decltype(message_permutation_)::value_type>{};
+      auto n = serializer(name_, buffer, permutation);
+      comm_buffer_.resize(n);
+      //buffer_size_needs_update_ = false;
+    }
+    auto buffer = nonstd::span(comm_buffer_);
+    const auto permutation = nonstd::span<const typename decltype(message_permutation_)::value_type>(message_permutation_);
+    serializer(name_, buffer, permutation);
+    comm_.Send(buffer.data());
+  }
+  template <typename Deserializer>
+  void Receive(Deserializer&& deserializer)
+  {
+    auto data = comm_.Recv();
+    const auto buffer =
+      nonstd::span<const T>(data);
+    static_assert(std::is_same_v<T, typename decltype(data)::value_type>);
+    const auto permutation = nonstd::span<const typename decltype(message_permutation_)::value_type>(message_permutation_);
+    // load data into the field based on user specified function/functor
+    deserializer(name_, buffer, permutation);
+  }
+
+  /// update the permutation array and buffer sizes upon mesh change
+  void Update();
+
+private:
+  MPI_Comm mpi_comm_;
+  std::vector<T> comm_buffer_;
+  std::vector<wdmcpl::LO> message_permutation_;
+  redev::BidirectionalComm<T> comm_;
+  redev::BidirectionalComm<T> gid_comm_;
+  bool buffer_size_needs_update_;
+  // Stored functions used for updated field info/serialization/deserialization
+  ReversePartitionMapFunction reverse_partition_map_function_;
+  GlobalIDFunction global_id_function_;
+  SerializerFunction<T> serializer_;
+  DeserializerFunction<T> deserializer_;
+  redev::Redev& redev_;
+  std::string name_;
+};
 // Coupler needs to have both a standalone mesh definitions to setup rdv comms
 // and a list of fields
 // in the server it also needs sets of fields that will be combined
@@ -176,129 +321,27 @@ public:
   // TODO: decide...function objects can become regular types if field sizes are
   // static
   // FIXME: rank_count_func is only needed on client
-  template <typename T, typename Func, typename GlobalIDFunc>
-  void AddField(std::string_view mesh_partition_name, std::string field_name,
-                Field* field, Func&& rank_count_func,
-                GlobalIDFunc&& global_id_func)
+  template <typename T>
+  FieldCommunicatorT<T>& AddField(std::string field_name, GlobalIDFunction global_id_function,
+                ReversePartitionMapFunction reverse_partition_map_function,
+                SerializerFunction<T> serializer,
+                DeserializerFunction<T> deserializer)
   {
-    auto it = fields_.find(field_name);
-    if (it != fields_.end()) {
+    auto [it, inserted] = fields_.template try_emplace(
+      field_name,
+      std::make_unique<FieldCommunicatorT<T>>(field_name,
+                                              redev_,
+                                              mpi_comm_,
+                                              global_id_function,
+                                              reverse_partition_map_function,
+                                              serializer, deserializer, name_
+                                              ));
+    if (!inserted) {
       std::cerr << "Field with this name" << field_name << "already exists!\n";
       std::exit(EXIT_FAILURE);
     }
-    adios2::Params params{{"Streaming", "On"}, {"OpenTimeoutSecs", "12"}};
-    auto transport_type = redev::TransportType::BP4;
-    std::string transport_name = name_;
-    transport_name.append("_").append(field_name);
-    auto comm =
-      redev_.CreateAdiosClient<T>(transport_name, params, transport_type);
-
-    // set up GID comm to do setup phase and get the
-    // FIXME: use  one directional comm instead of the adios bidirectional comm
-    auto gid_comm = redev_.CreateAdiosClient<wdmcpl::GO>(
-      transport_name + "_gids", params, transport_type);
-
-    auto gids = global_id_func(field_name, field);
-    redev::LOs permutation;
-    if (process_type_ == redev::ProcessType::Client) {
-      const ReversePartitionMap reverse_partition =
-        rank_count_func(field_name, field, redev_.GetPartition());
-      auto out_message = ConstructOutMessage(reverse_partition);
-      comm.SetOutMessageLayout(out_message.dest, out_message.offset);
-      gid_comm.SetOutMessageLayout(out_message.dest, out_message.offset);
-      permutation = ConstructPermutation(reverse_partition);
-      // use permutation array to send the gids
-      std::vector<wdmcpl::GO> gid_msgs(gids.size());
-      REDEV_ALWAYS_ASSERT(gids.size() == permutation.size());
-      for (int i = 0; i < gids.size(); ++i) {
-        gid_msgs[permutation[i]] = gids[i];
-      }
-      gid_comm.Send(gid_msgs.data());
-    } else {
-      auto recv_gids = gid_comm.Recv();
-      int rank, nproc;
-      MPI_Comm_rank(mpi_comm_, &rank);
-      MPI_Comm_size(mpi_comm_, &nproc);
-      // we require that the layout for the gids and the message are the same
-      const auto in_message_layout = gid_comm.GetInMessageLayout();
-      auto out_message = ConstructOutMessage(rank, nproc, in_message_layout);
-      comm.SetOutMessageLayout(out_message.dest, out_message.offset);
-      // construct server permutation array
-      // Verify that there are no duplicate entries in the received
-      // data. Duplicate data indicates that sender is not sending data from
-      // only the owned rank
-      REDEV_ALWAYS_ASSERT(!HasDuplicates(recv_gids));
-      permutation = ConstructPermutation(gids, recv_gids);
-    }
-
-    fields_.emplace(std::move(field_name),
-                    FieldDataT<T>{.field = field,
-                                  .comm_buffer = {},
-                                  .message_permutation = permutation,
-                                  .comm = std::move(comm),
-                                  .buffer_size_needs_update = true});
-  }
-  /**
-   * Gather the field from the rendezvous server and deserialize it into the
-   * local field definition
-   * @tparam Func invocable that takes Field* and span<byte> (buffer to fill
-   * field field data)
-   * @param name
-   * @param deserializer
-   */
-  template <typename Func>
-  void ReceiveField(std::string_view name, Func&& deserializer)
-  {
-    std::visit(
-      [&deserializer, name](auto&& field) {
-        auto data = field.comm.Recv();
-        const auto buffer =
-          nonstd::span<const typename decltype(data)::value_type>(data);
-        const auto permutation = nonstd::span<
-          const typename decltype(field.message_permutation)::value_type>(
-          field.message_permutation);
-        // load data into the field based on user specified function/functor
-        deserializer(name, field.field, buffer, permutation);
-      },
-      find_field_or_error(name));
-  }
-  /**
-   * Scatter the field to the rendezvous server by serializing the local field
-   * definition
-   * @tparam Func
-   * @param name
-   * @param serializer the serializer is an invocable that takes a Field* and a
-   * span of one of the wdmcpl data types. It is used in a two pass algorithm,
-   * so the implimenter must check the size of the buffer that is passed in. If
-   * the buffer has a size of 0, routine must not write any data into the
-   * buffer. The serializer invocable must return the number of entries to be
-   * serialized. Note, this algorithm is not guaranteed to call the first
-   * counting pass.
-   */
-  template <typename Func>
-  void SendField(std::string_view name, Func&& serializer)
-  {
-    std::visit(
-      [&serializer, name](auto&& field) {
-        // TODO: if the field size needs to be updated also need to update the
-        // out message layout and permutation arrays
-        if (field.buffer_size_needs_update) {
-          // pass empty buffer to serializer for first pass of algorithm
-          const auto buffer =
-            nonstd::span<typename decltype(field.comm_buffer)::value_type>{};
-          const auto permutation = nonstd::span<
-            const typename decltype(field.message_permutation)::value_type>{};
-          auto n = serializer(name, field.field, buffer, permutation);
-          field.comm_buffer.resize(n);
-        }
-        auto buffer = nonstd::span(field.comm_buffer);
-        const auto permutation = nonstd::span<
-          const typename decltype(field.message_permutation)::value_type>(
-          field.message_permutation);
-        serializer(name, field.field, buffer, permutation);
-        field.comm.Send(buffer.data());
-      },
-      find_field_or_error(name));
+    REDEV_ALWAYS_ASSERT(it->second != nullptr);
+    return static_cast<FieldCommunicatorT<T>&>(*(it->second));
   }
 
 private:
@@ -310,8 +353,8 @@ private:
   // Field data must be constructed/destructed after Redev
   // (since FieldData contains a Comm object
   // that requires Redev)
-  std::unordered_map<std::string, FieldData> fields_;
-  FieldData& find_field_or_error(std::string_view name)
+  std::unordered_map<std::string, std::unique_ptr<FieldCommunicator>> fields_;
+  FieldCommunicator& find_field_or_error(std::string_view name)
   {
     auto it = fields_.find(std::string(name));
     if (it == fields_.end()) {
@@ -320,7 +363,8 @@ private:
                    "to AddField)\n";
       std::exit(EXIT_FAILURE);
     }
-    return it->second;
+    REDEV_ALWAYS_ASSERT(it->second != nullptr);
+    return *(it->second);
   }
 };
 } // namespace wdmcpl

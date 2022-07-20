@@ -67,8 +67,8 @@ struct SerializeOmegaHGids
   {
   }
   template <typename T>
-  int operator()(std::string_view, wdmcpl::Field*, nonstd::span<T> buffer,
-                 nonstd::span<const wdmcpl::LO> permutation)
+  int operator()(std::string_view, nonstd::span<T> buffer,
+                 nonstd::span<const wdmcpl::LO> permutation) const
   {
     // WDMCPL_ALWAYS_ASSERT(buffer.size() == is_overlap_h_.size());
     auto gids = mesh_.globals(0);
@@ -98,8 +98,8 @@ struct SerializeOmegaH
   {
   }
   template <typename T>
-  int operator()(std::string_view name, wdmcpl::Field*, nonstd::span<T> buffer,
-                 nonstd::span<const wdmcpl::LO> permutation)
+  int operator()(std::string_view name, nonstd::span<T> buffer,
+                 nonstd::span<const wdmcpl::LO> permutation) const
   {
     // WDMCPL_ALWAYS_ASSERT(buffer.size() == is_overlap_h_.size());
     const auto array = mesh_.get_array<T>(0, std::string(name));
@@ -126,9 +126,8 @@ struct DeserializeOmegaH
   {
   }
   template <typename T>
-  void operator()(std::string_view, wdmcpl::Field*,
-                  nonstd::span<const T> buffer,
-                  nonstd::span<const wdmcpl::LO> permutation)
+  void operator()(std::string_view, nonstd::span<const T> buffer,
+                  nonstd::span<const wdmcpl::LO> permutation) const
   {
 
     REDEV_ALWAYS_ASSERT(buffer.size() == permutation.size());
@@ -153,7 +152,7 @@ struct OmegaHGids
     : mesh_(mesh), is_overlap_h_(is_overlap_h)
   {
   }
-  std::vector<wdmcpl::GO> operator()(std::string_view, wdmcpl::Field*)
+  std::vector<wdmcpl::GO> operator()(std::string_view) const
   {
     auto gids = mesh_.globals(0);
     auto gids_h = Omega_h::HostRead(gids);
@@ -172,8 +171,8 @@ struct OmegaHGids
 struct OmegaHReversePartition
 {
   OmegaHReversePartition(Omega_h::Mesh& mesh) : mesh(mesh) {}
-  wdmcpl::ReversePartitionMap operator()(std::string_view, wdmcpl::Field*,
-                                         const redev::Partition& partition)
+  wdmcpl::ReversePartitionMap operator()(std::string_view,
+                                         const redev::Partition& partition) const
   {
     auto ohComm = mesh.comm();
     const auto rank = ohComm->rank();
@@ -230,35 +229,37 @@ redev::ClassPtn setupServerPartition(Omega_h::Mesh& mesh,
 
 void xgc_delta_f(MPI_Comm comm, Omega_h::Mesh& mesh)
 {
+
   wdmcpl::Coupler cpl("proxy_couple", wdmcpl::ProcessType::Client, comm,
                       redev::ClassPtn{});
   auto is_overlap_h = markMeshOverlapRegion(mesh);
-  cpl.AddField<wdmcpl::GO>("xgc", "df_gids", nullptr,
-                           OmegaHReversePartition{mesh},
-                           OmegaHGids{mesh, is_overlap_h});
-  cpl.SendField("df_gids", SerializeOmegaHGids{mesh, is_overlap_h});
-  // get updated field data from coupling server
-  cpl.ReceiveField("df_gids", DeserializeOmegaH{mesh, is_overlap_h});
+  auto& df_gid_field = cpl.AddField<wdmcpl::GO>(
+    "df_gids", OmegaHGids{mesh, is_overlap_h}, OmegaHReversePartition{mesh},
+    SerializeOmegaHGids{mesh, is_overlap_h},
+    DeserializeOmegaH{mesh, is_overlap_h});
+  df_gid_field.Send();
+  df_gid_field.Receive();
 }
 void xgc_total_f(MPI_Comm comm, Omega_h::Mesh& mesh)
 {
   wdmcpl::Coupler cpl("proxy_couple", wdmcpl::ProcessType::Client, comm,
                       redev::ClassPtn{});
   auto is_overlap_h = markMeshOverlapRegion(mesh);
-  cpl.AddField<wdmcpl::GO>("xgc", "tf_gids", nullptr,
-                           OmegaHReversePartition{mesh},
-                           OmegaHGids{mesh, is_overlap_h});
-  cpl.SendField("tf_gids", SerializeOmegaHGids{mesh, is_overlap_h});
+  auto& tf_gid_field = cpl.AddField<wdmcpl::GO>(
+    "tf_gids", OmegaHGids{mesh, is_overlap_h}, OmegaHReversePartition{mesh},
+    SerializeOmegaHGids{mesh, is_overlap_h},
+    DeserializeOmegaH{mesh, is_overlap_h});
+
+  tf_gid_field.Send();
   // get updated field data from coupling server
-  cpl.ReceiveField("tf_gids", DeserializeOmegaH{mesh, is_overlap_h});
+  tf_gid_field.Receive();
 }
 struct DeserializeServer
 {
   DeserializeServer(std::vector<wdmcpl::GO>& v) : v_(v){};
   template <typename T>
-  void operator()(std::string_view name, wdmcpl::Field* field,
-                  nonstd::span<const T> buffer,
-                  nonstd::span<const wdmcpl::LO> permutation)
+  void operator()(std::string_view name, nonstd::span<const T> buffer,
+                  nonstd::span<const wdmcpl::LO> permutation) const
   {
     v_.resize(buffer.size());
     for (int i = 0; i < buffer.size(); ++i) {
@@ -274,9 +275,8 @@ struct SerializeServer
   SerializeServer(std::vector<wdmcpl::GO>& v) : v_(v){};
 
   template <typename T>
-  int operator()(std::string_view name, wdmcpl::Field* field,
-                 nonstd::span<T> buffer,
-                 nonstd::span<const wdmcpl::LO> permutation)
+  int operator()(std::string_view name, nonstd::span<T> buffer,
+                 nonstd::span<const wdmcpl::LO> permutation) const
   {
     if (buffer.size() >= 0) {
       for (int i = 0; i < buffer.size(); ++i) {
@@ -297,16 +297,17 @@ void coupler(MPI_Comm comm, Omega_h::Mesh& mesh, std::string_view cpn_file)
   auto is_overlap_h = markMeshOverlapRegion(mesh);
   std::vector<wdmcpl::GO> delta_f_gids;
   std::vector<wdmcpl::GO> total_f_gids;
-  cpl.AddField<wdmcpl::GO>("xgc", "tf_gids", nullptr,
-                           OmegaHReversePartition{mesh},
-                           OmegaHGids{mesh, is_overlap_h});
-  cpl.ReceiveField("tf_gids", DeserializeServer(total_f_gids));
-  cpl.SendField("tf_gids", SerializeServer(total_f_gids));
-  cpl.AddField<wdmcpl::GO>("xgc", "df_gids", nullptr,
-                           OmegaHReversePartition{mesh},
-                           OmegaHGids{mesh, is_overlap_h});
-  cpl.ReceiveField("df_gids", DeserializeServer(delta_f_gids));
-  cpl.SendField("df_gids", SerializeServer(delta_f_gids));
+  auto& tf_gid_field = cpl.AddField<wdmcpl::GO>(
+    "tf_gids", OmegaHGids{mesh, is_overlap_h}, OmegaHReversePartition{mesh},
+    SerializeServer{total_f_gids}, DeserializeServer{total_f_gids});
+
+  auto& df_gid_field = cpl.AddField<wdmcpl::GO>(
+    "df_gids", OmegaHGids{mesh, is_overlap_h}, OmegaHReversePartition{mesh},
+    SerializeServer{delta_f_gids}, DeserializeServer{delta_f_gids});
+  df_gid_field.Receive();
+  tf_gid_field.Receive();
+  df_gid_field.Send();
+  tf_gid_field.Send();
 }
 
 int main(int argc, char** argv)
