@@ -1,6 +1,7 @@
 #include <Omega_h_file.hpp>
 #include <Omega_h_mesh.hpp>
 #include <Omega_h_tag.hpp>
+#include "wdmcpl/inclusive_scan.h"
 #include <array>
 #include <map>
 #include <numeric>
@@ -31,7 +32,7 @@ int main(int argc, char** argv)
   const auto nfaces = geometric_ents[1].size();
   // now lets scan the number of vertices in each face
   std::vector<Omega_h::ClassId> verts_per_face(nfaces);
-  std::inclusive_scan(
+  wdmcpl::inclusive_scan(
     std::begin(geometric_ents[1]), std::end(geometric_ents[1]),
     std::begin(verts_per_face),
     [](auto first, auto second) { return first + second.second; },

@@ -12,3 +12,29 @@ compilers:
     modules: []
     environment: {}
     extra_rpaths: []
+- compiler:
+    spec: gcc@11.3.0
+    paths:
+      cc: /lore/mersoj/spack/spack/opt/spack/linux-rhel7-x86_64/gcc-4.8.5/gcc-11.3.0-uqmp46fh6ipkltuzn7hckpfhsn4e27cg/bin/gcc
+      cxx: /lore/mersoj/spack/spack/opt/spack/linux-rhel7-x86_64/gcc-4.8.5/gcc-11.3.0-uqmp46fh6ipkltuzn7hckpfhsn4e27cg/bin/g++
+      fc: /lore/mersoj/spack/spack/opt/spack/linux-rhel7-x86_64/gcc-4.8.5/gcc-11.3.0-uqmp46fh6ipkltuzn7hckpfhsn4e27cg/bin/gfortran
+      f77: /lore/mersoj/spack/spack/opt/spack/linux-rhel7-x86_64/gcc-4.8.5/gcc-11.3.0-uqmp46fh6ipkltuzn7hckpfhsn4e27cg/bin/gfortran
+    flags: {}
+    operating_system: rhel7
+    target: x86_64
+    modules: []
+    environment: {}
+    extra_rpaths: []
+- compiler:
+    spec: gcc@8.4.0
+    paths:
+      cc:  /lore/mersoj/spack/spack/opt/spack/linux-rhel7-x86_64/gcc-13.1.0/gcc-8.4.0-ju3fdnj4clbduomjgmx7puaooyt5ovo6/bin/gcc
+      cxx: /lore/mersoj/spack/spack/opt/spack/linux-rhel7-x86_64/gcc-13.1.0/gcc-8.4.0-ju3fdnj4clbduomjgmx7puaooyt5ovo6/bin/g++
+      fc:  /lore/mersoj/spack/spack/opt/spack/linux-rhel7-x86_64/gcc-13.1.0/gcc-8.4.0-ju3fdnj4clbduomjgmx7puaooyt5ovo6/bin/gfortran
+      f77: /lore/mersoj/spack/spack/opt/spack/linux-rhel7-x86_64/gcc-13.1.0/gcc-8.4.0-ju3fdnj4clbduomjgmx7puaooyt5ovo6/bin//gfortran
+    flags: {}
+    operating_system: rhel7
+    target: x86_64
+    modules: []
+    environment: {}
+    extra_rpaths: []

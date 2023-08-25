@@ -74,7 +74,9 @@ ctest --test-dir buildWdmCpl --output-on-failure
     $ mkdir /lore/$USER/pcms-coupler
     $ cd /lore/$USER/pcms-coupler
     $ git clone https://github.com/jacobmerson/pcms
-    $ cd pcms/spack
+    $ cd pcms
+    $ git clone https://github.com/jacobmerson/pcms_testcases testdata
+    $ cd spack
     $ spack env create -d env spack.yaml
     $ cd env
     $ spack env activate .

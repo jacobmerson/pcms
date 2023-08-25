@@ -9,8 +9,8 @@ packages:
       prefix: /usr
   cuda:
     externals:
-    - spec: cuda@11.6
-      prefix: /usr/local/cuda-11.6
+    - spec: cuda@11.4
+      prefix: /usr/local/cuda-11.4
     - spec: cuda@10.1.243
       prefix: /usr/local/cuda-10.1
     - spec: cuda@10.2.89
