@@ -19,6 +19,7 @@ SCOREC Rhel7 environment
 ```
 module unuse /opt/scorec/spack/lmod/linux-rhel7-x86_64/Core
 module use /opt/scorec/spack/v0154_2/lmod/linux-rhel7-x86_64/Core
+module use /opt/scorec/modules
 module load \
 gcc/10.1.0 \
 mpich \
@@ -30,7 +31,7 @@ gdb
 Build, install, and test
 
 ```
-git clone git@github.com:SCOREC/wdmapp_testcases.git #test data
+git clone https://github.com/jacobmerson/pcms_testcases #test data
 git clone git@github.com:SCOREC/wdmapp_coupling.git
 
 cmake -S wdmapp_coupling -B buildWdmCpl \
