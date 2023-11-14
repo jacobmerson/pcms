@@ -1,4 +1,5 @@
 # TODO split out the field transfer library
+
 set(PCMS_HEADERS
         pcms.h
         pcms/arrays.h
@@ -44,6 +45,7 @@ endif ()
 
 find_package(Kokkos REQUIRED)
 find_package(perfstubs REQUIRED)
+find_package(pybind11 REQUIRED)
 
 add_library(pcms_core ${PCMS_SOURCES})
 set_target_properties(pcms_core PROPERTIES
@@ -116,6 +118,12 @@ if(PCMS_ENABLE_Fortran)
   add_subdirectory(pcms/fortranapi)
   target_link_libraries(pcms_pcms INTERFACE pcms::fortranapi)
 endif()
+if (PCMS_ENABLE_Python)
+  add_subdirectory(pcms/pythonapi)
+  #target_link_libraries(pcms_pcms INTERFACE pcms::pythonapi)
+endif()
+
+#add_subdirectory(pcms/pythonapi)
 
 install(
         TARGETS pcms_pcms

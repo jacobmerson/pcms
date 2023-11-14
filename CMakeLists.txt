@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.19)
 project(pcms VERSION 0.0.5 LANGUAGES CXX)
+#set(CMAKE_CXX_VISIBILITY_PRESET "default")
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -16,11 +17,16 @@ option(PCMS_ENABLE_CLIENT "enable the coupling client implementation" ON)
 option(PCMS_ENABLE_XGC "enable xgc field adapter" ON)
 option(PCMS_ENABLE_OMEGA_H "enable Omega_h field adapter" OFF)
 option(PCMS_ENABLE_C "Enable pcms C api" ON)
+option(PCMS_ENABLE_Python "Enable pcms Python api" OFF)
 
 # find package before fortran enabled, so we don't require the adios2 fortran interfaces
 # this is important because adios2 build with clang/gfortran is broken
 find_package(redev 4.3.0 REQUIRED)
 
+if (PCMS_ENABLE_Python)
+  set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
+  set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
+endif ()
 if (PCMS_ENABLE_C)
   enable_language(C)
   option(PCMS_ENABLE_Fortran "Enable pcms fortran api" ON)
