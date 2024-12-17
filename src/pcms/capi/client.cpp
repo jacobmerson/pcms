@@ -9,22 +9,7 @@
 #include <fstream>
 #include "pcms/xgc_reverse_classification.h"
 #include "pcms/dummy_field_adapter.h"
-namespace pcms
-{
-// Note that we have a closed set of types that can be used in the C interface
-using FieldAdapterVariant =
-  std::variant<std::monostate, pcms::XGCFieldAdapter<double>,
-               pcms::XGCFieldAdapter<float>, pcms::XGCFieldAdapter<int>,
-               pcms::XGCFieldAdapter<long>,
-               pcms::DummyFieldAdapter
-//#ifdef PCMS_HAS_OMEGA_H
-//               ,
-//               pcms::OmegaHFieldAdapter<double>,
-//               pcms::OmegaHFieldAdapter<int>
-//#endif
-               >;
-
-} // namespace pcms
+#include "client_cpp.h"
 
 [[nodiscard]] PcmsClientHandle pcms_create_client(const char* name,
                                                        MPI_Comm comm)
@@ -116,18 +101,7 @@ void pcms_receive_field(PcmsFieldHandle field_handle)
   PCMS_ALWAYS_ASSERT(field != nullptr);
   field->Receive();
 }
-template <typename T>
-void pcms_create_xgc_field_adapter_t(
-  const char* name, MPI_Comm comm, void* data, int size,
-  const pcms::ReverseClassificationVertex& reverse_classification,
-  in_overlap_function in_overlap, pcms::FieldAdapterVariant& field_adapter)
-{
-  PCMS_ALWAYS_ASSERT((size >0) ? (data!=nullptr) : true);
-  pcms::ScalarArrayView<T, pcms::HostMemorySpace> data_view(
-    reinterpret_cast<T*>(data), size);
-  field_adapter.emplace<pcms::XGCFieldAdapter<T>>(
-    name, comm, data_view, reverse_classification, in_overlap);
-}
+
 PcmsFieldAdapterHandle pcms_create_xgc_field_adapter(
   const char* name, MPI_Comm comm, void* data, int size, PcmsType data_type,
   const PcmsReverseClassificationHandle rc, in_overlap_function in_overlap)
