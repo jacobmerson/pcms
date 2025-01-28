@@ -96,6 +96,30 @@ struct GetRankOmegaH
   Omega_h::HostRead<Omega_h::ClassId> ids_;
   Omega_h::HostRead<Omega_h::I8> dims_;
 };
+
+struct OwnedMaskFunctor
+{
+  Omega_h::Read<Omega_h::I8> mask;
+  Omega_h::Read<Omega_h::I8> owned;
+  Omega_h::Write<Omega_h::I8> owned_mask;
+
+  OwnedMaskFunctor(Omega_h::Read<Omega_h::I8> mask_,
+                   Omega_h::Read<Omega_h::I8> owned_,
+                   Omega_h::Write<Omega_h::I8> owned_mask_)
+    : mask(mask_), owned(owned_), owned_mask(owned_mask_)
+  {
+  }
+
+  OMEGA_H_DEVICE void operator()(LO i) const
+  {
+    if (mask.exists()) {
+      owned_mask[i] = mask[i] && owned[i];
+    } else {
+      owned_mask[i] = owned[i];
+    }
+  }
+};
+
 } // namespace detail
 
 template <typename T,
@@ -453,31 +477,8 @@ public:
     PCMS_FUNCTION_TIMER;
     Omega_h::Write<Omega_h::I8> owned_mask(mesh.nents(0));
     auto owned = mesh.owned(0);
-    struct OwnedMaskFunctor
-    {
-      Omega_h::Read<Omega_h::I8> mask;
-      Omega_h::Read<Omega_h::I8> owned;
-      Omega_h::Write<Omega_h::I8> owned_mask;
-
-      OwnedMaskFunctor(Omega_h::Read<Omega_h::I8> mask_,
-                       Omega_h::Read<Omega_h::I8> owned_,
-                       Omega_h::Write<Omega_h::I8> owned_mask_)
-        : mask(mask_), owned(owned_), owned_mask(owned_mask_)
-      {
-      }
-
-      OMEGA_H_DEVICE void operator()(LO i) const
-      {
-        if (mask.exists()) {
-          owned_mask[i] = mask[i] && owned[i];
-        } else {
-          owned_mask[i] = owned[i];
-        }
-      }
-    };
-
     Omega_h::parallel_for(owned_mask.size(),
-                          OwnedMaskFunctor(mask, owned, owned_mask));
+                          detail::OwnedMaskFunctor(mask, owned, owned_mask));
     field_ = OmegaHField<T, CoordinateElementType>(name,           mesh,      Omega_h::Read<Omega_h::I8>(owned_mask),
              global_id_name);
   }
