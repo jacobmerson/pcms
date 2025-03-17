@@ -1,0 +1,321 @@
+#include <wdmcpl.h>
+#include <wdmcpl/types.h>
+#include <Omega_h_file.hpp>
+#include <Omega_h_for.hpp>
+#include "test_support.h"
+#include <wdmcpl/omega_h_field.h>
+#include <wdmcpl/xgc_field_adapter.h>
+#include <chrono>
+
+using wdmcpl::Copy;
+using wdmcpl::CouplerClient;
+using wdmcpl::CouplerServer;
+using wdmcpl::FieldEvaluationMethod;
+using wdmcpl::FieldTransferMethod;
+using wdmcpl::GO;
+using wdmcpl::LO;
+using wdmcpl::OmegaHFieldAdapter;
+
+namespace ts = test_support;
+
+// TODO: we should communicate the geometric ids in the overlap regions.
+// is there a way to use the isOverlap functor to do this. This allows for
+// maximum flexibility moving forward
+//
+
+[[nodiscard]] static wdmcpl::ConvertibleCoupledField* AddField(
+  wdmcpl::Application* application, const std::string& name,
+  const std::string& path, Omega_h::Read<Omega_h::I8> is_overlap,
+  const std::string& numbering, Omega_h::Mesh& mesh, int plane)
+{
+  PCMS_ALWAYS_ASSERT(application != nullptr);
+  std::stringstream field_name;
+  field_name << name;
+  if (plane >= 0) {
+    field_name << "_" << plane;
+  }
+  return application->AddField(
+    field_name.str(),
+    wdmcpl::OmegaHFieldAdapter<wdmcpl::Real>(path + field_name.str(), mesh,
+                                             is_overlap, numbering),
+    FieldTransferMethod::Copy, // to Omega_h
+    FieldEvaluationMethod::None,
+    FieldTransferMethod::Copy, // from Omega_h
+    FieldEvaluationMethod::None, is_overlap);
+}
+
+struct XGCAnalysis
+{
+  using FieldVec = std::vector<wdmcpl::ConvertibleCoupledField*>;
+  // Only need edensity(:,1) and idensity(:,1), pot=dpot(:,1)+pot0
+  FieldVec pot;
+  // FieldVec pot0; (isn't used in GEM)
+  FieldVec edensity;
+  FieldVec idensity;
+  wdmcpl::ConvertibleCoupledField* psi;
+};
+struct GEMAnalysis
+{
+  using FieldVec = std::vector<wdmcpl::ConvertibleCoupledField*>;
+  FieldVec pot;
+  FieldVec edensity;
+  FieldVec idensity;
+};
+
+static void ReceiveFields(
+  const std::vector<wdmcpl::ConvertibleCoupledField*>& fields)
+{
+  for (auto* field : fields) {
+    field->Receive();
+  }
+}
+static void SendFields(
+  const std::vector<wdmcpl::ConvertibleCoupledField*>& fields)
+{
+  for (auto* field : fields) {
+    field->Send();
+  }
+}
+static void CopyFields(
+  const std::vector<wdmcpl::ConvertibleCoupledField*>& from_fields,
+  const std::vector<wdmcpl::ConvertibleCoupledField*>& to_fields)
+{
+  PCMS_ALWAYS_ASSERT(from_fields.size() == to_fields.size());
+  for (size_t i = 0; i < from_fields.size(); ++i) {
+    const auto* from =
+      from_fields[i]
+        ->GetFieldAdapter<wdmcpl::OmegaHFieldAdapter<wdmcpl::Real>>();
+    auto* to =
+      to_fields[i]->GetFieldAdapter<wdmcpl::OmegaHFieldAdapter<wdmcpl::Real>>();
+    copy_field(from->GetField(), to->GetField());
+  }
+}
+
+template <typename T>
+static void AverageAndSetField(const wdmcpl::OmegaHField<T>& a,
+                               wdmcpl::OmegaHField<T>& b)
+{
+  const auto a_data = get_nodal_data(a);
+  const auto b_data = get_nodal_data(b);
+  Omega_h::Write<T> combined_data(a_data.size());
+  Omega_h::parallel_for(
+    combined_data.size(), OMEGA_H_LAMBDA(size_t i) {
+      combined_data[i] = (a_data[i] + b_data[i]) / 2.0;
+    });
+  auto combined_view = wdmcpl::make_array_view(Omega_h::Read<T>(combined_data));
+  wdmcpl::set_nodal_data(b, combined_view);
+}
+
+/*
+ * Takes the average of each pair of fields and sets the results in the the
+ * second argument
+ */
+static void AverageAndSetFields(
+  const std::vector<wdmcpl::ConvertibleCoupledField*>& from_fields,
+  const std::vector<wdmcpl::ConvertibleCoupledField*>& to_fields)
+{
+  PCMS_ALWAYS_ASSERT(from_fields.size() == to_fields.size());
+  for (size_t i = 0; i < from_fields.size(); ++i) {
+    const auto* from =
+      from_fields[i]
+        ->GetFieldAdapter<wdmcpl::OmegaHFieldAdapter<wdmcpl::Real>>();
+    auto* to =
+      to_fields[i]->GetFieldAdapter<wdmcpl::OmegaHFieldAdapter<wdmcpl::Real>>();
+    AverageAndSetField(from->GetField(), to->GetField());
+  }
+}
+
+void SendRecvDensity(wdmcpl::Application* core, wdmcpl::Application* edge,
+                     XGCAnalysis& core_analysis, XGCAnalysis& edge_analysis,
+                     int rank)
+{
+
+  std::chrono::duration<double> elapsed_seconds;
+  double min, max, avg;
+  if (!rank)
+    std::cerr << "Send/Recv Density\n";
+  auto sr_time1 = std::chrono::steady_clock::now();
+  // gather density fields (Core+Edge)
+  core->BeginReceivePhase();
+  edge->BeginReceivePhase();
+  // Gather
+  ReceiveFields(core_analysis.edensity);
+  ReceiveFields(edge_analysis.edensity);
+  ReceiveFields(core_analysis.idensity);
+  ReceiveFields(edge_analysis.idensity);
+
+  core->EndReceivePhase();
+  edge->EndReceivePhase();
+  auto sr_time2 = std::chrono::steady_clock::now();
+  elapsed_seconds = sr_time2 - sr_time1;
+  ts::timeMinMaxAvg(elapsed_seconds.count(), min, max, avg);
+  if (!rank)
+    ts::printTime("Recv Density", min, max, avg);
+
+  // FIXME OVERLAP FIELDS
+
+  sr_time1 = std::chrono::steady_clock::now();
+  elapsed_seconds = sr_time1 - sr_time2;
+  ts::timeMinMaxAvg(elapsed_seconds.count(), min, max, avg);
+  if (!rank)
+    ts::printTime("Average Density", min, max, avg);
+  edge->BeginSendPhase();
+  SendFields(edge_analysis.edensity);
+  SendFields(edge_analysis.idensity);
+  edge->EndSendPhase();
+  auto sr_time3 = std::chrono::steady_clock::now();
+  elapsed_seconds = sr_time3 - sr_time1;
+  ts::timeMinMaxAvg(elapsed_seconds.count(), min, max, avg);
+  if (!rank)
+    ts::printTime("Send Density", min, max, avg);
+}
+void SendRecvPotential(wdmcpl::Application* core, wdmcpl::Application* edge,
+                       XGCAnalysis& core_analysis, XGCAnalysis& edge_analysis,
+                       int rank)
+{
+
+  std::chrono::duration<double> elapsed_seconds;
+  double min, max, avg;
+  if (!rank)
+    std::cerr << "Send/Recv Potential\n";
+  auto sr_time3 = std::chrono::steady_clock::now();
+  edge->BeginReceivePhase();
+  // deal with phi fields (pot0/dpot1/dpot2)
+  // 1. reveive fields from Edge
+  for (auto& f : edge_analysis.dpot) {
+    ReceiveFields(f);
+  }
+  ReceiveFields(edge_analysis.pot0);
+  // core->EndReceivePhase();
+  edge->EndReceivePhase();
+  auto sr_time4 = std::chrono::steady_clock::now();
+  elapsed_seconds = sr_time4 - sr_time3;
+  ts::timeMinMaxAvg(elapsed_seconds.count(), min, max, avg);
+  if (!rank)
+    ts::printTime("Receive Potential", min, max, avg);
+  // 2. Copy fields from Edge->Core
+  for (int i = 0; i < edge_analysis.dpot.size(); ++i) {
+    CopyFields(edge_analysis.dpot[i], core_analysis.dpot[i]);
+    CopyFields(edge_analysis.dpot[i], core_analysis.dpot[i]);
+  }
+  CopyFields(edge_analysis.pot0, core_analysis.pot0);
+  auto sr_time5 = std::chrono::steady_clock::now();
+  elapsed_seconds = sr_time5 - sr_time4;
+  ts::timeMinMaxAvg(elapsed_seconds.count(), min, max, avg);
+  if (!rank)
+    ts::printTime("Copy Potential", min, max, avg);
+  core->BeginSendPhase();
+  for (auto& f : core_analysis.dpot) {
+    SendFields(f);
+  }
+  SendFields(core_analysis.pot0);
+  core->EndSendPhase();
+  auto sr_time6 = std::chrono::steady_clock::now();
+  elapsed_seconds = sr_time6 - sr_time5;
+  ts::timeMinMaxAvg(elapsed_seconds.count(), min, max, avg);
+  if (!rank)
+    ts::printTime("Send Potential", min, max, avg);
+}
+
+void omegah_coupler(MPI_Comm comm, Omega_h::Mesh& mesh,
+                    std::string_view cpn_file, int nphi)
+{
+  std::chrono::duration<double> elapsed_seconds;
+  double min, max, avg;
+  int rank;
+  MPI_Comm_rank(comm, &rank);
+  auto time1 = std::chrono::steady_clock::now();
+
+  wdmcpl::CouplerServer cpl(
+    "xgc_n0_coupling", comm,
+    redev::Partition{ts::setupServerPartition(mesh, cpn_file)}, mesh);
+  const auto partition = std::get<redev::ClassPtn>(cpl.GetPartition());
+  std::string numbering = "simNumbering";
+  PCMS_ALWAYS_ASSERT(mesh.has_tag(0, numbering));
+  auto* core = cpl.AddApplication("core", "core/");
+  auto* edge = cpl.AddApplication("edge", "edge/");
+  auto is_overlap = ts::markServerOverlapRegion(
+    mesh, partition, KOKKOS_LAMBDA(const int dim, const int id) {
+      // if (id >= 1 && id <= 2) {
+      //   return 1;
+      // }
+      // if (id >= 100 && id <= 140) {
+      //   return 1;
+      // }
+      // return 0;
+      return 1;
+    });
+  auto time2 = std::chrono::steady_clock::now();
+  elapsed_seconds = time2 - time1;
+  ts::timeMinMaxAvg(elapsed_seconds.count(), min, max, avg);
+  if (!rank)
+    ts::printTime("Initialize Coupler/Mesh", min, max, avg);
+
+  GEMAnalysis core_analysis;
+  XGCAnalysis edge_analysis;
+  std::cerr << "ADDING FIELDS\n";
+  for (int i = 0; i < nphi; ++i) {
+    core_analysis.pot.push_back(
+      AddField(core, "pot_plane", "core/", is_overlap, numbering, mesh, i));
+    core_analysis.edensity.push_back(AddField(core, "edensity_plane", "core/",
+                                              is_overlap, numbering, mesh, i));
+    core_analysis.idensity.push_back(AddField(core, "idensity_plane", "core/",
+                                              is_overlap, numbering, mesh, i));
+
+    edge_analysis.pot.push_back(
+      AddField(edge, "pot_plane", "edge/", is_overlap, numbering, mesh, i));
+    edge_analysis.edensity.push_back(AddField(edge, "edensity_plane", "edge/",
+                                              is_overlap, numbering, mesh, i));
+    edge_analysis.idensity.push_back(AddField(edge, "idensity_plane", "edge/",
+                                              is_overlap, numbering, mesh, i));
+  }
+  edge_analysis.psi =
+    AddField(edge, "psi", "core/", is_overlap, numbering, mesh, -1);
+  auto time3 = std::chrono::steady_clock::now();
+  elapsed_seconds = time3 - time2;
+  ts::timeMinMaxAvg(elapsed_seconds.count(), min, max, avg);
+  if (!rank)
+    ts::printTime("Add Meshes", min, max, avg);
+
+  edge->BeginReceivePhase();
+  edge_analysis.psi->Receive();
+  edge->EndReceivePhase();
+  auto time4 = std::chrono::steady_clock::now();
+  elapsed_seconds = time4 - time3;
+  ts::timeMinMaxAvg(elapsed_seconds.count(), min, max, avg);
+  if (!rank)
+    ts::printTime("Receive Psi", min, max, avg);
+  int step = 0;
+  while (true) {
+    std::stringstream ss;
+    SendRecvDensity(core, edge, core_analysis, edge_analysis, rank);
+    SendRecvPotential(core, edge, core_analysis, edge_analysis, rank);
+  }
+}
+
+int main(int argc, char** argv)
+{
+  auto lib = Omega_h::Library(&argc, &argv);
+  auto world = lib.world();
+  const int rank = world->rank();
+  int size = world->size();
+  if (argc != 4) {
+    if (!rank) {
+      std::cerr << "Usage: " << argv[0]
+                << "</path/to/omega_h/mesh> "
+                   "</path/to/partitionFile.cpn> "
+                   "sml_nphi_total";
+    }
+    exit(EXIT_FAILURE);
+  }
+
+  const auto meshFile = argv[1];
+  const auto classPartitionFile = argv[2];
+  const int sml_nphi_total = std::atoi(argv[3]);
+
+  Omega_h::Mesh mesh(&lib);
+  Omega_h::binary::read(meshFile, lib.world(), &mesh);
+  MPI_Comm mpi_comm = lib.world()->get_impl();
+  omegah_coupler(mpi_comm, mesh, classPartitionFile, sml_nphi_total);
+  return 0;
+}
