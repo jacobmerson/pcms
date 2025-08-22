@@ -1,5 +1,6 @@
 #ifndef PCMS_COUPLING_XGC_FIELD_ADAPTER_H
 #define PCMS_COUPLING_XGC_FIELD_ADAPTER_H
+#include "pcms/field_adapter_interface.h"
 #include "pcms/adapter/omega_h/omega_h_field.h"
 #include "pcms/types.h"
 #include "pcms/memory_spaces.h"
@@ -14,8 +15,9 @@
 namespace pcms
 {
 template <typename T, typename CoordinateElementType = Real>
-class XGCFieldAdapter
+class XGCFieldAdapter : public FieldAdapterBase<XGCFieldAdapter<T, CoordinateElementType>, T>
 {
+  friend class FieldAdapterBase<XGCFieldAdapter<T, CoordinateElementType>, T>;
 public:
   using memory_space = HostMemorySpace;
   using value_type = T;
@@ -64,8 +66,29 @@ public:
     }
   }
 
-  int Serialize(Rank1View<T, memory_space> buffer,
-                Rank1View<const pcms::LO, memory_space> permutation) const
+  // Implement required virtual methods from IFieldAdapter
+  FieldAdapterType GetAdapterType() const noexcept override {
+    if constexpr (std::is_same_v<T, float>) {
+      return FieldAdapterType::XGC_FLOAT;
+    } else if constexpr (std::is_same_v<T, double>) {
+      return FieldAdapterType::XGC_DOUBLE;
+    } else if constexpr (std::is_same_v<T, int>) {
+      return FieldAdapterType::XGC_INT;
+    } else if constexpr (std::is_same_v<T, long int>) {
+      return FieldAdapterType::XGC_LONG_INT;
+    } else {
+      return FieldAdapterType::XGC_DOUBLE; // fallback
+    }
+  }
+
+  std::unique_ptr<IFieldAdapter> Clone() const override {
+    return std::make_unique<XGCFieldAdapter<T, CoordinateElementType>>(*this);
+  }
+
+public:
+  // Implement type-safe serialization for CRTP base
+  int SerializeImpl(Rank1View<T, memory_space> buffer,
+                    Rank1View<const pcms::LO, memory_space> permutation) const override
   {
     PCMS_FUNCTION_TIMER;
     static_assert(std::is_same_v<memory_space, pcms::HostMemorySpace>,
@@ -81,8 +104,8 @@ public:
     }
     return 0;
   }
-  void Deserialize(Rank1View<const T, memory_space> buffer,
-                   Rank1View<const pcms::LO, memory_space> permutation) const
+  void DeserializeImpl(Rank1View<const T, memory_space> buffer,
+                       Rank1View<const pcms::LO, memory_space> permutation) override
   {
     PCMS_FUNCTION_TIMER;
     static_assert(std::is_same_v<memory_space, pcms::HostMemorySpace>,
@@ -95,8 +118,12 @@ public:
               redev::getMpiType(value_type{}), plane_root_, plane_comm_);
   }
 
-  // REQUIRED
-  [[nodiscard]] std::vector<GO> GetGids() const
+public:
+
+  // Implement required virtual methods
+  const std::string& GetName() const override { return name_; }
+  
+  [[nodiscard]] std::vector<GO> GetGids() const override
   {
     PCMS_FUNCTION_TIMER;
     if (RankParticipatesCouplingCommunication()) {
@@ -109,9 +136,8 @@ public:
     return {};
   }
 
-  // REQUIRED
   [[nodiscard]] ReversePartitionMap GetReversePartitionMap(
-    const Partition& partition) const
+    const Partition& partition) const override
   {
     PCMS_FUNCTION_TIMER;
     if (RankParticipatesCouplingCommunication()) {
@@ -147,14 +173,14 @@ public:
     }
     return {};
   }
-  [[nodiscard]] bool RankParticipatesCouplingCommunication() const noexcept
+  [[nodiscard]] bool RankParticipatesCouplingCommunication() const noexcept override
   {
     PCMS_FUNCTION_TIMER;
     // only do adios communications on 0 rank of the XGC fields
     return (plane_rank_ == plane_root_);
   }
 
-  [[nodiscard]] pcms::mesh_entity_type GetEntityType() const noexcept
+  [[nodiscard]] pcms::mesh_entity_type GetEntityType() const noexcept override
   {
     return pcms::mesh_entity_type::VERTEX;
   }

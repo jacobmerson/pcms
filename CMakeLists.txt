@@ -75,6 +75,11 @@ dual_mpi_test(TESTNAME smoke_test
         NAME1 rdv EXE1 ./smoke_test PROCS1 2 ARGS1 1 ${PCMS_TEST_DATA_DIR}/cyclone/23elements/mesh.osh/
         NAME2 app EXE2 ./smoke_test PROCS2 1 ARGS2 0 ${PCMS_TEST_DATA_DIR}/cyclone/23elements/mesh.osh/)
 
+# Add test for inheritance refactor
+add_executable(test_inheritance_refactor test_inheritance_refactor.cpp)
+target_link_libraries(test_inheritance_refactor pcms::core)
+add_test(NAME inheritance_refactor_test COMMAND test_inheritance_refactor)
+
 if(BUILD_TESTING)
   add_subdirectory(test)
 endif()

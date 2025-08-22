@@ -7,6 +7,15 @@
 extern "C" {
 #endif
 
+enum PcmsAdapterType
+{
+  PCMS_ADAPTER_XGC,
+  PCMS_ADAPTER_OMEGAH,
+  PCMS_ADAPTER_GENE,
+  PCMS_ADAPTER_GEM
+};
+typedef enum PcmsAdapterType PcmsAdapterType;
+
 struct PcmsClientHandle
 {
   void* couplerPointer;
@@ -25,23 +34,16 @@ struct PcmsReverseClassificationHandle
 typedef struct PcmsReverseClassificationHandle PcmsReverseClassificationHandle;
 struct PcmsFieldAdapterHandle
 {
-  void* pointer;
+  void* pointer;        // Points to IFieldAdapter*
+  PcmsAdapterType type; // Store the adapter type for validation
 };
 typedef struct PcmsFieldAdapterHandle PcmsFieldAdapterHandle;
 struct PcmsFieldHandle
 {
-  void* pointer;
+  void* pointer;        // Points to CoupledField*
+  PcmsAdapterType type; // Store the adapter type for validation
 };
 typedef struct PcmsFieldHandle PcmsFieldHandle;
-
-enum PcmsAdapterType
-{
-  PCMS_ADAPTER_XGC,
-  PCMS_ADAPTER_OMEGAH,
-  PCMS_ADAPTER_GENE,
-  PCMS_ADAPTER_GEM
-};
-typedef enum PcmsAdapterType PcmsAdapterType;
 enum PcmsType
 {
   PCMS_FLOAT,
@@ -72,6 +74,11 @@ PcmsFieldAdapterHandle pcms_create_xgc_field_adapter(
   const char* name, MPI_Comm plane_comm, void* data, int size,
   PcmsType data_type, const PcmsReverseClassificationHandle rc,
   in_overlap_function in_overlap);
+
+// Additional validation functions
+int pcms_is_valid_field_adapter(PcmsFieldAdapterHandle handle);
+int pcms_is_valid_field(PcmsFieldHandle handle);
+PcmsAdapterType pcms_get_field_adapter_type(PcmsFieldAdapterHandle handle);
 
 PcmsFieldAdapterHandle pcms_create_dummy_field_adapter();
 

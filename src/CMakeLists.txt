@@ -22,6 +22,9 @@ set(PCMS_HEADERS
         pcms/coupler.h
         pcms/coordinate_system.h
         pcms/field_layout.h
+        pcms/field_adapter_interface.h
+        pcms/field_adapter_factory.h
+        pcms/dummy_field_adapter.h
         pcms/adapter/point_cloud/point_cloud_layout.h
         pcms/adapter/point_cloud/point_cloud.h
         pcms/adapter/omega_h/omega_h_field_layout.h
@@ -46,7 +49,9 @@ configure_file(
 
 if(PCMS_ENABLE_XGC)
   list(APPEND PCMS_SOURCES pcms/adapter/xgc/xgc_reverse_classification.cpp)
-  list(APPEND PCMS_HEADERS pcms/adapter/xgc/xgc_reverse_classification.h)
+  list(APPEND PCMS_HEADERS 
+          pcms/adapter/xgc/xgc_reverse_classification.h
+          pcms/adapter/xgc/xgc_field_adapter.h)
 endif()
 if (PCMS_ENABLE_OMEGA_H)
   list(APPEND PCMS_SOURCES pcms/point_search.cpp)

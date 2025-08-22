@@ -17,6 +17,7 @@
 #include "pcms/memory_spaces.h"
 #include "pcms/profile.h"
 #include "pcms/partition.h"
+#include "pcms/field_adapter_interface.h"
 #include <optional>
 
 // FIXME add executtion spaces (don't use kokkos exe spaces directly)
@@ -29,20 +30,6 @@ struct OmegaHMemorySpace
 {
   using type = typename Kokkos::DefaultExecutionSpace::memory_space;
 };
-
-enum class mesh_entity_type : int{
-  VERTEX = 0,
-  EDGE = 1,
-  FACE = 2,
-  REGION = 3
-};
-
-inline int mesh_entity_to_int(mesh_entity_type entity_type)
-{
-  static_assert(std::is_same<std::underlying_type_t<mesh_entity_type>, int>::value, "mesh_entity_type must be an int");
-  return static_cast<std::underlying_type_t<mesh_entity_type>>(entity_type);
-}
-
 
 namespace detail
 {
@@ -459,8 +446,9 @@ namespace pcms
 {
 
 template <typename T>
-class OmegaHFieldAdapter
+class OmegaHFieldAdapter : public FieldAdapterBase<OmegaHFieldAdapter<T>, T>
 {
+  friend class FieldAdapterBase<OmegaHFieldAdapter<T>, T>;
 public:
   using memory_space = OmegaHMemorySpace::type;
   using value_type = T;
@@ -482,15 +470,33 @@ public:
   {
     PCMS_FUNCTION_TIMER;
   }
-  [[nodiscard]] const std::string& GetName() const noexcept
+  // Implement required virtual methods from IFieldAdapter
+  FieldAdapterType GetAdapterType() const noexcept override {
+    if constexpr (std::is_same_v<T, float>) {
+      return FieldAdapterType::OMEGA_H_FLOAT;
+    } else {
+      return FieldAdapterType::OMEGA_H_DOUBLE;
+    }
+  }
+
+  std::unique_ptr<IFieldAdapter> Clone() const override {
+    return std::make_unique<OmegaHFieldAdapter<T>>(*this);
+  }
+
+  const std::string& GetName() const override
   {
     return field_.GetName();
   }
-  // REQUIRED
-  int Serialize(
+
+  bool RankParticipatesCouplingCommunication() const noexcept override {
+    return true; // OmegaH adapters participate in coupling
+  }
+
+public:
+  // Implement type-safe serialization for CRTP base
+  int SerializeImpl(
     Rank1View<T, pcms::HostMemorySpace> buffer,
-    Rank1View<const pcms::LO, pcms::HostMemorySpace>
-                  permutation) const
+    Rank1View<const pcms::LO, pcms::HostMemorySpace> permutation) const
   {
     PCMS_FUNCTION_TIMER;
     // host copy of filtered field data array
@@ -502,11 +508,10 @@ public:
     }
     return array_h.size();
   }
-  // REQUIRED
-  void Deserialize(
+
+  void DeserializeImpl(
     Rank1View<const T, pcms::HostMemorySpace> buffer,
-    Rank1View<const pcms::LO, pcms::HostMemorySpace>
-                     permutation) const
+    Rank1View<const pcms::LO, pcms::HostMemorySpace> permutation)
   {
     PCMS_FUNCTION_TIMER;
     REDEV_ALWAYS_ASSERT(buffer.size() == permutation.size());
@@ -518,7 +523,7 @@ public:
     set_nodal_data(field_, make_array_view(sorted_buffer_d));
   }
 
-  [[nodiscard]] std::vector<GO> GetGids() const
+  [[nodiscard]] std::vector<GO> GetGids() const override
   {
     PCMS_FUNCTION_TIMER;
     auto gids = field_.GetGids();
@@ -528,9 +533,9 @@ public:
     }
     return {};
   }
-  // REQUIRED
+
   [[nodiscard]] ReversePartitionMap GetReversePartitionMap(
-    const Partition& partition) const
+    const Partition& partition) const override
   {
     PCMS_FUNCTION_TIMER;
     auto classIds_h = Omega_h::HostRead<Omega_h::ClassId>(field_.GetClassIDs());
@@ -565,7 +570,7 @@ public:
     return field_;
   }
 
-  [[nodiscard]] mesh_entity_type GetEntityType() const noexcept
+  [[nodiscard]] mesh_entity_type GetEntityType() const noexcept override
   {
     return entity_type_;
   }
