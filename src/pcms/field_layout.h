@@ -1,6 +1,9 @@
 #ifndef PCMS_FIELD_LAYOUT_H
 #define PCMS_FIELD_LAYOUT_H
+#include <array>
+#include <map>
 #include <memory>
+#include <vector>
 #include <redev.h>
 #include "pcms/field.h"
 #include "pcms/arrays.h"
@@ -12,16 +15,15 @@ namespace pcms
 constexpr int ent_offsets_len = 5;
 using EntOffsetsArray = std::array<size_t, ent_offsets_len>;
 
-struct PartitionMapping
+struct FieldLayoutPlan
 {
-  std::vector<LO> indices;
-  EntOffsetsArray ent_offsets;
-
-  PartitionMapping() { ent_offsets.fill(0); }
+  redev::LOs destinations;
+  redev::LOs offsets;
+  std::vector<pcms::LO> permutation;
+  std::vector<pcms::GO> gid_payload;
 };
 
 using ReversePartitionMap = std::map<pcms::LO, std::vector<pcms::LO>>;
-using ReversePartitionMap2 = std::map<pcms::LO, PartitionMapping>;
 
 template <typename T>
 class FieldT;
@@ -59,8 +61,12 @@ public:
 
   virtual EntOffsetsArray GetEntOffsets() const = 0;
 
-  virtual ReversePartitionMap2 GetReversePartitionMap(
-    const redev::Partition& partition) const = 0;
+  virtual FieldLayoutPlan BuildClientPlan(const redev::Partition& partition) const = 0;
+
+  virtual FieldLayoutPlan BuildServerPlan(
+    GlobalIDView<HostMemorySpace> received_gids,
+    const redev::InMessageLayout& incoming_layout, int mpi_rank,
+    int mpi_size) const = 0;
 
   virtual CoordinateView<HostMemorySpace> GetDOFHolderCoordinates() const = 0;
 

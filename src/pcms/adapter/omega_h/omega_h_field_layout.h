@@ -29,6 +29,8 @@ public:
   Rank1View<const bool, HostMemorySpace> GetOwned() const override;
   GlobalIDView<HostMemorySpace> GetGids() const override;
   CoordinateView<HostMemorySpace> GetDOFHolderCoordinates() const override;
+  Omega_h::Read<Omega_h::ClassId> GetClassIDs() const;
+  Omega_h::Read<Omega_h::I8> GetClassDims() const;
 
   // returns true if the field layout is distributed
   // if the field layout is distributed, the owned and global dofs are the same
@@ -36,17 +38,18 @@ public:
 
   EntOffsetsArray GetEntOffsets() const override;
 
-  ReversePartitionMap2 GetReversePartitionMap(
-    const redev::Partition& partition) const override;
+  FieldLayoutPlan BuildClientPlan(const redev::Partition& partition) const override;
+
+  FieldLayoutPlan BuildServerPlan(
+    GlobalIDView<HostMemorySpace> received_gids,
+    const redev::InMessageLayout& incoming_layout, int mpi_rank,
+    int mpi_size) const override;
 
   std::array<int, 4> GetNodesPerDim() const;
   size_t GetNumEnts() const;
   Omega_h::Mesh& GetMesh() const;
 
 private:
-  Omega_h::Read<Omega_h::ClassId> GetClassIDs() const;
-  Omega_h::Read<Omega_h::I8> GetClassDims() const;
-
   Omega_h::Mesh& mesh_;
   Omega_h::Write<Omega_h::GO> gids_;
   Omega_h::HostWrite<Omega_h::GO> gids_host_;

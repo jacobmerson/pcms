@@ -91,9 +91,17 @@ std::array<int, 4> PointCloudLayout::GetNodesPerDim() const
   return nodes;
 }
 
-ReversePartitionMap2 PointCloudLayout::GetReversePartitionMap(
-  const redev::Partition& /* unused */) const
+FieldLayoutPlan PointCloudLayout::BuildClientPlan(
+  const redev::Partition& /*partition*/) const
 {
-  throw std::runtime_error("Unimplemented");
+  throw std::runtime_error("PointCloudLayout::BuildClientPlan unimplemented");
+}
+
+FieldLayoutPlan PointCloudLayout::BuildServerPlan(
+  GlobalIDView<HostMemorySpace> /*received_gids*/,
+  const redev::InMessageLayout& /*incoming_layout*/, int /*mpi_rank*/,
+  int /*mpi_size*/) const
+{
+  throw std::runtime_error("PointCloudLayout::BuildServerPlan unimplemented");
 }
 } // namespace pcms

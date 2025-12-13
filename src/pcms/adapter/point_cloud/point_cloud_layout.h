@@ -27,8 +27,12 @@ public:
   size_t GetNumEnts() const;
   EntOffsetsArray GetEntOffsets() const override;
 
-  ReversePartitionMap2 GetReversePartitionMap(
-    const redev::Partition& partition) const override;
+  FieldLayoutPlan BuildClientPlan(const redev::Partition& partition) const override;
+
+  FieldLayoutPlan BuildServerPlan(
+    GlobalIDView<HostMemorySpace> received_gids,
+    const redev::InMessageLayout& incoming_layout, int mpi_rank,
+    int mpi_size) const override;
 
   std::array<int, 4> GetNodesPerDim() const;
 
