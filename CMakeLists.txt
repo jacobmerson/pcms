@@ -26,6 +26,8 @@ if(PROJECT_IS_TOP_LEVEL)
 
   find_program(CLANG_TIDY_EXECUTABLE clang-tidy REQUIRED)
   find_program(RUN_CLANG_TIDY_EXECUTABLE run-clang-tidy REQUIRED)
+  find_program(IWYU_TOOL_EXECUTABLE iwyu_tool.py)
+  find_program(IWYU_EXECUTABLE include-what-you-use)
 
   set(CLANG_TIDY_CONFIG_FILE ${CMAKE_CURRENT_LIST_DIR}/.clang-tidy)
   set(CLANG_TIDY_SOURCE_FILTER [=[^(?!.*(\.c|\.i|\.f90)$).*$]=])
@@ -81,7 +83,9 @@ find_package(MPI REQUIRED)
 # MPI_CXX_INCLUDE_DIRS empty because the wrapper handles includes implicitly,
 # meaning compile_commands.json has no explicit -I flags for mpi.h.
 if(PROJECT_IS_TOP_LEVEL)
-  set(_clang_tidy_extra_args "")
+  # Collect MPI include flags that may be missing from compile_commands.json
+  # when CMAKE_CXX_COMPILER is an MPI wrapper (e.g. mpicxx).
+  set(_mpi_inc_flags "")
   get_target_property(_mpi_cxx_incs MPI::MPI_CXX INTERFACE_INCLUDE_DIRECTORIES)
   if(NOT _mpi_cxx_incs)
     execute_process(
@@ -90,11 +94,13 @@ if(PROJECT_IS_TOP_LEVEL)
       OUTPUT_STRIP_TRAILING_WHITESPACE
       ERROR_QUIET)
     string(REGEX MATCHALL "-I([^ ]+)" _mpi_inc_flags "${_mpi_show}")
-    foreach(_flag IN LISTS _mpi_inc_flags)
-      list(APPEND _clang_tidy_extra_args "-extra-arg=${_flag}")
-    endforeach()
-    message(STATUS "clang-tidy MPI extra args: ${_clang_tidy_extra_args}")
+    message(STATUS "MPI include flags: ${_mpi_inc_flags}")
   endif()
+
+  set(_clang_tidy_extra_args "")
+  foreach(_flag IN LISTS _mpi_inc_flags)
+    list(APPEND _clang_tidy_extra_args "-extra-arg=${_flag}")
+  endforeach()
 
   add_custom_target(run-clang-tidy
     VERBATIM COMMAND ${RUN_CLANG_TIDY_EXECUTABLE}
@@ -104,6 +110,23 @@ if(PROJECT_IS_TOP_LEVEL)
     -source-filter ${CLANG_TIDY_SOURCE_FILTER}
     ${_clang_tidy_extra_args}
   )
+
+  if(IWYU_TOOL_EXECUTABLE AND IWYU_EXECUTABLE)
+    set(_iwyu_extra_args "")
+    foreach(_flag IN LISTS _mpi_inc_flags)
+      list(APPEND _iwyu_extra_args "--" "${_flag}")
+    endforeach()
+
+    add_custom_target(run-iwyu
+      VERBATIM COMMAND ${IWYU_TOOL_EXECUTABLE}
+      -p ${CMAKE_BINARY_DIR}
+      ${_iwyu_extra_args}
+    )
+    message(STATUS "IWYU_TOOL_EXECUTABLE=${IWYU_TOOL_EXECUTABLE}")
+    message(STATUS "IWYU_EXECUTABLE=${IWYU_EXECUTABLE}")
+  else()
+    message(STATUS "include-what-you-use not found; run-iwyu target unavailable")
+  endif()
 endif()
 
 message(STATUS "Found redev: ${redev_DIR} (found version ${redev_VERSION})")
