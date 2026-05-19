@@ -46,7 +46,7 @@ PetscErrorCode calculateMassMatrix(Omega_h::Mesh& mesh, Mat* mass_out)
     MeshField::Omegah::getTriangleElement<ShapeOrder>(mesh);
   MeshField::FieldElement coordFe(mesh.nelems(), coordField, shp, map);
 
-  auto elmMassMatrix = buildMassMatrix(mesh, coordFe);
+  auto elmMassMatrix = buildElementMassMatrix(mesh, coordFe);
   const PetscInt expected_nnz = 9 * mesh.nelems();
   PetscCheck(static_cast<PetscInt>(elmMassMatrix.extent(0)) == expected_nnz,
              PETSC_COMM_SELF, PETSC_ERR_ARG_SIZ,

@@ -222,4 +222,23 @@ TEST_CASE("OmegaHConservativeProjection matches conservative projection solver",
   for (Omega_h::LO i = 0; i < target_mesh.nverts(); ++i) {
     REQUIRE(target_values[i] == Catch::Approx(expected_h[i]).margin(1e-12));
   }
+
+  // Second Apply with a different source field — verifies cached integrators
+  // and evaluator are reused correctly and don't hold stale state.
+  pcms::test::SetField(
+    source, OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) {
+      return 2.0 * x - y + 0.5;
+    });
+
+  const auto expected2 = pcms::solveGalerkinProjection(
+    target_mesh, source_mesh, intersections,
+    make_omega_h_reals(source.GetDOFHolderDataHost()));
+  const auto expected2_h = Omega_h::HostRead<Omega_h::Real>(expected2);
+
+  projection.Apply(source, target);
+
+  const auto target_values2 = target.GetDOFHolderDataHost();
+  for (Omega_h::LO i = 0; i < target_mesh.nverts(); ++i) {
+    REQUIRE(target_values2[i] == Catch::Approx(expected2_h[i]).margin(1e-12));
+  }
 }

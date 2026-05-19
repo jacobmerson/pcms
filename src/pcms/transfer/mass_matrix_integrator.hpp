@@ -31,7 +31,7 @@ public:
   }
   void atPoints(Kokkos::View<MeshField::Real**> p,
                 Kokkos::View<MeshField::Real*> w,
-                Kokkos::View<MeshField::Real*> dV)
+                Kokkos::View<MeshField::Real*> dV) override
   {
     // std::cerr << "MassMatrixIntegrator::atPoints(...)\n";
     const size_t numPtsPerElem = p.extent(0) / mesh.nelems();
@@ -77,8 +77,8 @@ public:
 };
 
 template <typename FieldElement>
-Kokkos::View<MeshField::Real*> buildMassMatrix(Omega_h::Mesh& mesh,
-                                               FieldElement& coordFe)
+Kokkos::View<MeshField::Real*> buildElementMassMatrix(Omega_h::Mesh& mesh,
+                                                      FieldElement& coordFe)
 {
   MassMatrixIntegrator mmi(mesh, coordFe);
   mmi.process(coordFe);

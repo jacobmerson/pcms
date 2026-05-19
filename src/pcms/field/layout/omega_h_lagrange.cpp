@@ -191,6 +191,11 @@ GlobalIDView<HostMemorySpace> OmegaHLagrangeLayout::GetGidsHost() const
   return GlobalIDView<HostMemorySpace>(gids_host_.data(), gids_host_.size());
 }
 
+GlobalIDView<DeviceMemorySpace> OmegaHLagrangeLayout::GetGids() const
+{
+  return GlobalIDView<DeviceMemorySpace>(gids_.data(), gids_.size());
+}
+
 CoordinateView<DeviceMemorySpace>
 OmegaHLagrangeLayout::GetDOFHolderCoordinates() const
 {
