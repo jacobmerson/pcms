@@ -104,7 +104,14 @@ Omega_h::Reals GalerkinProjectionSolver::Solve(
                                                          1);
   evaluator.Evaluate(source_field, MakeRank2View(sampled_values));
 
-  rhs_integrator.Assemble(MakeConstRank2View(sampled_values));
+  return Solve(rhs_integrator, MakeConstRank2View(sampled_values));
+}
+
+Omega_h::Reals GalerkinProjectionSolver::Solve(
+  LinearFormIntegrator& rhs_integrator,
+  Rank2View<const Real, DeviceMemorySpace> sampled_values) const
+{
+  rhs_integrator.Assemble(sampled_values);
   Vec rhs_vector = rhs_integrator.GetVector();
 
   Vec solution = nullptr;

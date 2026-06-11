@@ -49,6 +49,14 @@ public:
                        const PointEvaluator<Real>& evaluator,
                        const Field<Real>& source_field) const;
 
+  // Assembles the RHS from values already sampled at rhs_integrator's
+  // integration points (shape [num_points][num_components]) and solves
+  // M*x = f using the cached KSP. Used by workflows that pre-process the
+  // sampled values (e.g. control-variate residuals) before assembly.
+  Omega_h::Reals Solve(
+    LinearFormIntegrator& rhs_integrator,
+    Rank2View<const Real, DeviceMemorySpace> sampled_values) const;
+
 private:
   PetscInt nverts_;
   KSP ksp_ = nullptr;

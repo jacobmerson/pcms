@@ -411,6 +411,7 @@ if(Catch2_FOUND)
     list(APPEND PCMS_UNIT_TEST_SOURCES
       test_omega_h_rhs_integrator.cpp
       test_omega_h_mass_integrator.cpp
+      test_omega_h_mc_rhs_integrator.cpp
       test_mesh_intersection_field_transfer.cpp)
   endif()
   

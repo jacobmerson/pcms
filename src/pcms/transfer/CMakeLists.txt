@@ -8,6 +8,7 @@ set(PCMS_FIELD_TRANSFER_HEADERS
     copy.h
     transfer_operator.hpp
     integration_point_set.hpp
+    sobol_sequence.hpp
 )
 
 
@@ -34,6 +35,8 @@ if(PCMS_ENABLE_PETSC AND PCMS_ENABLE_MESHFIELDS)
       omega_h_conservative_projection.hpp
       omega_h_rhs_integrator.hpp
       omega_h_mass_integrator.hpp
+      omega_h_mc_rhs_integrator.hpp
+      omega_h_control_variate_projection.hpp
       coo_assembly_utils.hpp
       petsc_utils.hpp
       omega_h_form_integrator_utils.hpp)
@@ -44,6 +47,8 @@ if(PCMS_ENABLE_PETSC AND PCMS_ENABLE_MESHFIELDS)
       omega_h_conservative_projection.cpp
       omega_h_rhs_integrator.cpp
       omega_h_mass_integrator.cpp
+      omega_h_mc_rhs_integrator.cpp
+      omega_h_control_variate_projection.cpp
       petsc_utils.cpp
       coo_assembly_utils.cpp)
 endif()
