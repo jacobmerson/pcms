@@ -146,7 +146,7 @@ inline void SetField(const FieldLayout& layout, FieldData<Real>& field,
 {
   using MemorySpace = typename ExecutionSpace::memory_space;
 
-  auto dof_coords = layout.GetDOFHolderCoordinates().GetCoordinates();
+  auto dof_coords = layout.GetDOFHolderCoordinates().GetValues();
   int n = static_cast<int>(dof_coords.extent(0));
   Kokkos::View<Real* [2], MemorySpace> coords_device("coords_device", n);
   Kokkos::parallel_for(

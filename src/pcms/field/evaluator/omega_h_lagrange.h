@@ -288,7 +288,7 @@ public:
         "OmegaHLagrangeEvaluatorFactory: NearestBoundary is not supported");
     }
 
-    auto raw_coords = coords.GetCoordinates();
+    auto raw_coords = coords.GetValues();
     LO n_pts = static_cast<LO>(raw_coords.extent(0));
     int mesh_dim = layout_->GetMesh().dim();
 

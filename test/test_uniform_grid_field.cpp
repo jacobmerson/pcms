@@ -70,8 +70,8 @@ void VerifyUniformGridFieldValues(
   for (int j = 0; j <= grid.divisions[1]; ++j) {
     for (int i = 0; i <= grid.divisions[0]; ++i) {
       int vertex_id = j * (grid.divisions[0] + 1) + i;
-      pcms::Real x = ug_coords.GetCoordinates()(vertex_id, 0);
-      pcms::Real y = ug_coords.GetCoordinates()(vertex_id, 1);
+      pcms::Real x = ug_coords.GetValues()(vertex_id, 0);
+      pcms::Real y = ug_coords.GetValues()(vertex_id, 1);
       pcms::Real expected = x + 2.0 * y;
       pcms::Real actual = ug_field_data[vertex_id];
       REQUIRE(std::abs(expected - actual) <= 1e-10);
@@ -131,7 +131,7 @@ TEST_CASE("UniformGrid order-0 field creation and evaluation")
   REQUIRE(layout->GetOrder() == 0);
   REQUIRE(layout->GetNumOwnedDofHolder() == 4);
 
-  auto coords_device = layout->GetDOFHolderCoordinates().GetCoordinates();
+  auto coords_device = layout->GetDOFHolderCoordinates().GetValues();
   auto coords = pcms::test::CopyCoordinatesToHost(coords_device, 4, 2);
 
   REQUIRE(coords(0, 0) == Catch::Approx(2.5));
@@ -349,7 +349,7 @@ TEST_CASE("Transfer from OmegaH field to UniformGrid field")
 
   // set up_coords to host
   auto ug_coords_host = pcms::test::CopyCoordinatesToHost(
-    ug_coords.GetCoordinates(), num_ug_nodes, 2);
+    ug_coords.GetValues(), num_ug_nodes, 2);
 
   for (int i = 0; i < num_ug_nodes; ++i) {
     pcms::Real x = ug_coords_host(i, 0);
@@ -655,7 +655,7 @@ TEST_CASE("UniformGrid workflow")
   pcms::Interpolator<pcms::Real> interp(omega_h_factory, ug_factory);
   interp.Apply(omega_h_field, ug_field);
   auto ug_coords_device_view =
-    ug_factory.GetLayout()->GetDOFHolderCoordinates().GetCoordinates();
+    ug_factory.GetLayout()->GetDOFHolderCoordinates().GetValues();
   auto ug_coords_host_view =
     pcms::test::CopyCoordinatesToHost(ug_coords_device_view, 25, 2);
 

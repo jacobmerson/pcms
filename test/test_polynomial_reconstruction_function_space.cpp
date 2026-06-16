@@ -44,7 +44,7 @@ TEST_CASE(
   REQUIRE(layout->GetNumGlobalDofHolder() == 4);
   REQUIRE_FALSE(layout->IsDistributed());
 
-  auto dof_coords = layout->GetDOFHolderCoordinates().GetCoordinates();
+  auto dof_coords = layout->GetDOFHolderCoordinates().GetValues();
   auto dof_coords_host = pcms::test::CopyCoordinatesToHost(dof_coords, 4, 2);
 
   REQUIRE(static_cast<int>(dof_coords_host.extent(0)) == 4);

@@ -33,7 +33,7 @@ public:
   }
 
   [[nodiscard]] Rank2View<const Real, MemorySpace, LayoutPolicy>
-  GetCoordinates() const noexcept
+  GetValues() const noexcept
   {
     return coordinates_;
   }
@@ -42,7 +42,7 @@ public:
   // CoordinateTransformation as they are unsafe (i.e., you can break class
   // invariant) passkey pattern?
   [[nodiscard]] Rank2View<const Real, MemorySpace, LayoutPolicy>
-  GetCoordinates() noexcept
+  GetValues() noexcept
   {
     return coordinates_;
   }

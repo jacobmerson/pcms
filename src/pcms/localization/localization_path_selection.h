@@ -44,7 +44,7 @@ inline std::optional<int> GetUniformDofHolderEntityDim(
     return std::nullopt;
   }
 
-  if (static_cast<LO>(layout.GetDOFHolderCoordinates().GetCoordinates().extent(
+  if (static_cast<LO>(layout.GetDOFHolderCoordinates().GetValues().extent(
         0)) != disc->GetNumEntities(*entity_dim)) {
     return std::nullopt;
   }

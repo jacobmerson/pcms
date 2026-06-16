@@ -38,7 +38,7 @@ public:
                const FunctionSpace& target_space, OutOfBoundsPolicy policy = {})
     : num_points_(static_cast<LO>(target_space.GetLayout()
                                     ->GetDOFHolderCoordinates()
-                                    .GetCoordinates()
+                                    .GetValues()
                                     .extent(0))),
       n_comp_(target_space.GetLayout()->GetNumComponents()),
       evaluator_(source_space.CreatePointEvaluator<T>(

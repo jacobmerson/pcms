@@ -238,7 +238,7 @@ public:
         "not implemented");
     }
 
-    auto coordinates = coords.GetCoordinates();
+    auto coordinates = coords.GetValues();
     LO num_points = static_cast<LO>(coordinates.extent(0));
 
     Kokkos::View<LO*, DeviceMemorySpace> cell_indices_device("cell_indices",

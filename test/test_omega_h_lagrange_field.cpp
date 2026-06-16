@@ -40,7 +40,7 @@ TEST_CASE("OmegaHLagrangeLayout order-1 properties")
   REQUIRE(layout.IsDistributed()); // always true for Omega_h mesh layouts
 
   // DOF holder coordinates should match vertex coordinates
-  auto coords_device = layout.GetDOFHolderCoordinates().GetCoordinates();
+  auto coords_device = layout.GetDOFHolderCoordinates().GetValues();
   int nverts = mesh.nents(0);
   auto coords_view =
     pcms::test::CopyCoordinatesToHost(coords_device, nverts, mesh.dim());
@@ -74,7 +74,7 @@ TEST_CASE("OmegaHLagrangeLayout order-0 properties")
   REQUIRE(layout.GetNumGlobalDofHolder() == mesh.nglobal_ents(mesh.dim()));
 
   // DOF holder coordinates should match element centroids
-  auto coords_device = layout.GetDOFHolderCoordinates().GetCoordinates();
+  auto coords_device = layout.GetDOFHolderCoordinates().GetValues();
   int nelems = mesh.nelems();
   auto coords_view =
     pcms::test::CopyCoordinatesToHost(coords_device, nelems, mesh.dim());

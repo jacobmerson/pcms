@@ -44,7 +44,7 @@ CreateUniformGridBinaryField(Omega_h::Mesh& mesh, const UniformGrid<Dim>& grid)
   auto field = function_space.template CreateField<Real>(FieldMetadata{});
 
   auto coord_view = layout->GetDOFHolderCoordinates();
-  auto coords = coord_view.GetCoordinates();
+  auto coords = coord_view.GetValues();
   LO n = layout->GetNumOwnedDofHolder();
 
   Kokkos::View<Real* [Dim]> coords_d("coords_d", n);

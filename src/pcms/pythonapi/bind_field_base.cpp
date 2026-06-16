@@ -76,7 +76,7 @@ void bind_coordinate_system_module(py::module& m)
     .def(
       "get_coordinates",
       [](const CoordinateView<HostMemorySpace>& self) {
-        auto coords = self.GetCoordinates();
+        auto coords = self.GetValues();
         // Convert to numpy array
         py::array_t<Real> result({static_cast<py::ssize_t>(coords.extent(0)),
                                   static_cast<py::ssize_t>(coords.extent(1))});
@@ -247,7 +247,7 @@ void bind_create_field_module(py::module& m)
       "get_dof_holder_coordinates",
       [](const Field<Real>& self) {
         auto cv = self.GetLayout().GetDOFHolderCoordinates();
-        auto coords = cv.GetCoordinates();
+        auto coords = cv.GetValues();
         Kokkos::View<Real**, DeviceMemorySpace> coords_device(
           "coords_device", coords.extent(0), coords.extent(1));
         Kokkos::parallel_for(

@@ -213,8 +213,8 @@ TEST_CASE("FieldLayout: metadata queries")
 
   auto coords = layout->GetDOFHolderCoordinates();
   REQUIRE(coords.GetCoordinateSystem() == CoordinateSystem::Cartesian);
-  REQUIRE(coords.GetCoordinates().extent(0) > 0);
-  REQUIRE(coords.GetCoordinates().extent(1) == 2);
+  REQUIRE(coords.GetValues().extent(0) > 0);
+  REQUIRE(coords.GetValues().extent(1) == 2);
 }
 
 // ============================================================================
@@ -234,8 +234,8 @@ TEST_CASE("FieldData: layout metadata queries")
 
   auto coords = factory.GetLayout()->GetDOFHolderCoordinates();
   REQUIRE(coords.GetCoordinateSystem() == CoordinateSystem::Cartesian);
-  REQUIRE(coords.GetCoordinates().extent(0) > 0);
-  REQUIRE(coords.GetCoordinates().extent(1) == 2);
+  REQUIRE(coords.GetValues().extent(0) > 0);
+  REQUIRE(coords.GetValues().extent(1) == 2);
 }
 
 // ============================================================================
@@ -290,8 +290,8 @@ TEST_CASE("FieldLayout: MeshFields metadata queries")
   auto layout = factory.GetLayout();
   auto coords = layout->GetDOFHolderCoordinates();
   REQUIRE(coords.GetCoordinateSystem() == CoordinateSystem::Cartesian);
-  REQUIRE(coords.GetCoordinates().extent(0) > 0);
-  REQUIRE(coords.GetCoordinates().extent(1) == 2);
+  REQUIRE(coords.GetValues().extent(0) > 0);
+  REQUIRE(coords.GetValues().extent(1) == 2);
 }
 
 TEST_CASE("PointEvaluator: MeshFields order-1 linear evaluation")

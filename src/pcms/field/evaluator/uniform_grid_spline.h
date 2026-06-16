@@ -198,7 +198,7 @@ public:
         "single-component fields");
     }
 
-    auto coordinates = coords.GetCoordinates();
+    auto coordinates = coords.GetValues();
     LO num_points = static_cast<LO>(coordinates.extent(0));
 
     Kokkos::View<Real**, DeviceMemorySpace> coordinates_d("coordinates_d",
