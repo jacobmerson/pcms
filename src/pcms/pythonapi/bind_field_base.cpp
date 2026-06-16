@@ -289,16 +289,34 @@ void bind_create_field_module(py::module& m)
          "Get the coordinate system for this function space");
 
   // Bind LagrangeFunctionSpace as a concrete FunctionSpace subtype.
-  py::class_<LagrangeFunctionSpace, FunctionSpace>(m, "LagrangeFunctionSpace")
+  py::class_<LagrangeFunctionSpace, FunctionSpace> lagrange_space(
+    m, "LagrangeFunctionSpace");
+
+  // Backend selecting the underlying field layout. The conservative-projection
+  // transfer operators require the native Omega_h backend.
+  py::enum_<LagrangeFunctionSpace::Backend>(lagrange_space, "Backend")
+    .value("MeshFields", LagrangeFunctionSpace::Backend::MeshFields,
+           "MeshFields-backed layout (default when MeshFields is enabled)")
+    .value("OmegaH", LagrangeFunctionSpace::Backend::OmegaH,
+           "Native Omega_h Lagrange layout (required by the conservative and "
+           "Monte Carlo projection transfer operators)")
+    .export_values();
+
+  lagrange_space
     .def_static(
       "from_mesh",
       [](Omega_h::Mesh& mesh, int order, int num_components,
-         CoordinateSystem coordinate_system) {
+         CoordinateSystem coordinate_system, std::string global_id_name,
+         LagrangeFunctionSpace::Backend backend) {
         return LagrangeFunctionSpace::FromMesh(mesh, order, num_components,
-                                               coordinate_system);
+                                               coordinate_system,
+                                               std::move(global_id_name),
+                                               backend);
       },
       py::arg("mesh"), py::arg("order"), py::arg("num_components") = 1,
       py::arg("coordinate_system") = CoordinateSystem::Cartesian,
+      py::arg("global_id_name") = "global",
+      py::arg("backend") = LagrangeFunctionSpace::DefaultBackend,
       "Create a LagrangeFunctionSpace from an Omega_h mesh")
 
     .def_static(

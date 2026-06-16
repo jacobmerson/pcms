@@ -18,6 +18,14 @@ pybind11_add_module(pcms
 target_compile_features(pcms PUBLIC cxx_std_20)
 target_link_libraries(pcms PRIVATE Kokkos::kokkos pybind11::module MPI::MPI_C pcms::core pcms::transfer)
 
+# The conservative/Monte Carlo projection bindings include transfer headers
+# that transitively pull in PETSc (petscvec.h). PETSc is linked PRIVATE into
+# pcms_transfer, so its include directories do not propagate; link it here so
+# the bindings compile when PETSc + MeshFields are enabled.
+if(PCMS_ENABLE_PETSC AND PCMS_ENABLE_MESHFIELDS)
+  target_link_libraries(pcms PRIVATE PETSc::PETSc meshfields::meshfields)
+endif()
+
 # if we are building as a python package from the pyproject.toml
 # scikit-build-core will set this variable
 if(SKBUILD)
