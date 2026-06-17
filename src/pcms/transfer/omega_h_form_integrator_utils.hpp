@@ -6,6 +6,7 @@
 #include "pcms/transfer/mesh_intersection.hpp"
 #include "pcms/utility/assert.h"
 #include <MeshField_Integrate.hpp>
+#include <MeshField_Shape.hpp>
 #include <Omega_h_shape.hpp>
 #include <Kokkos_MathematicalFunctions.hpp>
 
@@ -220,6 +221,42 @@ OMEGA_H_INLINE void ForEachIntersectionSubtriangle(
     }
   }
 }
+
+// Barycentric integration points and weights for a reference triangle, taken
+// from MeshField's predefined triangle quadrature rules and staged on device
+// for use in element integration kernels.
+//
+// MeshField::getIntegrationPoints returns a host std::vector, which cannot be
+// dereferenced inside a device kernel, so the (tiny) rule is copied into device
+// Kokkos views once at construction.
+//
+// @tparam order Quadrature order (number of points and polynomial accuracy).
+template <int order>
+struct IntegrationData
+{
+  Kokkos::View<MeshField::Vector3*> bary_coords; // barycentric coordinates
+  Kokkos::View<Omega_h::Real*> weights;          // quadrature weights
+
+  IntegrationData()
+  {
+    auto ip_vec = MeshField::getIntegrationPoints<MeshField::Triangle>(order);
+    const std::size_t num_ip = ip_vec.size();
+
+    bary_coords = Kokkos::View<MeshField::Vector3*>("bary_coords", num_ip);
+    weights = Kokkos::View<Omega_h::Real*>("weights", num_ip);
+
+    auto bary_coords_host = Kokkos::create_mirror_view(bary_coords);
+    auto weights_host = Kokkos::create_mirror_view(weights);
+    for (std::size_t i = 0; i < num_ip; ++i) {
+      bary_coords_host(i) = ip_vec[i].param;
+      weights_host(i) = ip_vec[i].weight;
+    }
+    Kokkos::deep_copy(bary_coords, bary_coords_host);
+    Kokkos::deep_copy(weights, weights_host);
+  }
+
+  int size() const { return bary_coords.extent(0); }
+};
 
 } // namespace pcms::detail
 

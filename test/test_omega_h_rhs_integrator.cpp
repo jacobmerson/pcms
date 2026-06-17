@@ -7,11 +7,10 @@
 #include <pcms/field/evaluation_request.h>
 #include <pcms/field/function_space/lagrange.h>
 #include <pcms/field/layout/omega_h_lagrange.h>
-#include <pcms/transfer/load_vector_integrator.hpp>
-#include <pcms/transfer/mesh_intersection.hpp>
 #include <pcms/transfer/omega_h_rhs_integrator.hpp>
 #include "field_test_utils.h"
 #include <petscksp.h>
+#include <cmath>
 #include <unordered_map>
 #include <vector>
 
@@ -53,6 +52,77 @@ Omega_h::Mesh BuildUnitSquare(Omega_h::Library& lib, int diagonal)
     2, "class_id", 1,
     Omega_h::Read<Omega_h::ClassId>(mesh.nelems(), Omega_h::ClassId(0)));
   return mesh;
+}
+
+// Independent reference for the assembled conservative load vector
+//   b_j = \int phi_j^target f dx
+// when f is exactly representable in the target order-1 space (constant or
+// affine): the integral then equals (M g)_j, where M is the target consistent
+// mass matrix and g_k = f(target node k). Assembled here from per-element mass
+// matrices on the target mesh alone — no intersection or source-mesh machinery
+// — so it cross-checks the integrator instead of restating its computation.
+//
+// The result is keyed by global DOF id to match the PETSc row indexing of the
+// integrator's assembled vector.
+std::unordered_map<pcms::GO, pcms::Real> ExpectedLoadByGid(
+  Omega_h::Mesh& target_mesh,
+  const pcms::OmegaHLagrangeLayout& target_layout,
+  const std::vector<pcms::Real>& g_by_vert)
+{
+  const auto coords_h = Omega_h::HostRead<Omega_h::Real>(target_mesh.coords());
+  const auto faces2nodes_h = Omega_h::HostRead<Omega_h::LO>(
+    target_mesh.ask_down(Omega_h::FACE, Omega_h::VERT).ab2b);
+  const auto& gids = target_layout.GetGidsHost();
+
+  std::unordered_map<pcms::GO, pcms::Real> b;
+  for (int e = 0; e < target_mesh.nelems(); ++e) {
+    const int v[3] = {faces2nodes_h[3 * e + 0], faces2nodes_h[3 * e + 1],
+                      faces2nodes_h[3 * e + 2]};
+    const double x0 = coords_h[2 * v[0]], y0 = coords_h[2 * v[0] + 1];
+    const double x1 = coords_h[2 * v[1]], y1 = coords_h[2 * v[1] + 1];
+    const double x2 = coords_h[2 * v[2]], y2 = coords_h[2 * v[2] + 1];
+    const double area =
+      0.5 * std::abs((x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0));
+
+    // Consistent P1 element mass matrix M^e = (area/12) [[2,1,1],[1,2,1],
+    // [1,1,2]], so (M^e g)_j = (area/12) (g_j + sum_k g_k).
+    const double g_sum = g_by_vert[v[0]] + g_by_vert[v[1]] + g_by_vert[v[2]];
+    for (int j = 0; j < 3; ++j) {
+      const double bj = (area / 12.0) * (g_by_vert[v[j]] + g_sum);
+      b[static_cast<pcms::GO>(gids[v[j]])] += static_cast<pcms::Real>(bj);
+    }
+  }
+  return b;
+}
+
+// Assembles the integrator's load vector for source_field and compares it,
+// per global DOF id, against the supplied expected values.
+void CheckAssembledLoadMatches(
+  pcms::FunctionSpace& source_space, pcms::LinearFormIntegrator& integrator,
+  const pcms::Field<pcms::Real>& source_field,
+  const std::unordered_map<pcms::GO, pcms::Real>& expected)
+{
+  const auto& pts = integrator.GetIntegrationPoints();
+  const std::size_t npts = pts.GetCoordinates().GetValues().extent(0);
+
+  auto evaluator = source_space.CreatePointEvaluator<pcms::Real>(
+    pcms::EvaluationRequest::FromCoordinates(pts.GetCoordinates()));
+  Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> sampled("sampled", npts,
+                                                              1);
+  evaluator->Evaluate(source_field, pcms::MakeRank2View(sampled));
+
+  integrator.Assemble(pcms::MakeConstRank2View(sampled));
+  Vec vec = integrator.GetVector();
+
+  const PetscScalar* vec_array = nullptr;
+  VecGetArrayRead(vec, &vec_array);
+  for (const auto& [gid, ref_val] : expected) {
+    const pcms::Real got = static_cast<pcms::Real>(vec_array[gid]);
+    CAPTURE(gid, ref_val, got);
+    CHECK(got == Catch::Approx(ref_val).epsilon(1e-10));
+  }
+  VecRestoreArrayRead(vec, &vec_array);
+  // vec is owned by integrator; no VecDestroy here.
 }
 
 } // namespace
@@ -137,12 +207,11 @@ TEST_CASE("OmegaHRHSIntegrator: zero source field gives zero assembled vector",
   // vec is owned by integrator; no VecDestroy here.
 }
 
-TEST_CASE(
-  "OmegaHRHSIntegrator: constant field matches buildLoadVector reference",
-  "[rhs_integrator]")
+TEST_CASE("OmegaHRHSIntegrator: constant field matches consistent-mass load",
+          "[rhs_integrator]")
 {
-  // Verifies that the staged integrator produces the same assembled load vector
-  // as the legacy buildLoadVector() for a constant source field of 2.0.
+  // For a constant source field the assembled load vector must equal the
+  // target consistent mass matrix applied to the constant nodal vector.
   Omega_h::Library lib;
   auto source_mesh = BuildUnitSquare(lib, 1);
   auto target_mesh = BuildUnitSquare(lib, 0);
@@ -154,75 +223,31 @@ TEST_CASE(
     target_mesh, 1, 1, pcms::CoordinateSystem::Cartesian, "global",
     pcms::LagrangeFunctionSpace::Backend::OmegaH);
 
-  // Set constant source field = 2.0.
+  const double c = 2.0;
   auto source_field = source_space.CreateField<pcms::Real>();
-  {
-    const int n = source_mesh.nverts();
-    std::vector<pcms::Real> vals(n, 2.0);
-    source_field.SetDOFHolderDataHost(
-      pcms::Rank1View<const pcms::Real, pcms::HostMemorySpace>(vals.data(), n));
-  }
+  pcms::test::SetField(
+    source_field, OMEGA_H_LAMBDA(pcms::Real, pcms::Real) { return c; });
 
-  // --- Reference via legacy buildLoadVector ---
-  Omega_h::Write<Omega_h::Real> src_vals_oh(source_mesh.nverts(), 2.0);
-  const auto intersection = pcms::intersectTargets(source_mesh, target_mesh);
-  auto ref_flat =
-    pcms::buildLoadVector(target_mesh, source_mesh, intersection, src_vals_oh);
-  auto ref_host =
-    Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, ref_flat);
-
-  // Scatter ref_flat into per-global-node totals.
-  const auto& tgt_faces2nodes =
-    target_mesh.ask_down(Omega_h::FACE, Omega_h::VERT).ab2b;
   const auto target_layout =
     std::dynamic_pointer_cast<const pcms::OmegaHLagrangeLayout>(
       target_space.GetLayout());
-  const auto& tgt_gids = target_layout->GetGidsHost();
+  const std::vector<pcms::Real> g(target_mesh.nverts(), c);
+  const auto expected = ExpectedLoadByGid(target_mesh, *target_layout, g);
 
-  std::unordered_map<pcms::GO, pcms::Real> ref_by_gid;
-  for (int e = 0; e < target_mesh.nelems(); ++e) {
-    const auto verts = Omega_h::gather_verts<3>(tgt_faces2nodes, e);
-    for (int k = 0; k < 3; ++k) {
-      ref_by_gid[static_cast<pcms::GO>(tgt_gids[verts[k]])] +=
-        static_cast<pcms::Real>(ref_host(e * 3 + k));
-    }
-  }
-
-  // --- New staged integrator ---
   auto integrator =
     pcms::BuildOmegaHConservativeRHSIntegrator(source_space, target_space);
-  const auto& pts = integrator->GetIntegrationPoints();
-  const std::size_t npts = pts.GetCoordinates().GetValues().extent(0);
-
-  auto evaluator = source_space.CreatePointEvaluator<pcms::Real>(
-    pcms::EvaluationRequest::FromCoordinates(pts.GetCoordinates()));
-
-  Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> sampled("sampled", npts,
-                                                              1);
-  evaluator->Evaluate(source_field, pcms::MakeRank2View(sampled));
-
-  integrator->Assemble(pcms::MakeConstRank2View(sampled));
-  Vec vec = integrator->GetVector();
-
-  const PetscScalar* vec_array = nullptr;
-  VecGetArrayRead(vec, &vec_array);
-
-  // Compare per-node totals.
-  for (const auto& [gid, ref_val] : ref_by_gid) {
-    const pcms::Real got = static_cast<pcms::Real>(vec_array[gid]);
-    CAPTURE(gid, ref_val, got);
-    CHECK(got == Catch::Approx(ref_val).epsilon(1e-10));
-  }
-  VecRestoreArrayRead(vec, &vec_array);
-  // vec is owned by integrator; no VecDestroy here.
+  CheckAssembledLoadMatches(source_space, *integrator, source_field, expected);
 }
 
-TEST_CASE("OmegaHRHSIntegrator: linear field matches buildLoadVector reference",
+TEST_CASE("OmegaHRHSIntegrator: linear field matches consistent-mass load",
           "[rhs_integrator]")
 {
   // f(x,y) = x + y exercises non-trivial quadrature paths that a constant
-  // field cannot catch (the constant case integrates any quadrature rule
-  // exactly, while a linear field requires at least 1st-order accuracy).
+  // field cannot catch (a constant integrates exactly under any rule, while a
+  // linear field requires at least 1st-order accuracy). The field is affine,
+  // hence exactly representable in the target P1 space, so the assembled load
+  // vector must equal the target consistent mass matrix applied to the nodal
+  // values of x + y.
   Omega_h::Library lib;
   auto source_mesh = BuildUnitSquare(lib, 1);
   auto target_mesh = BuildUnitSquare(lib, 0);
@@ -234,69 +259,25 @@ TEST_CASE("OmegaHRHSIntegrator: linear field matches buildLoadVector reference",
     target_mesh, 1, 1, pcms::CoordinateSystem::Cartesian, "global",
     pcms::LagrangeFunctionSpace::Backend::OmegaH);
 
-  // Set source field = x + y at each vertex.
   auto source_field = source_space.CreateField<pcms::Real>();
   pcms::test::SetField(
     source_field,
     OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) { return x + y; });
 
-  // --- Reference via legacy buildLoadVector ---
-  const auto src_coords_h =
-    Omega_h::HostRead<Omega_h::Real>(source_mesh.coords());
-  Omega_h::Write<Omega_h::Real> src_vals_oh(source_mesh.nverts());
-  Omega_h::parallel_for(
-    source_mesh.nverts(), OMEGA_H_LAMBDA(int i) {
-      src_vals_oh[i] = src_coords_h[2 * i + 0] + src_coords_h[2 * i + 1];
-    });
-
-  const auto intersection = pcms::intersectTargets(source_mesh, target_mesh);
-  auto ref_flat =
-    pcms::buildLoadVector(target_mesh, source_mesh, intersection, src_vals_oh);
-  auto ref_host =
-    Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, ref_flat);
-
-  const auto& tgt_faces2nodes =
-    target_mesh.ask_down(Omega_h::FACE, Omega_h::VERT).ab2b;
   const auto target_layout =
     std::dynamic_pointer_cast<const pcms::OmegaHLagrangeLayout>(
       target_space.GetLayout());
-  const auto& tgt_gids = target_layout->GetGidsHost();
-
-  std::unordered_map<pcms::GO, pcms::Real> ref_by_gid;
-  for (int e = 0; e < target_mesh.nelems(); ++e) {
-    const auto verts = Omega_h::gather_verts<3>(tgt_faces2nodes, e);
-    for (int k = 0; k < 3; ++k) {
-      ref_by_gid[static_cast<pcms::GO>(tgt_gids[verts[k]])] +=
-        static_cast<pcms::Real>(ref_host(e * 3 + k));
-    }
+  const auto tgt_coords_h =
+    Omega_h::HostRead<Omega_h::Real>(target_mesh.coords());
+  std::vector<pcms::Real> g(target_mesh.nverts());
+  for (int i = 0; i < target_mesh.nverts(); ++i) {
+    g[i] = tgt_coords_h[2 * i + 0] + tgt_coords_h[2 * i + 1];
   }
+  const auto expected = ExpectedLoadByGid(target_mesh, *target_layout, g);
 
-  // --- New staged integrator ---
   auto integrator =
     pcms::BuildOmegaHConservativeRHSIntegrator(source_space, target_space);
-  const auto& pts = integrator->GetIntegrationPoints();
-  const std::size_t npts = pts.GetCoordinates().GetValues().extent(0);
-
-  auto evaluator = source_space.CreatePointEvaluator<pcms::Real>(
-    pcms::EvaluationRequest::FromCoordinates(pts.GetCoordinates()));
-
-  Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> sampled("sampled", npts,
-                                                              1);
-  evaluator->Evaluate(source_field, pcms::MakeRank2View(sampled));
-
-  integrator->Assemble(pcms::MakeConstRank2View(sampled));
-  Vec vec = integrator->GetVector();
-
-  const PetscScalar* vec_array = nullptr;
-  VecGetArrayRead(vec, &vec_array);
-
-  for (const auto& [gid, ref_val] : ref_by_gid) {
-    const pcms::Real got = static_cast<pcms::Real>(vec_array[gid]);
-    CAPTURE(gid, ref_val, got);
-    CHECK(got == Catch::Approx(ref_val).epsilon(1e-10));
-  }
-  VecRestoreArrayRead(vec, &vec_array);
-  // vec is owned by integrator; no VecDestroy here.
+  CheckAssembledLoadMatches(source_space, *integrator, source_field, expected);
 }
 
 TEST_CASE("OmegaHRHSIntegrator: rejects invalid layouts", "[rhs_integrator]")

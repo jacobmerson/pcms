@@ -1,5 +1,4 @@
 #include "pcms/transfer/omega_h_rhs_integrator.hpp"
-#include "pcms/transfer/load_vector_integrator.hpp"
 #include "pcms/transfer/omega_h_form_integrator_utils.hpp"
 #include "pcms/transfer/petsc_utils.hpp"
 #include "pcms/utility/assert.h"
@@ -71,7 +70,7 @@ OmegaHRHSIntegrator::Data OmegaHRHSIntegrator::BuildData(
   const auto& src_faces2nodes =
     source_mesh.ask_down(Omega_h::FACE, Omega_h::VERT).ab2b;
 
-  IntegrationData<2> ip_data;
+  detail::IntegrationData<2> ip_data;
   const int npts = ip_data.size();
   auto bary_coords = ip_data.bary_coords; // device view
   auto weights = ip_data.weights;         // device view

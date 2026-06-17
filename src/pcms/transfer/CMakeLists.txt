@@ -19,10 +19,7 @@ set(PCMS_FIELD_TRANSFER_SOURCES
 
 if(PCMS_ENABLE_MESHFIELDS)
   list(APPEND PCMS_FIELD_TRANSFER_HEADERS
-      load_vector_integrator.hpp
       mass_matrix_integrator.hpp)
-  list(APPEND PCMS_FIELD_TRANSFER_SOURCES
-      load_vector_integrator.cpp)
 endif()
 
 if(PCMS_ENABLE_PETSC AND PCMS_ENABLE_MESHFIELDS)
