@@ -29,8 +29,6 @@ if(PCMS_ENABLE_PETSC AND PCMS_ENABLE_MESHFIELDS)
   list(APPEND PCMS_FIELD_TRANSFER_HEADERS
       linear_form_integrator.hpp
       bilinear_form_integrator.hpp
-      calculate_load_vector.hpp
-      calculate_mass_matrix.hpp
       conservative_projection_solver.hpp
       omega_h_conservative_projection.hpp
       omega_h_rhs_integrator.hpp
@@ -41,8 +39,6 @@ if(PCMS_ENABLE_PETSC AND PCMS_ENABLE_MESHFIELDS)
       petsc_utils.hpp
       omega_h_form_integrator_utils.hpp)
   list(APPEND PCMS_FIELD_TRANSFER_SOURCES
-      calculate_load_vector.cpp
-      calculate_mass_matrix.cpp
       conservative_projection_solver.cpp
       omega_h_conservative_projection.cpp
       omega_h_rhs_integrator.cpp

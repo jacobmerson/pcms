@@ -8,7 +8,6 @@
 #include <pcms/field/point_evaluator.h>
 #include <pcms/transfer/bilinear_form_integrator.hpp>
 #include <pcms/transfer/linear_form_integrator.hpp>
-#include <pcms/transfer/mesh_intersection.hpp>
 
 namespace pcms
 {
@@ -61,19 +60,6 @@ private:
   PetscInt nverts_;
   KSP ksp_ = nullptr;
 };
-
-// One-shot Galerkin projection (reference / legacy path).
-// Builds and tears down the matrix and KSP on every call.
-// Prefer GalerkinProjectionSolver for repeated use on the same mesh pair.
-Omega_h::Reals solveGalerkinProjection(Omega_h::Mesh& target_mesh,
-                                       Omega_h::Mesh& source_mesh,
-                                       const IntersectionResults& intersection,
-                                       const Omega_h::Reals& source_values);
-
-Omega_h::Reals rhsVectorMI(Omega_h::Mesh& target_mesh,
-                           Omega_h::Mesh& source_mesh,
-                           const IntersectionResults& intersection,
-                           const Omega_h::Reals& source_values);
 
 } // namespace pcms
 
