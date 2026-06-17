@@ -34,7 +34,9 @@ static Omega_h::Reals vecToOmegaHReals(Vec vec)
 // ---------------------------------------------------------------------------
 
 GalerkinProjectionSolver::GalerkinProjectionSolver(
-  const BilinearFormIntegrator& mass_integrator)
+  const BilinearFormIntegrator& mass_integrator,
+  LinearFormIntegrator& rhs_integrator)
+  : rhs_integrator_(&rhs_integrator)
 {
   Mat A = mass_integrator.GetMatrix();
 
@@ -42,6 +44,13 @@ GalerkinProjectionSolver::GalerkinProjectionSolver(
   PetscErrorCode ierr = MatGetSize(A, &m, &n);
   CHKERRABORT(PETSC_COMM_WORLD, ierr);
   nverts_ = m;
+
+  const std::size_t num_pts = rhs_integrator_->GetIntegrationPoints()
+                                .GetCoordinates()
+                                .GetValues()
+                                .extent(0);
+  sampled_values_ =
+    Kokkos::View<Real**, DeviceMemorySpace>("rhs_sampled", num_pts, 1);
 
   ierr = KSPCreate(PETSC_COMM_WORLD, &ksp_);
   CHKERRABORT(PETSC_COMM_WORLD, ierr);
@@ -62,26 +71,18 @@ GalerkinProjectionSolver::~GalerkinProjectionSolver()
 }
 
 Omega_h::Reals GalerkinProjectionSolver::Solve(
-  LinearFormIntegrator& rhs_integrator, const PointEvaluator<Real>& evaluator,
+  const PointEvaluator<Real>& evaluator,
   const Field<Real>& source_field) const
 {
-  const std::size_t num_pts = rhs_integrator.GetIntegrationPoints()
-                                .GetCoordinates()
-                                .GetValues()
-                                .extent(0);
-  Kokkos::View<Real**, DeviceMemorySpace> sampled_values("rhs_sampled", num_pts,
-                                                         1);
-  evaluator.Evaluate(source_field, MakeRank2View(sampled_values));
-
-  return Solve(rhs_integrator, MakeConstRank2View(sampled_values));
+  evaluator.Evaluate(source_field, MakeRank2View(sampled_values_));
+  return Solve(MakeConstRank2View(sampled_values_));
 }
 
 Omega_h::Reals GalerkinProjectionSolver::Solve(
-  LinearFormIntegrator& rhs_integrator,
   Rank2View<const Real, DeviceMemorySpace> sampled_values) const
 {
-  rhs_integrator.Assemble(sampled_values);
-  Vec rhs_vector = rhs_integrator.GetVector();
+  rhs_integrator_->Assemble(sampled_values);
+  Vec rhs_vector = rhs_integrator_->GetVector();
 
   Vec solution = nullptr;
   PetscErrorCode ierr = createSeqVec(PETSC_COMM_WORLD, nverts_, &solution);

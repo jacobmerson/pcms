@@ -58,7 +58,8 @@ OmegaHConservativeProjection::OmegaHConservativeProjection(
   // the matrix so it remains alive inside the KSP after this scope ends.
   OmegaHMassIntegrator mass_integrator(target_layout_,
                                        target_space.GetCoordinateSystem());
-  solver_ = std::make_unique<GalerkinProjectionSolver>(mass_integrator);
+  solver_ =
+    std::make_unique<GalerkinProjectionSolver>(mass_integrator, *rhs_integrator_);
 }
 
 // Defined here so that GalerkinProjectionSolver (forward-declared in the
@@ -70,8 +71,7 @@ void OmegaHConservativeProjection::Apply(const Field<Real>& source,
 {
   CheckApplyCompatible(source, target, *source_layout_, *target_layout_);
 
-  const auto target_values =
-    solver_->Solve(*rhs_integrator_, *evaluator_, source);
+  const auto target_values = solver_->Solve(*evaluator_, source);
   auto target_values_h = Omega_h::HostRead<Omega_h::Real>(target_values);
   target.SetDOFHolderDataHost(make_const_array_view(target_values_h));
 }

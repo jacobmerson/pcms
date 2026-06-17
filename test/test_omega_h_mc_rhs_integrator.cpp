@@ -208,8 +208,8 @@ TEST_CASE("OmegaHMonteCarloRHSIntegrator: Sobol projection converges on a "
       rhs_integrator.GetIntegrationPoints().GetCoordinates()));
 
   pcms::OmegaHMassIntegrator mass_integrator(target_space);
-  pcms::GalerkinProjectionSolver solver(mass_integrator);
-  const auto projected = solver.Solve(rhs_integrator, *evaluator, source_field);
+  pcms::GalerkinProjectionSolver solver(mass_integrator, rhs_integrator);
+  const auto projected = solver.Solve(*evaluator, source_field);
   const auto projected_h = Omega_h::HostRead<Omega_h::Real>(projected);
 
   // The Sobol estimate is deterministic; the observed max nodal error with
@@ -299,9 +299,8 @@ TEST_CASE("OmegaHControlVariateProjection: reduces error vs plain Monte Carlo",
     pcms::EvaluationRequest::FromCoordinates(
       mc_integrator.GetIntegrationPoints().GetCoordinates()));
   pcms::OmegaHMassIntegrator mass_integrator(target_space);
-  pcms::GalerkinProjectionSolver solver(mass_integrator);
-  const auto mc_projected =
-    solver.Solve(mc_integrator, *evaluator, source_field);
+  pcms::GalerkinProjectionSolver solver(mass_integrator, mc_integrator);
+  const auto mc_projected = solver.Solve(*evaluator, source_field);
   const auto mc_projected_h = Omega_h::HostRead<Omega_h::Real>(mc_projected);
 
   // Control-variate projection with the same sampling configuration.

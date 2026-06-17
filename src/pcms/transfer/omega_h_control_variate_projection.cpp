@@ -30,7 +30,8 @@ OmegaHControlVariateProjection::OmegaHControlVariateProjection(
   // the matrix so it remains alive inside the KSP after this scope ends.
   OmegaHMassIntegrator mass_integrator(target_layout_,
                                        target_space.GetCoordinateSystem());
-  solver_ = std::make_unique<GalerkinProjectionSolver>(mass_integrator);
+  solver_ =
+    std::make_unique<GalerkinProjectionSolver>(mass_integrator, *rhs_integrator_);
 }
 
 // Defined here so that GalerkinProjectionSolver (forward-declared in the
@@ -61,8 +62,7 @@ void OmegaHControlVariateProjection::Apply(const Field<Real>& source,
     KOKKOS_LAMBDA(int i) { residual(i, 0) = f_samples(i, 0) - residual(i, 0); });
 
   // 3. Project the residual: M * delta = r.
-  const auto delta =
-    solver_->Solve(*rhs_integrator_, MakeConstRank2View(residual));
+  const auto delta = solver_->Solve(MakeConstRank2View(residual));
 
   // 4. x = g + delta. delta is indexed by global id (PETSc row), the DOF
   //    holder by local vertex id.
