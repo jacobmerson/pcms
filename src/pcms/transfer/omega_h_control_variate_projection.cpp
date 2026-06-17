@@ -46,10 +46,8 @@ void OmegaHControlVariateProjection::Apply(const Field<Real>& source,
 
   // 2. Sample the source field and the control variate at the fixed Monte
   //    Carlo sample points; the stochastic RHS integrates the residual.
-  const std::size_t num_samples = rhs_integrator_->GetIntegrationPoints()
-                                    .GetCoordinates()
-                                    .GetValues()
-                                    .extent(0);
+  const std::size_t num_samples =
+    rhs_integrator_->GetIntegrationPoints().NumPoints();
   Kokkos::View<Real**, DeviceMemorySpace> f_samples("cv_f_samples",
                                                     num_samples, 1);
   Kokkos::View<Real**, DeviceMemorySpace> residual("cv_residual", num_samples,

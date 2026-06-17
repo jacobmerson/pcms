@@ -45,10 +45,8 @@ GalerkinProjectionSolver::GalerkinProjectionSolver(
   CHKERRABORT(PETSC_COMM_WORLD, ierr);
   nverts_ = m;
 
-  const std::size_t num_pts = rhs_integrator_->GetIntegrationPoints()
-                                .GetCoordinates()
-                                .GetValues()
-                                .extent(0);
+  const std::size_t num_pts =
+    rhs_integrator_->GetIntegrationPoints().NumPoints();
   sampled_values_ =
     Kokkos::View<Real**, DeviceMemorySpace>("rhs_sampled", num_pts, 1);
 

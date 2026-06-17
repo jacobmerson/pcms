@@ -3,6 +3,8 @@
 
 #include "pcms/field/coordinate_system.h"
 
+#include <cstddef>
+
 namespace pcms
 {
 
@@ -20,6 +22,13 @@ class IntegrationPointSet
 public:
   // Global coordinates of all integration points, shape [num_points][dim].
   virtual CoordinateView<MemorySpace> GetCoordinates() const = 0;
+
+  // Number of integration points.
+  [[nodiscard]]
+  std::size_t NumPoints() const
+  {
+    return GetCoordinates().GetValues().extent(0);
+  }
 
   virtual ~IntegrationPointSet() noexcept = default;
 };
