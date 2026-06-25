@@ -13,7 +13,7 @@ namespace
 {
 
 // Maps a uniform point on the unit square to uniform barycentric coordinates
-// on a triangle (area-preserving sqrt parametrization).
+// Shape Distributions (ACM Transactions on Graphics, Vol. 21, No. 4, October 2002.) page 814 Eq 1
 KOKKOS_INLINE_FUNCTION Omega_h::Vector<3> UniformTriangleBarycentric(Real u,
                                                                      Real v)
 {
