@@ -140,11 +140,11 @@ def main():
             source_space,
             target_space,
             samples_per_element=64,
-            sampling=pcms.MonteCarloSampling.Sobol,
+            sampling=pcms.MonteCarloSampling.UniformRandom,
             seed=8675309,
         )
         monte_carlo.apply(source_field, mc_target)
-        report("Monte Carlo (control variate, Sobol)", mc_target, target_mesh,
+        report("Monte Carlo (control variate, UniformRandom)", mc_target, target_mesh,
                target_coords, reference_values, source_integral)
 
         print("\n✓ Field transfer completed with both methods.")

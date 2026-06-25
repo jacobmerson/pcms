@@ -104,8 +104,6 @@ void bind_transfer_field_module(py::module& m)
   py::enum_<MonteCarloSampling>(m, "MonteCarloSampling")
     .value("UniformRandom", MonteCarloSampling::UniformRandom,
            "Independent pseudo-random uniform draws per element")
-    .value("Sobol", MonteCarloSampling::Sobol,
-           "One low-discrepancy Sobol point set mapped onto every element")
     .export_values();
 
   // Variance-reduced Monte Carlo Galerkin projection. The source field is
@@ -122,7 +120,7 @@ void bind_transfer_field_module(py::module& m)
          }),
          py::arg("source_space"), py::arg("target_space"),
          py::arg("samples_per_element"),
-         py::arg("sampling") = MonteCarloSampling::Sobol,
+         py::arg("sampling") = MonteCarloSampling::UniformRandom,
          py::arg("seed") = std::uint64_t(8675309),
          "Construct a Monte Carlo (control-variate) conservative projection. "
          "Sample-point generation, the control-variate interpolator, and the "

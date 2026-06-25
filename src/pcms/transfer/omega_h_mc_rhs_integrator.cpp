@@ -1,7 +1,6 @@
 #include "pcms/transfer/omega_h_mc_rhs_integrator.hpp"
 #include "pcms/transfer/omega_h_form_integrator_utils.hpp"
 #include "pcms/transfer/petsc_utils.hpp"
-#include "pcms/transfer/sobol_sequence.hpp"
 #include "pcms/utility/assert.h"
 #include <Kokkos_Random.hpp>
 #include <Omega_h_shape.hpp>
@@ -104,35 +103,20 @@ OmegaHMonteCarloRHSIntegrator::Data OmegaHMonteCarloRHSIntegrator::BuildData(
   auto node_gids = d.node_gids;
   auto coeffs = d.coeffs;
 
-  if (sampling == MonteCarloSampling::Sobol) {
-    const auto unit_pts = GetSobolSequence(npe);
-    Kokkos::parallel_for(
-      "mc_rhs_fill_sobol",
-      Kokkos::RangePolicy<DefaultExecutionSpace>(0, nelems),
-      KOKKOS_LAMBDA(int elm) {
-        FillElementSamples(elm, npe, mesh_coords, faces2nodes, gids_ptr,
-                           coords, node_gids, coeffs,
-                           [&](int s, Real& u, Real& v) {
-                             u = unit_pts(s, 0);
-                             v = unit_pts(s, 1);
-                           });
-      });
-  } else {
-    Kokkos::Random_XorShift64_Pool<DefaultExecutionSpace> pool(seed);
-    Kokkos::parallel_for(
-      "mc_rhs_fill_random",
-      Kokkos::RangePolicy<DefaultExecutionSpace>(0, nelems),
-      KOKKOS_LAMBDA(int elm) {
-        auto gen = pool.get_state();
-        FillElementSamples(elm, npe, mesh_coords, faces2nodes, gids_ptr,
-                           coords, node_gids, coeffs,
-                           [&](int /*s*/, Real& u, Real& v) {
-                             u = gen.drand();
-                             v = gen.drand();
-                           });
-        pool.free_state(gen);
-      });
-  }
+  Kokkos::Random_XorShift64_Pool<DefaultExecutionSpace> pool(seed);
+  Kokkos::parallel_for(
+    "mc_rhs_fill_random",
+    Kokkos::RangePolicy<DefaultExecutionSpace>(0, nelems),
+    KOKKOS_LAMBDA(int elm) {
+      auto gen = pool.get_state();
+      FillElementSamples(elm, npe, mesh_coords, faces2nodes, gids_ptr,
+                         coords, node_gids, coeffs,
+                         [&](int /*s*/, Real& u, Real& v) {
+                           u = gen.drand();
+                           v = gen.drand();
+                         });
+      pool.free_state(gen);
+    });
   Kokkos::fence();
 
   return d;

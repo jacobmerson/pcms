@@ -11,7 +11,6 @@
 #include <pcms/transfer/omega_h_control_variate_projection.hpp>
 #include <pcms/transfer/omega_h_mass_integrator.hpp>
 #include <pcms/transfer/omega_h_mc_rhs_integrator.hpp>
-#include <pcms/transfer/sobol_sequence.hpp>
 #include "field_test_utils.h"
 #include <petscksp.h>
 #include <vector>
@@ -80,43 +79,7 @@ void EvaluateAndAssemble(pcms::LinearFormIntegrator& integrator,
 
 } // namespace
 
-// ---------------------------------------------------------------------------
-// Sobol sequence
-// ---------------------------------------------------------------------------
 
-TEST_CASE("Sobol2DPoint reproduces the standard 2D Sobol sequence", "[sobol]")
-{
-  // First seven points after the origin of the unscrambled Sobol sequence.
-  const std::vector<std::array<double, 2>> expected = {
-    {0.5, 0.5},     {0.75, 0.25},  {0.25, 0.75}, {0.375, 0.375},
-    {0.875, 0.875}, {0.625, 0.125}, {0.125, 0.625}};
-
-  for (std::size_t i = 0; i < expected.size(); ++i) {
-    const auto p = pcms::Sobol2DPoint(static_cast<uint32_t>(i + 1));
-    CAPTURE(i, p[0], p[1]);
-    CHECK(p[0] == Catch::Approx(expected[i][0]).margin(1e-15));
-    CHECK(p[1] == Catch::Approx(expected[i][1]).margin(1e-15));
-  }
-}
-
-TEST_CASE("GetSobolSequence fills a device view in point order", "[sobol]")
-{
-  const int n = 64;
-  const auto pts = pcms::GetSobolSequence(n);
-  auto pts_h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, pts);
-
-  REQUIRE(pts_h.extent(0) == static_cast<std::size_t>(n));
-  REQUIRE(pts_h.extent(1) == 2);
-  for (int i = 0; i < n; ++i) {
-    const auto p = pcms::Sobol2DPoint(static_cast<uint32_t>(i + 1));
-    CHECK(pts_h(i, 0) == Catch::Approx(p[0]).margin(1e-15));
-    CHECK(pts_h(i, 1) == Catch::Approx(p[1]).margin(1e-15));
-    CHECK(pts_h(i, 0) >= 0.0);
-    CHECK(pts_h(i, 0) < 1.0);
-    CHECK(pts_h(i, 1) >= 0.0);
-    CHECK(pts_h(i, 1) < 1.0);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Monte Carlo RHS integrator
@@ -130,8 +93,7 @@ TEST_CASE("OmegaHMonteCarloRHSIntegrator: sample points lie inside the domain",
   auto target_space = MakeP1Space(target_mesh);
 
   const int samples_per_element = 16;
-  for (const auto sampling : {pcms::MonteCarloSampling::UniformRandom,
-                              pcms::MonteCarloSampling::Sobol}) {
+  for (const auto sampling : {pcms::MonteCarloSampling::UniformRandom}) {
     pcms::OmegaHMonteCarloRHSIntegrator integrator(target_space,
                                                    samples_per_element,
                                                    sampling);
@@ -172,54 +134,14 @@ TEST_CASE("OmegaHMonteCarloRHSIntegrator: constant field integrates exactly",
   pcms::test::SetField(
     source_field, OMEGA_H_LAMBDA(pcms::Real, pcms::Real) { return 2.0; });
 
-  for (const auto sampling : {pcms::MonteCarloSampling::UniformRandom,
-                              pcms::MonteCarloSampling::Sobol}) {
+  for (const auto sampling : {pcms::MonteCarloSampling::UniformRandom}) {
     pcms::OmegaHMonteCarloRHSIntegrator integrator(target_space, 8, sampling);
     EvaluateAndAssemble(integrator, source_space, source_field);
 
     PetscScalar sum = 0.0;
     VecSum(integrator.GetVector(), &sum);
-    INFO("sampling=" << (sampling == pcms::MonteCarloSampling::Sobol
-                           ? "Sobol"
-                           : "UniformRandom"));
+    INFO("sampling=" << "UniformRandom");
     CHECK(static_cast<pcms::Real>(sum) == Catch::Approx(2.0).margin(1e-12));
-  }
-}
-
-TEST_CASE("OmegaHMonteCarloRHSIntegrator: Sobol projection converges on a "
-          "linear field",
-          "[mc_rhs_integrator]")
-{
-  Omega_h::Library lib;
-  auto source_mesh = BuildUnitSquare(lib, 1);
-  auto target_mesh = BuildUnitSquare(lib, 0);
-  auto source_space = MakeP1Space(source_mesh);
-  auto target_space = MakeP1Space(target_mesh);
-
-  auto source_field = source_space.CreateField<pcms::Real>();
-  pcms::test::SetField(
-    source_field,
-    OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) { return x + 2.0 * y; });
-
-  pcms::OmegaHMonteCarloRHSIntegrator rhs_integrator(
-    target_space, 1024, pcms::MonteCarloSampling::Sobol);
-  auto evaluator = source_space.CreatePointEvaluator<pcms::Real>(
-    pcms::EvaluationRequest::FromCoordinates(
-      rhs_integrator.GetIntegrationPoints().GetCoordinates()));
-
-  pcms::OmegaHMassIntegrator mass_integrator(target_space);
-  pcms::GalerkinProjectionSolver solver(mass_integrator, rhs_integrator);
-  const auto projected = solver.Solve(*evaluator, source_field);
-  const auto projected_h = Omega_h::HostRead<Omega_h::Real>(projected);
-
-  // The Sobol estimate is deterministic; the observed max nodal error with
-  // 1024 samples per element is ~1e-2 (the sqrt triangle map warps the
-  // low-discrepancy structure, and the mass solve amplifies RHS error).
-  const auto coords_h = Omega_h::HostRead<Omega_h::Real>(target_mesh.coords());
-  for (Omega_h::LO i = 0; i < target_mesh.nverts(); ++i) {
-    const double expected = coords_h[2 * i + 0] + 2.0 * coords_h[2 * i + 1];
-    CAPTURE(i, expected, projected_h[i]);
-    CHECK(projected_h[i] == Catch::Approx(expected).margin(2e-2));
   }
 }
 

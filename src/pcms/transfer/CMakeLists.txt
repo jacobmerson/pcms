@@ -8,7 +8,6 @@ set(PCMS_FIELD_TRANSFER_HEADERS
     copy.h
     transfer_operator.hpp
     integration_point_set.hpp
-    sobol_sequence.hpp
 )
 
 

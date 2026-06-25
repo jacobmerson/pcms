@@ -16,7 +16,6 @@ namespace pcms
 enum class MonteCarloSampling
 {
   UniformRandom, // independent uniform draws per element (XorShift64 pool)
-  Sobol,         // one 2D Sobol point set mapped onto every triangle
 };
 
 // Monte Carlo RHS integrator for conservative L2 projection onto order-1
@@ -26,7 +25,7 @@ enum class MonteCarloSampling
 //   b_j = \int phi_j f dx
 // is estimated per target element T from a uniform sample x_1..x_N over T:
 //   b_j ~= (|T| / N) * sum_i phi_j(x_i) f(x_i)
-// Unit-square samples (pseudo-random or Sobol) are mapped to each triangle
+// Unit-square samples (pseudo-random) are mapped to each triangle
 // with the area-preserving sqrt parametrization. Sample locations are fixed
 // at construction and exposed through GetIntegrationPoints(); Assemble()
 // consumes source-field values sampled there, exactly like
