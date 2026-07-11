@@ -1,7 +1,7 @@
 
 #include <pybind11/pybind11.h>
 #include "pcms/configuration.h"
-#ifdef PCMS_ENABLE_PETSC
+#if defined(PCMS_ENABLE_PETSC) && defined(PCMS_ENABLE_MESHFIELDS)
 #include <petscsys.h>
 #endif
 
@@ -39,7 +39,7 @@ void bind_mesh_utilities_module(py::module& m);
 } // namespace pcms
 PYBIND11_MODULE(pcms, m)
 {
-#ifdef PCMS_ENABLE_PETSC
+#if defined(PCMS_ENABLE_PETSC) && defined(PCMS_ENABLE_MESHFIELDS)
   // The conservative/Monte Carlo projection solvers build PETSc objects on
   // PETSC_COMM_WORLD, so PETSc must be initialized before any of them are
   // constructed. Do it once at import time (PetscInitialize brings up MPI if it
