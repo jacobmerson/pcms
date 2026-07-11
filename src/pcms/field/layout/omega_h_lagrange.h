@@ -35,6 +35,7 @@ public:
 
   Rank1View<const bool, HostMemorySpace> GetOwnedHost() const override;
   GlobalIDView<HostMemorySpace> GetGidsHost() const override;
+  GlobalIDView<DeviceMemorySpace> GetGids() const;
   CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const override;
 
   [[nodiscard]] bool IsDistributed() const override;

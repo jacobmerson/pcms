@@ -404,11 +404,14 @@ if(Catch2_FOUND)
 
   if(PCMS_ENABLE_MESHFIELDS)
     list(APPEND PCMS_UNIT_TEST_SOURCES
-      test_load_vector.cpp)
+      test_omega_h_form_integrator_utils.cpp)
   endif()
 
   if(PCMS_ENABLE_PETSC AND PCMS_ENABLE_MESHFIELDS)
     list(APPEND PCMS_UNIT_TEST_SOURCES
+      test_omega_h_intersection_rhs_integrator.cpp
+      test_omega_h_mass_integrator.cpp
+      test_omega_h_mc_rhs_integrator.cpp
       test_mesh_intersection_field_transfer.cpp)
   endif()
   

@@ -1,69 +1,12 @@
 #include <petscksp.h>
 
 #include "pcms/transfer/conservative_projection_solver.hpp"
+#include "pcms/utility/arrays.h"
 #include "pcms/transfer/petsc_utils.hpp"
-#include "pcms/transfer/calculate_load_vector.hpp"
-#include "pcms/transfer/calculate_mass_matrix.hpp"
+#include <Kokkos_Core.hpp>
 
 namespace pcms
 {
-/**
- * @brief Solves a linear system Ax = b using PETSc's KSP solvers
- *
- * Uses PETSc's Krylov Subspace solvers to find x in Ax = b.
- * The solver can be configured through PETSc runtime options.
- *
- * @param A The system matrix
- * @param b The right-hand side vector
- * @return Vec Solution vector x
- */
-static Vec solveLinearSystem(Mat A, Vec b)
-{
-  PetscInt m, n;
-  PetscErrorCode ierr;
-
-  ierr = MatGetSize(A, &m, &n);
-  CHKERRABORT(PETSC_COMM_WORLD, ierr);
-
-  Vec x;
-  ierr = createSeqVec(PETSC_COMM_WORLD, n, &x);
-  CHKERRABORT(PETSC_COMM_WORLD, ierr);
-
-  KSP ksp;
-  ierr = KSPCreate(PETSC_COMM_WORLD, &ksp);
-  CHKERRABORT(PETSC_COMM_WORLD, ierr);
-
-  ierr = KSPSetOperators(ksp, A, A);
-  CHKERRABORT(PETSC_COMM_WORLD, ierr);
-
-  ierr = KSPSetComputeSingularValues(ksp, PETSC_TRUE);
-  CHKERRABORT(PETSC_COMM_WORLD, ierr);
-
-  ierr = KSPSetFromOptions(ksp);
-  CHKERRABORT(PETSC_COMM_WORLD, ierr);
-
-  ierr = KSPSetUp(ksp);
-  CHKERRABORT(PETSC_COMM_WORLD, ierr);
-
-  ierr = KSPSolve(ksp, b, x);
-  CHKERRABORT(PETSC_COMM_WORLD, ierr);
-
-  /// compute and print condition number estimate
-  PetscReal smax = 0.0, smin = 0.0;
-  ierr = KSPComputeExtremeSingularValues(ksp, &smax, &smin);
-  if (!ierr && smin > 0.0) {
-    PetscPrintf(PETSC_COMM_WORLD,
-                "Estimated condition number of matrix A: %.6e\n", smax / smin);
-  } else {
-    PetscPrintf(PETSC_COMM_WORLD,
-                "Condition number estimate unavailable (smin <= 0 or error)\n");
-  }
-
-  ierr = KSPDestroy(&ksp);
-  CHKERRABORT(PETSC_COMM_WORLD, ierr);
-
-  return x;
-}
 
 static Omega_h::Reals vecToOmegaHReals(Vec vec)
 {
@@ -86,59 +29,71 @@ static Omega_h::Reals vecToOmegaHReals(Vec vec)
   return Omega_h::Reals(values_host);
 }
 
-Omega_h::Reals solveGalerkinProjection(Omega_h::Mesh& target_mesh,
-                                       Omega_h::Mesh& source_mesh,
-                                       const IntersectionResults& intersection,
-                                       const Omega_h::Reals& source_values)
+// ---------------------------------------------------------------------------
+// GalerkinProjectionSolver
+// ---------------------------------------------------------------------------
+
+GalerkinProjectionSolver::GalerkinProjectionSolver(
+  const BilinearFormIntegrator& mass_integrator,
+  LinearFormIntegrator& rhs_integrator)
+  : rhs_integrator_(&rhs_integrator)
 {
-  if ((PetscInt)source_values.size() !=
-      source_mesh.coords().size() / source_mesh.dim()) {
-    std::cerr << "ERROR: source_values size (" << source_values.size()
-              << ") doesn't match expected size ("
-              << source_mesh.coords().size() / source_mesh.dim() << ")"
-              << std::endl;
-    throw std::runtime_error("source_values length mismatch");
+  Mat A = mass_integrator.GetMatrix();
+
+  PetscInt m = 0, n = 0;
+  PetscErrorCode ierr = MatGetSize(A, &m, &n);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
+  nverts_ = m;
+
+  const std::size_t num_pts =
+    rhs_integrator_->GetIntegrationPoints().NumPoints();
+  sampled_values_ =
+    Kokkos::View<Real**, DeviceMemorySpace>("rhs_sampled", num_pts, 1);
+
+  ierr = KSPCreate(PETSC_COMM_WORLD, &ksp_);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
+  ierr = KSPSetOperators(ksp_, A, A);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
+  ierr = KSPSetFromOptions(ksp_);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
+  ierr = KSPSetUp(ksp_);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
+}
+
+GalerkinProjectionSolver::~GalerkinProjectionSolver()
+{
+  if (ksp_) {
+    KSPDestroy(&ksp_);
   }
-
-  Mat mass;
-  PetscErrorCode ierr = calculateMassMatrix(target_mesh, &mass);
-  CHKERRABORT(PETSC_COMM_WORLD, ierr);
-
-  Vec vec;
-  ierr = calculateLoadVector(target_mesh, source_mesh, intersection,
-                             source_values, &vec);
-  CHKERRABORT(PETSC_COMM_WORLD, ierr);
-
-  Vec x = solveLinearSystem(mass, vec);
-  auto solution_vector = vecToOmegaHReals(x);
-
-  ierr = VecDestroy(&x);
-  CHKERRABORT(PETSC_COMM_WORLD, ierr);
-
-  ierr = MatDestroy(&mass);
-  CHKERRABORT(PETSC_COMM_WORLD, ierr);
-
-  ierr = VecDestroy(&vec);
-  CHKERRABORT(PETSC_COMM_WORLD, ierr);
-
-  return solution_vector;
+  // mat_ is owned by the BilinearFormIntegrator; KSP holds its own reference.
 }
-Omega_h::Reals rhsVectorMI(Omega_h::Mesh& target_mesh,
-                           Omega_h::Mesh& source_mesh,
-                           const IntersectionResults& intersection,
-                           const Omega_h::Reals& source_values)
+
+Omega_h::Reals GalerkinProjectionSolver::Solve(
+  const PointEvaluator<Real>& evaluator, const Field<Real>& source_field) const
 {
-  Vec vec;
-  PetscErrorCode ierr;
-  ierr = calculateLoadVector(target_mesh, source_mesh, intersection,
-                             source_values, &vec);
-  CHKERRABORT(PETSC_COMM_WORLD, ierr);
-
-  auto rhsvector = vecToOmegaHReals(vec);
-
-  ierr = VecDestroy(&vec);
-  CHKERRABORT(PETSC_COMM_WORLD, ierr);
-
-  return rhsvector;
+  evaluator.Evaluate(source_field, MakeRank2View(sampled_values_));
+  return Solve(MakeConstRank2View(sampled_values_));
 }
+
+Omega_h::Reals GalerkinProjectionSolver::Solve(
+  Rank2View<const Real, DeviceMemorySpace> sampled_values) const
+{
+  rhs_integrator_->Assemble(sampled_values);
+  Vec rhs_vector = rhs_integrator_->GetVector();
+
+  Vec solution = nullptr;
+  PetscErrorCode ierr = createSeqVec(PETSC_COMM_WORLD, nverts_, &solution);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
+
+  ierr = KSPSolve(ksp_, rhs_vector, solution);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
+
+  auto result = vecToOmegaHReals(solution);
+
+  ierr = VecDestroy(&solution);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
+
+  return result;
+}
+
 } // namespace pcms

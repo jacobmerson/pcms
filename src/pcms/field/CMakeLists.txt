@@ -3,6 +3,7 @@ find_package(KokkosKernels REQUIRED)
 set(PCMS_FIELD_HEADERS
         field.h
         coordinate_system.h
+        element_dispatch.h
         evaluation_request.h
         field_layout.h
         field_metadata.h

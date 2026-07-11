@@ -7,6 +7,7 @@ set(PCMS_FIELD_TRANSFER_HEADERS
     interpolator.h
     copy.h
     transfer_operator.hpp
+    integration_point_set.hpp
 )
 
 
@@ -17,25 +18,29 @@ set(PCMS_FIELD_TRANSFER_SOURCES
 
 if(PCMS_ENABLE_MESHFIELDS)
   list(APPEND PCMS_FIELD_TRANSFER_HEADERS
-      load_vector_integrator.hpp
       mass_matrix_integrator.hpp)
-  list(APPEND PCMS_FIELD_TRANSFER_SOURCES
-      load_vector_integrator.cpp)
 endif()
 
 if(PCMS_ENABLE_PETSC AND PCMS_ENABLE_MESHFIELDS)
   list(APPEND PCMS_FIELD_TRANSFER_HEADERS
-      calculate_load_vector.hpp
-      calculate_mass_matrix.hpp
+      linear_form_integrator.hpp
+      bilinear_form_integrator.hpp
       conservative_projection_solver.hpp
       omega_h_conservative_projection.hpp
+      omega_h_intersection_rhs_integrator.hpp
+      omega_h_mass_integrator.hpp
+      omega_h_mc_rhs_integrator.hpp
+      omega_h_control_variate_projection.hpp
       coo_assembly_utils.hpp
-      petsc_utils.hpp)
+      petsc_utils.hpp
+      omega_h_form_integrator_utils.hpp)
   list(APPEND PCMS_FIELD_TRANSFER_SOURCES
-      calculate_load_vector.cpp
-      calculate_mass_matrix.cpp
       conservative_projection_solver.cpp
       omega_h_conservative_projection.cpp
+      omega_h_intersection_rhs_integrator.cpp
+      omega_h_mass_integrator.cpp
+      omega_h_mc_rhs_integrator.cpp
+      omega_h_control_variate_projection.cpp
       petsc_utils.cpp
       coo_assembly_utils.cpp)
 endif()
