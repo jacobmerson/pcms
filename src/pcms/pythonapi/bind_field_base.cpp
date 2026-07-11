@@ -8,6 +8,7 @@
 #include "pcms/field/field_layout.h"
 #include "pcms/field/field_metadata.h"
 #include "pcms/field/function_space.h"
+#include "pcms/discretization/discretization/omega_h.hpp"
 #include "pcms/field/data/simple.h"
 #include "pcms/field/layout/uniform_grid.h"
 #include "pcms/field/uniform_grid_binary_field.h"
@@ -223,7 +224,12 @@ void bind_create_field_module(py::module& m)
 
     .def(
       "set_dof_holder_data",
-      [](Field<Real>& self, py::array_t<const Real> arr) {
+      // c_style|forcecast makes pybind materialize a contiguous copy of the
+      // input, so non-contiguous arrays (e.g. a column slice like data[:, i])
+      // are read correctly rather than by walking flat memory with the wrong
+      // stride.
+      [](Field<Real>& self,
+         py::array_t<Real, py::array::c_style | py::array::forcecast> arr) {
         auto buf = arr.request();
         if (buf.ndim != 1) {
           throw std::runtime_error("DOF holder data must be a 1D array");
@@ -293,19 +299,51 @@ void bind_create_field_module(py::module& m)
       py::arg("request"),
       "Create a reusable point evaluator from an EvaluationRequest.")
     .def("get_coordinate_system", &FunctionSpace::GetCoordinateSystem,
-         "Get the coordinate system for this function space");
+         "Get the coordinate system for this function space")
+    .def(
+      "mesh",
+      [](const FunctionSpace& self) -> Omega_h::Mesh& {
+        auto disc = std::dynamic_pointer_cast<const OmegaHDiscretization>(
+          self.GetDiscretization());
+        if (!disc) {
+          throw std::runtime_error(
+            "FunctionSpace::mesh: this function space is not backed by an "
+            "Omega_h mesh");
+        }
+        return disc->GetMesh();
+      },
+      py::return_value_policy::reference,
+      "The Omega_h mesh this function space is defined on (Omega_h backend "
+      "only).");
 
   // Bind LagrangeFunctionSpace as a concrete FunctionSpace subtype.
-  py::class_<LagrangeFunctionSpace, FunctionSpace>(m, "LagrangeFunctionSpace")
+  py::class_<LagrangeFunctionSpace, FunctionSpace> lagrange_space(
+    m, "LagrangeFunctionSpace");
+
+  // Backend selecting the underlying field layout. The conservative-projection
+  // transfer operators require the native Omega_h backend.
+  py::enum_<LagrangeFunctionSpace::Backend>(lagrange_space, "Backend")
+    .value("MeshFields", LagrangeFunctionSpace::Backend::MeshFields,
+           "MeshFields-backed layout (default when MeshFields is enabled)")
+    .value("OmegaH", LagrangeFunctionSpace::Backend::OmegaH,
+           "Native Omega_h Lagrange layout (required by the conservative and "
+           "Monte Carlo projection transfer operators)")
+    .export_values();
+
+  lagrange_space
     .def_static(
       "from_mesh",
       [](Omega_h::Mesh& mesh, int order, int num_components,
-         CoordinateSystem coordinate_system) {
-        return LagrangeFunctionSpace::FromMesh(mesh, order, num_components,
-                                               coordinate_system);
+         CoordinateSystem coordinate_system, std::string global_id_name,
+         LagrangeFunctionSpace::Backend backend) {
+        return LagrangeFunctionSpace::FromMesh(
+          mesh, order, num_components, coordinate_system,
+          std::move(global_id_name), backend);
       },
       py::arg("mesh"), py::arg("order"), py::arg("num_components") = 1,
       py::arg("coordinate_system") = CoordinateSystem::Cartesian,
+      py::arg("global_id_name") = "global",
+      py::arg("backend") = LagrangeFunctionSpace::DefaultBackend,
       "Create a LagrangeFunctionSpace from an Omega_h mesh")
 
     .def_static(

@@ -1,5 +1,9 @@
 
 #include <pybind11/pybind11.h>
+#include "pcms/configuration.h"
+#ifdef PCMS_ENABLE_PETSC
+#include <petscsys.h>
+#endif
 
 namespace py = pybind11;
 
@@ -35,6 +39,26 @@ void bind_mesh_utilities_module(py::module& m);
 } // namespace pcms
 PYBIND11_MODULE(pcms, m)
 {
+#ifdef PCMS_ENABLE_PETSC
+  // The conservative/Monte Carlo projection solvers build PETSc objects on
+  // PETSC_COMM_WORLD, so PETSc must be initialized before any of them are
+  // constructed. Do it once at import time (PetscInitialize brings up MPI if it
+  // is not already running) so callers never manage PETSc state by hand.
+  //
+  // PETSc is intentionally NOT finalized via atexit: PETSc's Kokkos-backed
+  // objects must be torn down before Kokkos::finalize, but Kokkos is owned by
+  // OmegaHLibrary and an atexit hook would run after that library is destroyed.
+  // Leaving PETSc initialized until the process exits avoids that ordering trap
+  // and is harmless (the OS reclaims everything on exit).
+  {
+    PetscBool petsc_initialized = PETSC_FALSE;
+    PetscInitialized(&petsc_initialized);
+    if (!petsc_initialized) {
+      PetscInitializeNoArguments();
+    }
+  }
+#endif
+
   // Bind fundamental types first (coordinate systems, etc.)
   pcms::bind_coordinate_system_module(m);
   pcms::bind_coordinate_module(m);
