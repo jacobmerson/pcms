@@ -12,7 +12,7 @@
 #include "pcms/utility/types.h"
 #include <Kokkos_Core.hpp>
 #include <memory>
-#include <transfer_operator.hpp>
+#include "pcms/transfer/transfer_operator.hpp"
 
 namespace pcms
 {
