@@ -46,7 +46,12 @@ inline constexpr bool is_supported_field_type_v =
 //
 // FunctionSpace is used as the parameter type for operation objects such as
 // Interpolator<T>, so that operations are not coupled to a specific backend.
-class FunctionSpace
+//
+// FunctionSpace inherits enable_shared_from_this because CreateFunction stamps
+// a shared_ptr<const FunctionSpace> into each Function it produces. Concrete
+// spaces must therefore be owned by a shared_ptr (the From* factories return
+// one); calling CreateFunction on a stack-allocated space throws bad_weak_ptr.
+class FunctionSpace : public std::enable_shared_from_this<FunctionSpace>
 {
 public:
   virtual std::shared_ptr<const Discretization> GetDiscretization()
@@ -73,6 +78,16 @@ public:
   template <typename T>
   [[nodiscard]] Field<T> CreateField(std::unique_ptr<FieldData<T>> data) const;
 
+  // Like CreateField, but returns a Function that retains a shared reference to
+  // this space (so it can be evaluated / used to build transfer operators).
+  // Requires this space to be owned by a shared_ptr (see class note).
+  template <typename T>
+  [[nodiscard]] Function<T> CreateFunction(FieldMetadata metadata = {}) const;
+
+  template <typename T>
+  [[nodiscard]] Function<T> CreateFunction(
+    std::unique_ptr<FieldData<T>> data) const;
+
   // Create a point evaluator for the given evaluation request.
   // Compile-time error for unsupported T; runtime error for T or capability
   // unsupported by the concrete backend.
@@ -89,12 +104,17 @@ public:
 protected:
   template <typename T>
   static Field<T> WrapField(std::shared_ptr<const FieldLayout> layout,
-                            std::unique_ptr<FieldData<T>> data,
-                            std::shared_ptr<const FieldEvaluatorFactory<Real>>
-                              evaluator_factory = nullptr)
+                            std::unique_ptr<FieldData<T>> data)
   {
-    return Field<T>(typename Field<T>::CtorKey{}, std::move(layout),
-                    std::move(evaluator_factory), std::move(data));
+    return Field<T>(std::move(layout), std::move(data));
+  }
+
+  template <typename T>
+  static Function<T> WrapFunction(std::shared_ptr<const FieldLayout> layout,
+                                  std::unique_ptr<FieldData<T>> data,
+                                  std::shared_ptr<const FunctionSpace> space)
+  {
+    return Function<T>(std::move(layout), std::move(data), std::move(space));
   }
 
   virtual FieldVariant CreateFieldImpl(Type value_type,
@@ -105,6 +125,24 @@ protected:
   virtual PointEvaluatorVariant CreatePointEvaluatorImpl(
     Type value_type, const EvaluationRequest& request) const = 0;
 };
+
+// Wrap a by-value FunctionSpace (typically the result of a From* factory) in a
+// shared_ptr so it can produce Functions and participate in transfers via
+// AddFunction/CreateTransfer. Ordinary by-value use — CreateField, point
+// evaluation, constructing a transfer operator directly — does not need this;
+// only Function (which retains a shared_ptr<const FunctionSpace>) does.
+//
+//   auto space = pcms::Share(LagrangeFunctionSpace::FromMesh(...));
+//   auto fn = space->CreateFunction<Real>();
+template <typename Space>
+[[nodiscard]] std::shared_ptr<Space> Share(Space&& space)
+{
+  static_assert(
+    std::is_base_of_v<FunctionSpace, std::remove_reference_t<Space>>,
+    "Share expects a FunctionSpace-derived type");
+  return std::make_shared<std::remove_reference_t<Space>>(
+    std::forward<Space>(space));
+}
 
 template <typename T>
 Field<T> FunctionSpace::CreateField(FieldMetadata metadata) const
@@ -123,6 +161,27 @@ Field<T> FunctionSpace::CreateField(std::unique_ptr<FieldData<T>> data) const
     throw pcms_error("FunctionSpace::CreateField: data must not be null");
   }
   return std::get<Field<T>>(CreateFieldImpl(FieldDataVariant{std::move(data)}));
+}
+
+template <typename T>
+Function<T> FunctionSpace::CreateFunction(FieldMetadata metadata) const
+{
+  static_assert(is_supported_field_type_v<T>,
+                "T is not a supported field type");
+  Field<T> field = CreateField<T>(metadata);
+  return WrapFunction<T>(std::move(field.layout_), std::move(field.data_),
+                         shared_from_this());
+}
+
+template <typename T>
+Function<T> FunctionSpace::CreateFunction(
+  std::unique_ptr<FieldData<T>> data) const
+{
+  static_assert(is_supported_field_type_v<T>,
+                "T is not a supported field type");
+  Field<T> field = CreateField<T>(std::move(data));
+  return WrapFunction<T>(std::move(field.layout_), std::move(field.data_),
+                         shared_from_this());
 }
 
 template <typename T>

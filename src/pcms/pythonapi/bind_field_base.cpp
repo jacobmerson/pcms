@@ -286,7 +286,7 @@ void bind_create_field_module(py::module& m)
       },
       "DOF holder coordinates as a 2D numpy array (num_dof_holders × dim)");
 
-  py::class_<FunctionSpace>(m, "FunctionSpace")
+  py::class_<FunctionSpace, std::shared_ptr<FunctionSpace>>(m, "FunctionSpace")
     .def(
       "create_field",
       [](const FunctionSpace& self) { return self.CreateField<Real>(); },
@@ -317,8 +317,9 @@ void bind_create_field_module(py::module& m)
       "only).");
 
   // Bind LagrangeFunctionSpace as a concrete FunctionSpace subtype.
-  py::class_<LagrangeFunctionSpace, FunctionSpace> lagrange_space(
-    m, "LagrangeFunctionSpace");
+  py::class_<LagrangeFunctionSpace, FunctionSpace,
+             std::shared_ptr<LagrangeFunctionSpace>>
+    lagrange_space(m, "LagrangeFunctionSpace");
 
   // Backend selecting the underlying field layout. The conservative-projection
   // transfer operators require the native Omega_h backend.
@@ -386,7 +387,8 @@ void bind_create_field_module(py::module& m)
 
   // Bind PolynomialReconstructionFunctionSpace as a concrete FunctionSpace
   // subtype.
-  py::class_<PolynomialReconstructionFunctionSpace, FunctionSpace>(
+  py::class_<PolynomialReconstructionFunctionSpace, FunctionSpace,
+             std::shared_ptr<PolynomialReconstructionFunctionSpace>>(
     m, "PolynomialReconstructionFunctionSpace")
     .def_static(
       "from_coords",
