@@ -3,32 +3,23 @@
 namespace pcms
 {
 
-FieldLayoutCommunicator& Application::GetLayoutCommunicator(
-  const FieldLayout& layout)
+FieldLayoutCommunicator& Application::GetOrCreateLayoutCommunicator(
+  const FieldLayout& layout, bool participates)
 {
   PCMS_FUNCTION_TIMER;
-  auto it = field_layout_communicators_.find(&layout);
+  const std::string& name = layout.GetName();
+  if (name.empty()) {
+    throw pcms_error(
+      "Application: the field's layout has no name; name it at construction "
+      "(From*(..., layout_name)) before registering it with a coupler");
+  }
+
+  // Fields whose layouts share a name share one GID-exchange communicator.
+  auto it = field_layout_communicators_.find(name);
   if (it != field_layout_communicators_.end()) {
     return *it->second;
-  } else {
-    throw pcms_error("Field added with unregistered layout. Call AddLayout() "
-                     "before AddField().");
   }
-}
 
-const FieldLayout& Application::AddLayout(
-  std::string name, std::shared_ptr<const FieldLayout> layout,
-  bool participates)
-{
-  return AddLayout(std::move(name), std::move(layout),
-                   std::make_unique<GenericFieldExchangePlanner>(),
-                   participates);
-}
-
-const FieldLayout& Application::AddLayout(
-  std::string name, std::shared_ptr<const FieldLayout> layout,
-  std::unique_ptr<FieldExchangePlanner> planner, bool participates)
-{
   MPI_Comm mpi_comm_subset = MPI_COMM_NULL;
   bool own_mpi_comm = false;
   PCMS_ALWAYS_ASSERT((mpi_comm_ == MPI_COMM_NULL) ? (!participates) : true);
@@ -39,21 +30,19 @@ const FieldLayout& Application::AddLayout(
                    &mpi_comm_subset);
     own_mpi_comm = true;
   }
-  layouts_.push_back(std::move(layout));
-  const FieldLayout& layout_ref = *layouts_.back();
 
-  // Check if there's an overlap mask for this layout
   const OverlapMask* overlap_mask = nullptr;
   auto mask_it = layout_overlap_masks_.find(name);
   if (mask_it != layout_overlap_masks_.end()) {
     overlap_mask = mask_it->second.get();
   }
 
-  field_layout_communicators_.emplace(
-    &layout_ref, std::make_unique<FieldLayoutCommunicator>(
-                   name, mpi_comm_subset, redev_, channel_, layout_ref,
-                   std::move(planner), own_mpi_comm, overlap_mask));
-  return layout_ref;
+  auto [it2, inserted] = field_layout_communicators_.emplace(
+    name, std::make_unique<FieldLayoutCommunicator>(
+            name, mpi_comm_subset, redev_, channel_, layout,
+            std::make_unique<GenericFieldExchangePlanner>(), own_mpi_comm,
+            overlap_mask));
+  return *it2->second;
 }
 
 void Application::SetLayoutOverlapMask(

@@ -40,7 +40,12 @@ struct DummyFieldRegistration
 class EmptyFunctionSpace : public FunctionSpace
 {
 public:
-  EmptyFunctionSpace() : layout_(std::make_shared<EmptyFieldLayout>()) {}
+  explicit EmptyFunctionSpace(std::string layout_name = "")
+  {
+    auto layout = std::make_shared<EmptyFieldLayout>();
+    layout->SetName(std::move(layout_name));
+    layout_ = layout;
+  }
 
   [[nodiscard]] std::shared_ptr<const FieldLayout> GetLayout()
     const noexcept override
@@ -130,29 +135,31 @@ ClientState::HandleVariant RegisterField(
   Application& app, std::string name,
   const detail::XGCFieldRegistration<T>& registration, bool participates)
 {
+  // The layout's coupling identity is the field name
+  // not the arbitrary adapter name given at creation.
+  registration.function_space.SetLayoutName(name);
   auto field = registration.function_space.template CreateField<T>(
-    std::make_unique<XGCFieldData<T>>(
-      registration.function_space.GetXGCLayout(), FieldMetadata{},
-      registration.data));
-  app.AddLayout(name, registration.function_space.GetLayout(), participates);
+    std::move(name), std::make_unique<XGCFieldData<T>>(
+                       registration.function_space.GetXGCLayout(),
+                       FieldMetadata{}, registration.data));
   std::unique_ptr<FieldSerializer<T>> serializer =
     std::make_unique<XGCFieldSerializer<T>>(registration.plane_comm,
                                             participates);
-  return ClientState::HandleVariant{app.AddField(
-    std::move(name), std::move(field), std::move(serializer), participates)};
+  return ClientState::HandleVariant{
+    app.AddField(std::move(field), std::move(serializer), participates)};
 }
 
 inline ClientState::HandleVariant RegisterField(
   Application& app, std::string name, const detail::DummyFieldRegistration&,
   bool participates)
 {
-  auto function_space = detail::EmptyFunctionSpace{};
-  app.AddLayout(name, function_space.GetLayout(), participates);
-  auto field = function_space.CreateField<int>(FieldMetadata{});
+  auto function_space = detail::EmptyFunctionSpace{name};
+  auto field =
+    function_space.CreateField<int>(std::move(name), FieldMetadata{});
   std::unique_ptr<FieldSerializer<int>> serializer =
     std::make_unique<FieldSerializer<int>>();
-  return ClientState::HandleVariant{app.AddField(
-    std::move(name), std::move(field), std::move(serializer), participates)};
+  return ClientState::HandleVariant{
+    app.AddField(std::move(field), std::move(serializer), participates)};
 }
 
 } // namespace pcms

@@ -54,21 +54,20 @@ void xgc_coupler_with_overlap(MPI_Comm comm, Omega_h::Mesh& mesh,
 
     application->SetLayoutOverlapMask(ss.str(), std::move(overlap_mask));
 
-    auto function_space = pcms::XGCFunctionSpace(
-      rc, ts::IsModelEntInOverlap{}, static_cast<pcms::LO>(mesh.nverts()));
-
-    application->AddLayout(ss.str(), function_space.GetLayout());
+    auto function_space =
+      pcms::XGCFunctionSpace(rc, ts::IsModelEntInOverlap{},
+                             static_cast<pcms::LO>(mesh.nverts()), ss.str());
 
     auto field = function_space.CreateField<pcms::GO>(
-      std::make_unique<pcms::XGCFieldData<pcms::GO>>(
-        function_space.GetXGCLayout(), pcms::FieldMetadata{},
-        make_array_view(data[i])));
+      ss.str(), std::make_unique<pcms::XGCFieldData<pcms::GO>>(
+                  function_space.GetXGCLayout(), pcms::FieldMetadata{},
+                  make_array_view(data[i])));
 
     std::unique_ptr<pcms::FieldSerializer<GO>> serializer =
       std::make_unique<pcms::XGCFieldSerializer<GO>>(comm);
 
     fields.push_back(
-      application->AddField(ss.str(), std::move(field), std::move(serializer)));
+      application->AddField(std::move(field), std::move(serializer)));
   }
 
   do {
@@ -175,19 +174,17 @@ void omegah_coupler_with_overlap(MPI_Comm comm, Omega_h::Mesh& mesh,
 
     auto factory = pcms::LagrangeFunctionSpace::FromMesh(
       mesh, 1, 1, pcms::CoordinateSystem::Cartesian, numbering,
-      pcms::LagrangeFunctionSpace::Backend::OmegaH);
+      pcms::LagrangeFunctionSpace::Backend::OmegaH, ss.str());
 
-    application->AddLayout(ss.str(), factory.GetLayout());
-
-    auto field =
-      factory.CreateField<GO>(std::make_unique<pcms::SimpleFieldData<GO>>(
-        factory.GetLayout(), pcms::FieldMetadata{}));
+    auto field = factory.CreateField<GO>(
+      ss.str(), std::make_unique<pcms::SimpleFieldData<GO>>(
+                  factory.GetLayout(), pcms::FieldMetadata{}));
 
     std::unique_ptr<pcms::FieldSerializer<GO>> serializer =
       std::make_unique<pcms::FieldSerializer<GO>>();
 
     fields.push_back(
-      application->AddField(ss.str(), std::move(field), std::move(serializer)));
+      application->AddField(std::move(field), std::move(serializer)));
   }
 
   do {

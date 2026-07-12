@@ -119,7 +119,7 @@ void CheckPolynomialReproduction(unsigned degree,
 
   auto fs = pcms::PolynomialReconstructionFunctionSpace::Create(
     coords_view, CoordinateSystem::Cartesian, SweepTestOptions(degree, basis));
-  auto field = fs.CreateField<Real>(pcms::FieldMetadata{});
+  auto field = fs.CreateField<Real>();
   pcms::test::SetField(field.GetData(), *fs.GetLayout(), func);
 
   auto pts = QueryPoints();
@@ -170,8 +170,8 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: same PointEvaluator "
 
   auto fs = pcms::PolynomialReconstructionFunctionSpace::Create(
     coords_view, CoordinateSystem::Cartesian, DefaultTestOptions());
-  auto field_a = fs.CreateField<Real>(pcms::FieldMetadata{});
-  auto field_b = fs.CreateField<Real>(pcms::FieldMetadata{});
+  auto field_a = fs.CreateField<Real>();
+  auto field_b = fs.CreateField<Real>();
 
   pcms::test::SetField(
     field_a.GetData(), *fs.GetLayout(),
@@ -226,7 +226,7 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: Evaluate throws for "
 
   auto fs = pcms::PolynomialReconstructionFunctionSpace::Create(
     coords_view, CoordinateSystem::Cartesian);
-  auto field = fs.CreateField<Real>(pcms::FieldMetadata{});
+  auto field = fs.CreateField<Real>();
 
   auto pts = QueryPoints();
   int n = static_cast<int>(pts.size()) / 2;
@@ -258,7 +258,7 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: default MLSOptions — "
   // Use default options — no third argument
   auto fs = pcms::PolynomialReconstructionFunctionSpace::Create(
     coords_view, CoordinateSystem::Cartesian);
-  auto field = fs.CreateField<Real>(pcms::FieldMetadata{});
+  auto field = fs.CreateField<Real>();
   pcms::test::SetField(
     field.GetData(), *fs.GetLayout(),
     OMEGA_H_LAMBDA(Real, Real) { return Real(1.0); });
@@ -332,7 +332,7 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: radius option is "
 
   auto fs = pcms::PolynomialReconstructionFunctionSpace::Create(
     coords_view, CoordinateSystem::Cartesian, opts);
-  auto field = fs.CreateField<Real>(pcms::FieldMetadata{});
+  auto field = fs.CreateField<Real>();
   std::vector<Real> dof_values{1.0, 5.0};
   field.GetData().SetDOFHolderDataHost(Rank2View<const Real, HostMemorySpace>(
     dof_values.data(), static_cast<pcms::LO>(dof_values.size()), 1));
@@ -374,7 +374,7 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: 3D point clouds preserve "
     REQUIRE(layout_coords(i, 2) == Catch::Approx(src[3 * i + 2]));
   }
 
-  auto field = fs.CreateField<Real>(pcms::FieldMetadata{});
+  auto field = fs.CreateField<Real>();
   std::vector<Real> dof_values(27);
   for (int i = 0; i < 27; ++i) {
     const Real x = src[3 * i + 0];

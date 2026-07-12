@@ -78,15 +78,12 @@ static void test_shared_layout(Omega_h::Library& lib,
                       redev::Partition{partition});
     auto* app = cpl.AddApplication("shared_layout");
     auto factory = pcms::LagrangeFunctionSpace::FromMesh(
-      mesh, 1, 1, pcms::CoordinateSystem::Cartesian);
-    auto layout = factory.GetLayout();
-    app->AddLayout("shared", layout);
+      mesh, 1, 1, pcms::CoordinateSystem::Cartesian, "global",
+      pcms::LagrangeFunctionSpace::DefaultBackend, "shared");
+    auto f1 = app->AddField(factory.CreateField<Real>("field_a"));
     PCMS_ALWAYS_ASSERT(app->GetLayoutCommunicatorCount() == 1);
-    auto f1 = app->AddField("field_a", factory.CreateField<Real>());
-    PCMS_ALWAYS_ASSERT(app->GetLayoutCommunicatorCount() ==
-                       1); // still 1 after adding field
-    auto f2 = app->AddField("field_b", factory.CreateField<Real>());
-    PCMS_ALWAYS_ASSERT(app->GetLayoutCommunicatorCount() == 1); // still 1
+    auto f2 = app->AddField(factory.CreateField<Real>("field_b"));
+    PCMS_ALWAYS_ASSERT(app->GetLayoutCommunicatorCount() == 1); // shared layout
     app->ReceivePhase([&]() {
       f1.Receive();
       f2.Receive();
@@ -100,11 +97,10 @@ static void test_shared_layout(Omega_h::Library& lib,
                       redev::Partition{});
     auto* app = cpl.AddApplication("shared_layout");
     auto factory = pcms::LagrangeFunctionSpace::FromMesh(
-      mesh, 1, 1, pcms::CoordinateSystem::Cartesian);
-    auto layout = factory.GetLayout();
-    app->AddLayout("shared", layout);
-    auto f1 = app->AddField("field_a", factory.CreateField<Real>());
-    auto f2 = app->AddField("field_b", factory.CreateField<Real>());
+      mesh, 1, 1, pcms::CoordinateSystem::Cartesian, "global",
+      pcms::LagrangeFunctionSpace::DefaultBackend, "shared");
+    auto f1 = app->AddField(factory.CreateField<Real>("field_a"));
+    auto f2 = app->AddField(factory.CreateField<Real>("field_b"));
     app->SendPhase([&]() {
       f1.Send();
       f2.Send();
@@ -134,7 +130,7 @@ void client1(MPI_Comm comm, Omega_h::Mesh& mesh, std::string comm_name,
     "id gid", Kokkos::RangePolicy<pcms::HostMemorySpace::execution_space>(0, n),
     [=](int i) { ids[i] = gids[i]; });
 
-  auto field = factory.CreateField<Real>(pcms::FieldMetadata{});
+  auto field = factory.CreateField<Real>();
   field.SetDOFHolderDataHost(
     pcms::Rank2View<const Real, pcms::HostMemorySpace>(ids.data(), n, 1));
 
@@ -161,7 +157,7 @@ void client2(MPI_Comm comm, Omega_h::Mesh& mesh, std::string comm_name,
   auto gids = layout->GetGidsHost();
   const auto n = layout->GetNumOwnedDofHolder();
 
-  auto field = factory.CreateField<Real>(pcms::FieldMetadata{});
+  auto field = factory.CreateField<Real>();
   pcms::FieldLayoutCommunicator layout_comm(comm_name + "2", comm, rdv, channel,
                                             *layout);
   pcms::FieldCommunicator<pcms::Real> field_comm(layout_comm.GetName(),
@@ -224,7 +220,7 @@ void server(MPI_Comm comm, Omega_h::Mesh& mesh, std::string comm_name,
     "id 0", Kokkos::RangePolicy<pcms::HostMemorySpace::execution_space>(0, n),
     [=](int i) { ids[i] = 0; });
 
-  auto field = factory.CreateField<Real>(pcms::FieldMetadata{});
+  auto field = factory.CreateField<Real>();
   pcms::FieldLayoutCommunicator layout_comm1(comm_name + "1", comm, rdv,
                                              channel1, *layout);
   pcms::FieldLayoutCommunicator layout_comm2(comm_name + "2", comm, rdv,

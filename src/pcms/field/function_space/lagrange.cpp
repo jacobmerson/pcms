@@ -66,7 +66,7 @@ LagrangeFunctionSpace::LagrangeFunctionSpace(
 LagrangeFunctionSpace LagrangeFunctionSpace::FromMesh(
   Omega_h::Mesh& mesh, int order, int num_components,
   CoordinateSystem coordinate_system, std::string global_id_name,
-  Backend backend)
+  Backend backend, std::string layout_name)
 {
   // https://github.com/SCOREC/meshFields/issues/88
   if (backend == Backend::MeshFields && order == 0) {
@@ -89,6 +89,7 @@ LagrangeFunctionSpace LagrangeFunctionSpace::FromMesh(
     auto mesh_layout = std::make_shared<MeshFieldsAdapterLayout>(
       mesh, nodes_per_dim, num_components, coordinate_system,
       std::move(global_id_name));
+    mesh_layout->SetName(layout_name);
     auto eval_factory =
       std::make_shared<MeshFieldsEvaluatorFactory<Real>>(mesh_layout);
     return LagrangeFunctionSpace(
@@ -126,6 +127,7 @@ LagrangeFunctionSpace LagrangeFunctionSpace::FromMesh(
   }
   auto layout = std::make_shared<OmegaHLagrangeLayout>(
     mesh, order, num_components, coordinate_system, std::move(global_id_name));
+  layout->SetName(std::move(layout_name));
   auto eval_factory =
     std::make_shared<OmegaHLagrangeEvaluatorFactory<Real>>(layout);
   return LagrangeFunctionSpace(
@@ -146,7 +148,7 @@ LagrangeFunctionSpace LagrangeFunctionSpace::FromMesh(
 LagrangeFunctionSpace LagrangeFunctionSpace::FromMesh(
   Omega_h::Mesh& mesh, int order, int num_components,
   CoordinateSystem coordinate_system, Omega_h::Read<Omega_h::I8> owned_mask,
-  std::string global_id_name, Backend backend)
+  std::string global_id_name, Backend backend, std::string layout_name)
 {
   if (backend == Backend::MeshFields) {
     throw pcms_error(
@@ -161,6 +163,7 @@ LagrangeFunctionSpace LagrangeFunctionSpace::FromMesh(
   auto layout = std::make_shared<OmegaHLagrangeLayout>(
     mesh, order, num_components, coordinate_system, std::move(owned_mask),
     std::move(global_id_name));
+  layout->SetName(std::move(layout_name));
   auto eval_factory =
     std::make_shared<OmegaHLagrangeEvaluatorFactory<Real>>(layout);
   return LagrangeFunctionSpace(
@@ -180,7 +183,7 @@ LagrangeFunctionSpace LagrangeFunctionSpace::FromMesh(
 
 LagrangeFunctionSpace LagrangeFunctionSpace::FromUniformGrid(
   const UniformGrid<2>& grid, int num_components,
-  CoordinateSystem coordinate_system, int order)
+  CoordinateSystem coordinate_system, int order, std::string layout_name)
 {
   if (order != 0 && order != 1) {
     throw std::invalid_argument("LagrangeFunctionSpace::FromUniformGrid: only "
@@ -188,6 +191,7 @@ LagrangeFunctionSpace LagrangeFunctionSpace::FromUniformGrid(
   }
   auto ug_layout = std::make_shared<UniformGridFieldLayout<2>>(
     grid, num_components, coordinate_system, order);
+  ug_layout->SetName(std::move(layout_name));
   auto eval_factory =
     std::make_shared<UniformGridEvaluatorFactory<2>>(ug_layout);
   return LagrangeFunctionSpace(
@@ -207,7 +211,7 @@ LagrangeFunctionSpace LagrangeFunctionSpace::FromUniformGrid(
 
 LagrangeFunctionSpace LagrangeFunctionSpace::FromUniformGrid(
   const UniformGrid<3>& grid, int num_components,
-  CoordinateSystem coordinate_system, int order)
+  CoordinateSystem coordinate_system, int order, std::string layout_name)
 {
   if (order != 0 && order != 1) {
     throw std::invalid_argument("LagrangeFunctionSpace::FromUniformGrid: only "
@@ -215,6 +219,7 @@ LagrangeFunctionSpace LagrangeFunctionSpace::FromUniformGrid(
   }
   auto ug_layout = std::make_shared<UniformGridFieldLayout<3>>(
     grid, num_components, coordinate_system, order);
+  ug_layout->SetName(std::move(layout_name));
   auto eval_factory =
     std::make_shared<UniformGridEvaluatorFactory<3>>(ug_layout);
   return LagrangeFunctionSpace(

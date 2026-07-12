@@ -31,9 +31,39 @@ public:
   void Receive(redev::Mode mode = redev::Mode::Synchronous) const;
   [[nodiscard]] Field<T>& GetField() const;
 
+  [[nodiscard]] const std::string& GetName() const noexcept { return name_; }
+
 private:
   Application* app_;
   std::string name_;
+};
+
+// FunctionHandle is a FieldHandle that additionally carries the function space,
+// so it can be evaluated / used to build transfer operators. Only AddFunction
+// produces one; CreateTransfer accepts FunctionHandle (not FieldHandle), which
+// makes passing a comm-only field to a transfer a compile error.
+template <typename T>
+class FunctionHandle : public FieldHandle<T>
+{
+public:
+  FunctionHandle(Application* app, std::string name,
+                 std::shared_ptr<const FunctionSpace> space)
+    : FieldHandle<T>(app, std::move(name)), space_(std::move(space))
+  {
+  }
+
+  [[nodiscard]] const FunctionSpace& GetSpace() const noexcept
+  {
+    return *space_;
+  }
+  [[nodiscard]] std::shared_ptr<const FunctionSpace> GetSpacePtr()
+    const noexcept
+  {
+    return space_;
+  }
+
+private:
+  std::shared_ptr<const FunctionSpace> space_;
 };
 
 class Application
@@ -50,26 +80,32 @@ public:
     PCMS_FUNCTION_TIMER;
   }
 
-  const FieldLayout& AddLayout(std::string name,
-                               std::shared_ptr<const FieldLayout> layout,
-                               bool participates = true);
-  const FieldLayout& AddLayout(std::string name,
-                               std::shared_ptr<const FieldLayout> layout,
-                               std::unique_ptr<FieldExchangePlanner> planner,
-                               bool participates = true);
-
-  // Set the overlap mask for a specific layout by name
+  // Set the overlap mask for a field's layout by name. Must be set before the
+  // AddField/AddFunction that first creates that layout's communicator.
   void SetLayoutOverlapMask(const std::string& layout_name,
                             std::unique_ptr<OverlapMask> overlap_mask);
 
+  // Register a comm-only field, identified by its own name. The layout's
+  // communicator is created on first use and shared by any later
+  // field/function whose layout has the same name.
   template <typename T>
-  FieldHandle<T> AddField(std::string name, Field<T>&& field,
-                          bool participates = true);
+  FieldHandle<T> AddField(Field<T>&& field, bool participates = true);
 
   template <typename T>
-  FieldHandle<T> AddField(std::string name, Field<T>&& field,
+  FieldHandle<T> AddField(Field<T>&& field,
                           std::unique_ptr<FieldSerializer<T>> serializer,
                           bool participates = true);
+
+  // Register a transferable field: like AddField but retains the function space
+  // (via the stored Function) and returns a FunctionHandle usable in transfers.
+  template <typename T>
+  FunctionHandle<T> AddFunction(Function<T>&& function,
+                                bool participates = true);
+
+  template <typename T>
+  FunctionHandle<T> AddFunction(Function<T>&& function,
+                                std::unique_ptr<FieldSerializer<T>> serializer,
+                                bool participates = true);
 
   void SendField(const std::string& name,
                  redev::Mode mode = redev::Mode::Synchronous)
@@ -144,20 +180,29 @@ public:
   [[nodiscard]] Field<T>& GetField(const std::string& name);
 
 private:
-  FieldLayoutCommunicator& GetLayoutCommunicator(const FieldLayout& layout);
+  // Returns the communicator for `layout`, creating it (MPI split + overlap
+  // mask lookup + planner) on first use and reusing it for any later
+  // field/function whose layout has the same name.
+  FieldLayoutCommunicator& GetOrCreateLayoutCommunicator(
+    const FieldLayout& layout, bool participates);
+
+  template <typename T>
+  void RegisterFieldCommunicator(Field<T>& field_obj,
+                                 std::unique_ptr<FieldSerializer<T>> serializer,
+                                 bool participates);
 
   MPI_Comm mpi_comm_;
   redev::Redev& redev_;
   redev::Channel channel_;
-  std::vector<std::shared_ptr<const FieldLayout>> layouts_;
   std::map<std::string, FieldVariant> fields_;
+  std::map<std::string, FunctionVariant> functions_;
   std::vector<std::unique_ptr<FieldLayoutCommunicator>>
     owned_field_layout_communicators_;
   // map is used rather than unordered_map because we give pointers to the
   // internal data and rehash of unordered_map can cause pointer invalidation.
   // map is less cache friendly, but pointers are not invalidated.
   std::map<std::string, FieldCommunicator2Ptr> field_communicators_;
-  std::map<const FieldLayout*, std::unique_ptr<FieldLayoutCommunicator>>
+  std::map<std::string, std::unique_ptr<FieldLayoutCommunicator>>
     field_layout_communicators_;
   std::map<std::string, std::unique_ptr<OverlapMask>> layout_overlap_masks_;
 };
@@ -238,47 +283,106 @@ pcms::Field<T>& pcms::FieldHandle<T>::GetField() const
 template <typename T>
 pcms::Field<T>& pcms::Application::GetField(const std::string& name)
 {
-  auto* field = std::get_if<Field<T>>(&detail::find_or_error(name, fields_));
-  if (field == nullptr) {
-    throw pcms_error("Field stored with different type than requested");
+  auto field_it = fields_.find(name);
+  if (field_it != fields_.end()) {
+    auto* field = std::get_if<Field<T>>(&field_it->second);
+    if (field == nullptr) {
+      throw pcms_error("Field stored with different type than requested");
+    }
+    return *field;
   }
-  return *field;
+  auto fn_it = functions_.find(name);
+  if (fn_it != functions_.end()) {
+    auto* function = std::get_if<Function<T>>(&fn_it->second);
+    if (function == nullptr) {
+      throw pcms_error("Field stored with different type than requested");
+    }
+    return *function;
+  }
+  throw pcms_error("Field '" + name + "' not found");
 }
 
 template <typename T>
-pcms::FieldHandle<T> pcms::Application::AddField(std::string name,
-                                                 Field<T>&& field,
+void pcms::Application::RegisterFieldCommunicator(
+  Field<T>& field_obj, std::unique_ptr<FieldSerializer<T>> serializer,
+  bool participates)
+{
+  const std::string& name = field_obj.GetName();
+  FieldLayoutCommunicator& layout_communicator =
+    GetOrCreateLayoutCommunicator(field_obj.GetLayout(), participates);
+  FieldCommunicator2Ptr field_communicator =
+    std::make_unique<FieldCommunicator<T>>(name, layout_communicator, field_obj,
+                                           std::move(serializer));
+  auto [it, inserted] =
+    field_communicators_.emplace(name, std::move(field_communicator));
+  if (!inserted) {
+    throw pcms_error("Field with this name already exists");
+  }
+}
+
+template <typename T>
+pcms::FieldHandle<T> pcms::Application::AddField(Field<T>&& field,
                                                  bool participates)
 {
-  return AddField(std::move(name), std::move(field),
-                  std::make_unique<FieldSerializer<T>>(), participates);
+  return AddField(std::move(field), std::make_unique<FieldSerializer<T>>(),
+                  participates);
 }
 
 template <typename T>
 pcms::FieldHandle<T> pcms::Application::AddField(
-  std::string name, Field<T>&& field,
-  std::unique_ptr<FieldSerializer<T>> serializer, bool participates)
+  Field<T>&& field, std::unique_ptr<FieldSerializer<T>> serializer,
+  bool participates)
 {
   PCMS_FUNCTION_TIMER;
-  (void)participates;
+  std::string name = field.GetName();
+  if (name.empty()) {
+    throw pcms_error("Application::AddField: field has no name");
+  }
   auto [field_it, field_inserted] = fields_.emplace(name, std::move(field));
   if (!field_inserted) {
     throw pcms_error("Field with this name already exists");
   }
-  auto& field_obj = std::get<Field<T>>(field_it->second);
-  const FieldLayout& layout = field_obj.GetLayout();
-  FieldLayoutCommunicator& layout_communicator = GetLayoutCommunicator(layout);
-  FieldCommunicator2Ptr field_communicator =
-    std::make_unique<FieldCommunicator<T>>(name, layout_communicator, field_obj,
-                                           std::move(serializer));
-
-  auto [it, inserted] =
-    field_communicators_.emplace(name, std::move(field_communicator));
-  if (!inserted) {
+  try {
+    RegisterFieldCommunicator<T>(std::get<Field<T>>(field_it->second),
+                                 std::move(serializer), participates);
+  } catch (...) {
     fields_.erase(field_it);
-    throw pcms_error("Field with this name already exists");
+    throw;
   }
   return FieldHandle<T>{this, std::move(name)};
+}
+
+template <typename T>
+pcms::FunctionHandle<T> pcms::Application::AddFunction(Function<T>&& function,
+                                                       bool participates)
+{
+  return AddFunction(std::move(function),
+                     std::make_unique<FieldSerializer<T>>(), participates);
+}
+
+template <typename T>
+pcms::FunctionHandle<T> pcms::Application::AddFunction(
+  Function<T>&& function, std::unique_ptr<FieldSerializer<T>> serializer,
+  bool participates)
+{
+  PCMS_FUNCTION_TIMER;
+  std::string name = function.GetName();
+  if (name.empty()) {
+    throw pcms_error("Application::AddFunction: function has no name");
+  }
+  auto space = function.GetSpacePtr();
+  auto [fn_it, fn_inserted] = functions_.emplace(name, std::move(function));
+  if (!fn_inserted) {
+    throw pcms_error("Field with this name already exists");
+  }
+  try {
+    RegisterFieldCommunicator<T>(std::get<Function<T>>(fn_it->second),
+                                 std::move(serializer), participates);
+  } catch (...) {
+    functions_.erase(fn_it);
+    throw;
+  }
+  return FunctionHandle<T>{this, std::move(name), std::move(space)};
 }
 
 #endif // COUPLER2_H_

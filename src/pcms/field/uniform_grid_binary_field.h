@@ -41,7 +41,7 @@ CreateUniformGridBinaryField(Omega_h::Mesh& mesh, const UniformGrid<Dim>& grid)
   auto layout = std::dynamic_pointer_cast<const UniformGridFieldLayout<Dim>>(
     function_space.GetLayout());
   PCMS_ALWAYS_ASSERT(layout != nullptr);
-  auto field = function_space.template CreateField<Real>(FieldMetadata{});
+  auto field = function_space.template CreateField<Real>("", FieldMetadata{});
 
   auto coord_view = layout->GetDOFHolderCoordinates();
   auto coords = coord_view.GetValues();

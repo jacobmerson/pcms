@@ -7,6 +7,7 @@
 #include "pcms/utility/memory_spaces.h"
 #include "pcms/utility/types.h"
 #include <memory>
+#include <string>
 #include <utility>
 #include <variant>
 
@@ -37,6 +38,9 @@ public:
 
   const FieldLayout& GetLayout() const { return *layout_; }
 
+  // Optional identifier for this field. Empty by default; set at creation.
+  [[nodiscard]] const std::string& GetName() const noexcept { return name_; }
+
   Rank2View<const T, HostMemorySpace> GetDOFHolderDataHost() const
   {
     return data_->GetDOFHolderDataHost();
@@ -58,17 +62,18 @@ public:
   }
 
 protected:
-  Field(std::shared_ptr<const FieldLayout> layout,
+  Field(std::string name, std::shared_ptr<const FieldLayout> layout,
         std::unique_ptr<FieldData<T>> data)
-    : layout_(std::move(layout)), data_(std::move(data))
+    : name_(std::move(name)), layout_(std::move(layout)), data_(std::move(data))
   {
   }
 
-  // FunctionSpace constructs Fields (via WrapField) and moves a Field's layout
-  // and data out to build a Function (via CreateFunction).
+  // FunctionSpace constructs Fields (via WrapField) and moves a Field's name,
+  // layout and data out to build a Function (via CreateFunction).
   friend class FunctionSpace;
 
 private:
+  std::string name_;
   std::shared_ptr<const FieldLayout> layout_;
   std::unique_ptr<FieldData<T>> data_;
 };
@@ -96,10 +101,11 @@ public:
   }
 
 protected:
-  Function(std::shared_ptr<const FieldLayout> layout,
+  Function(std::string name, std::shared_ptr<const FieldLayout> layout,
            std::unique_ptr<FieldData<T>> data,
            std::shared_ptr<const FunctionSpace> space)
-    : Field<T>(std::move(layout), std::move(data)), space_(std::move(space))
+    : Field<T>(std::move(name), std::move(layout), std::move(data)),
+      space_(std::move(space))
   {
   }
 

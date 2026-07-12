@@ -17,10 +17,20 @@ class XGCFunctionSpace : public FunctionSpace
 public:
   XGCFunctionSpace(const ReverseClassificationVertex& reverse_classification,
                    std::function<int8_t(int, int)> in_overlap,
-                   LO num_plane_nodes)
+                   LO num_plane_nodes, std::string layout_name = "")
     : layout_(std::make_shared<XGCFieldLayout>(
         reverse_classification, std::move(in_overlap), num_plane_nodes))
   {
+    layout_->SetName(std::move(layout_name));
+  }
+
+  // Set the layout name after construction. Const because the name is metadata
+  // that does not affect the (const) discretization; the layout pointee is
+  // mutable through the shared_ptr. Used by the capi, which learns a field's
+  // name only when it is added, after the space is built.
+  void SetLayoutName(std::string name) const
+  {
+    layout_->SetName(std::move(name));
   }
 
   [[nodiscard]] std::shared_ptr<const FieldLayout> GetLayout()
@@ -82,7 +92,7 @@ public:
   }
 
 private:
-  std::shared_ptr<const XGCFieldLayout> layout_;
+  std::shared_ptr<XGCFieldLayout> layout_;
 };
 
 } // namespace pcms

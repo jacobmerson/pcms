@@ -64,8 +64,8 @@ TEST_CASE("PolynomialReconstructionFunctionSpace fields share layout")
 
   auto factory = pcms::PolynomialReconstructionFunctionSpace::Create(
     coords_view, CoordinateSystem::Cartesian);
-  auto source = factory.CreateField<Real>(pcms::FieldMetadata{});
-  auto target = factory.CreateField<Real>(pcms::FieldMetadata{});
+  auto source = factory.CreateField<Real>();
+  auto target = factory.CreateField<Real>();
 
   REQUIRE(&source.GetLayout() == &target.GetLayout());
 }
@@ -78,7 +78,7 @@ TEST_CASE("PolynomialReconstructionFunctionSpace point-cloud field set/get DOF "
 
   auto field = pcms::PolynomialReconstructionFunctionSpace::Create(
                  coords_view, CoordinateSystem::Cartesian)
-                 .CreateField<Real>(pcms::FieldMetadata{});
+                 .CreateField<Real>();
 
   std::vector<Real> data{1.0, 2.0, 3.0, 4.0};
   Rank2View<const Real, HostMemorySpace> data_view(
@@ -100,7 +100,7 @@ TEST_CASE("PolynomialReconstructionFunctionSpace point-cloud field serialize / "
 
   auto factory = pcms::PolynomialReconstructionFunctionSpace::Create(
     coords_view, CoordinateSystem::Cartesian);
-  auto field = factory.CreateField<Real>(pcms::FieldMetadata{});
+  auto field = factory.CreateField<Real>();
 
   std::vector<Real> data{5.0, 6.0, 7.0, 8.0};
   Rank2View<const Real, HostMemorySpace> data_view(
@@ -119,7 +119,7 @@ TEST_CASE("PolynomialReconstructionFunctionSpace field keeps layout alive "
   auto field = [&]() {
     auto factory = pcms::PolynomialReconstructionFunctionSpace::Create(
       coords_view, CoordinateSystem::Cartesian);
-    return factory.CreateField<Real>(pcms::FieldMetadata{});
+    return factory.CreateField<Real>();
   }();
 
   auto point_cloud_layout =

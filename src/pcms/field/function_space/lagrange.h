@@ -44,22 +44,25 @@ public:
   [[nodiscard]] static LagrangeFunctionSpace FromMesh(
     Omega_h::Mesh& mesh, int order, int num_components,
     CoordinateSystem coordinate_system, std::string global_id_name = "global",
-    Backend backend = DefaultBackend);
+    Backend backend = DefaultBackend, std::string layout_name = "");
 
   [[nodiscard]] static LagrangeFunctionSpace FromMesh(
     Omega_h::Mesh& mesh, int order, int num_components,
     CoordinateSystem coordinate_system, Omega_h::Read<Omega_h::I8> owned_mask,
-    std::string global_id_name = "global", Backend backend = DefaultBackend);
+    std::string global_id_name = "global", Backend backend = DefaultBackend,
+    std::string layout_name = "");
 
   // Structured uniform grid — order-1 H1-conforming nodal field on a regular
   // grid
   [[nodiscard]] static LagrangeFunctionSpace FromUniformGrid(
     const UniformGrid<2>& grid, int num_components,
-    CoordinateSystem coordinate_system, int order = 1);
+    CoordinateSystem coordinate_system, int order = 1,
+    std::string layout_name = "");
 
   [[nodiscard]] static LagrangeFunctionSpace FromUniformGrid(
     const UniformGrid<3>& grid, int num_components,
-    CoordinateSystem coordinate_system, int order = 1);
+    CoordinateSystem coordinate_system, int order = 1,
+    std::string layout_name = "");
 
   [[nodiscard]] std::shared_ptr<const FieldLayout> GetLayout()
     const noexcept override;

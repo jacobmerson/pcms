@@ -66,27 +66,31 @@ public:
 
   virtual ~FunctionSpace() noexcept = default;
 
-  // Create a new field with freshly allocated data for this function space.
-  // Compile-time error for unsupported T; runtime error for T unsupported by
-  // the concrete backend.
+  // Create a new named field with freshly allocated data for this function
+  // space. The name is optional (empty by default) and identifies the field to
+  // consumers such as a coupler. Compile-time error for unsupported T; runtime
+  // error for T unsupported by the concrete backend.
   template <typename T>
-  [[nodiscard]] Field<T> CreateField(FieldMetadata metadata = {}) const;
+  [[nodiscard]] Field<T> CreateField(std::string name = "",
+                                     FieldMetadata metadata = {}) const;
 
   // Expert API: wrap externally constructed field data into a Field for this
   // function space. The concrete function space validates backend-specific
   // field-data type and storage size compatibility.
   template <typename T>
-  [[nodiscard]] Field<T> CreateField(std::unique_ptr<FieldData<T>> data) const;
+  [[nodiscard]] Field<T> CreateField(std::string name,
+                                     std::unique_ptr<FieldData<T>> data) const;
 
   // Like CreateField, but returns a Function that retains a shared reference to
   // this space (so it can be evaluated / used to build transfer operators).
   // Requires this space to be owned by a shared_ptr (see class note).
   template <typename T>
-  [[nodiscard]] Function<T> CreateFunction(FieldMetadata metadata = {}) const;
+  [[nodiscard]] Function<T> CreateFunction(std::string name = "",
+                                           FieldMetadata metadata = {}) const;
 
   template <typename T>
   [[nodiscard]] Function<T> CreateFunction(
-    std::unique_ptr<FieldData<T>> data) const;
+    std::string name, std::unique_ptr<FieldData<T>> data) const;
 
   // Create a point evaluator for the given evaluation request.
   // Compile-time error for unsupported T; runtime error for T or capability
@@ -106,15 +110,17 @@ protected:
   static Field<T> WrapField(std::shared_ptr<const FieldLayout> layout,
                             std::unique_ptr<FieldData<T>> data)
   {
-    return Field<T>(std::move(layout), std::move(data));
+    return Field<T>(std::string{}, std::move(layout), std::move(data));
   }
 
   template <typename T>
-  static Function<T> WrapFunction(std::shared_ptr<const FieldLayout> layout,
+  static Function<T> WrapFunction(std::string name,
+                                  std::shared_ptr<const FieldLayout> layout,
                                   std::unique_ptr<FieldData<T>> data,
                                   std::shared_ptr<const FunctionSpace> space)
   {
-    return Function<T>(std::move(layout), std::move(data), std::move(space));
+    return Function<T>(std::move(name), std::move(layout), std::move(data),
+                       std::move(space));
   }
 
   virtual FieldVariant CreateFieldImpl(Type value_type,
@@ -145,43 +151,52 @@ template <typename Space>
 }
 
 template <typename T>
-Field<T> FunctionSpace::CreateField(FieldMetadata metadata) const
+Field<T> FunctionSpace::CreateField(std::string name,
+                                    FieldMetadata metadata) const
 {
   static_assert(is_supported_field_type_v<T>,
                 "T is not a supported field type");
-  return std::get<Field<T>>(CreateFieldImpl(TypeEnumFromType<T>(), metadata));
+  Field<T> field =
+    std::get<Field<T>>(CreateFieldImpl(TypeEnumFromType<T>(), metadata));
+  field.name_ = std::move(name);
+  return field;
 }
 
 template <typename T>
-Field<T> FunctionSpace::CreateField(std::unique_ptr<FieldData<T>> data) const
+Field<T> FunctionSpace::CreateField(std::string name,
+                                    std::unique_ptr<FieldData<T>> data) const
 {
   static_assert(is_supported_field_type_v<T>,
                 "T is not a supported field type");
   if (!data) {
     throw pcms_error("FunctionSpace::CreateField: data must not be null");
   }
-  return std::get<Field<T>>(CreateFieldImpl(FieldDataVariant{std::move(data)}));
+  Field<T> field =
+    std::get<Field<T>>(CreateFieldImpl(FieldDataVariant{std::move(data)}));
+  field.name_ = std::move(name);
+  return field;
 }
 
 template <typename T>
-Function<T> FunctionSpace::CreateFunction(FieldMetadata metadata) const
+Function<T> FunctionSpace::CreateFunction(std::string name,
+                                          FieldMetadata metadata) const
 {
   static_assert(is_supported_field_type_v<T>,
                 "T is not a supported field type");
-  Field<T> field = CreateField<T>(metadata);
-  return WrapFunction<T>(std::move(field.layout_), std::move(field.data_),
-                         shared_from_this());
+  Field<T> field = CreateField<T>(std::move(name), metadata);
+  return WrapFunction<T>(std::move(field.name_), std::move(field.layout_),
+                         std::move(field.data_), shared_from_this());
 }
 
 template <typename T>
 Function<T> FunctionSpace::CreateFunction(
-  std::unique_ptr<FieldData<T>> data) const
+  std::string name, std::unique_ptr<FieldData<T>> data) const
 {
   static_assert(is_supported_field_type_v<T>,
                 "T is not a supported field type");
-  Field<T> field = CreateField<T>(std::move(data));
-  return WrapFunction<T>(std::move(field.layout_), std::move(field.data_),
-                         shared_from_this());
+  Field<T> field = CreateField<T>(std::move(name), std::move(data));
+  return WrapFunction<T>(std::move(field.name_), std::move(field.layout_),
+                         std::move(field.data_), shared_from_this());
 }
 
 template <typename T>

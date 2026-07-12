@@ -30,7 +30,7 @@ TEST_CASE("evaluate linear 2d omega_h_field")
                                  100, 0, false);
   auto factory = pcms::LagrangeFunctionSpace::FromMesh(
     mesh, 1, 1, pcms::CoordinateSystem::Cartesian);
-  auto field = factory.CreateField<Real>(pcms::FieldMetadata{});
+  auto field = factory.CreateField<Real>();
 
   pcms::test::SetField(
     field.GetData(), *factory.GetLayout(),
@@ -75,7 +75,7 @@ TEST_CASE("evaluate quadratic 2d meshfields_field")
     });
 
   Omega_h::HostWrite<Real> test_f_host(test_f);
-  auto field = factory.CreateField<Real>(pcms::FieldMetadata{});
+  auto field = factory.CreateField<Real>();
   field.GetData().SetDOFHolderDataHost(
     pcms::Rank2View<const Real, pcms::HostMemorySpace>(test_f_host.data(),
                                                        test_f_host.size(), 1));

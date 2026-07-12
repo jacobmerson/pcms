@@ -51,17 +51,17 @@ void xgc_coupler(MPI_Comm comm, Omega_h::Mesh& mesh, std::string_view cpn_file)
     // FIXME: The current C/Fortran proxy API couples layout registration to
     // field registration, so each XGC plane is registered as a separate layout
     // communicator even though the layouts are geometrically identical.
-    auto function_space = pcms::XGCFunctionSpace(
-      rc, ts::IsModelEntInOverlap{}, static_cast<pcms::LO>(mesh.nverts()));
+    auto function_space =
+      pcms::XGCFunctionSpace(rc, ts::IsModelEntInOverlap{},
+                             static_cast<pcms::LO>(mesh.nverts()), ss.str());
     auto field = function_space.CreateField<pcms::GO>(
-      std::make_unique<pcms::XGCFieldData<pcms::GO>>(
-        function_space.GetXGCLayout(), pcms::FieldMetadata{},
-        make_array_view(data[i])));
-    application->AddLayout(ss.str(), function_space.GetLayout());
+      ss.str(), std::make_unique<pcms::XGCFieldData<pcms::GO>>(
+                  function_space.GetXGCLayout(), pcms::FieldMetadata{},
+                  make_array_view(data[i])));
     std::unique_ptr<pcms::FieldSerializer<GO>> serializer =
       std::make_unique<pcms::XGCFieldSerializer<GO>>(comm);
     fields.push_back(
-      application->AddField(ss.str(), std::move(field), std::move(serializer)));
+      application->AddField(std::move(field), std::move(serializer)));
   }
 
   do {
@@ -172,15 +172,14 @@ void omegah_coupler(MPI_Comm comm, Omega_h::Mesh& mesh,
     // communicator even though the layouts are geometrically identical.
     auto factory = pcms::LagrangeFunctionSpace::FromMesh(
       mesh, 1, 1, pcms::CoordinateSystem::Cartesian, numbering,
-      pcms::LagrangeFunctionSpace::Backend::OmegaH);
-    application->AddLayout(ss.str(), factory.GetLayout());
-    auto field =
-      factory.CreateField<GO>(std::make_unique<pcms::SimpleFieldData<GO>>(
-        factory.GetLayout(), pcms::FieldMetadata{}));
+      pcms::LagrangeFunctionSpace::Backend::OmegaH, ss.str());
+    auto field = factory.CreateField<GO>(
+      ss.str(), std::make_unique<pcms::SimpleFieldData<GO>>(
+                  factory.GetLayout(), pcms::FieldMetadata{}));
     std::unique_ptr<pcms::FieldSerializer<GO>> serializer =
       std::make_unique<pcms::FieldSerializer<GO>>();
     fields.push_back(
-      application->AddField(ss.str(), std::move(field), std::move(serializer)));
+      application->AddField(std::move(field), std::move(serializer)));
   }
   do {
     application->ReceivePhase([&]() {

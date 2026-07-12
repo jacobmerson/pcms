@@ -2,6 +2,7 @@
 #define PCMS_FIELD_LAYOUT_H
 #include <map>
 #include <memory>
+#include <string>
 #include <vector>
 #include "pcms/discretization/discretization.h"
 #include "pcms/utility/types.h"
@@ -19,6 +20,12 @@ using ReversePartitionMap = std::map<pcms::LO, std::vector<pcms::LO>>;
 class FieldLayout
 {
 public:
+  // Optional identifier for this layout. Set once at construction (via a From*
+  // factory) and empty by default. Consumers that need to identify a layout by
+  // a stable name use it; it carries no meaning within the field layer itself.
+  [[nodiscard]] const std::string& GetName() const noexcept { return name_; }
+  void SetName(std::string name) { name_ = std::move(name); }
+
   virtual std::shared_ptr<const Discretization> GetDiscretization()
     const noexcept = 0;
 
@@ -77,6 +84,7 @@ protected:
   void BuildGlobalToLocalPermutation();
 
 private:
+  std::string name_;
   Kokkos::View<LO*, HostMemorySpace> global_to_local_host_;
   Kokkos::View<LO*, DeviceMemorySpace> global_to_local_;
 };

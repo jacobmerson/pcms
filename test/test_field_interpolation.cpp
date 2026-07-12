@@ -27,8 +27,8 @@ TEST_CASE("interpolate linear 2d omega_h_field")
     Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 100, 100, 0, false);
   auto factory = pcms::LagrangeFunctionSpace::FromMesh(
     mesh, 1, 1, pcms::CoordinateSystem::Cartesian);
-  auto field = factory.CreateField<Real>(pcms::FieldMetadata{});
-  auto interpolated = factory.CreateField<Real>(pcms::FieldMetadata{});
+  auto field = factory.CreateField<Real>();
+  auto interpolated = factory.CreateField<Real>();
   pcms::test::SetField(
     field, OMEGA_H_LAMBDA(Real x, Real y) { return -0.3 * x + 0.5 * y; });
 
@@ -80,8 +80,8 @@ TEST_CASE("interpolate quadratic 2d meshfields_field")
     });
 
   Omega_h::HostWrite<Real> test_f_host(test_f);
-  auto field = factory2.CreateField<Real>(pcms::FieldMetadata{});
-  auto interpolated = factory2.CreateField<Real>(pcms::FieldMetadata{});
+  auto field = factory2.CreateField<Real>();
+  auto interpolated = factory2.CreateField<Real>();
   field.SetDOFHolderDataHost(pcms::Rank2View<const Real, pcms::HostMemorySpace>(
     test_f_host.data(), test_f_host.size(), 1));
 
@@ -126,8 +126,8 @@ TEST_CASE("Interpolator: construct once, apply twice with different data")
   auto factory = pcms::LagrangeFunctionSpace::FromMesh(
     mesh, 1, 1, pcms::CoordinateSystem::Cartesian);
 
-  auto source = factory.CreateField<Real>(pcms::FieldMetadata{});
-  auto target = factory.CreateField<Real>(pcms::FieldMetadata{});
+  auto source = factory.CreateField<Real>();
+  auto target = factory.CreateField<Real>();
 
   // Construct Interpolator once — localization happens here.
   // Because source and target share the same layout (same factory),
