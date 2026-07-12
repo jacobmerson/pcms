@@ -1,5 +1,6 @@
 #include "pcms/coupler/field_exchange_planner.h"
 #include "partition.h"
+#include "pcms/field/gid_permutation.hpp"
 #include "pcms/utility/assert.h"
 #include "pcms/utility/inclusive_scan.h"
 #include "pcms/utility/profile.h"
@@ -45,11 +46,13 @@ static int GetMeshEntityDim(LO local_index, const EntOffsetsArray& ent_offsets)
 static size_t GetMessageBlockIndex(
   LO permutation_entry, Rank1View<const redev::LO, HostMemorySpace> offsets)
 {
-  auto begin = offsets.data_handle();
-  auto end = begin + offsets.size();
-  auto it = std::upper_bound(begin, end, permutation_entry);
-  PCMS_ALWAYS_ASSERT(it != begin);
-  return static_cast<size_t>(std::distance(begin, it - 1));
+  for (size_t i = 0; i < offsets.size() - 1; ++i) {
+    if (permutation_entry >= offsets(i) && permutation_entry < offsets(i + 1)) {
+      return i;
+    }
+  }
+  PCMS_ALWAYS_ASSERT(false);
+  return 0;
 }
 
 static OutMsg ConstructOutMessage(const ReversePartitionMap2& reverse_partition)
@@ -61,8 +64,7 @@ static OutMsg ConstructOutMessage(const ReversePartitionMap2& reverse_partition)
   out.dest.reserve(reverse_partition.size());
   for (const auto& rank : reverse_partition) {
     out.dest.push_back(rank.first);
-    counts.push_back(rank.second.indices.size() +
-                     rank.second.ent_offsets.size());
+    counts.push_back(rank.second.indices.size());
   }
   out.offset.resize(counts.size() + 1);
   out.offset[0] = 0;
@@ -73,14 +75,14 @@ static OutMsg ConstructOutMessage(const ReversePartitionMap2& reverse_partition)
 
 static redev::LOs ConstructPermutation(
   const ReversePartitionMap2& reverse_partition, size_t num_entries,
-  int* length)
+  int& length)
 {
   PCMS_FUNCTION_TIMER;
-  redev::LOs permutation(num_entries);
+  // Holders that do not participate in this exchange (non-owned, or owned but
+  // outside the overlap region) stay unmapped; serialization skips them.
+  redev::LOs permutation = MakeUnmappedPermutation(num_entries);
   LO entry = 0;
   for (const auto& rank : reverse_partition) {
-    entry += ent_offsets_len;
-
     for (unsigned e = 0; e < rank.second.ent_offsets.size() - 1; ++e) {
       const int start = rank.second.ent_offsets[e];
       const int end = rank.second.ent_offsets[e + 1];
@@ -92,53 +94,58 @@ static redev::LOs ConstructPermutation(
       }
     }
   }
-  *length = entry;
+  length = entry;
   return permutation;
 }
 
+// Parses a received GID message -- a concatenation of per-sender
+// [entity-offset header | GIDs] blocks -- into the permutation mapping each
+// local holder to the compact (header-excluded) buffer index of its GID. This
+// owns the on-the-wire message format; the GID-to-holder matching is delegated
+// to pcms::AppendGidPermutation. Holders absent from the message are left
+// unmapped. Returns the total payload length (GID count excluding headers) via
+// payload_length.
 static redev::LOs ConstructPermutation(
   GlobalIDView<HostMemorySpace> local_gids,
   GlobalIDView<HostMemorySpace> received_msg,
-  const EntOffsetsArray& ent_offsets)
+  const EntOffsetsArray& ent_offsets, int& payload_length)
 {
   PCMS_FUNCTION_TIMER;
-  std::array<std::map<pcms::GO, pcms::LO>, 4> gid_to_buffer_index;
+  GidToIndexMaps gid_to_buffer_index;
   size_t offset = 0;
+  LO payload_offset = 0;
   while (true) {
-    GlobalIDView<HostMemorySpace> received_offsets(
-      received_msg.data_handle() + offset, ent_offsets_len);
-    int length = received_offsets[received_offsets.size() - 1];
-    GlobalIDView<HostMemorySpace> received_gids(
-      received_msg.data_handle() + offset + ent_offsets_len, length);
+    // Guard the header read before dereferencing its last entry (the payload
+    // length), so a truncated message aborts rather than reading out of bounds.
+    PCMS_ALWAYS_ASSERT(offset + ent_offsets_len <= received_msg.size());
+    int message_length = received_msg(offset + ent_offsets_len - 1);
 
-    PCMS_ALWAYS_ASSERT(offset + ent_offsets_len + length - 1 <
+    PCMS_ALWAYS_ASSERT(offset + ent_offsets_len + message_length - 1 <
                        received_msg.size());
 
-    for (size_t e = 0; e < received_offsets.size() - 1; ++e) {
-      size_t start = received_offsets[e];
-      size_t end = received_offsets[e + 1];
+    for (size_t e = 0; e < ent_offsets_len - 1; ++e) {
+      size_t start = received_msg(offset + e);
+      size_t end = received_msg(offset + e + 1);
 
       for (size_t i = start; i < end; ++i) {
-        gid_to_buffer_index[e][received_gids[i]] = offset + ent_offsets_len + i;
+        const GO gid = received_msg(offset + ent_offsets_len + i);
+        gid_to_buffer_index[e][gid] = payload_offset + i;
       }
     }
 
-    offset += length + ent_offsets_len;
+    payload_offset += message_length;
+    offset += message_length + ent_offsets_len;
     if (offset >= received_msg.size())
       break;
   }
 
   redev::LOs permutation;
   permutation.reserve(local_gids.size());
-  for (size_t e = 0; e < ent_offsets.size() - 1; ++e) {
-    const auto start = ent_offsets[e];
-    const auto end = ent_offsets[e + 1];
-
-    for (size_t i = start; i < end; ++i)
-      permutation.push_back(gid_to_buffer_index[e][local_gids[i]]);
-  }
+  AppendGidPermutation(local_gids, ent_offsets, gid_to_buffer_index, permutation,
+                       /*allow_missing=*/true);
 
   REDEV_ALWAYS_ASSERT(permutation.size() == local_gids.size());
+  payload_length = payload_offset;
   return permutation;
 }
 
@@ -158,8 +165,11 @@ static OutMsg ConstructOutMessage(int rank, int nproc,
     totInMsgs - in.srcRanks[(nAppProcs - 1) * nproc + rank];
   OutMsg out;
   for (size_t i = 0; i < nAppProcs; ++i) {
-    if (senderDeg[i] > 0)
+    if (senderDeg[i] > 0) {
+      REDEV_ALWAYS_ASSERT(senderDeg[i] > ent_offsets_len);
+      senderDeg[i] -= ent_offsets_len;
       out.dest.push_back(i);
+    }
   }
   redev::GO sum = 0;
   for (auto deg : senderDeg) {
@@ -203,7 +213,7 @@ static ReversePartitionMap2 BuildReversePartitionMap(
   auto overlap_mask_view = overlap_mask.GetMask(layout);
 
   for (LO local_index = 0; local_index < n; ++local_index) {
-    if (!owned[local_index])
+    if (!owned(local_index))
       continue;
 
     if (!overlap_mask_view[local_index])
@@ -250,7 +260,7 @@ ExchangePlan GenericFieldExchangePlanner::BuildExchangePlan(
 
   int length = 0;
   plan.permutation =
-    ConstructPermutation(reverse_partition, gids.size(), &length);
+    ConstructPermutation(reverse_partition, gids.size(), length);
   plan.msg_size = static_cast<size_t>(length);
 
   return plan;
@@ -268,8 +278,10 @@ ExchangePlan GenericFieldExchangePlanner::BuildReceivePlan(
   auto out_msg = ConstructOutMessage(rank, nproc, in_message_layout);
   plan.dest_ranks = std::move(out_msg.dest);
   plan.offsets = std::move(out_msg.offset);
-  plan.permutation = ConstructPermutation(gids, received_gids, ent_offsets);
-  plan.msg_size = received_gids.size();
+  int length = 0;
+  plan.permutation =
+    ConstructPermutation(gids, received_gids, ent_offsets, length);
+  plan.msg_size = static_cast<size_t>(length);
   return plan;
 }
 
@@ -278,7 +290,9 @@ void GenericFieldExchangePlanner::FillGidMessage(
   Rank1View<GO, HostMemorySpace> gid_message) const
 {
   PCMS_FUNCTION_TIMER;
-  PCMS_ALWAYS_ASSERT(static_cast<size_t>(gid_message.size()) == plan.msg_size);
+  const size_t header_size = plan.dest_ranks.size() * ent_offsets_len;
+  PCMS_ALWAYS_ASSERT(static_cast<size_t>(gid_message.size()) ==
+                     plan.msg_size + header_size);
 
   auto gids = layout.GetGidsHost();
   auto owned = layout.GetOwnedHost();
@@ -294,9 +308,15 @@ void GenericFieldExchangePlanner::FillGidMessage(
       continue;
 
     LO perm_index = plan.permutation[local_index];
-    gid_message[perm_index] = gids[local_index];
-
+    // Owned holders outside the overlap region carry the sentinel and have no
+    // slot in the message.
+    if (perm_index < 0)
+      continue;
     auto block_index = GetMessageBlockIndex(perm_index, offsets);
+    const auto gid_index =
+      perm_index + static_cast<LO>((block_index + 1) * ent_offsets_len);
+    gid_message(gid_index) = gids(local_index);
+
     int mesh_ent_dim = GetMeshEntityDim(local_index, ent_offsets);
     for (size_t e = static_cast<size_t>(mesh_ent_dim) + 1; e < ent_offsets_len;
          ++e) {
@@ -306,9 +326,10 @@ void GenericFieldExchangePlanner::FillGidMessage(
 
   for (size_t block_index = 0; block_index < per_rank_offsets.size();
        ++block_index) {
-    auto header_offset = static_cast<size_t>(plan.offsets[block_index]);
+    auto header_offset = static_cast<size_t>(plan.offsets[block_index]) +
+                         block_index * ent_offsets_len;
     for (size_t e = 0; e < ent_offsets_len; ++e) {
-      gid_message[header_offset + e] =
+      gid_message(header_offset + e) =
         static_cast<GO>(per_rank_offsets[block_index][e]);
     }
   }

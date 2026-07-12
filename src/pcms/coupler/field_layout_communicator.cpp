@@ -74,8 +74,13 @@ void FieldLayoutCommunicator::UpdateLayout()
     // overlap_mask_ is always non-null (created in constructor if not provided)
     plan_ = planner_->BuildExchangePlan(
       layout_, redev::Partition{redev_.GetPartition()}, overlap_mask_.get());
-    gid_comm_.SetOutMessageLayout(plan_.dest_ranks, plan_.offsets);
-    std::vector<GO> gid_message(plan_.msg_size);
+    redev::LOs gid_offsets(plan_.offsets.size());
+    for (size_t i = 0; i < plan_.offsets.size(); ++i) {
+      gid_offsets[i] = plan_.offsets[i] + i * ent_offsets_len;
+    }
+    gid_comm_.SetOutMessageLayout(plan_.dest_ranks, gid_offsets);
+    std::vector<GO> gid_message(plan_.msg_size +
+                                plan_.dest_ranks.size() * ent_offsets_len);
     planner_->FillGidMessage(
       layout_, plan_,
       Rank1View<GO, HostMemorySpace>(gid_message.data(), gid_message.size()));

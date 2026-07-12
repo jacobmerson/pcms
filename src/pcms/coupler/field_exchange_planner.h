@@ -13,6 +13,8 @@ namespace pcms
 struct ExchangePlan
 {
   redev::LOs dest_ranks;
+  // Field-payload offsets and permutation. GID-message headers are inserted
+  // only while exchanging the layout and are not represented in this plan.
   redev::LOs offsets;
   std::vector<LO> permutation;
   size_t msg_size = 0;

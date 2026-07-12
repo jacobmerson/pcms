@@ -385,6 +385,7 @@ if(Catch2_FOUND)
       test_field_evaluation.cpp
       test_field_interpolation.cpp
       test_field_copy.cpp
+      test_field_exchange_planner.cpp
       test_point_search.cpp
       test_mls_basis.cpp
       test_rbf_interp.cpp
