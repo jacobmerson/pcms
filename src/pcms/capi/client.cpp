@@ -1,5 +1,6 @@
 #include "client.h"
 #include "pcms.h"
+#include "pcms/field/field_factory.h"
 #include "pcms/field/function_space/xgc.h"
 #include "pcms/field/data/xgc.h"
 #include "pcms/field/layout/xgc.h"
@@ -23,11 +24,11 @@ namespace detail
 template <typename T>
 struct XGCFieldRegistration
 {
-  XGCFunctionSpace function_space;
+  XGCFieldFactory function_space;
   MPI_Comm plane_comm;
   Rank1View<T, HostMemorySpace> data;
 
-  XGCFieldRegistration(XGCFunctionSpace fs, MPI_Comm comm,
+  XGCFieldRegistration(XGCFieldFactory fs, MPI_Comm comm,
                        Rank1View<T, HostMemorySpace> d)
     : function_space(std::move(fs)), plane_comm(comm), data(d)
   {
@@ -37,10 +38,10 @@ struct XGCFieldRegistration
 struct DummyFieldRegistration
 {};
 
-class EmptyFunctionSpace : public FunctionSpace
+class EmptyFieldFactory : public FieldFactory
 {
 public:
-  explicit EmptyFunctionSpace(std::string layout_name = "")
+  explicit EmptyFieldFactory(std::string layout_name = "")
   {
     auto layout = std::make_shared<EmptyFieldLayout>();
     layout->SetName(std::move(layout_name));
@@ -51,11 +52,6 @@ public:
     const noexcept override
   {
     return layout_;
-  }
-
-  [[nodiscard]] CoordinateSystem GetCoordinateSystem() const noexcept override
-  {
-    return CoordinateSystem::Cartesian;
   }
 
 protected:
@@ -80,23 +76,17 @@ protected:
         PCMS_ALWAYS_ASSERT(fd != nullptr);
         if (dynamic_cast<const SimpleFieldData<T>*>(fd.get()) == nullptr) {
           throw pcms_error(
-            "EmptyFunctionSpace::CreateField: requires SimpleFieldData");
+            "EmptyFieldFactory::CreateField: requires SimpleFieldData");
         }
         if (fd->GetDOFHolderDataHost().size() !=
             detail::ExpectedFlatFieldDataSize(*layout_)) {
           throw pcms_error(
-            "EmptyFunctionSpace::CreateField: field data size does not match "
+            "EmptyFieldFactory::CreateField: field data size does not match "
             "layout");
         }
         return WrapField<T>(layout_, std::forward<decltype(fd)>(fd));
       },
       std::move(data));
-  }
-
-  [[nodiscard]] PointEvaluatorVariant CreatePointEvaluatorImpl(
-    Type /*value_type*/, const EvaluationRequest& /*request*/) const override
-  {
-    throw pcms_error("EmptyFunctionSpace does not support point evaluation");
   }
 
 private:
@@ -153,7 +143,7 @@ inline ClientState::HandleVariant RegisterField(
   Application& app, std::string name, const detail::DummyFieldRegistration&,
   bool participates)
 {
-  auto function_space = detail::EmptyFunctionSpace{name};
+  auto function_space = detail::EmptyFieldFactory{name};
   auto field =
     function_space.CreateField<int>(std::move(name), FieldMetadata{});
   std::unique_ptr<FieldSerializer<int>> serializer =
@@ -258,7 +248,7 @@ void pcms_create_xgc_field_adapter_t(
 {
   PCMS_ALWAYS_ASSERT((size > 0) ? (data != nullptr) : true);
   auto function_space =
-    pcms::XGCFunctionSpace(reverse_classification, in_overlap, size);
+    pcms::XGCFieldFactory(reverse_classification, in_overlap, size);
   pcms::Rank1View<T, pcms::HostMemorySpace> data_view(
     reinterpret_cast<T*>(data), size);
   field_adapter.emplace<pcms::detail::XGCFieldRegistration<T>>(

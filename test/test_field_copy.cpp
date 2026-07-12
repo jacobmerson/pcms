@@ -22,20 +22,20 @@ void test_copy(Omega_h::CommPtr world, int dim, int order, int num_components)
   auto factory = pcms::LagrangeFunctionSpace::FromMesh(
     mesh, order, num_components, pcms::CoordinateSystem::Cartesian, "global",
     pcms::LagrangeFunctionSpace::Backend::OmegaH);
-  auto layout = factory.GetLayout();
+  auto layout = factory->GetLayout();
   int ndata = layout->GetNumOwnedDofHolder() * num_components;
   Omega_h::HostWrite<Real> ids(ndata);
   Kokkos::parallel_for(
     Kokkos::RangePolicy<pcms::HostMemorySpace::execution_space>(0, ndata),
     [=](int i) { ids[i] = i; });
 
-  auto original = factory.CreateField<Real>();
+  auto original = factory->CreateFunction<Real>();
   original.SetDOFHolderDataHost(
     pcms::Rank2View<const Real, pcms::HostMemorySpace>(
       ids.data(), layout->GetNumOwnedDofHolder(), num_components));
 
-  auto copied = factory.CreateField<Real>();
-  pcms::Copy<Real> copy(factory, factory);
+  auto copied = factory->CreateFunction<Real>();
+  pcms::Copy<Real> copy(*factory, *factory);
   copy.Apply(original, copied);
   auto copied_array = pcms::FlattenToRank1View(copied.GetDOFHolderDataHost());
 

@@ -55,8 +55,8 @@ void xgc_coupler_with_overlap(MPI_Comm comm, Omega_h::Mesh& mesh,
     application->SetLayoutOverlapMask(ss.str(), std::move(overlap_mask));
 
     auto function_space =
-      pcms::XGCFunctionSpace(rc, ts::IsModelEntInOverlap{},
-                             static_cast<pcms::LO>(mesh.nverts()), ss.str());
+      pcms::XGCFieldFactory(rc, ts::IsModelEntInOverlap{},
+                            static_cast<pcms::LO>(mesh.nverts()), ss.str());
 
     auto field = function_space.CreateField<pcms::GO>(
       ss.str(), std::make_unique<pcms::XGCFieldData<pcms::GO>>(
@@ -176,9 +176,9 @@ void omegah_coupler_with_overlap(MPI_Comm comm, Omega_h::Mesh& mesh,
       mesh, 1, 1, pcms::CoordinateSystem::Cartesian, numbering,
       pcms::LagrangeFunctionSpace::Backend::OmegaH, ss.str());
 
-    auto field = factory.CreateField<GO>(
+    auto field = factory->CreateFunction<GO>(
       ss.str(), std::make_unique<pcms::SimpleFieldData<GO>>(
-                  factory.GetLayout(), pcms::FieldMetadata{}));
+                  factory->GetLayout(), pcms::FieldMetadata{}));
 
     std::unique_ptr<pcms::FieldSerializer<GO>> serializer =
       std::make_unique<pcms::FieldSerializer<GO>>();

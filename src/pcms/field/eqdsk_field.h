@@ -12,7 +12,7 @@ namespace pcms
 
 struct EQDSKField
 {
-  SplineFunctionSpace space;
+  std::shared_ptr<SplineFunctionSpace> space;
   Field<Real> field;
 };
 
@@ -20,7 +20,7 @@ struct EQDSKField
 struct EQDSKFieldWithData
 {
   EQDSKData data;
-  SplineFunctionSpace space;
+  std::shared_ptr<SplineFunctionSpace> space;
   Field<Real> field;
 };
 
@@ -43,7 +43,7 @@ inline EQDSKField MakeEQDSKField(const EQDSKData& eqdsk_data)
 {
   auto space = SplineFunctionSpace::FromUniformGrid(
     eqdsk_data.grid, CoordinateSystem::Cartesian);
-  auto field = space.CreateField<Real>();
+  Field<Real> field = space->CreateFunction<Real>();
   field.GetData().SetDOFHolderData(Rank2View<const Real, DeviceMemorySpace>(
     eqdsk_data.PSIZR.data(), eqdsk_data.PSIZR.extent(0), 1));
   return {std::move(space), std::move(field)};

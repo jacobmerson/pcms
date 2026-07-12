@@ -52,8 +52,8 @@ void xgc_coupler(MPI_Comm comm, Omega_h::Mesh& mesh, std::string_view cpn_file)
     // field registration, so each XGC plane is registered as a separate layout
     // communicator even though the layouts are geometrically identical.
     auto function_space =
-      pcms::XGCFunctionSpace(rc, ts::IsModelEntInOverlap{},
-                             static_cast<pcms::LO>(mesh.nverts()), ss.str());
+      pcms::XGCFieldFactory(rc, ts::IsModelEntInOverlap{},
+                            static_cast<pcms::LO>(mesh.nverts()), ss.str());
     auto field = function_space.CreateField<pcms::GO>(
       ss.str(), std::make_unique<pcms::XGCFieldData<pcms::GO>>(
                   function_space.GetXGCLayout(), pcms::FieldMetadata{},
@@ -173,9 +173,9 @@ void omegah_coupler(MPI_Comm comm, Omega_h::Mesh& mesh,
     auto factory = pcms::LagrangeFunctionSpace::FromMesh(
       mesh, 1, 1, pcms::CoordinateSystem::Cartesian, numbering,
       pcms::LagrangeFunctionSpace::Backend::OmegaH, ss.str());
-    auto field = factory.CreateField<GO>(
+    auto field = factory->CreateFunction<GO>(
       ss.str(), std::make_unique<pcms::SimpleFieldData<GO>>(
-                  factory.GetLayout(), pcms::FieldMetadata{}));
+                  factory->GetLayout(), pcms::FieldMetadata{}));
     std::unique_ptr<pcms::FieldSerializer<GO>> serializer =
       std::make_unique<pcms::FieldSerializer<GO>>();
     fields.push_back(

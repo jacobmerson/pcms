@@ -37,7 +37,7 @@ TEST_CASE(
 
   auto factory = pcms::PolynomialReconstructionFunctionSpace::Create(
     coords_view, CoordinateSystem::Cartesian);
-  auto layout = factory.GetLayout();
+  auto layout = factory->GetLayout();
 
   REQUIRE(layout->GetNumComponents() == 1);
   REQUIRE(layout->GetNumOwnedDofHolder() == 4);
@@ -64,8 +64,8 @@ TEST_CASE("PolynomialReconstructionFunctionSpace fields share layout")
 
   auto factory = pcms::PolynomialReconstructionFunctionSpace::Create(
     coords_view, CoordinateSystem::Cartesian);
-  auto source = factory.CreateField<Real>();
-  auto target = factory.CreateField<Real>();
+  auto source = factory->CreateFunction<Real>();
+  auto target = factory->CreateFunction<Real>();
 
   REQUIRE(&source.GetLayout() == &target.GetLayout());
 }
@@ -78,7 +78,7 @@ TEST_CASE("PolynomialReconstructionFunctionSpace point-cloud field set/get DOF "
 
   auto field = pcms::PolynomialReconstructionFunctionSpace::Create(
                  coords_view, CoordinateSystem::Cartesian)
-                 .CreateField<Real>();
+                 ->CreateFunction<Real>();
 
   std::vector<Real> data{1.0, 2.0, 3.0, 4.0};
   Rank2View<const Real, HostMemorySpace> data_view(
@@ -100,14 +100,14 @@ TEST_CASE("PolynomialReconstructionFunctionSpace point-cloud field serialize / "
 
   auto factory = pcms::PolynomialReconstructionFunctionSpace::Create(
     coords_view, CoordinateSystem::Cartesian);
-  auto field = factory.CreateField<Real>();
+  auto field = factory->CreateFunction<Real>();
 
   std::vector<Real> data{5.0, 6.0, 7.0, 8.0};
   Rank2View<const Real, HostMemorySpace> data_view(
     data.data(), static_cast<LO>(data.size()), 1);
   field.GetData().SetDOFHolderDataHost(data_view);
 
-  pcms::test::CheckSerializeDeserialize(*factory.GetLayout(), field.GetData());
+  pcms::test::CheckSerializeDeserialize(*factory->GetLayout(), field.GetData());
 }
 
 TEST_CASE("PolynomialReconstructionFunctionSpace field keeps layout alive "
@@ -119,7 +119,7 @@ TEST_CASE("PolynomialReconstructionFunctionSpace field keeps layout alive "
   auto field = [&]() {
     auto factory = pcms::PolynomialReconstructionFunctionSpace::Create(
       coords_view, CoordinateSystem::Cartesian);
-    return factory.CreateField<Real>();
+    return factory->CreateFunction<Real>();
   }();
 
   auto point_cloud_layout =
@@ -148,15 +148,15 @@ TEST_CASE("Different layouts on the same mesh report SameEntities")
   auto lagrange = pcms::LagrangeFunctionSpace::FromMesh(
     mesh, 1, 1, CoordinateSystem::Cartesian);
 
-  auto nodal_disc = nodal.GetLayout()->GetDiscretization();
-  auto lagrange_disc = lagrange.GetLayout()->GetDiscretization();
+  auto nodal_disc = nodal->GetLayout()->GetDiscretization();
+  auto lagrange_disc = lagrange->GetLayout()->GetDiscretization();
 
   REQUIRE(nodal_disc != nullptr);
   REQUIRE(lagrange_disc != nullptr);
   REQUIRE(nodal_disc->SameEntities(*lagrange_disc));
 
-  REQUIRE(nodal.GetLayout()->GetNumOwnedDofHolder() == mesh.nfaces());
-  REQUIRE(lagrange.GetLayout()->GetNumOwnedDofHolder() == mesh.nverts());
+  REQUIRE(nodal->GetLayout()->GetNumOwnedDofHolder() == mesh.nfaces());
+  REQUIRE(lagrange->GetLayout()->GetNumOwnedDofHolder() == mesh.nverts());
 
   REQUIRE(nodal_disc->GetNumEntities(pcms::Face) == mesh.nfaces());
   REQUIRE(lagrange_disc->GetNumEntities(pcms::Vertex) == mesh.nverts());
@@ -175,8 +175,8 @@ TEST_CASE("Layouts on different meshes do not report SameEntities")
   auto nodal_b = pcms::PolynomialReconstructionFunctionSpace::FromMesh(
     mesh_b, pcms::Vertex, CoordinateSystem::Cartesian);
 
-  auto disc_a = nodal_a.GetLayout()->GetDiscretization();
-  auto disc_b = nodal_b.GetLayout()->GetDiscretization();
+  auto disc_a = nodal_a->GetLayout()->GetDiscretization();
+  auto disc_b = nodal_b->GetLayout()->GetDiscretization();
 
   REQUIRE_FALSE(disc_a->SameEntities(*disc_b));
 }
@@ -196,8 +196,8 @@ TEST_CASE(
   auto standalone = pcms::PolynomialReconstructionFunctionSpace::Create(
     coords_view, CoordinateSystem::Cartesian);
 
-  auto mesh_disc = lagrange.GetLayout()->GetDiscretization();
-  auto point_cloud_disc = standalone.GetLayout()->GetDiscretization();
+  auto mesh_disc = lagrange->GetLayout()->GetDiscretization();
+  auto point_cloud_disc = standalone->GetLayout()->GetDiscretization();
 
   REQUIRE_FALSE(mesh_disc->SameEntities(*point_cloud_disc));
   REQUIRE_FALSE(point_cloud_disc->SameEntities(*mesh_disc));

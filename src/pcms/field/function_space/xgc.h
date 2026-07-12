@@ -1,9 +1,9 @@
-#ifndef PCMS_XGC_FUNCTION_SPACE_H
-#define PCMS_XGC_FUNCTION_SPACE_H
+#ifndef PCMS_XGC_FIELD_FACTORY_H
+#define PCMS_XGC_FIELD_FACTORY_H
 
 #include "pcms/field/data/xgc.h"
 #include "pcms/field/field.h"
-#include "pcms/field/function_space.h"
+#include "pcms/field/field_factory.h"
 #include "pcms/field/field_metadata.h"
 #include "pcms/utility/common.h"
 #include <functional>
@@ -12,22 +12,19 @@
 namespace pcms
 {
 
-class XGCFunctionSpace : public FunctionSpace
+// XGC is a comm-only backend
+class XGCFieldFactory : public FieldFactory
 {
 public:
-  XGCFunctionSpace(const ReverseClassificationVertex& reverse_classification,
-                   std::function<int8_t(int, int)> in_overlap,
-                   LO num_plane_nodes, std::string layout_name = "")
+  XGCFieldFactory(const ReverseClassificationVertex& reverse_classification,
+                  std::function<int8_t(int, int)> in_overlap,
+                  LO num_plane_nodes, std::string layout_name = "")
     : layout_(std::make_shared<XGCFieldLayout>(
         reverse_classification, std::move(in_overlap), num_plane_nodes))
   {
     layout_->SetName(std::move(layout_name));
   }
 
-  // Set the layout name after construction. Const because the name is metadata
-  // that does not affect the (const) discretization; the layout pointee is
-  // mutable through the shared_ptr. Used by the capi, which learns a field's
-  // name only when it is added, after the space is built.
   void SetLayoutName(std::string name) const
   {
     layout_->SetName(std::move(name));
@@ -39,9 +36,10 @@ public:
     return layout_;
   }
 
-  [[nodiscard]] CoordinateSystem GetCoordinateSystem() const noexcept override
+  [[nodiscard]] std::shared_ptr<const XGCFieldLayout> GetXGCLayout()
+    const noexcept
   {
-    return CoordinateSystem::XGC;
+    return layout_;
   }
 
 protected:
@@ -65,30 +63,17 @@ protected:
         PCMS_ALWAYS_ASSERT(fd != nullptr);
         if (dynamic_cast<const XGCFieldData<T>*>(fd.get()) == nullptr) {
           throw pcms_error(
-            "XGCFunctionSpace::CreateField: requires XGCFieldData");
+            "XGCFieldFactory::CreateField: requires XGCFieldData");
         }
         if (fd->GetDOFHolderDataHost().size() !=
             static_cast<size_t>(layout_->GetFullDataSize())) {
           throw pcms_error(
-            "XGCFunctionSpace::CreateField: field data size does not match "
+            "XGCFieldFactory::CreateField: field data size does not match "
             "layout");
         }
         return WrapField<T>(layout_, std::move(fd));
       },
       std::move(data));
-  }
-
-  [[nodiscard]] PointEvaluatorVariant CreatePointEvaluatorImpl(
-    Type /*value_type*/, const EvaluationRequest& /*request*/) const override
-  {
-    throw pcms_error("XGCFunctionSpace does not support point evaluation");
-  }
-
-public:
-  [[nodiscard]] std::shared_ptr<const XGCFieldLayout> GetXGCLayout()
-    const noexcept
-  {
-    return layout_;
   }
 
 private:
@@ -97,4 +82,4 @@ private:
 
 } // namespace pcms
 
-#endif // PCMS_XGC_FUNCTION_SPACE_H
+#endif // PCMS_XGC_FIELD_FACTORY_H

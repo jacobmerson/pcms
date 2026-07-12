@@ -68,8 +68,10 @@ protected:
   {
   }
 
-  // FunctionSpace constructs Fields (via WrapField) and moves a Field's name,
-  // layout and data out to build a Function (via CreateFunction).
+  // FieldFactory constructs Fields (via WrapField); FunctionSpace constructs
+  // Fields the same way and moves a Field's name, layout and data out to build
+  // a Function (via CreateFunction). Both stamp the field name.
+  friend class FieldFactory;
   friend class FunctionSpace;
 
 private:

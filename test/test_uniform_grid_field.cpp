@@ -109,7 +109,7 @@ TEST_CASE("UniformGrid field creation")
 
   auto field_space = pcms::LagrangeFunctionSpace::FromUniformGrid(
     grid, 1, pcms::CoordinateSystem::Cartesian);
-  auto field = field_space.CreateField<pcms::Real>();
+  auto field = field_space->CreateFunction<pcms::Real>();
   REQUIRE(field.GetDOFHolderDataHost().size() ==
           static_cast<size_t>(layout->OwnedSize()));
 }
@@ -125,7 +125,7 @@ TEST_CASE("UniformGrid order-0 field creation and evaluation")
     grid, 1, pcms::CoordinateSystem::Cartesian, 0);
   auto field_space = pcms::LagrangeFunctionSpace::FromUniformGrid(
     grid, 1, pcms::CoordinateSystem::Cartesian, 0);
-  auto field = field_space.CreateField<pcms::Real>();
+  auto field = field_space->CreateFunction<pcms::Real>();
   pcms::UniformGridEvaluatorFactory<2> eval_factory(layout);
 
   REQUIRE(layout->GetOrder() == 0);
@@ -179,7 +179,7 @@ TEST_CASE("UniformGrid field data operations", "[uniform_grid_field]")
     grid, 1, pcms::CoordinateSystem::Cartesian);
   auto field_space = pcms::LagrangeFunctionSpace::FromUniformGrid(
     grid, 1, pcms::CoordinateSystem::Cartesian);
-  auto field = field_space.CreateField<pcms::Real>();
+  auto field = field_space->CreateFunction<pcms::Real>();
 
   std::vector<pcms::Real> data(25);
   for (size_t i = 0; i < 25; ++i)
@@ -206,7 +206,7 @@ TEST_CASE("UniformGrid field evaluation - piecewise constant")
     grid, 1, pcms::CoordinateSystem::Cartesian);
   auto field_space = pcms::LagrangeFunctionSpace::FromUniformGrid(
     grid, 1, pcms::CoordinateSystem::Cartesian);
-  auto field = field_space.CreateField<pcms::Real>();
+  auto field = field_space->CreateFunction<pcms::Real>();
   pcms::UniformGridEvaluatorFactory<2> eval_factory(layout);
 
   // Set vertex values for a 2x2 cell grid (3x3 = 9 vertices)
@@ -269,7 +269,7 @@ TEST_CASE("UniformGrid field serialization")
     grid, 1, pcms::CoordinateSystem::Cartesian);
   auto field_space = pcms::LagrangeFunctionSpace::FromUniformGrid(
     grid, 1, pcms::CoordinateSystem::Cartesian);
-  auto field = field_space.CreateField<pcms::Real>();
+  auto field = field_space->CreateFunction<pcms::Real>();
 
   std::vector<pcms::Real> data(16);
   for (size_t i = 0; i < 16; ++i)
@@ -303,13 +303,13 @@ TEST_CASE("UniformGrid field copy")
 
   auto factory = pcms::LagrangeFunctionSpace::FromUniformGrid(
     grid, 1, pcms::CoordinateSystem::Cartesian);
-  auto field = factory.CreateField<pcms::Real>();
+  auto field = factory->CreateFunction<pcms::Real>();
   field.SetDOFHolderDataHost(
     pcms::Rank2View<const pcms::Real, pcms::HostMemorySpace>(
       data.data(), static_cast<pcms::LO>(data.size()), 1));
 
-  auto field2 = factory.CreateField<pcms::Real>();
-  pcms::Copy<pcms::Real> copy(factory, factory);
+  auto field2 = factory->CreateFunction<pcms::Real>();
+  pcms::Copy<pcms::Real> copy(*factory, *factory);
   copy.Apply(field, field2);
 
   auto copied_data = pcms::FlattenToRank1View(field2.GetDOFHolderDataHost());
@@ -326,7 +326,7 @@ TEST_CASE("Transfer from OmegaH field to UniformGrid field")
 
   auto omega_h_factory = pcms::LagrangeFunctionSpace::FromMesh(
     mesh, 1, 1, pcms::CoordinateSystem::Cartesian);
-  auto omega_h_field = omega_h_factory.CreateField<pcms::Real>();
+  auto omega_h_field = omega_h_factory->CreateFunction<pcms::Real>();
   pcms::test::SetField(
     omega_h_field,
     OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) { return x + 2.0 * y; });
@@ -337,15 +337,15 @@ TEST_CASE("Transfer from OmegaH field to UniformGrid field")
   grid.divisions = {2, 2};
   auto ug_factory = pcms::LagrangeFunctionSpace::FromUniformGrid(
     grid, 1, pcms::CoordinateSystem::Cartesian);
-  auto ug_field = ug_factory.CreateField<pcms::Real>();
+  auto ug_field = ug_factory->CreateFunction<pcms::Real>();
 
-  pcms::Interpolator<pcms::Real> interp(omega_h_factory, ug_factory);
+  pcms::Interpolator<pcms::Real> interp(*omega_h_factory, *ug_factory);
   interp.Apply(omega_h_field, ug_field);
 
   auto transferred_data =
     pcms::FlattenToRank1View(ug_field.GetDOFHolderDataHost());
-  auto ug_coords = ug_factory.GetLayout()->GetDOFHolderCoordinates();
-  int num_ug_nodes = ug_factory.GetLayout()->GetNumOwnedDofHolder();
+  auto ug_coords = ug_factory->GetLayout()->GetDOFHolderCoordinates();
+  int num_ug_nodes = ug_factory->GetLayout()->GetNumOwnedDofHolder();
 
   // set up_coords to host
   auto ug_coords_host =
@@ -639,22 +639,22 @@ TEST_CASE("UniformGrid workflow")
 
   auto omega_h_factory = pcms::LagrangeFunctionSpace::FromMesh(
     mesh, 1, 1, pcms::CoordinateSystem::Cartesian);
-  auto omega_h_field = omega_h_factory.CreateField<pcms::Real>();
+  auto omega_h_field = omega_h_factory->CreateFunction<pcms::Real>();
   pcms::test::SetField(
     omega_h_field,
     OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) { return x + 2.0 * y; });
 
   auto ug_factory = pcms::LagrangeFunctionSpace::FromUniformGrid(
     grid, 1, pcms::CoordinateSystem::Cartesian);
-  auto ug_field = ug_factory.CreateField<pcms::Real>();
+  auto ug_field = ug_factory->CreateFunction<pcms::Real>();
 
   auto [mask_layout, mask_field] =
     pcms::CreateUniformGridBinaryField<2>(mesh, grid);
 
-  pcms::Interpolator<pcms::Real> interp(omega_h_factory, ug_factory);
+  pcms::Interpolator<pcms::Real> interp(*omega_h_factory, *ug_factory);
   interp.Apply(omega_h_field, ug_field);
   auto ug_coords_device_view =
-    ug_factory.GetLayout()->GetDOFHolderCoordinates().GetValues();
+    ug_factory->GetLayout()->GetDOFHolderCoordinates().GetValues();
   auto ug_coords_host_view =
     pcms::test::CopyCoordinatesToHost(ug_coords_device_view, 25, 2);
 

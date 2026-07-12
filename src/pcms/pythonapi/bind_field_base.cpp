@@ -289,7 +289,9 @@ void bind_create_field_module(py::module& m)
   py::class_<FunctionSpace, std::shared_ptr<FunctionSpace>>(m, "FunctionSpace")
     .def(
       "create_field",
-      [](const FunctionSpace& self) { return self.CreateField<Real>(); },
+      [](const FunctionSpace& self) -> Field<Real> {
+        return self.CreateFunction<Real>();
+      },
       "Create a Field<Real> for this function space.")
     .def(
       "create_point_evaluator",

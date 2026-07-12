@@ -17,7 +17,7 @@ OmegaHControlVariateProjection::OmegaHControlVariateProjection(
       target_layout_, target_space.GetCoordinateSystem(), samples_per_element,
       sampling, seed)),
     interpolator_(source_space, target_space),
-    control_variate_(target_space.CreateField<Real>())
+    control_variate_(target_space.CreateFunction<Real>())
 {
   const auto sample_coords =
     rhs_integrator_->GetIntegrationPoints().GetCoordinates();

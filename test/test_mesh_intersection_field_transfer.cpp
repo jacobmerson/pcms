@@ -39,7 +39,7 @@ Omega_h::Mesh BuildUnitSquare(Omega_h::Library& lib, const Omega_h::LOs& ev2v)
   return mesh;
 }
 
-pcms::LagrangeFunctionSpace MakeP1Space(
+std::shared_ptr<pcms::LagrangeFunctionSpace> MakeP1Space(
   Omega_h::Mesh& mesh, const std::string& global_id_name = "global")
 {
   return pcms::LagrangeFunctionSpace::FromMesh(
@@ -47,7 +47,7 @@ pcms::LagrangeFunctionSpace MakeP1Space(
     pcms::LagrangeFunctionSpace::Backend::OmegaH);
 }
 
-pcms::LagrangeFunctionSpace MakeP0Space(Omega_h::Mesh& mesh)
+std::shared_ptr<pcms::LagrangeFunctionSpace> MakeP0Space(Omega_h::Mesh& mesh)
 {
   return pcms::LagrangeFunctionSpace::FromMesh(
     mesh, 0, 1, pcms::CoordinateSystem::Cartesian, "global",
@@ -146,10 +146,10 @@ TEST_CASE("OmegaHConservativeProjection reproduces constant and linear fields",
   auto source_space = MakeP1Space(source_mesh);
   auto target_space = MakeP1Space(target_mesh);
 
-  auto source = source_space.CreateField<pcms::Real>();
-  auto target = target_space.CreateField<pcms::Real>();
+  auto source = source_space->CreateFunction<pcms::Real>();
+  auto target = target_space->CreateFunction<pcms::Real>();
 
-  pcms::OmegaHConservativeProjection projection(source_space, target_space);
+  pcms::OmegaHConservativeProjection projection(*source_space, *target_space);
 
   SECTION("constant field is preserved and conserved")
   {
@@ -208,10 +208,10 @@ TEST_CASE("OmegaHConservativeProjection conserves the integral",
   auto source_space = MakeP1Space(source_mesh);
   auto target_space = MakeP1Space(target_mesh);
 
-  auto source = source_space.CreateField<pcms::Real>();
-  auto target = target_space.CreateField<pcms::Real>();
+  auto source = source_space->CreateFunction<pcms::Real>();
+  auto target = target_space->CreateFunction<pcms::Real>();
 
-  pcms::OmegaHConservativeProjection projection(source_space, target_space);
+  pcms::OmegaHConservativeProjection projection(*source_space, *target_space);
 
   pcms::test::SetField(
     source, OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) {
@@ -246,18 +246,18 @@ TEST_CASE("OmegaHConservativeProjection writes reordered target GIDs in local "
   auto source_space = MakeP1Space(source_mesh);
   auto target_space = MakeP1Space(target_mesh, "reordered_global");
 
-  auto source = source_space.CreateField<pcms::Real>();
-  auto target = target_space.CreateField<pcms::Real>();
+  auto source = source_space->CreateFunction<pcms::Real>();
+  auto target = target_space->CreateFunction<pcms::Real>();
 
   pcms::test::SetField(
     source, OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) { return x + 2.0 * y; });
 
-  pcms::OmegaHConservativeProjection projection(source_space, target_space);
+  pcms::OmegaHConservativeProjection projection(*source_space, *target_space);
   projection.Apply(source, target);
 
   const auto target_values = target.GetDOFHolderDataHost();
   const auto target_coords =
-    target_space.GetLayout()->GetDOFHolderCoordinates().GetValues();
+    target_space->GetLayout()->GetDOFHolderCoordinates().GetValues();
   const auto target_coords_h = pcms::test::CopyCoordinatesToHost(
     target_coords, target_mesh.nverts(), target_mesh.dim());
   REQUIRE(static_cast<Omega_h::LO>(target_values.extent(0)) ==
@@ -285,18 +285,18 @@ TEST_CASE("OmegaHConservativeProjection maps sparse target GIDs to active "
   auto source_space = MakeP1Space(source_mesh);
   auto target_space = MakeP1Space(target_mesh, "sparse_global");
 
-  auto source = source_space.CreateField<pcms::Real>();
-  auto target = target_space.CreateField<pcms::Real>();
+  auto source = source_space->CreateFunction<pcms::Real>();
+  auto target = target_space->CreateFunction<pcms::Real>();
 
   pcms::test::SetField(
     source, OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) { return x + 2.0 * y; });
 
-  pcms::OmegaHConservativeProjection projection(source_space, target_space);
+  pcms::OmegaHConservativeProjection projection(*source_space, *target_space);
   projection.Apply(source, target);
 
   const auto target_values = target.GetDOFHolderDataHost();
   const auto target_coords =
-    target_space.GetLayout()->GetDOFHolderCoordinates().GetValues();
+    target_space->GetLayout()->GetDOFHolderCoordinates().GetValues();
   const auto target_coords_h = pcms::test::CopyCoordinatesToHost(
     target_coords, target_mesh.nverts(), target_mesh.dim());
   REQUIRE(static_cast<Omega_h::LO>(target_values.extent(0)) ==
@@ -325,10 +325,10 @@ TEST_CASE("OmegaHConservativeProjection P0 source to P1 target",
   auto source_space = MakeP0Space(source_mesh);
   auto target_space = MakeP1Space(target_mesh);
 
-  auto source = source_space.CreateField<pcms::Real>();
-  auto target = target_space.CreateField<pcms::Real>();
+  auto source = source_space->CreateFunction<pcms::Real>();
+  auto target = target_space->CreateFunction<pcms::Real>();
 
-  pcms::OmegaHConservativeProjection projection(source_space, target_space);
+  pcms::OmegaHConservativeProjection projection(*source_space, *target_space);
 
   SECTION("constant field is preserved and conserved")
   {
@@ -379,10 +379,10 @@ TEST_CASE("OmegaHConservativeProjection P1 source to P0 target",
   auto source_space = MakeP1Space(source_mesh);
   auto target_space = MakeP0Space(target_mesh);
 
-  auto source = source_space.CreateField<pcms::Real>();
-  auto target = target_space.CreateField<pcms::Real>();
+  auto source = source_space->CreateFunction<pcms::Real>();
+  auto target = target_space->CreateFunction<pcms::Real>();
 
-  pcms::OmegaHConservativeProjection projection(source_space, target_space);
+  pcms::OmegaHConservativeProjection projection(*source_space, *target_space);
 
   SECTION("constant field is preserved and conserved")
   {

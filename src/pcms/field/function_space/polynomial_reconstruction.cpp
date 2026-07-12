@@ -17,13 +17,13 @@ namespace pcms
 {
 
 PolynomialReconstructionFunctionSpace::PolynomialReconstructionFunctionSpace(
-  std::shared_ptr<const FieldLayout> layout,
+  Key, std::shared_ptr<const FieldLayout> layout,
   std::shared_ptr<FieldEvaluatorFactory<Real>> evaluator_factory) noexcept
   : layout_(std::move(layout)), evaluator_factory_(std::move(evaluator_factory))
 {
 }
 
-PolynomialReconstructionFunctionSpace
+std::shared_ptr<PolynomialReconstructionFunctionSpace>
 PolynomialReconstructionFunctionSpace::Create(
   Rank2View<Real, HostMemorySpace> coords, CoordinateSystem coordinate_system,
   MLSOptions options)
@@ -40,11 +40,11 @@ PolynomialReconstructionFunctionSpace::Create(
     std::make_shared<PointCloudLocalizationFactory>(pc_layout, options);
   auto eval_factory = std::make_shared<PointCloudEvaluatorFactory>(
     pc_layout, localization, options);
-  return PolynomialReconstructionFunctionSpace(pc_layout,
-                                               std::move(eval_factory));
+  return std::make_shared<PolynomialReconstructionFunctionSpace>(
+    Key{}, pc_layout, std::move(eval_factory));
 }
 
-PolynomialReconstructionFunctionSpace
+std::shared_ptr<PolynomialReconstructionFunctionSpace>
 PolynomialReconstructionFunctionSpace::FromMesh(
   Omega_h::Mesh& mesh, int source_entity_dim,
   CoordinateSystem coordinate_system, MLSOptions options)
@@ -66,8 +66,8 @@ PolynomialReconstructionFunctionSpace::FromMesh(
     mesh, source_entity_dim, options);
   auto eval_factory = std::make_shared<PointCloudEvaluatorFactory>(
     mesh_layout, localization, options);
-  return PolynomialReconstructionFunctionSpace(mesh_layout,
-                                               std::move(eval_factory));
+  return std::make_shared<PolynomialReconstructionFunctionSpace>(
+    Key{}, mesh_layout, std::move(eval_factory));
 }
 
 std::shared_ptr<const FieldLayout>

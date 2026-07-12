@@ -282,8 +282,8 @@ void CheckEvaluation(const Factory& factory, const Field<Real>& field,
                      double abs_tol = 1e-10)
 {
   auto device_coords =
-    CreateDeviceCoordinateView(pts, factory.GetCoordinateSystem());
-  auto evaluator = factory.template CreatePointEvaluator<Real>(
+    CreateDeviceCoordinateView(pts, factory->GetCoordinateSystem());
+  auto evaluator = factory->template CreatePointEvaluator<Real>(
     EvaluationRequest::FromCoordinates(device_coords.coordinate_view));
   CheckEvaluation<ExecutionSpace>(*evaluator, field, pts, func, abs_tol);
 }
@@ -314,9 +314,9 @@ void CheckFillMode(const Factory& factory, const Field<Real>& field,
                    Real fill_value, const std::vector<Real>& outside_pts)
 {
   auto device_coords =
-    CreateDeviceCoordinateView(outside_pts, factory.GetCoordinateSystem());
+    CreateDeviceCoordinateView(outside_pts, factory->GetCoordinateSystem());
   OutOfBoundsPolicy policy{OutOfBoundsMode::FILL, fill_value};
-  auto evaluator = factory.template CreatePointEvaluator<Real>(
+  auto evaluator = factory->template CreatePointEvaluator<Real>(
     EvaluationRequest::FromCoordinates(device_coords.coordinate_view, policy));
   CheckFillMode(*evaluator, field, fill_value, outside_pts);
 }
@@ -334,9 +334,9 @@ void CheckEvaluationWithFill(const Factory& factory, const Field<Real>& field,
   REQUIRE(static_cast<int>(is_inside.size()) == n);
 
   auto device_coords =
-    CreateDeviceCoordinateView(pts, factory.GetCoordinateSystem());
+    CreateDeviceCoordinateView(pts, factory->GetCoordinateSystem());
   OutOfBoundsPolicy policy{OutOfBoundsMode::FILL, fill_value};
-  auto evaluator = factory.template CreatePointEvaluator<Real>(
+  auto evaluator = factory->template CreatePointEvaluator<Real>(
     EvaluationRequest::FromCoordinates(device_coords.coordinate_view, policy));
 
   Kokkos::View<Real*, DeviceMemorySpace> out_device("out_device", n);

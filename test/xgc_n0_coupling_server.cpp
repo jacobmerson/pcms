@@ -43,12 +43,12 @@ struct RegisteredField
 [[nodiscard]]
 static RegisteredField AddField(
   pcms::Application* application,
-  const pcms::LagrangeFunctionSpace& function_space, const std::string& name,
-  const std::string& path, int plane)
+  const std::shared_ptr<pcms::LagrangeFunctionSpace>& function_space,
+  const std::string& name, const std::string& path, int plane)
 {
   PCMS_ALWAYS_ASSERT(application != nullptr);
   auto field_name = MakeFieldName(name, plane);
-  auto field = function_space.CreateField<pcms::Real>(path + field_name);
+  auto field = function_space->CreateFunction<pcms::Real>(path + field_name);
   std::unique_ptr<pcms::FieldSerializer<pcms::Real>> serializer =
     std::make_unique<pcms::FieldSerializer<pcms::Real>>();
   auto handle = application->AddField(std::move(field), std::move(serializer));

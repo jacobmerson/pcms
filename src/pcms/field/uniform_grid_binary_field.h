@@ -39,9 +39,9 @@ CreateUniformGridBinaryField(Omega_h::Mesh& mesh, const UniformGrid<Dim>& grid)
   auto function_space = LagrangeFunctionSpace::FromUniformGrid(
     grid, 1, CoordinateSystem::Cartesian);
   auto layout = std::dynamic_pointer_cast<const UniformGridFieldLayout<Dim>>(
-    function_space.GetLayout());
+    function_space->GetLayout());
   PCMS_ALWAYS_ASSERT(layout != nullptr);
-  auto field = function_space.template CreateField<Real>("", FieldMetadata{});
+  Field<Real> field = function_space->template CreateFunction<Real>("");
 
   auto coord_view = layout->GetDOFHolderCoordinates();
   auto coords = coord_view.GetValues();

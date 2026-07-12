@@ -21,8 +21,19 @@ namespace pcms
 
 class SplineFunctionSpace : public FunctionSpace
 {
+  // Passkey: only members (the From* factories) can create a Key, so only they
+  // can construct a space, while std::make_shared can still call the ctor.
+  struct Key
+  {
+    explicit Key() = default;
+  };
+
 public:
-  [[nodiscard]] static SplineFunctionSpace FromUniformGrid(
+  SplineFunctionSpace(
+    Key, std::shared_ptr<const FieldLayout> layout,
+    std::shared_ptr<FieldEvaluatorFactory<Real>> evaluator_factory) noexcept;
+
+  [[nodiscard]] static std::shared_ptr<SplineFunctionSpace> FromUniformGrid(
     const UniformGrid<2>& grid, CoordinateSystem coordinate_system);
 
   [[nodiscard]] std::shared_ptr<const FieldLayout> GetLayout()
@@ -41,10 +52,6 @@ protected:
     Type value_type, const EvaluationRequest& request) const override;
 
 private:
-  explicit SplineFunctionSpace(
-    std::shared_ptr<const FieldLayout> layout,
-    std::shared_ptr<FieldEvaluatorFactory<Real>> evaluator_factory) noexcept;
-
   std::shared_ptr<const FieldLayout> layout_;
   std::shared_ptr<FieldEvaluatorFactory<Real>> evaluator_factory_;
 };

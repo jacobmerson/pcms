@@ -182,10 +182,10 @@ TEST_CASE("EQDSKData with SplineFunctionSpace")
   {
     // auto spline_space = pcms::SplineFunctionSpace::FromEQDSK(eqdsk_data);
 
-    // auto psi_field = spline_space.CreateField<pcms::Real>();
+    // auto psi_field = spline_space->CreateFunction<pcms::Real>();
 
     auto [spline_space, psi_field] = pcms::MakeEQDSKField(eqdsk_data);
-    auto layout = spline_space.GetLayout();
+    auto layout = spline_space->GetLayout();
     const int layout_size = layout->OwnedSize();
     const int psizr_size = static_cast<int>(eqdsk_data.PSIZR.extent(0));
 
@@ -230,7 +230,7 @@ TEST_CASE("EQDSKData with SplineFunctionSpace")
     auto eval_request = pcms::EvaluationRequest::FromCoordinates(coord_view);
 
     auto evaluator =
-      spline_space.CreatePointEvaluator<pcms::Real>(eval_request);
+      spline_space->CreatePointEvaluator<pcms::Real>(eval_request);
 
     auto eval_results_1d = Kokkos::View<pcms::Real*, pcms::DeviceMemorySpace>(
       "eval_results", num_eval_points);

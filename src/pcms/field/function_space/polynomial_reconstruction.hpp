@@ -23,14 +23,25 @@ class FieldEvaluatorFactory;
 
 class PolynomialReconstructionFunctionSpace : public FunctionSpace
 {
-public:
-  [[nodiscard]] static PolynomialReconstructionFunctionSpace Create(
-    Rank2View<Real, HostMemorySpace> coords, CoordinateSystem coordinate_system,
-    MLSOptions options = {});
+  // Passkey: only members (the Create/FromMesh factories) can create a Key, so
+  // only they can construct a space, while std::make_shared can call the ctor.
+  struct Key
+  {
+    explicit Key() = default;
+  };
 
-  [[nodiscard]] static PolynomialReconstructionFunctionSpace FromMesh(
-    Omega_h::Mesh& mesh, int source_entity_dim,
-    CoordinateSystem coordinate_system, MLSOptions options = {});
+public:
+  PolynomialReconstructionFunctionSpace(
+    Key, std::shared_ptr<const FieldLayout> layout,
+    std::shared_ptr<FieldEvaluatorFactory<Real>> evaluator_factory) noexcept;
+
+  [[nodiscard]] static std::shared_ptr<PolynomialReconstructionFunctionSpace>
+  Create(Rank2View<Real, HostMemorySpace> coords,
+         CoordinateSystem coordinate_system, MLSOptions options = {});
+
+  [[nodiscard]] static std::shared_ptr<PolynomialReconstructionFunctionSpace>
+  FromMesh(Omega_h::Mesh& mesh, int source_entity_dim,
+           CoordinateSystem coordinate_system, MLSOptions options = {});
 
   [[nodiscard]] std::shared_ptr<const FieldLayout> GetLayout()
     const noexcept override;
@@ -48,10 +59,6 @@ protected:
     Type value_type, const EvaluationRequest& request) const override;
 
 private:
-  explicit PolynomialReconstructionFunctionSpace(
-    std::shared_ptr<const FieldLayout> layout,
-    std::shared_ptr<FieldEvaluatorFactory<Real>> evaluator_factory) noexcept;
-
   std::shared_ptr<const FieldLayout> layout_;
   std::shared_ptr<FieldEvaluatorFactory<Real>> evaluator_factory_;
 };

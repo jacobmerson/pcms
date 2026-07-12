@@ -93,14 +93,14 @@ void xgc_delta_f(MPI_Comm comm, Omega_h::Mesh& mesh)
     mesh, 1, 1, pcms::CoordinateSystem::Cartesian, "global",
     pcms::LagrangeFunctionSpace::DefaultBackend, "gids");
 
-  auto gids_field = factory.CreateField<pcms::Real>("gids");
-  auto gids2_field = factory.CreateField<pcms::Real>("gids2");
+  auto gids_field = factory->CreateFunction<pcms::Real>("gids");
+  auto gids2_field = factory->CreateFunction<pcms::Real>("gids2");
 
   auto* gids_ptr = &gids_field.GetData();
   auto* gids2_ptr = &gids2_field.GetData();
 
-  initializeFieldWithGids(*factory.GetLayout(), gids_ptr, 1.0);
-  initializeFieldWithGids(*factory.GetLayout(), gids2_ptr, 2.0);
+  initializeFieldWithGids(*factory->GetLayout(), gids_ptr, 1.0);
+  initializeFieldWithGids(*factory->GetLayout(), gids2_ptr, 2.0);
 
   app->AddField(std::move(gids_field));
   app->AddField(std::move(gids2_field));
@@ -114,7 +114,7 @@ void xgc_delta_f(MPI_Comm comm, Omega_h::Mesh& mesh)
       app->ReceiveField("gids"); //(Alt) df_gid_field->Receive();
       app->EndReceivePhase();
 
-      if (!validateField(*factory.GetLayout(), gids_ptr, "gids", rank, 1.0)) {
+      if (!validateField(*factory->GetLayout(), gids_ptr, "gids", rank, 1.0)) {
         std::cerr << "xgc_delta_f: Field validation failed at round " << i
                   << std::endl;
         exit(EXIT_FAILURE);
@@ -134,11 +134,11 @@ void xgc_total_f(MPI_Comm comm, Omega_h::Mesh& mesh)
     mesh, 1, 1, pcms::CoordinateSystem::Cartesian, "global",
     pcms::LagrangeFunctionSpace::DefaultBackend, "gids");
 
-  auto gids_field = factory.CreateField<pcms::Real>("gids");
+  auto gids_field = factory->CreateFunction<pcms::Real>("gids");
 
   auto* gids_ptr = &gids_field.GetData();
 
-  initializeFieldWithGids(*factory.GetLayout(), gids_ptr, 10.0);
+  initializeFieldWithGids(*factory->GetLayout(), gids_ptr, 10.0);
 
   app->AddField(std::move(gids_field));
 
@@ -151,7 +151,7 @@ void xgc_total_f(MPI_Comm comm, Omega_h::Mesh& mesh)
       app->ReceiveField("gids"); //(Alt) tf_gid_field->Receive();
       app->EndReceivePhase();
 
-      if (!validateField(*factory.GetLayout(), gids_ptr, "gids", rank, 10.0)) {
+      if (!validateField(*factory->GetLayout(), gids_ptr, "gids", rank, 10.0)) {
         std::cerr << "xgc_total_f: Field validation failed at round " << i
                   << std::endl;
         exit(EXIT_FAILURE);
@@ -180,9 +180,9 @@ void xgc_coupler(MPI_Comm comm, Omega_h::Mesh& mesh, std::string_view cpn_file)
     mesh, 1, 1, pcms::CoordinateSystem::Cartesian, "global",
     pcms::LagrangeFunctionSpace::DefaultBackend, "gids");
   // TODO, fields should have a transfer policy rather than parameters
-  auto total_gids_field = factory_total.CreateField<pcms::Real>("gids");
-  auto delta_gids_field = factory_delta.CreateField<pcms::Real>("gids");
-  auto delta_gids2_field = factory_delta.CreateField<pcms::Real>("gids2");
+  auto total_gids_field = factory_total->CreateFunction<pcms::Real>("gids");
+  auto delta_gids_field = factory_delta->CreateFunction<pcms::Real>("gids");
+  auto delta_gids2_field = factory_delta->CreateFunction<pcms::Real>("gids2");
 
   auto* total_gids_ptr = &total_gids_field.GetData();
   auto* delta_gids_ptr = &delta_gids_field.GetData();
@@ -198,7 +198,7 @@ void xgc_coupler(MPI_Comm comm, Omega_h::Mesh& mesh, std::string_view cpn_file)
       total_f->ReceiveField("gids");
       total_f->EndReceivePhase();
 
-      if (!validateField(*factory_total.GetLayout(), total_gids_ptr, "gids",
+      if (!validateField(*factory_total->GetLayout(), total_gids_ptr, "gids",
                          rank, 10.0)) {
         std::cerr << "xgc_coupler: total_f field validation failed at round "
                   << i << std::endl;
@@ -209,7 +209,7 @@ void xgc_coupler(MPI_Comm comm, Omega_h::Mesh& mesh, std::string_view cpn_file)
       delta_f->ReceiveField("gids");
       delta_f->EndReceivePhase();
 
-      if (!validateField(*factory_delta.GetLayout(), delta_gids_ptr, "gids",
+      if (!validateField(*factory_delta->GetLayout(), delta_gids_ptr, "gids",
                          rank, 1.0)) {
         std::cerr << "xgc_coupler: delta_f field validation failed at round "
                   << i << std::endl;

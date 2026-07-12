@@ -102,9 +102,9 @@ TEST_CASE(
     mesh, 1, 1, pcms::CoordinateSystem::Cartesian, "global",
     pcms::LagrangeFunctionSpace::Backend::OmegaH);
 
-  const auto ref = BuildReferenceMassMap(mesh, space);
+  const auto ref = BuildReferenceMassMap(mesh, *space);
 
-  auto integrator = pcms::BuildOmegaHMassIntegrator(space);
+  auto integrator = pcms::BuildOmegaHMassIntegrator(*space);
   Mat mat = integrator->GetMatrix();
 
   for (const auto& [key, ref_val] : ref) {
@@ -134,11 +134,11 @@ TEST_CASE("OmegaHMassIntegrator: row sums match lumped mass",
 
   const auto layout =
     std::dynamic_pointer_cast<const pcms::OmegaHLagrangeLayout>(
-      space.GetLayout());
+      space->GetLayout());
   const auto& gids = layout->GetGidsHost();
   const int nverts = mesh.nverts();
 
-  auto integrator = pcms::BuildOmegaHMassIntegrator(space);
+  auto integrator = pcms::BuildOmegaHMassIntegrator(*space);
   Mat mat = integrator->GetMatrix();
 
   // Sum all row sums.
@@ -174,7 +174,7 @@ TEST_CASE("OmegaHMassIntegrator: rejects invalid layouts", "[mass_integrator]")
     auto space = pcms::LagrangeFunctionSpace::FromMesh(
       mesh, 1, 2, pcms::CoordinateSystem::Cartesian, "global",
       pcms::LagrangeFunctionSpace::Backend::OmegaH);
-    REQUIRE_THROWS(pcms::BuildOmegaHMassIntegrator(space));
+    REQUIRE_THROWS(pcms::BuildOmegaHMassIntegrator(*space));
   }
 
   SECTION("non-Cartesian coordinate system throws")
@@ -182,6 +182,6 @@ TEST_CASE("OmegaHMassIntegrator: rejects invalid layouts", "[mass_integrator]")
     auto space = pcms::LagrangeFunctionSpace::FromMesh(
       mesh, 1, 1, pcms::CoordinateSystem::Cylindrical, "global",
       pcms::LagrangeFunctionSpace::Backend::OmegaH);
-    REQUIRE_THROWS(pcms::BuildOmegaHMassIntegrator(space));
+    REQUIRE_THROWS(pcms::BuildOmegaHMassIntegrator(*space));
   }
 }
