@@ -28,7 +28,8 @@ template <typename UnitSampleAt>
 KOKKOS_INLINE_FUNCTION void FillElementSamples(
   const int elm, const int samples_per_element,
   const Omega_h::Reals& mesh_coords, const Omega_h::LOs& faces2nodes,
-  const GO* gids, const Kokkos::View<Real**, DeviceMemorySpace>& coords,
+  const Kokkos::View<const LO*, DeviceMemorySpace>& global_to_local,
+  const Kokkos::View<Real**, DeviceMemorySpace>& coords,
   const Kokkos::View<PetscInt*, DeviceMemorySpace>& node_gids,
   const Kokkos::View<Real*, DeviceMemorySpace>& coeffs,
   const UnitSampleAt& unit_sample_at)
@@ -53,7 +54,7 @@ KOKKOS_INLINE_FUNCTION void FillElementSamples(
     for (int k = 0; k < 3; ++k) {
       x += bary[k] * vert_coords[k][0];
       y += bary[k] * vert_coords[k][1];
-      node_gids(i * 3 + k) = static_cast<PetscInt>(gids[verts[k]]);
+      node_gids(i * 3 + k) = static_cast<PetscInt>(global_to_local(verts[k]));
       coeffs(i * 3 + k) = bary[k] * weight;
     }
     coords(i, 0) = x;
@@ -85,8 +86,7 @@ OmegaHMonteCarloRHSIntegrator::Data OmegaHMonteCarloRHSIntegrator::BuildData(
   const int num_samples = nelems * samples_per_element;
   const auto mesh_coords = mesh.coords();
   const auto faces2nodes = mesh.ask_down(Omega_h::FACE, Omega_h::VERT).ab2b;
-  const auto device_gids = target_layout->GetGids();
-  const GO* gids_ptr = device_gids.data_handle();
+  const auto global_to_local = target_layout->GetGlobalToLocalPermutation();
 
   Data d;
   d.coords =
@@ -107,8 +107,9 @@ OmegaHMonteCarloRHSIntegrator::Data OmegaHMonteCarloRHSIntegrator::BuildData(
     "mc_rhs_fill_random", Kokkos::RangePolicy<DefaultExecutionSpace>(0, nelems),
     KOKKOS_LAMBDA(int elm) {
       auto gen = pool.get_state();
-      FillElementSamples(elm, npe, mesh_coords, faces2nodes, gids_ptr, coords,
-                         node_gids, coeffs, [&](int /*s*/, Real& u, Real& v) {
+      FillElementSamples(elm, npe, mesh_coords, faces2nodes, global_to_local,
+                         coords, node_gids, coeffs,
+                         [&](int /*s*/, Real& u, Real& v) {
                            u = gen.drand();
                            v = gen.drand();
                          });

@@ -39,10 +39,11 @@ Omega_h::Mesh BuildUnitSquare(Omega_h::Library& lib, const Omega_h::LOs& ev2v)
   return mesh;
 }
 
-pcms::LagrangeFunctionSpace MakeP1Space(Omega_h::Mesh& mesh)
+pcms::LagrangeFunctionSpace MakeP1Space(
+  Omega_h::Mesh& mesh, const std::string& global_id_name = "global")
 {
   return pcms::LagrangeFunctionSpace::FromMesh(
-    mesh, 1, 1, pcms::CoordinateSystem::Cartesian, "global",
+    mesh, 1, 1, pcms::CoordinateSystem::Cartesian, global_id_name,
     pcms::LagrangeFunctionSpace::Backend::OmegaH);
 }
 
@@ -51,6 +52,20 @@ pcms::LagrangeFunctionSpace MakeP0Space(Omega_h::Mesh& mesh)
   return pcms::LagrangeFunctionSpace::FromMesh(
     mesh, 0, 1, pcms::CoordinateSystem::Cartesian, "global",
     pcms::LagrangeFunctionSpace::Backend::OmegaH);
+}
+
+void AddReorderedVertexGlobalIds(Omega_h::Mesh& mesh)
+{
+  mesh.add_tag<Omega_h::GO>(
+    0, "reordered_global", 1,
+    Omega_h::Read<Omega_h::GO>({2, 0, 3, 1}, "reordered_global"));
+}
+
+void AddSparseVertexGlobalIds(Omega_h::Mesh& mesh)
+{
+  mesh.add_tag<Omega_h::GO>(
+    0, "sparse_global", 1,
+    Omega_h::Read<Omega_h::GO>({102, 7, 41, 19}, "sparse_global"));
 }
 
 // Integral over the mesh of an order-0 (piecewise-constant) field whose values
@@ -214,6 +229,84 @@ TEST_CASE("OmegaHConservativeProjection conserves the integral",
   projection.Apply(source, target);
   REQUIRE(IntegrateP1Field(target_mesh, target) ==
           Catch::Approx(IntegrateP1Field(source_mesh, source)).margin(1e-12));
+}
+
+TEST_CASE("OmegaHConservativeProjection writes reordered target GIDs in local "
+          "DOF order",
+          "[transfer][mesh_intersection]")
+{
+  Omega_h::Library lib;
+
+  Omega_h::Mesh source_mesh =
+    BuildUnitSquare(lib, Omega_h::LOs({0, 1, 2, 0, 2, 3}));
+  Omega_h::Mesh target_mesh =
+    BuildUnitSquare(lib, Omega_h::LOs({0, 1, 3, 1, 2, 3}));
+  AddReorderedVertexGlobalIds(target_mesh);
+
+  auto source_space = MakeP1Space(source_mesh);
+  auto target_space = MakeP1Space(target_mesh, "reordered_global");
+
+  auto source = source_space.CreateField<pcms::Real>();
+  auto target = target_space.CreateField<pcms::Real>();
+
+  pcms::test::SetField(
+    source, OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) { return x + 2.0 * y; });
+
+  pcms::OmegaHConservativeProjection projection(source_space, target_space);
+  projection.Apply(source, target);
+
+  const auto target_values = target.GetDOFHolderDataHost();
+  const auto target_coords =
+    target_space.GetLayout()->GetDOFHolderCoordinates().GetValues();
+  const auto target_coords_h = pcms::test::CopyCoordinatesToHost(
+    target_coords, target_mesh.nverts(), target_mesh.dim());
+  REQUIRE(static_cast<Omega_h::LO>(target_values.extent(0)) ==
+          target_mesh.nverts());
+  REQUIRE(target_values.extent(1) == 1);
+  for (Omega_h::LO i = 0; i < target_mesh.nverts(); ++i) {
+    const double expected = target_coords_h(i, 0) + 2.0 * target_coords_h(i, 1);
+    CAPTURE(i);
+    REQUIRE(target_values(i, 0) == Catch::Approx(expected).margin(1e-9));
+  }
+}
+
+TEST_CASE("OmegaHConservativeProjection maps sparse target GIDs to active "
+          "PETSc rows",
+          "[transfer][mesh_intersection]")
+{
+  Omega_h::Library lib;
+
+  Omega_h::Mesh source_mesh =
+    BuildUnitSquare(lib, Omega_h::LOs({0, 1, 2, 0, 2, 3}));
+  Omega_h::Mesh target_mesh =
+    BuildUnitSquare(lib, Omega_h::LOs({0, 1, 3, 1, 2, 3}));
+  AddSparseVertexGlobalIds(target_mesh);
+
+  auto source_space = MakeP1Space(source_mesh);
+  auto target_space = MakeP1Space(target_mesh, "sparse_global");
+
+  auto source = source_space.CreateField<pcms::Real>();
+  auto target = target_space.CreateField<pcms::Real>();
+
+  pcms::test::SetField(
+    source, OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) { return x + 2.0 * y; });
+
+  pcms::OmegaHConservativeProjection projection(source_space, target_space);
+  projection.Apply(source, target);
+
+  const auto target_values = target.GetDOFHolderDataHost();
+  const auto target_coords =
+    target_space.GetLayout()->GetDOFHolderCoordinates().GetValues();
+  const auto target_coords_h = pcms::test::CopyCoordinatesToHost(
+    target_coords, target_mesh.nverts(), target_mesh.dim());
+  REQUIRE(static_cast<Omega_h::LO>(target_values.extent(0)) ==
+          target_mesh.nverts());
+  REQUIRE(target_values.extent(1) == 1);
+  for (Omega_h::LO i = 0; i < target_mesh.nverts(); ++i) {
+    const double expected = target_coords_h(i, 0) + 2.0 * target_coords_h(i, 1);
+    CAPTURE(i);
+    REQUIRE(target_values(i, 0) == Catch::Approx(expected).margin(1e-9));
+  }
 }
 
 // P0 (piecewise-constant) source -> P1 target. A constant lives in P1, so it is

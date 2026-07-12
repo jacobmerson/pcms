@@ -282,8 +282,7 @@ struct IntegrationData
 // Each specialization provides, for a target element `elm` with local vertex
 // ids `verts` and vertex coordinates `tgt_verts`:
 //   ndof            number of local target DOFs
-//   Gid(...)        global DOF id for local dof k (element id for P0, vertex
-//                   id for P1) — matching OmegaHLagrangeLayout::GetGids()
+//   Index(...)      active PETSc row for local dof k
 //   Values(pt, ...) basis values at the (global) integration point pt
 template <int Order>
 struct TargetTriBasis;
@@ -293,11 +292,13 @@ struct TargetTriBasis<0>
 {
   static constexpr int ndof = 1;
 
-  KOKKOS_INLINE_FUNCTION static GO Gid(const GO* gids, int elm,
-                                       const Omega_h::Few<Omega_h::LO, 3>&,
-                                       int /*k*/)
+  template <typename Permutation>
+  KOKKOS_INLINE_FUNCTION static LO Index(const Permutation& permutation,
+                                         int elm,
+                                         const Omega_h::Few<Omega_h::LO, 3>&,
+                                         int /*k*/)
   {
-    return gids[elm];
+    return permutation(elm);
   }
 
   KOKKOS_INLINE_FUNCTION static void Values(
@@ -313,11 +314,12 @@ struct TargetTriBasis<1>
 {
   static constexpr int ndof = 3;
 
-  KOKKOS_INLINE_FUNCTION static GO Gid(
-    const GO* gids, int /*elm*/, const Omega_h::Few<Omega_h::LO, 3>& verts,
-    int k)
+  template <typename Permutation>
+  KOKKOS_INLINE_FUNCTION static LO Index(
+    const Permutation& permutation, int /*elm*/,
+    const Omega_h::Few<Omega_h::LO, 3>& verts, int k)
   {
-    return gids[verts[k]];
+    return permutation(verts[k]);
   }
 
   // P1 basis functions are the barycentric coordinates of the target element

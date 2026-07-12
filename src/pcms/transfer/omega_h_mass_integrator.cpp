@@ -29,10 +29,9 @@ OmegaHMassIntegrator::OmegaHMassIntegrator(
                                           "OmegaHMassIntegrator", "target");
 
   Omega_h::Mesh& mesh = target_layout->GetMesh();
-  const auto device_gids = target_layout->GetGids();
-  const GO* gids_ptr = device_gids.data_handle();
+  const auto global_to_local = target_layout->GetGlobalToLocalPermutation();
   const PetscInt num_dofs =
-    static_cast<PetscInt>(target_layout->GetNumGlobalDofHolder());
+    static_cast<PetscInt>(target_layout->GetNumOwnedDofHolder());
   const int nelems = mesh.nelems();
 
   if (target_layout->GetOrder() == 0) {
@@ -56,7 +55,7 @@ OmegaHMassIntegrator::OmegaHMassIntegrator(
         basis[1] = vm[2] - vm[0];
         const Omega_h::Real area =
           Kokkos::fabs(Omega_h::triangle_area_from_basis(basis));
-        const PetscInt g = static_cast<PetscInt>(gids_ptr[e]);
+        const PetscInt g = static_cast<PetscInt>(global_to_local(e));
         coo_rows(e) = g;
         coo_cols(e) = g;
         vals(e) = static_cast<PetscScalar>(area);
@@ -95,8 +94,8 @@ OmegaHMassIntegrator::OmegaHMassIntegrator(
       for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
           const int idx = e * 9 + i * 3 + j;
-          coo_rows(idx) = static_cast<PetscInt>(gids_ptr[verts[i]]);
-          coo_cols(idx) = static_cast<PetscInt>(gids_ptr[verts[j]]);
+          coo_rows(idx) = static_cast<PetscInt>(global_to_local(verts[i]));
+          coo_cols(idx) = static_cast<PetscInt>(global_to_local(verts[j]));
         }
       }
     });

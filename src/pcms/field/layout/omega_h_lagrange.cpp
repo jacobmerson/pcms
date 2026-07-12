@@ -146,6 +146,8 @@ OmegaHLagrangeLayout::OmegaHLagrangeLayout(Omega_h::Mesh& mesh, int order,
     classification_ids_host_(i) = static_cast<LO>(class_ids_host[i]);
   }
   discretization_ = std::make_shared<OmegaHDiscretization>(mesh_);
+
+  BuildGlobalToLocalPermutation();
 }
 
 OmegaHLagrangeLayout::OmegaHLagrangeLayout(
@@ -189,6 +191,8 @@ OmegaHLagrangeLayout::OmegaHLagrangeLayout(
     classification_ids_host_(i) = static_cast<LO>(class_ids_host[i]);
   }
   discretization_ = std::make_shared<OmegaHDiscretization>(mesh_);
+
+  BuildGlobalToLocalPermutation();
 }
 
 std::shared_ptr<const Discretization> OmegaHLagrangeLayout::GetDiscretization()

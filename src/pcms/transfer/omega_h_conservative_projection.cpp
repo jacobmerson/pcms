@@ -60,6 +60,9 @@ OmegaHConservativeProjection::OmegaHConservativeProjection(
                                        target_space.GetCoordinateSystem());
   solver_ = std::make_unique<GalerkinProjectionSolver>(mass_integrator,
                                                        *rhs_integrator_);
+  target_values_ = Kokkos::View<Real**, DeviceMemorySpace>(
+    "conservative_projection_target_values",
+    target_layout_->GetNumOwnedDofHolder(), target_layout_->GetNumComponents());
 }
 
 // Defined here so that GalerkinProjectionSolver (forward-declared in the
@@ -71,11 +74,22 @@ void OmegaHConservativeProjection::Apply(const Field<Real>& source,
 {
   CheckApplyCompatible(source, target, *source_layout_, *target_layout_);
 
-  const auto target_values = solver_->Solve(*evaluator_, source);
-  auto target_values_h = Omega_h::HostRead<Omega_h::Real>(target_values);
-  target.SetDOFHolderDataHost(Rank2View<const Real, HostMemorySpace>(
-    target_values_h.data(), target_layout_->GetNumOwnedDofHolder(),
-    target_layout_->GetNumComponents()));
+  const auto solution = solver_->Solve(*evaluator_, source);
+  const auto global_to_local = target_layout_->GetGlobalToLocalPermutation();
+  const int num_dof_holders = target_layout_->GetNumOwnedDofHolder();
+  const int num_components = target_layout_->GetNumComponents();
+  auto target_values = target_values_;
+  Kokkos::parallel_for(
+    "conservative_projection_scatter_solution",
+    Kokkos::RangePolicy<DefaultExecutionSpace>(0, num_dof_holders),
+    KOKKOS_LAMBDA(int i) {
+      for (int c = 0; c < num_components; ++c) {
+        target_values(i, c) = solution[global_to_local(i) * num_components + c];
+      }
+    });
+  Kokkos::fence();
+
+  target.SetDOFHolderData(MakeConstRank2View(target_values_));
 }
 
 } // namespace pcms

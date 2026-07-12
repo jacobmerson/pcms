@@ -6,6 +6,7 @@
 #include "pcms/field/point_evaluator.h"
 #include "pcms/transfer/omega_h_intersection_rhs_integrator.hpp"
 #include "pcms/transfer/transfer_operator.hpp"
+#include <Kokkos_Core.hpp>
 #include <memory>
 
 namespace pcms
@@ -45,6 +46,7 @@ private:
   std::unique_ptr<OmegaHIntersectionRHSIntegrator> rhs_integrator_;
   std::unique_ptr<PointEvaluator<Real>> evaluator_;
   std::unique_ptr<GalerkinProjectionSolver> solver_;
+  mutable Kokkos::View<Real**, DeviceMemorySpace> target_values_;
 };
 
 } // namespace pcms

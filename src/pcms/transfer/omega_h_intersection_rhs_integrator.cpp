@@ -79,8 +79,7 @@ OmegaHIntersectionRHSIntegrator::BuildDataImpl(
   auto bary_coords = ip_data.bary_coords; // device view
   auto weights = ip_data.weights;         // device view
 
-  const auto device_gids = target_layout.GetGids();
-  const GO* gids_ptr = device_gids.data_handle();
+  const auto global_to_local = target_layout.GetGlobalToLocalPermutation();
 
   const Omega_h::LOs tgt2src_offsets = intersections.tgt2src_offsets;
   const Omega_h::LOs tgt2src_indices = intersections.tgt2src_indices;
@@ -143,8 +142,8 @@ OmegaHIntersectionRHSIntegrator::BuildDataImpl(
             coords(global_ip, 0) = pt[0];
             coords(global_ip, 1) = pt[1];
             for (int k = 0; k < ndof; ++k) {
-              node_gids(global_ip * ndof + k) =
-                static_cast<PetscInt>(Basis::Gid(gids_ptr, elm, tgt_verts, k));
+              node_gids(global_ip * ndof + k) = static_cast<PetscInt>(
+                Basis::Index(global_to_local, elm, tgt_verts, k));
               coeffs(global_ip * ndof + k) = basis[k] * w * 2.0 * area;
             }
             ++ip_local;
@@ -159,7 +158,7 @@ OmegaHIntersectionRHSIntegrator::BuildDataImpl(
   d.coeffs = std::move(coeffs);
   d.ndof_per_elem = ndof;
   d.num_target_dofs =
-    static_cast<PetscInt>(target_layout.GetNumGlobalDofHolder());
+    static_cast<PetscInt>(target_layout.GetNumOwnedDofHolder());
   return d;
 }
 

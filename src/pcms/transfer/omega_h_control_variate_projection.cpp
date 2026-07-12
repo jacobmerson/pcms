@@ -64,26 +64,21 @@ void OmegaHControlVariateProjection::Apply(const Field<Real>& source,
   // 3. Project the residual: M * delta = r.
   const auto delta = solver_->Solve(MakeConstRank2View(residual));
 
-  // 4. x = g + delta. delta is indexed by global id (PETSc row), the DOF
-  //    holder by local vertex id.
+  // 4. x = g + delta. delta is indexed by active PETSc row, while the field is
+  //    indexed by local DOF holder.
   const auto g_nodal = control_variate_.GetDOFHolderData();
-  auto g_view = Kokkos::View<const Real*, DeviceMemorySpace,
-                             Kokkos::MemoryTraits<Kokkos::Unmanaged>>(
-    g_nodal.data_handle(), g_nodal.extent(0));
-  const auto device_gids = target_layout_->GetGids();
-  const GO* gids_ptr = device_gids.data_handle();
-  const int nverts = static_cast<int>(g_view.extent(0));
+  const auto global_to_local = target_layout_->GetGlobalToLocalPermutation();
+  const int nverts = static_cast<int>(g_nodal.extent(0));
 
-  Kokkos::View<Real*, DeviceMemorySpace> result("cv_result", nverts);
+  Kokkos::View<Real**, DeviceMemorySpace> result("cv_result", nverts, 1);
   Kokkos::parallel_for(
     "cv_add_correction", Kokkos::RangePolicy<DefaultExecutionSpace>(0, nverts),
     KOKKOS_LAMBDA(int i) {
-      result(i) = g_view(i) + delta[static_cast<Omega_h::LO>(gids_ptr[i])];
+      result(i, 0) = g_nodal(i, 0) + delta[global_to_local(i)];
     });
   Kokkos::fence();
 
-  target.SetDOFHolderData(
-    Rank2View<const Real, DeviceMemorySpace>(result.data(), nverts, 1));
+  target.SetDOFHolderData(MakeConstRank2View(result));
 }
 
 } // namespace pcms
