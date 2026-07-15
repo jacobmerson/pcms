@@ -18,6 +18,7 @@ add_subdirectory(pcms/discretization)
 add_subdirectory(pcms/localization)
 add_subdirectory(pcms/field)
 add_subdirectory(pcms/coupler)
+add_subdirectory(pcms/transient)
 
 
 
@@ -105,6 +106,7 @@ endif()
 
 add_subdirectory(pcms/transfer)
 target_link_libraries(pcms_pcms INTERFACE pcms::transfer)
+target_link_libraries(pcms_pcms INTERFACE pcms::transient)
 
 install(
   TARGETS pcms_pcms

@@ -404,13 +404,24 @@ if(PCMS_ENABLE_OMEGA_H)
       ignored)
   endif()
 endif()
+# Transient overlapping-Schwarz demonstration (dependency-free: no Omega_h /
+# PETSc / MFEM / redev / SUNDIALS). Partitioned 1D heat domain with overlap,
+# driven by the transient coupling layer; see
+# docs/transient_coupled_simulation_plan.md.
+add_executable(test_transient_overlap_schwarz test_transient_overlap_schwarz.cpp)
+target_link_libraries(test_transient_overlap_schwarz PRIVATE pcms::transient)
+target_compile_features(test_transient_overlap_schwarz PRIVATE cxx_std_20)
+add_test(NAME test_transient_overlap_schwarz
+         COMMAND test_transient_overlap_schwarz)
+
 # unit tests
 find_package(Catch2 3)
 if(Catch2_FOUND)
   message(
     STATUS "Found Catch2: ${Catch2_DIR} (found version ${Catch2_VERSION})")
   set(PCMS_UNIT_TEST_SOURCES unit_test_main.cpp test_coordinate_transform.cpp
-                             test_coordinate.cpp test_bounding_box.cpp)
+                             test_coordinate.cpp test_bounding_box.cpp
+                             test_transient_coupling.cpp)
   if(PCMS_ENABLE_XGC)
     list(APPEND PCMS_UNIT_TEST_SOURCES test_xgc_reverse_classification.cpp
          test_xgc_field_data.cpp)
@@ -464,7 +475,7 @@ if(Catch2_FOUND)
   endif()
 
   target_link_libraries(unit_tests PUBLIC Catch2::Catch2 pcms::core
-          pcms::transfer Kokkos::kokkoskernels)
+          pcms::transfer pcms::transient Kokkos::kokkoskernels)
   target_include_directories(unit_tests PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
   if(PCMS_ENABLE_PETSC)

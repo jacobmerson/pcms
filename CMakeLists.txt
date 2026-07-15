@@ -125,6 +125,7 @@ find_package(Kokkos CONFIG 4.5 REQUIRED)
 
 option(PCMS_ENABLE_MESHFIELDS "Enable MeshFields support" ON)
 option(PCMS_ENABLE_PETSC "Enable PETSc support" OFF)
+option(PCMS_ENABLE_SUNDIALS "Enable SUNDIALS-backed transient strategies" OFF)
 
 if(PCMS_ENABLE_MESHFIELDS)
   find_package(meshfields REQUIRED)
@@ -133,6 +134,11 @@ endif()
 
 if(PCMS_ENABLE_PETSC)
   find_package(PETSc REQUIRED)
+endif()
+
+if(PCMS_ENABLE_SUNDIALS)
+  find_package(SUNDIALS REQUIRED)
+  message(STATUS "Found SUNDIALS: ${SUNDIALS_DIR} (found version ${SUNDIALS_VERSION})")
 endif()
 
 add_subdirectory(src)
