@@ -104,8 +104,8 @@ TEST_CASE("MFEM vertex-scalar field adapter")
     mfem::FunctionCoefficient coeff(LinearField);
     gf.ProjectCoefficient(coeff);
 
-    auto fs = pcms::MFEMFieldFactory(
-      pmesh, pfes, gf, pcms::CoordinateSystem::Cartesian);
+    auto fs = pcms::MFEMFieldFactory(pmesh, pfes, gf,
+                                     pcms::CoordinateSystem::Cartesian);
     auto field = fs.CreateField<pcms::Real>();
     const auto& layout = field.GetLayout();
 
@@ -119,8 +119,7 @@ TEST_CASE("MFEM vertex-scalar field adapter")
     Kokkos::View<pcms::Real*, pcms::HostMemorySpace> buffer("buffer", n);
 
     pcms::FieldSerializer<pcms::Real> serializer;
-    serializer.Serialize(field.GetData(), layout,
-                         pcms::make_array_view(buffer),
+    serializer.Serialize(field.GetData(), layout, pcms::make_array_view(buffer),
                          pcms::make_const_array_view(perm));
 
     // Deserialize into a fresh field bound to a second grid function.
