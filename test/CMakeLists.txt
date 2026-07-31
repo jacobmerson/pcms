@@ -486,6 +486,48 @@ if(PCMS_ENABLE_MFEM)
       ARGS2
       0)
   endif()
+  add_executable(mfem_participant testing/mfem_participant.cpp)
+  target_include_directories(
+          mfem_participant PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(
+          mfem_participant PRIVATE mfem pcms::transient_participant_adapter)
+
+  add_executable(
+          test_mfem_overlap_coupling test_mfem_overlap_coupling.cpp)
+  target_link_libraries(
+          test_mfem_overlap_coupling
+          PRIVATE pcms::transient_participant_adapter)
+  tri_mpi_test(
+          TESTNAME
+          test_mfem_overlap_coupling
+          TIMEOUT
+          120
+
+          NAME1
+          coupler
+          EXE1 $<TARGET_FILE:test_mfem_overlap_coupling>
+          PROCS1 
+          1
+          ARGS1
+          ${PCMS_TEST_DATA_DIR}/box_A_marked.osh
+          ${PCMS_TEST_DATA_DIR}/box_B_marked.osh
+
+          NAME2
+          participant_A
+          EXE2 $<TARGET_FILE:mfem_participant>
+          PROCS2 1
+          ARGS2
+          A
+          ${PCMS_TEST_DATA_DIR}/box_A_marked.mesh
+
+          NAME3
+          participant_B
+          EXE3 $<TARGET_FILE:mfem_participant>
+          PROCS3 1
+          ARGS3
+          B
+          ${PCMS_TEST_DATA_DIR}/box_B_marked.mesh)
+
 endif()
 
 if(PCMS_ENABLE_C)

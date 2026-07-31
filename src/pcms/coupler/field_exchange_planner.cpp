@@ -80,7 +80,7 @@ static redev::LOs ConstructPermutation(
   int* length)
 {
   PCMS_FUNCTION_TIMER;
-  redev::LOs permutation(num_entries);
+  redev::LOs permutation(num_entries, kUnreceivedDof);
   LO entry = 0;
   for (const auto& rank : reverse_partition) {
     entry += ent_offsets_len;
@@ -132,7 +132,7 @@ static redev::LOs ConstructPermutation(
       break;
   }
 
-  redev::LOs permutation(local_gids.size());
+  redev::LOs permutation(local_gids.size(), kUnreceivedDof);
   for (size_t e = 0; e < ent_offsets.size() - 1; ++e) {
     const auto start = ent_offsets[e];
     const auto end = ent_offsets[e + 1];

@@ -18,7 +18,7 @@ add_subdirectory(pcms/discretization)
 add_subdirectory(pcms/localization)
 add_subdirectory(pcms/field)
 add_subdirectory(pcms/coupler)
-
+add_subdirectory(pcms/transient)
 
 
 find_package(Kokkos REQUIRED)
@@ -104,7 +104,10 @@ if(PCMS_ENABLE_Fortran)
 endif()
 
 add_subdirectory(pcms/transfer)
+add_subdirectory(pcms/transient/participant_adapter)
 target_link_libraries(pcms_pcms INTERFACE pcms::transfer)
+target_link_libraries(pcms_pcms INTERFACE pcms::transient)
+target_link_libraries(pcms_pcms INTERFACE pcms::transient_participant_adapter)
 
 install(
   TARGETS pcms_pcms

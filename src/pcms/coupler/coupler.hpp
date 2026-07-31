@@ -8,6 +8,7 @@
 #include "pcms/coupler/field_communicator.hpp"
 #include "pcms/coupler/field_exchange_planner.h"
 #include "pcms/coupler/overlap_mask.h"
+#include "pcms/transfer/transfer_operator.hpp"
 #include "pcms/utility/assert.h"
 #include "pcms/utility/common.h"
 #include "pcms/utility/profile.h"
@@ -17,6 +18,7 @@ namespace pcms
 {
 
 class Application;
+class Coupler;
 
 template <typename T>
 class FieldHandle
@@ -34,6 +36,55 @@ public:
 private:
   Application* app_;
   std::string name_;
+};
+
+class Transfer
+{
+public:
+  virtual void Run() const = 0;
+  virtual ~Transfer() noexcept = default;
+};
+
+template <typename T>
+class BoundTransfer final : public Transfer
+{
+public:
+  BoundTransfer(FieldHandle<T> source, FieldHandle<T> target,
+                std::unique_ptr<TransferOperator<T>> transfer)
+    : source_(std::move(source)),
+      target_(std::move(target)),
+      transfer_(std::move(transfer))
+  {
+    PCMS_ALWAYS_ASSERT(transfer_ != nullptr);
+  }
+
+  void Run() const override
+  {
+    PCMS_FUNCTION_TIMER;
+    transfer_->Apply(source_.GetField(), target_.GetField());
+  }
+
+private:
+  FieldHandle<T> source_;
+  FieldHandle<T> target_;
+  std::unique_ptr<TransferOperator<T>> transfer_;
+};
+
+class TransferHandle
+{
+public:
+  void Run() const;
+
+private:
+  TransferHandle(Coupler* coupler, std::size_t id)
+    : coupler_(coupler), id_(id)
+  {
+  }
+
+  friend class Coupler;
+
+  Coupler* coupler_;
+  std::size_t id_;
 };
 
 class Application
@@ -204,12 +255,20 @@ public:
     return redev_.GetPartition();
   }
 
+  template <typename T>
+  TransferHandle AddTransfer(
+    FieldHandle<T> source, FieldHandle<T> target,
+    std::unique_ptr<TransferOperator<T>> transfer);
+
+  void RunTransfer(std::size_t id) { transfers_.at(id)->Run(); }
 private:
   std::string name_;
   MPI_Comm mpi_comm_;
   redev::Redev redev_;
   // gather and scatter operations have reference to internal fields
   std::map<std::string, Application> applications_;
+  std::vector<std::unique_ptr<Transfer>> transfers_;
+
 };
 
 } // namespace pcms
@@ -243,6 +302,24 @@ pcms::Field<T>& pcms::Application::GetField(const std::string& name)
     throw pcms_error("Field stored with different type than requested");
   }
   return *field;
+}
+
+inline void pcms::TransferHandle::Run() const
+{
+  PCMS_ALWAYS_ASSERT(coupler_ != nullptr);
+  coupler_->RunTransfer(id_);
+}
+
+template <typename T>
+pcms::TransferHandle pcms::Coupler::AddTransfer(
+  FieldHandle<T> source, FieldHandle<T> target,
+  std::unique_ptr<TransferOperator<T>> transfer)
+{
+  PCMS_ALWAYS_ASSERT(transfer != nullptr);
+  const std::size_t id = transfers_.size();
+  transfers_.push_back(std::make_unique<BoundTransfer<T>>(
+    std::move(source), std::move(target), std::move(transfer)));
+  return TransferHandle{this, id};
 }
 
 template <typename T>
