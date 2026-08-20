@@ -24,7 +24,7 @@ def test_copy(world, dim, order, num_components):
     # Create factory and layout
     print("  About to create factory...")
     factory = pcms.LagrangeFunctionSpace.from_mesh(
-        mesh, order, num_components, pcms.CoordinateSystem.Cartesian
+        mesh, order, num_components, pcms.CoordinateSystem.Cartesian()
     )
     print(f"Testing dim={dim}, order={order}, num_components={num_components}...")
 

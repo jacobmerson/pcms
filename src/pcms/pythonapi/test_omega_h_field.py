@@ -23,7 +23,7 @@ def test_field_methods(world, dim, order, num_components):
     )
 
     factory = pcms.LagrangeFunctionSpace.from_mesh(
-        mesh, order, num_components, pcms.CoordinateSystem.Cartesian
+        mesh, order, num_components, pcms.CoordinateSystem.Cartesian()
     )
     field = factory.create_field()
 
@@ -58,10 +58,10 @@ def test_field_transfer(world, dim, order, num_components):
     )
 
     source_space = pcms.LagrangeFunctionSpace.from_mesh(
-        mesh, order, num_components, pcms.CoordinateSystem.Cartesian
+        mesh, order, num_components, pcms.CoordinateSystem.Cartesian()
     )
     target_space = pcms.LagrangeFunctionSpace.from_mesh(
-        mesh, order, num_components, pcms.CoordinateSystem.Cartesian
+        mesh, order, num_components, pcms.CoordinateSystem.Cartesian()
     )
 
     source = source_space.create_field()
@@ -99,7 +99,7 @@ def test_field_evaluation(world, dim, order, num_components):
     )
 
     factory = pcms.LagrangeFunctionSpace.from_mesh(
-        mesh, order, num_components, pcms.CoordinateSystem.Cartesian
+        mesh, order, num_components, pcms.CoordinateSystem.Cartesian()
     )
     field = factory.create_field()
 

@@ -3,6 +3,7 @@
 
 #include "pcms/field/function_space.h"
 #include "pcms/field/layout/omega_h_lagrange.h"
+#include "pcms/field/coordinate_systems/cartesian.hpp"
 #include "pcms/transfer/mesh_intersection.hpp"
 #include "pcms/utility/assert.h"
 #include <MeshField_Integrate.hpp>
@@ -17,7 +18,7 @@ namespace pcms::detail
 // Shared checks for a scalar Cartesian Lagrange space on a 2D simplex mesh,
 // independent of order. Order is validated separately by the callers below.
 inline void CheckOmegaHScalarSimplex2DLayout(
-  CoordinateSystem coordinate_system,
+  std::shared_ptr<const CoordinateSystem> coordinate_system,
   const std::shared_ptr<const OmegaHLagrangeLayout>& layout,
   const char* context, const char* role)
 {
@@ -29,9 +30,10 @@ inline void CheckOmegaHScalarSimplex2DLayout(
     throw pcms_error(std::string(context) + ": " + role +
                      " space must have exactly one component");
   }
-  if (coordinate_system != CoordinateSystem::Cartesian) {
+  if (!SameCoordinateSystem(coordinate_system, csys::Cartesian::Create(2))) {
     throw pcms_error(std::string(context) + ": " + role +
-                     " space must use Cartesian coordinates");
+                     " space must use the Cartesian-2 coordinate system; map "
+                     "other systems explicitly");
   }
   const Omega_h::Mesh& mesh = layout->GetMesh();
   if (mesh.dim() != 2) {
@@ -45,7 +47,7 @@ inline void CheckOmegaHScalarSimplex2DLayout(
 
 // Strict order-1 check (used where only P1 is supported, e.g. Monte-Carlo RHS).
 inline void CheckOmegaHScalarP1Layout(
-  CoordinateSystem coordinate_system,
+  std::shared_ptr<const CoordinateSystem> coordinate_system,
   const std::shared_ptr<const OmegaHLagrangeLayout>& layout,
   const char* context, const char* role)
 {
@@ -60,7 +62,7 @@ inline void CheckOmegaHScalarP1Layout(
 // intersection integrator handles source and target orders independently, so
 // this replaces the strict P1 requirement on those paths.
 inline void CheckOmegaHScalarLagrangeLayout(
-  CoordinateSystem coordinate_system,
+  std::shared_ptr<const CoordinateSystem> coordinate_system,
   const std::shared_ptr<const OmegaHLagrangeLayout>& layout,
   const char* context, const char* role)
 {

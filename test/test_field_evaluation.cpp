@@ -7,6 +7,7 @@
 #include "pcms/utility/assert.h"
 #include "field_test_utils.h"
 #include <cmath>
+#include "pcms/field/coordinate_systems/cartesian.hpp"
 
 using pcms::Real;
 
@@ -29,7 +30,7 @@ TEST_CASE("evaluate linear 2d omega_h_field")
   auto mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1, 1, 0, 100,
                                  100, 0, false);
   auto factory = pcms::LagrangeFunctionSpace::FromMesh(
-    mesh, 1, 1, pcms::CoordinateSystem::Cartesian);
+    mesh, 1, 1, pcms::csys::Cartesian::Deferred());
   auto field = factory->CreateFunction<Real>();
 
   pcms::test::SetField(
@@ -47,7 +48,7 @@ TEST_CASE("evaluate quadratic 2d meshfields_field")
   auto mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1, 1, 0, 100,
                                  100, 0, false);
   auto factory = pcms::LagrangeFunctionSpace::FromMesh(
-    mesh, 2, 1, pcms::CoordinateSystem::Cartesian, "global",
+    mesh, 2, 1, pcms::csys::Cartesian::Deferred(), "global",
     pcms::LagrangeFunctionSpace::Backend::MeshFields);
 
   // Quadratic DOF holders span vertices and edge midpoints; the layout's DOF
@@ -70,7 +71,7 @@ TEST_CASE("evaluate quadratic 2d omega_h_field throws")
                                  100, 0, false);
 
   REQUIRE_THROWS_AS(pcms::LagrangeFunctionSpace::FromMesh(
-                      mesh, 2, 1, pcms::CoordinateSystem::Cartesian, "global",
+                      mesh, 2, 1, pcms::csys::Cartesian::Deferred(), "global",
                       pcms::LagrangeFunctionSpace::Backend::OmegaH),
                     pcms::pcms_error);
 }

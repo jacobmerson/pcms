@@ -16,7 +16,7 @@ def test_uniform_grid_field_creation():
 
     # Build the function space from the grid, then create a Field from it.
     factory = pcms.LagrangeFunctionSpace.from_uniform_grid(
-        grid, 1, pcms.CoordinateSystem.Cartesian
+        grid, 1, pcms.CoordinateSystem.Cartesian()
     )
     field = factory.create_field()
 
@@ -40,7 +40,7 @@ def test_uniform_grid_field_data_operations():
     grid.divisions = [2, 2]
 
     factory = pcms.LagrangeFunctionSpace.from_uniform_grid(
-        grid, 1, pcms.CoordinateSystem.Cartesian
+        grid, 1, pcms.CoordinateSystem.Cartesian()
     )
     field = factory.create_field()
 
@@ -65,7 +65,7 @@ def test_uniform_grid_field_coordinates_2d():
     grid.divisions = [2, 3]
 
     factory = pcms.LagrangeFunctionSpace.from_uniform_grid(
-        grid, 1, pcms.CoordinateSystem.Cartesian
+        grid, 1, pcms.CoordinateSystem.Cartesian()
     )
     field = factory.create_field()
 
@@ -104,7 +104,7 @@ def test_uniform_grid_field_coordinates_3d():
     grid.divisions = [2, 1, 3]
 
     factory = pcms.LagrangeFunctionSpace.from_uniform_grid(
-        grid, 1, pcms.CoordinateSystem.Cartesian
+        grid, 1, pcms.CoordinateSystem.Cartesian()
     )
     field = factory.create_field()
 
@@ -133,7 +133,7 @@ def test_uniform_grid_field_evaluation():
     grid.divisions = [2, 2]
 
     factory = pcms.LagrangeFunctionSpace.from_uniform_grid(
-        grid, 1, pcms.CoordinateSystem.Cartesian
+        grid, 1, pcms.CoordinateSystem.Cartesian()
     )
     field = factory.create_field()
 
@@ -197,7 +197,7 @@ def test_uniform_grid_workflow(world):
     print(f"Initialized Omega_h field with {omega_h_field.get_num_dof_holders()} nodes")
 
     ug_factory = pcms.LagrangeFunctionSpace.from_uniform_grid(
-        grid, 1, pcms.CoordinateSystem.Cartesian
+        grid, 1, pcms.CoordinateSystem.Cartesian()
     )
     ug_field = ug_factory.create_field()
 
