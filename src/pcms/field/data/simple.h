@@ -19,9 +19,9 @@ template <typename T>
 class SimpleFieldData : public FieldData<T>
 {
 public:
-  SimpleFieldData(std::shared_ptr<const FieldLayout> layout, FieldMetadata metadata)
+  SimpleFieldData(std::shared_ptr<const FieldLayout> layout, ValueBasis basis)
     : layout_(std::move(layout)),
-      metadata_(metadata),
+      basis_(std::move(basis)),
       host_data_("simple_field_data",
                  static_cast<size_t>(layout_->GetNumOwnedDofHolder()),
                  static_cast<size_t>(layout_->GetNumComponents())),
@@ -31,7 +31,11 @@ public:
   {
   }
 
-  const FieldMetadata& GetMetadata() const override { return metadata_; }
+  FieldValueType GetValueType() const override
+  {
+    return ValueTypeOfRank(basis_.Rank());
+  }
+  const ValueBasis& GetValueBasis() const override { return basis_; }
 
   Rank2View<const T, HostMemorySpace> GetDOFHolderDataHost() const override
   {
@@ -56,7 +60,7 @@ public:
 
 private:
   std::shared_ptr<const FieldLayout> layout_;
-  FieldMetadata metadata_;
+  ValueBasis basis_;
   mutable Kokkos::View<T**, HostMemorySpace> host_data_;
   Kokkos::View<T**, DeviceMemorySpace> device_data_;
 };
