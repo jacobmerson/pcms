@@ -7,14 +7,15 @@ namespace pcms
 namespace
 {
 // Construct the source-mesh containing-element search appropriate to the
-// spatial dimension: a uniform 20^Dim background grid over the source mesh.
+// spatial dimension: a background grid sized so cells hold ~1 element.
 template <int Dim>
 auto MakeGridPointSearch(Omega_h::Mesh& source_mesh)
 {
+  const auto n = pcms::DivisionsPerAxisForMesh<Dim>(source_mesh.nelems());
   if constexpr (Dim == 3) {
-    return pcms::GridPointSearch3D(source_mesh, 20, 20, 20);
+    return pcms::GridPointSearch3D(source_mesh, n, n, n);
   } else {
-    return pcms::GridPointSearch2D(source_mesh, 20, 20);
+    return pcms::GridPointSearch2D(source_mesh, n, n);
   }
 }
 } // namespace
