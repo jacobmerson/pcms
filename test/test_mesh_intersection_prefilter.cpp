@@ -4,6 +4,10 @@
 #include <Omega_h_mesh.hpp>
 
 #include <pcms/transfer/mesh_intersection.hpp>
+#include <pcms/utility/assert.h>
+
+#include <algorithm>
+#include <vector>
 
 namespace
 {
@@ -24,6 +28,30 @@ void require_intersections_identical(const pcms::IntersectionResults& filtered,
   REQUIRE(filtered_indices.size() == exact_indices.size());
   for (int i = 0; i < filtered_indices.size(); ++i) {
     REQUIRE(filtered_indices[i] == exact_indices[i]);
+  }
+}
+
+/// Assert the two intersection maps hold the same source elements per target,
+/// ignoring order. The order of a row is seed-then-BFS, and the seed is
+/// whichever containing element the point search reports first; a centroid
+/// lying on a shared face can legitimately be located in either neighbor.
+void require_intersections_equivalent(const pcms::IntersectionResults& a,
+                                      const pcms::IntersectionResults& b)
+{
+  const auto a_offsets = Omega_h::HostRead(a.tgt2src_offsets);
+  const auto b_offsets = Omega_h::HostRead(b.tgt2src_offsets);
+  REQUIRE(a_offsets.size() == b_offsets.size());
+  const auto a_indices = Omega_h::HostRead(a.tgt2src_indices);
+  const auto b_indices = Omega_h::HostRead(b.tgt2src_indices);
+  for (int row = 0; row + 1 < a_offsets.size(); ++row) {
+    REQUIRE(a_offsets[row] == b_offsets[row]);
+    std::vector<int> a_row(a_indices.data() + a_offsets[row],
+                           a_indices.data() + a_offsets[row + 1]);
+    std::vector<int> b_row(b_indices.data() + b_offsets[row],
+                           b_indices.data() + b_offsets[row + 1]);
+    std::sort(a_row.begin(), a_row.end());
+    std::sort(b_row.begin(), b_row.end());
+    REQUIRE(a_row == b_row);
   }
 }
 } // namespace
@@ -134,5 +162,55 @@ TEST_CASE("intersection prefilter preserves the intersection map",
     require_intersections_identical(
       pcms::intersectTargets(source, target, true),
       pcms::intersectTargets(source, target, false));
+  }
+}
+
+// The conservative transfer hands the intersection the source space's own
+// point search rather than building a second one. The set of source elements
+// per target is a property of the two meshes: which search located the target
+// centroids, and at what grid resolution, must not show in it. Row order can
+// (see require_intersections_equivalent), so this compares rows as sets.
+TEST_CASE("intersection map is independent of the supplied source search",
+          "[intersection]")
+{
+  Omega_h::Library lib;
+  auto world = lib.world();
+
+  SECTION("2D, coarse caller-supplied grid")
+  {
+    auto source =
+      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 7, 11, 0, false);
+    auto target =
+      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 5, 3, 0, false);
+    const pcms::GridPointSearchVariant search{
+      std::in_place_type<pcms::GridPointSearch2D>, source, 3, 3};
+    require_intersections_equivalent(
+      pcms::intersectTargets(source, target, search),
+      pcms::intersectTargets(source, target));
+  }
+  SECTION("3D, coarse caller-supplied grid")
+  {
+    auto source =
+      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 5, 3, 4, false);
+    auto target =
+      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 2, 4, 3, false);
+    const pcms::GridPointSearchVariant search{
+      std::in_place_type<pcms::GridPointSearch3D>, source, 2, 2, 2};
+    require_intersections_equivalent(
+      pcms::intersectTargets(source, target, search),
+      pcms::intersectTargets(source, target));
+  }
+  SECTION("a search of the wrong dimension is rejected")
+  {
+    auto source =
+      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 2, 2, 2, false);
+    auto target =
+      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 2, 2, 2, false);
+    auto flat =
+      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 2, 2, 0, false);
+    const pcms::GridPointSearchVariant search{
+      std::in_place_type<pcms::GridPointSearch2D>, flat, 2, 2};
+    REQUIRE_THROWS_AS(pcms::intersectTargets(source, target, search),
+                      pcms::pcms_error);
   }
 }

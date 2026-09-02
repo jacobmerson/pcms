@@ -2,6 +2,8 @@
 #define PCMS_COUPLING_POINT_SEARCH_H
 #include <cassert>
 
+#include <variant>
+
 #include <Kokkos_Core.hpp>
 #include <Omega_h_mesh.hpp>
 #include <Omega_h_bbox.hpp>
@@ -127,7 +129,7 @@ public:
    */
   [[nodiscard]] virtual LO GetOwningElementId(const Result& result) = 0;
   [[nodiscard]] virtual Kokkos::View<LO*> GetOwningElementIds(
-    Kokkos::View<const Result*> results) = 0;
+    Kokkos::View<const Result*> results) const = 0;
   virtual ~PointLocalizationSearch() = default;
 
 protected:
@@ -160,7 +162,7 @@ public:
     Kokkos::View<const Real* [DIM]> point) const override;
   [[nodiscard]] LO GetOwningElementId(const Result& result) override;
   [[nodiscard]] Kokkos::View<LO*> GetOwningElementIds(
-    Kokkos::View<const Result*> results) override;
+    Kokkos::View<const Result*> results) const override;
 
 private:
   Omega_h::Mesh mesh_;
@@ -198,7 +200,7 @@ public:
     Kokkos::View<const Real* [DIM]> point) const override;
   [[nodiscard]] LO GetOwningElementId(const Result& result) override;
   [[nodiscard]] Kokkos::View<LO*> GetOwningElementIds(
-    Kokkos::View<const Result*> results) override;
+    Kokkos::View<const Result*> results) const override;
 
 private:
   Omega_h::Mesh mesh_;
@@ -214,6 +216,13 @@ private:
   Omega_h::Reals coords_;
   Real fuzz_;
 };
+
+/// A grid search of either spatial dimension, as owned by components that are
+/// dimension-agnostic at compile time (e.g. an evaluator factory over an
+/// Omega_h mesh) and handed to consumers that need to locate points on the same
+/// mesh without building a second search.
+using GridPointSearchVariant =
+  std::variant<GridPointSearch2D, GridPointSearch3D>;
 
 } // namespace pcms
 #endif // PCMS_COUPLING_POINT_SEARCH_H

@@ -775,7 +775,7 @@ LO GridPointSearch2D::GetOwningElementId(const Result& result)
 }
 
 Kokkos::View<LO*> GridPointSearch2D::GetOwningElementIds(
-  Kokkos::View<const Result*> results)
+  Kokkos::View<const Result*> results) const
 {
   Kokkos::View<LO*> owners("point search owning face ids", results.extent(0));
   auto edges2faces_up = edges2faces_up_;
@@ -918,7 +918,7 @@ LO GridPointSearch3D::GetOwningElementId(const Result& result)
 }
 
 Kokkos::View<LO*> GridPointSearch3D::GetOwningElementIds(
-  Kokkos::View<const Result*> results)
+  Kokkos::View<const Result*> results) const
 {
   Kokkos::View<LO*> owners("point search owning region ids", results.extent(0));
   auto verts2regions_up = verts2regions_up_;

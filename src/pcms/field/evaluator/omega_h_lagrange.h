@@ -317,6 +317,15 @@ public:
 
   bool SupportsNearestBoundary() const override { return false; }
 
+  /// The containing-element search over this layout's mesh. Exposed so that
+  /// operators which must locate points on the same mesh, such as the
+  /// conservative transfer's intersection search, reuse it rather than build
+  /// and hold a second copy of the candidate map.
+  [[nodiscard]] const GridPointSearchVariant& GetSearch() const noexcept
+  {
+    return search_;
+  }
+
   std::unique_ptr<PointEvaluator<T>> CreatePointEvaluator(
     const EvaluationRequest& request) const override
   {
@@ -366,7 +375,7 @@ public:
 
 private:
   std::shared_ptr<const OmegaHLagrangeLayout> layout_;
-  mutable std::variant<GridPointSearch2D, GridPointSearch3D> search_;
+  GridPointSearchVariant search_;
 };
 
 } // namespace pcms

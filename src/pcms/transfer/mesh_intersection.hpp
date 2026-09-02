@@ -160,6 +160,9 @@ public:
    * source elements. If an element intersects the target triangle (based on
    * area tolerance), it is included.
    *
+   * @param start_elements For each target element, the source element
+   * containing its centroid (from a point search over the source mesh); the
+   * BFS starts there. Located once by the caller and shared by both passes.
    * @param tgt2src_offsets Offsets array (only used when writing indices).
    * @param[out] nIntersections Number of intersecting source elements per
    * target element.
@@ -177,7 +180,8 @@ public:
    * @see r3d::intersect_simplices, intersectTargets
    */
   template <int Dim>
-  void adjBasedIntersectSearch(const Omega_h::LOs& tgt2src_offsets,
+  void adjBasedIntersectSearch(const Kokkos::View<const LO*>& start_elements,
+                               const Omega_h::LOs& tgt2src_offsets,
                                Omega_h::Write<Omega_h::LO>& nIntersections,
                                Omega_h::Write<Omega_h::LO>& tgt2src_indices,
                                bool is_count_only, bool use_prefilter = true);
@@ -202,9 +206,25 @@ public:
  *
  * @see FindIntersections::adjBasedIntersectSearch
  */
-
 IntersectionResults intersectTargets(Omega_h::Mesh& source_mesh,
                                      Omega_h::Mesh& target_mesh,
                                      bool use_prefilter = true);
+
+/**
+ * @brief As above, locating target centroids with a caller-owned search over
+ * the source mesh instead of building one.
+ *
+ * The source function space already owns such a search for point evaluation,
+ * and constructing another costs a full candidate-map build and holds a second
+ * copy of it for the operator's lifetime. The resulting map does not depend on
+ * which search located the centroids.
+ *
+ * @param source_search Must have been built over `source_mesh`; that is the
+ * caller's responsibility. Its dimension must match the meshes (pcms_error
+ * otherwise).
+ */
+IntersectionResults intersectTargets(
+  Omega_h::Mesh& source_mesh, Omega_h::Mesh& target_mesh,
+  const GridPointSearchVariant& source_search, bool use_prefilter = true);
 } // namespace pcms
 #endif // PCMS_TRANSFER_MESH_INTERSECTION_HPP
