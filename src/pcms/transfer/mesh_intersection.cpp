@@ -24,7 +24,8 @@ template <int Dim>
 void FindIntersections::adjBasedIntersectSearch(
   const Omega_h::LOs& tgt2src_offsets,
   Omega_h::Write<Omega_h::LO>& nIntersections,
-  Omega_h::Write<Omega_h::LO>& tgt2src_indices, bool is_count_only)
+  Omega_h::Write<Omega_h::LO>& tgt2src_indices, bool is_count_only,
+  bool use_prefilter)
 {
   // Element entity dimension equals the spatial dimension (FACE for 2D, REGION
   // for 3D); measures are triangle areas (2D) or tet volumes (3D).
@@ -106,6 +107,17 @@ void FindIntersections::adjBasedIntersectSearch(
             }
             auto elm_vert_coords = get_vert_coords_of_elem<Dim>(
               src_coords, src_elems2nodes, neighborElmId);
+
+            // Most neighbors reached through the dual graph share a face with
+            // an element that already overlaps and so contribute no volume.
+            // The plane test settles those far more cheaply than a clip; it
+            // only ever rejects provably degenerate overlaps, so the accepted
+            // set is unchanged.
+            if (use_prefilter && simplices_have_degenerate_overlap<Dim>(
+                                   tgt_elm_vert_coords, elm_vert_coords)) {
+              continue;
+            }
+
             r3d::Polytope<Dim> intersection;
             r3d::intersect_simplices(intersection, tgt_elm_vert_coords,
                                      elm_vert_coords);
@@ -156,16 +168,17 @@ void FindIntersections::adjBasedIntersectSearch(
 // Explicit instantiations for the supported spatial dimensions.
 template void FindIntersections::adjBasedIntersectSearch<2>(
   const Omega_h::LOs&, Omega_h::Write<Omega_h::LO>&,
-  Omega_h::Write<Omega_h::LO>&, bool);
+  Omega_h::Write<Omega_h::LO>&, bool, bool);
 template void FindIntersections::adjBasedIntersectSearch<3>(
   const Omega_h::LOs&, Omega_h::Write<Omega_h::LO>&,
-  Omega_h::Write<Omega_h::LO>&, bool);
+  Omega_h::Write<Omega_h::LO>&, bool, bool);
 
 namespace
 {
 template <int Dim>
 IntersectionResults intersectTargetsImpl(Omega_h::Mesh& source_mesh,
-                                         Omega_h::Mesh& target_mesh)
+                                         Omega_h::Mesh& target_mesh,
+                                         bool use_prefilter)
 {
   FindIntersections intersect(source_mesh, target_mesh);
 
@@ -177,7 +190,7 @@ IntersectionResults intersectTargetsImpl(Omega_h::Mesh& source_mesh,
   Omega_h::Write<Omega_h::LO> tgt2src_indices;
 
   intersect.adjBasedIntersectSearch<Dim>(Omega_h::LOs(), nIntersections,
-                                         tgt2src_indices, true);
+                                         tgt2src_indices, true, use_prefilter);
 
   Kokkos::fence();
   auto tgt2src_offsets = Omega_h::offset_scan(Omega_h::Read(nIntersections),
@@ -191,19 +204,20 @@ IntersectionResults intersectTargetsImpl(Omega_h::Mesh& source_mesh,
     "indices of the source elements that intersect the given target element");
 
   intersect.adjBasedIntersectSearch<Dim>(tgt2src_offsets, nIntersections,
-                                         tgt2src_indices, false);
+                                         tgt2src_indices, false, use_prefilter);
   return {.tgt2src_offsets = tgt2src_offsets,
           .tgt2src_indices = Omega_h::read(tgt2src_indices)};
 }
 } // namespace
 
 IntersectionResults intersectTargets(Omega_h::Mesh& source_mesh,
-                                     Omega_h::Mesh& target_mesh)
+                                     Omega_h::Mesh& target_mesh,
+                                     bool use_prefilter)
 {
   OMEGA_H_CHECK(source_mesh.dim() == target_mesh.dim());
   if (source_mesh.dim() == 3) {
-    return intersectTargetsImpl<3>(source_mesh, target_mesh);
+    return intersectTargetsImpl<3>(source_mesh, target_mesh, use_prefilter);
   }
-  return intersectTargetsImpl<2>(source_mesh, target_mesh);
+  return intersectTargetsImpl<2>(source_mesh, target_mesh, use_prefilter);
 }
 } // namespace pcms
