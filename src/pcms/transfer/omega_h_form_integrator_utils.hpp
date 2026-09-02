@@ -293,11 +293,81 @@ OMEGA_H_INLINE void ForEachPolytopeFaceTriangle(const r3d::Polytope<3>& poly,
   }
 }
 
-// 3D: star-decompose the clipped intersection polyhedron into tetrahedra from
-// its centroid. The centroid lies strictly inside the convex intersection, so
-// lifting each boundary-face triangle (enumerated by
-// ForEachPolytopeFaceTriangle) to the centroid tiles the polyhedron without
-// overlap; op(sub_tet, src_elm, volume) fires for each non-degenerate piece.
+// Signed volume of the tet (apex, a, b, c) in the order the face walk emits
+// its triangles.
+[[nodiscard]] OMEGA_H_INLINE Omega_h::Real StarTetSignedVolume(
+  const Omega_h::Vector<3>& apex, const r3d::Vector<3>& a,
+  const r3d::Vector<3>& b, const r3d::Vector<3>& c)
+{
+  Omega_h::Few<Omega_h::Vector<3>, 3> basis;
+  for (int d = 0; d < 3; ++d) {
+    basis[0][d] = a[d] - apex[d];
+    basis[1][d] = b[d] - apex[d];
+    basis[2][d] = c[d] - apex[d];
+  }
+  return Omega_h::tet_volume_from_basis(basis);
+}
+
+// Star-decompose a clipped r3d polyhedron into tetrahedra from its centroid,
+// invoking op(sub_tet, measure) for every piece with |measure| > eps_vol. The
+// pieces' measures sum to the polyhedron's volume.
+//
+// The centroid lies inside the convex intersection, so lifting each
+// boundary-face triangle (enumerated by ForEachPolytopeFaceTriangle) to it
+// tiles the polyhedron. The measures are *signed*, and that matters: when the
+// clipping planes pass through the polytope's own vertices (a source element
+// sharing a face plane with the target, always the case on the same mesh), r3d
+// sees signed distances of order 1e-13 with mixed signs and splices new
+// vertices at O(1) fractions along the edges between them. The volume it
+// reports is still exact because r3d integrates with signed pieces, but the
+// face graph is folded: some faces come back with reversed orientation and
+// cancel against their mirror. Taking |volume| per piece breaks that
+// cancellation and over-counts by up to tens of percent of the element, so
+// the sign is kept and the overall orientation is fixed from the total.
+template <typename TetOp>
+OMEGA_H_INLINE void ForEachPolytopeStarTet(const r3d::Polytope<3>& poly,
+                                           const double eps_vol, TetOp&& op)
+{
+  Omega_h::Vector<3> apex = {0.0, 0.0, 0.0};
+  for (int v = 0; v < poly.nverts; ++v) {
+    apex[0] += poly.verts[v].pos[0];
+    apex[1] += poly.verts[v].pos[1];
+    apex[2] += poly.verts[v].pos[2];
+  }
+  apex[0] /= poly.nverts;
+  apex[1] /= poly.nverts;
+  apex[2] /= poly.nverts;
+
+  // The face walk's handedness is not fixed by r3d (it follows the order the
+  // clip left the neighbor lists in), so the sign that makes the pieces add up
+  // to a positive volume is read off the total. Folded pairs cancel in this
+  // sum, so it is the true volume to roundoff and its sign is well defined.
+  Omega_h::Real signed_total = 0.0;
+  ForEachPolytopeFaceTriangle(poly, [&](const r3d::Vector<3>& a,
+                                        const r3d::Vector<3>& b,
+                                        const r3d::Vector<3>& c) {
+    signed_total += StarTetSignedVolume(apex, a, b, c);
+  });
+  const Omega_h::Real orientation = (signed_total < 0.0) ? -1.0 : 1.0;
+
+  ForEachPolytopeFaceTriangle(poly, [&](const r3d::Vector<3>& a,
+                                        const r3d::Vector<3>& b,
+                                        const r3d::Vector<3>& c) {
+    const Omega_h::Real vol = orientation * StarTetSignedVolume(apex, a, b, c);
+    if (Kokkos::fabs(vol) > eps_vol) {
+      Omega_h::Few<Omega_h::Vector<3>, 4> tet_coords;
+      tet_coords[0] = apex;
+      tet_coords[1] = {a[0], a[1], a[2]};
+      tet_coords[2] = {b[0], b[1], b[2]};
+      tet_coords[3] = {c[0], c[1], c[2]};
+      op(tet_coords, vol);
+    }
+  });
+}
+
+// 3D: clip each intersecting source element against the target element and
+// star-decompose the result; op(sub_tet, src_elm, measure) fires for each
+// non-degenerate piece.
 template <typename SimplexOp>
 OMEGA_H_INLINE void ForEachIntersectionSubtetImpl(
   const int elm, const IntersectionResults& intersection,
@@ -323,44 +393,19 @@ OMEGA_H_INLINE void ForEachIntersectionSubtetImpl(
     const double eps_vol =
       PCMS_INTERSECTION_ABS_TOL + PCMS_INTERSECTION_REL_TOL * poly_vol;
 
-    // Centroid of the (convex) intersection polyhedron: interior apex.
-    Omega_h::Vector<3> apex = {0.0, 0.0, 0.0};
-    for (int v = 0; v < poly.nverts; ++v) {
-      apex[0] += poly.verts[v].pos[0];
-      apex[1] += poly.verts[v].pos[1];
-      apex[2] += poly.verts[v].pos[2];
-    }
-    apex[0] /= poly.nverts;
-    apex[1] /= poly.nverts;
-    apex[2] /= poly.nverts;
-
-    // Lift each boundary-face triangle to the interior centroid to form a tet.
-    ForEachPolytopeFaceTriangle(poly, [&](const r3d::Vector<3>& a,
-                                          const r3d::Vector<3>& b,
-                                          const r3d::Vector<3>& c) {
-      Omega_h::Few<Omega_h::Vector<3>, 4> tet_coords;
-      tet_coords[0] = apex;
-      tet_coords[1] = {a[0], a[1], a[2]};
-      tet_coords[2] = {b[0], b[1], b[2]};
-      tet_coords[3] = {c[0], c[1], c[2]};
-
-      Omega_h::Few<Omega_h::Vector<3>, 3> basis;
-      basis[0] = tet_coords[1] - tet_coords[0];
-      basis[1] = tet_coords[2] - tet_coords[0];
-      basis[2] = tet_coords[3] - tet_coords[0];
-
-      const Omega_h::Real vol =
-        Kokkos::fabs(Omega_h::tet_volume_from_basis(basis));
-      if (vol > eps_vol) {
-        op(tet_coords, current_src_elm, vol);
-      }
-    });
+    ForEachPolytopeStarTet(
+      poly, eps_vol,
+      [&](const Omega_h::Few<Omega_h::Vector<3>, 4>& tet_coords,
+          Omega_h::Real measure) { op(tet_coords, current_src_elm, measure); });
   }
 }
 
 // Dimension-generic driver over the sub-simplices (triangles in 2D, tets in 3D)
 // that tile each target element's intersection with the source mesh. Invokes
-// op(sub_simplex_coords, src_elm, measure) for every non-degenerate piece.
+// op(sub_simplex_coords, src_elm, measure) for every non-degenerate piece. In
+// 3D the measure is signed (see ForEachPolytopeStarTet); the pieces of one
+// intersection always sum to its volume, so callers must use the measure as a
+// weight rather than a size.
 template <int Dim, typename SimplexOp>
 OMEGA_H_INLINE void ForEachIntersectionSubsimplex(
   const int elm, const IntersectionResults& intersection,
