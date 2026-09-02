@@ -61,6 +61,24 @@ Kokkos::Crs<LO, Kokkos::DefaultExecutionSpace, void, LO>
 construct_intersection_map_2d(Omega_h::Mesh& mesh,
                               Kokkos::View<Uniform2DGrid[1]> grid,
                               int num_grid_cells);
+
+Kokkos::Crs<LO, Kokkos::DefaultExecutionSpace, void, LO>
+construct_intersection_map_3d(Omega_h::Mesh& mesh,
+                              Kokkos::View<Uniform3DGrid[1]> grid,
+                              int num_grid_cells);
+
+/// O(num_cells * nelems) brute-force candidate map. Test oracle for the
+/// element-major build above; never use in production.
+Kokkos::Crs<LO, Kokkos::DefaultExecutionSpace, void, LO>
+construct_intersection_map_reference_2d(Omega_h::Mesh& mesh,
+                                        Kokkos::View<Uniform2DGrid[1]> grid,
+                                        int num_grid_cells);
+
+/// \see construct_intersection_map_reference_2d
+Kokkos::Crs<LO, Kokkos::DefaultExecutionSpace, void, LO>
+construct_intersection_map_reference_3d(Omega_h::Mesh& mesh,
+                                        Kokkos::View<Uniform3DGrid[1]> grid,
+                                        int num_grid_cells);
 }
 
 [[nodiscard]] KOKKOS_FUNCTION bool triangle_intersects_bbox(

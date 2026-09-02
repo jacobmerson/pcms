@@ -162,6 +162,85 @@ TEST_CASE("construct intersection map")
     REQUIRE(num_candidates_within_range(intersection_map, 1, 6));
   }
 }
+namespace
+{
+/// Assert two candidate maps are identical: same row offsets and the same
+/// entries in the same order within every row.
+template <typename T>
+void require_maps_identical(const T& fast, const T& reference)
+{
+  REQUIRE(fast.numRows() == reference.numRows());
+  REQUIRE(fast.entries.size() == reference.entries.size());
+
+  auto fast_row_map =
+    Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, fast.row_map);
+  auto ref_row_map =
+    Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, reference.row_map);
+  auto fast_entries =
+    Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, fast.entries);
+  auto ref_entries =
+    Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, reference.entries);
+
+  for (std::size_t i = 0; i < fast_row_map.extent(0); ++i) {
+    REQUIRE(fast_row_map(i) == ref_row_map(i));
+  }
+  for (std::size_t i = 0; i < fast_entries.extent(0); ++i) {
+    REQUIRE(fast_entries(i) == ref_entries(i));
+  }
+}
+} // namespace
+
+// The element-major candidate map must produce exactly what the brute-force
+// cell-major build does. Entry order matters as well as membership: the search
+// returns the first candidate containing the point, so ordering decides which
+// element wins a shared-face tie and which is reported for an out-of-bounds
+// query.
+TEST_CASE("candidate map matches brute-force reference")
+{
+  auto lib = Omega_h::Library{};
+  auto world = lib.world();
+
+  SECTION("2D")
+  {
+    auto mesh =
+      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 10, 10, 0, false);
+    REQUIRE(mesh.dim() == 2);
+    for (pcms::LO divisions : {3, 10, 37}) {
+      Kokkos::View<Uniform2DGrid[1]> grid_d("uniform grid");
+      auto grid_h = Kokkos::create_mirror_view(grid_d);
+      grid_h(0) = Uniform2DGrid{.edge_length{1, 1},
+                                .bot_left = {0, 0},
+                                .divisions = {divisions, divisions}};
+      Kokkos::deep_copy(grid_d, grid_h);
+      const auto ncells = grid_h(0).GetNumCells();
+      require_maps_identical(
+        pcms::detail::construct_intersection_map_2d(mesh, grid_d, ncells),
+        pcms::detail::construct_intersection_map_reference_2d(mesh, grid_d,
+                                                              ncells));
+    }
+  }
+  SECTION("3D")
+  {
+    auto mesh =
+      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 5, 5, 5, false);
+    REQUIRE(mesh.dim() == 3);
+    for (pcms::LO divisions : {2, 5, 11}) {
+      Kokkos::View<pcms::Uniform3DGrid[1]> grid_d("uniform grid");
+      auto grid_h = Kokkos::create_mirror_view(grid_d);
+      grid_h(0) =
+        pcms::Uniform3DGrid{.edge_length{1, 1, 1},
+                            .bot_left = {0, 0, 0},
+                            .divisions = {divisions, divisions, divisions}};
+      Kokkos::deep_copy(grid_d, grid_h);
+      const auto ncells = grid_h(0).GetNumCells();
+      require_maps_identical(
+        pcms::detail::construct_intersection_map_3d(mesh, grid_d, ncells),
+        pcms::detail::construct_intersection_map_reference_3d(mesh, grid_d,
+                                                              ncells));
+    }
+  }
+}
+
 TEST_CASE("uniform grid search")
 {
   using pcms::GridPointSearch2D;
