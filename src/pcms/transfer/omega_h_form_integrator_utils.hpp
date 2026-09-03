@@ -205,13 +205,19 @@ template <int Dim>
   return Omega_h::simplex_size_from_basis(basis);
 }
 
-// Star-decompose a clipped r3d polytope into simplices from its centroid,
-// invoking op(simplex, measure) for every piece with |measure| > eps. The
-// pieces' measures sum to the polytope's measure.
+// Star-decompose a clipped r3d polytope into simplices, invoking
+// op(simplex, measure) for every piece with |measure| > eps. The pieces'
+// measures sum to the polytope's measure.
 //
-// The centroid lies inside the convex intersection, so lifting each boundary
-// facet (from ForEachPolytopeBoundarySimplex) to it tiles the polytope. The
-// measures are *signed*, and that matters: when the clipping planes pass
+// The apex is the polytope's first vertex: every boundary facet (from
+// ForEachPolytopeBoundarySimplex) is lifted to it, and the facets incident to
+// that vertex give zero-measure pieces that the epsilon filter drops. Any apex
+// works, because by the divergence theorem the signed sum over a closed
+// boundary is the enclosed measure regardless of where the pieces meet; a
+// vertex apex just yields the fewest pieces (one for a clean simplex, against
+// Dim+1 from the centroid), and each piece is one quadrature rule downstream.
+//
+// The measures are *signed*, and that matters: when the clipping planes pass
 // through the polytope's own vertices (a source element sharing a face plane
 // with the target, always the case on the same mesh), r3d sees signed distances
 // of order 1e-13 with mixed signs and splices new vertices at O(1) fractions
@@ -232,15 +238,7 @@ OMEGA_H_INLINE void ForEachPolytopeStarSimplex(const r3d::Polytope<Dim>& poly,
 {
   Omega_h::Vector<Dim> apex;
   for (int d = 0; d < Dim; ++d) {
-    apex[d] = 0.0;
-  }
-  for (int v = 0; v < poly.nverts; ++v) {
-    for (int d = 0; d < Dim; ++d) {
-      apex[d] += poly.verts[v].pos[d];
-    }
-  }
-  for (int d = 0; d < Dim; ++d) {
-    apex[d] /= poly.nverts;
+    apex[d] = poly.verts[0].pos[d];
   }
 
   Omega_h::Real signed_total = 0.0;

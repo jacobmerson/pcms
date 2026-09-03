@@ -433,9 +433,9 @@ r3d::Polytope<3> FoldedSelfClipPolytope()
 // The 2D analogue, built by hand: the triangle A B C with the cycle detouring
 // from B out to D (on edge BC) and straight back, A -> B -> D -> B -> C -> A.
 // This is the pattern r3d leaves after clipping on a plane through B: a
-// spliced edge vertex reached twice. The two spur edges B->D and D->B fan to
+// spliced edge vertex reached twice. The two spur edges B->D and D->B lift to
 // mirrored triangles whose signed areas cancel, so the cycle still encloses
-// the area of ABC; summing |area| per piece adds 2|cBD| instead.
+// the area of ABC; summing |area| per piece adds twice the spur triangle.
 r3d::Polytope<2> FoldedPolygon()
 {
   constexpr int nverts = 5;
@@ -465,7 +465,10 @@ double StarDecompositionMeasure(const r3d::Polytope<Dim>& poly)
   return sum;
 }
 
-// A clean simplex star-decomposes into Dim+1 pieces of equal measure.
+// A clean simplex star-decomposes from its first vertex into exactly one
+// piece, itself: the Dim facets incident to the apex have zero measure and are
+// dropped. One piece means one quadrature rule per same-mesh element, which is
+// the cost floor for the RHS build.
 template <int Dim>
 void RequireCleanSimplexDecomposition(const double* coords)
 {
@@ -483,10 +486,10 @@ void RequireCleanSimplexDecomposition(const double* coords)
     poly, 0.0,
     [&](const Omega_h::Few<Omega_h::Vector<Dim>, Dim + 1>&,
         Omega_h::Real piece) {
-      REQUIRE(piece == Catch::Approx(measure / (Dim + 1)).epsilon(1e-12));
+      REQUIRE(piece == Catch::Approx(measure).epsilon(1e-12));
       ++pieces;
     });
-  REQUIRE(pieces == Dim + 1);
+  REQUIRE(pieces == 1);
 }
 
 } // namespace
@@ -494,12 +497,12 @@ void RequireCleanSimplexDecomposition(const double* coords)
 TEST_CASE("star decomposition of a folded r3d polytope matches its measure",
           "[transfer][mesh_intersection]")
 {
-  SECTION("2D, clean triangle: three pieces of a third each")
+  SECTION("2D, clean triangle: one piece, itself")
   {
     constexpr double tri[6] = {0.0, 0.0, 4.0, 0.0, 0.0, 3.0};
     RequireCleanSimplexDecomposition<2>(tri);
   }
-  SECTION("3D, clean tetrahedron: four pieces of a quarter each")
+  SECTION("3D, clean tetrahedron: one piece, itself")
   {
     RequireCleanSimplexDecomposition<3>(kFoldingTetCoords.data());
   }
