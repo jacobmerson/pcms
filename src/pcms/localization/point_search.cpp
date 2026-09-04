@@ -27,6 +27,56 @@ KOKKOS_INLINE_FUNCTION bool normal_intersects_segment(
   return (ap * ab) * (bp * ba) >= 0;
 }
 
+/**
+ * Barycentric coordinates of a point in a simplex together with the factors
+ * that convert a Cartesian distance from facet i into a band on coordinate i:
+ * |lambda[i]| <= tau * grad_norm[i] iff the point is within distance tau of
+ * the plane of the facet opposite vertex i.
+ */
+template <int Dim>
+struct BarycentricWithScales
+{
+  Omega_h::Vector<Dim + 1> lambda;
+  Omega_h::Vector<Dim + 1> grad_norm;
+
+  /**
+   * Signed Cartesian distance to the most violated facet plane: non-negative
+   * inside the simplex, -tau on the boundary of the tolerance band.
+   */
+  KOKKOS_INLINE_FUNCTION Omega_h::Real SignedPlaneDistance() const
+  {
+    auto d = lambda[0] / grad_norm[0];
+    for (int i = 1; i <= Dim; ++i) {
+      d = Kokkos::fmin(d, lambda[i] / grad_norm[i]);
+    }
+    return d;
+  }
+};
+
+template <int Dim>
+KOKKOS_INLINE_FUNCTION BarycentricWithScales<Dim> barycentric_with_scales(
+  const Omega_h::Few<Omega_h::Vector<Dim>, Dim + 1>& vertex_coords,
+  const Omega_h::Vector<Dim>& point)
+{
+  // rows of the inverse basis are the gradients of lambda_1..lambda_Dim;
+  // Omega_h matrices are stored by column, so row j is inv[k][j] over k
+  const auto inv =
+    Omega_h::pseudo_invert(Omega_h::simplex_basis<Dim, Dim>(vertex_coords));
+  BarycentricWithScales<Dim> result;
+  result.lambda = Omega_h::form_barycentric(inv * (point - vertex_coords[0]));
+  auto grad0 = Omega_h::zero_vector<Dim>();
+  for (int j = 0; j < Dim; ++j) {
+    Omega_h::Vector<Dim> row;
+    for (int k = 0; k < Dim; ++k) {
+      row[k] = inv[k][j];
+    }
+    result.grad_norm[j + 1] = Omega_h::norm(row);
+    grad0 = grad0 - row;
+  }
+  result.grad_norm[0] = Omega_h::norm(grad0);
+  return result;
+}
+
 namespace pcms
 {
 
@@ -819,12 +869,11 @@ Kokkos::View<GridPointSearch3D::Result*> GridPointSearch3D::operator()(
   auto grid = grid_;
   auto candidate_map = candidate_map_;
   auto tris2verts = tris2verts_;
-  auto tris2verts_adj = tris2verts_adj_;
-  auto tris2edges_adj = tris2edges_adj_;
-  auto edges2verts_adj = edges2verts_adj_;
   auto coords = coords_;
+  auto tolerances = tolerances_;
   Kokkos::parallel_for(
     points.extent(0), KOKKOS_LAMBDA(int p) {
+      using Dimensionality = GridPointSearch3D::Result::Dimensionality;
       Omega_h::Vector<DIM> point;
       for (int i = 0; i < DIM; ++i) {
         point[i] = points(p, i);
@@ -832,38 +881,46 @@ Kokkos::View<GridPointSearch3D::Result*> GridPointSearch3D::operator()(
 
       auto cell_id = grid(0).ClosestCellID(point);
       assert(cell_id < num_rows && cell_id >= 0);
-      auto candidates_begin = candidate_map.row_map(cell_id);
-      auto candidates_end = candidate_map.row_map(cell_id + 1);
-      bool found = false;
+      const auto candidates_begin = candidate_map.row_map(cell_id);
+      const auto candidates_end = candidate_map.row_map(cell_id + 1);
+      const auto tau = tolerances(DIM - 1);
 
-      auto nearest_triangle = candidates_begin;
-      auto dimensionality = GridPointSearch3D::Result::Dimensionality::EDGE;
-      Omega_h::Vector<DIM + 1> parametric_coords_to_nearest;
-      // create array that's size of number of candidates x num coords to store
-      // parametric inversion
+      LO inside_elem = -1;
+      auto inside_lambda = Omega_h::zero_vector<DIM + 1>();
+      LO nearest_elem = -1;
+      Real nearest_dist = -INFINITY;
+      auto nearest_lambda = Omega_h::zero_vector<DIM + 1>();
       for (auto i = candidates_begin; i < candidates_end; ++i) {
-        const int triangleID = candidate_map.entries(i);
-        const auto elem_tri2verts =
-          Omega_h::gather_verts<DIM + 1>(tris2verts, triangleID);
-        auto vertex_coords =
-          Omega_h::gather_vectors<DIM + 1, DIM>(coords, elem_tri2verts);
-        auto parametric_coords =
-          Omega_h::barycentric_from_global<DIM, DIM>(point, vertex_coords);
+        const LO elem = candidate_map.entries(i);
+        const auto elem_verts =
+          Omega_h::gather_verts<DIM + 1>(tris2verts, elem);
+        const auto vertex_coords =
+          Omega_h::gather_vectors<DIM + 1, DIM>(coords, elem_verts);
+        const auto bary = barycentric_with_scales<DIM>(vertex_coords, point);
+        const auto dist = bary.SignedPlaneDistance();
 
-        if (Omega_h::is_barycentric_inside(parametric_coords)) {
-          results(p) = GridPointSearch3D::Result{
-            GridPointSearch3D::Result::Dimensionality::REGION, triangleID,
-            parametric_coords};
-          found = true;
-          break;
+        if (dist >= -tau) {
+          if (inside_elem < 0 || elem < inside_elem) {
+            inside_elem = elem;
+            inside_lambda = bary.lambda;
+          }
+        } else if (nearest_elem < 0 || dist > nearest_dist ||
+                   (dist == nearest_dist && elem < nearest_elem)) {
+          nearest_elem = elem;
+          nearest_dist = dist;
+          nearest_lambda = bary.lambda;
         }
-
-        // TODO: Get nearest element if no tetrahedron found
       }
-      if (!found) {
-        LO nearest_elem = candidate_map.entries(nearest_triangle);
-        results(p) = GridPointSearch3D::Result{dimensionality, -nearest_elem,
-                                               parametric_coords_to_nearest};
+
+      if (inside_elem >= 0) {
+        results(p) = GridPointSearch3D::Result{Dimensionality::REGION,
+                                               inside_elem, inside_lambda};
+      } else if (nearest_elem >= 0) {
+        results(p) = GridPointSearch3D::Result{Dimensionality::REGION,
+                                               -nearest_elem, nearest_lambda};
+      } else {
+        results(p) = GridPointSearch3D::Result{Dimensionality::REGION, -1,
+                                               Omega_h::zero_vector<DIM + 1>()};
       }
     });
 
@@ -874,7 +931,7 @@ GridPointSearch3D::GridPointSearch3D(Omega_h::Mesh& mesh, LO Nx, LO Ny, LO Nz)
   : GridPointSearch3D(mesh, Nx, Ny, Nz,
                       PointSearchTolerances{"point search 3d tolerances"})
 {
-  Kokkos::deep_copy(tolerances_, 0);
+  Kokkos::deep_copy(tolerances_, 1E-12);
 }
 
 GridPointSearch3D::GridPointSearch3D(Omega_h::Mesh& mesh, LO Nx, LO Ny, LO Nz,

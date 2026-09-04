@@ -190,11 +190,21 @@ public:
                     const PointSearchTolerances& tolerances);
 
   /**
-   *  Given a point in global coordinates, returns the id of the tetrahedron (3D
-   * element) that the point lies within and the parametric coordinate of the
-   * point within the tetrahedron. If the point does not lie within any
-   * tetrahedron element, then the id will be a negative number and (TODO) will
-   * return a negative id of the closest element.
+   * Given points in global coordinates, returns for each the id of a
+   * tetrahedron containing it and the point's barycentric coordinates in that
+   * tetrahedron. Containment is tested with a Cartesian tolerance band: the
+   * point may lie up to `tolerances(2)` outside any face plane (the band is
+   * applied per barycentric coordinate, scaled by the gradient norm of that
+   * coordinate, so it is the same distance from both sides of a shared face).
+   * The result is always labelled REGION. When several tetrahedra contain the
+   * point (it lies on a shared face, edge or vertex) the smallest id is
+   * returned; this is an interim tie-break that hides a genuine ambiguity,
+   * see docs/point_search_shared_face_plan.md.
+   *
+   * If no candidate contains the point, the id is the negative of the
+   * candidate whose most violated face plane is closest, with that
+   * candidate's barycentric coordinates; -1 if the grid cell has no
+   * candidates at all. The 2D tolerances are not used by the 3D search.
    */
   Kokkos::View<Result*> operator()(
     Kokkos::View<const Real* [DIM]> point) const override;
@@ -214,7 +224,6 @@ private:
   CandidateMapT candidate_map_;
   Omega_h::LOs tris2verts_;
   Omega_h::Reals coords_;
-  Real fuzz_;
 };
 
 /// A grid search of either spatial dimension, as owned by components that are
