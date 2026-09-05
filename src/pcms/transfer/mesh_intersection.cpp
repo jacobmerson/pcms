@@ -1,4 +1,6 @@
 #include "pcms/transfer/mesh_intersection.hpp"
+#include "pcms/field/evaluator/omega_h_lagrange.h"
+#include "pcms/field/function_space/lagrange.h"
 #include "pcms/utility/assert.h"
 #include "pcms/utility/mesh_geometry.h"
 #include "pcms/utility/omega_h_array_utils.h"
@@ -268,5 +270,104 @@ IntersectionResults intersectTargets(
   return intersectTargetsImpl<2>(source_mesh, target_mesh,
                                  RequireSearchDimension<2>(source_search),
                                  use_prefilter);
+}
+namespace
+{
+std::shared_ptr<const OmegaHDiscretization> RequireOmegaHDiscretization(
+  const FunctionSpace& space, const char* role)
+{
+  auto discretization = std::dynamic_pointer_cast<const OmegaHDiscretization>(
+    space.GetDiscretization());
+  if (!discretization) {
+    throw pcms_error(std::string("OmegaHMeshIntersection: the ") + role +
+                     " space is not on an Omega_h discretization");
+  }
+  return discretization;
+}
+} // namespace
+
+const GridPointSearchVariant* SourceSearchFromSpace(const FunctionSpace& space)
+{
+  const auto* lagrange = dynamic_cast<const LagrangeFunctionSpace*>(&space);
+  if (lagrange == nullptr) {
+    return nullptr;
+  }
+  const auto* factory =
+    dynamic_cast<const OmegaHLagrangeEvaluatorFactory<Real>*>(
+      lagrange->GetEvaluatorFactory().get());
+  return factory ? &factory->GetSearch() : nullptr;
+}
+
+OmegaHMeshIntersection::OmegaHMeshIntersection(
+  const FunctionSpace& source_space, const FunctionSpace& target_space,
+  bool use_prefilter)
+  : OmegaHMeshIntersection(RequireOmegaHDiscretization(source_space, "source"),
+                           RequireOmegaHDiscretization(target_space, "target"),
+                           SourceSearchFromSpace(source_space), use_prefilter)
+{
+}
+
+OmegaHMeshIntersection::OmegaHMeshIntersection(
+  std::shared_ptr<const OmegaHDiscretization> source,
+  std::shared_ptr<const OmegaHDiscretization> target,
+  const GridPointSearchVariant* source_search, bool use_prefilter)
+  : source_(std::move(source)), target_(std::move(target))
+{
+  if (!source_ || !target_) {
+    throw pcms_error("OmegaHMeshIntersection: discretizations must be set");
+  }
+  if (source_->GetMesh().dim() != target_->GetMesh().dim()) {
+    throw pcms_error(
+      "OmegaHMeshIntersection: source and target mesh dimensions differ");
+  }
+  results_ =
+    source_search
+      ? intersectTargets(source_->GetMesh(), target_->GetMesh(), *source_search,
+                         use_prefilter)
+      : intersectTargets(source_->GetMesh(), target_->GetMesh(), use_prefilter);
+}
+
+std::shared_ptr<const Discretization>
+OmegaHMeshIntersection::GetSourceDiscretization() const noexcept
+{
+  return source_;
+}
+
+std::shared_ptr<const Discretization>
+OmegaHMeshIntersection::GetTargetDiscretization() const noexcept
+{
+  return target_;
+}
+
+const IntersectionResults& OmegaHMeshIntersection::GetTargetToSource()
+  const noexcept
+{
+  return results_;
+}
+
+Omega_h::Mesh& OmegaHMeshIntersection::GetSourceMesh() const noexcept
+{
+  return source_->GetMesh();
+}
+
+Omega_h::Mesh& OmegaHMeshIntersection::GetTargetMesh() const noexcept
+{
+  return target_->GetMesh();
+}
+
+std::shared_ptr<MeshIntersection> IntersectMeshes(
+  const FunctionSpace& source_space, const FunctionSpace& target_space,
+  bool use_prefilter)
+{
+  const bool omega_h = std::dynamic_pointer_cast<const OmegaHDiscretization>(
+                         source_space.GetDiscretization()) &&
+                       std::dynamic_pointer_cast<const OmegaHDiscretization>(
+                         target_space.GetDiscretization());
+  if (omega_h) {
+    return std::make_shared<OmegaHMeshIntersection>(source_space, target_space,
+                                                    use_prefilter);
+  }
+  throw pcms_error("IntersectMeshes: no mesh intersection implementation for "
+                   "this pair of discretizations");
 }
 } // namespace pcms

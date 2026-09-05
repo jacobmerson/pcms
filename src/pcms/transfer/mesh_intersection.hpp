@@ -3,6 +3,9 @@
 
 #include <pcms/configuration.h>
 #include <pcms/localization/point_search.h>
+#include <pcms/discretization/discretization/omega_h.hpp>
+#include <pcms/field/function_space.h>
+#include <memory>
 #include <pcms/localization/queue_visited.hpp>
 #include <Omega_h_fail.hpp>
 #include <Omega_h_int_scan.hpp>
@@ -226,5 +229,57 @@ IntersectionResults intersectTargets(Omega_h::Mesh& source_mesh,
 IntersectionResults intersectTargets(
   Omega_h::Mesh& source_mesh, Omega_h::Mesh& target_mesh,
   const GridPointSearchVariant& source_search, bool use_prefilter = true);
+/// Overlap map between a source and a target discretization: for each target
+/// element, the source elements it intersects. Built once per mesh pair and
+/// shared by every operator on that pair.
+class MeshIntersection
+{
+public:
+  virtual ~MeshIntersection() = default;
+  virtual std::shared_ptr<const Discretization> GetSourceDiscretization()
+    const noexcept = 0;
+  virtual std::shared_ptr<const Discretization> GetTargetDiscretization()
+    const noexcept = 0;
+  /// Target-to-source CRS map; offsets are sized to the target element count.
+  virtual const IntersectionResults& GetTargetToSource() const noexcept = 0;
+};
+
+/// MeshIntersection of two Omega_h simplex meshes of the same dimension.
+class OmegaHMeshIntersection final : public MeshIntersection
+{
+public:
+  /// Reuses the source space's point search when the space owns one.
+  OmegaHMeshIntersection(const FunctionSpace& source_space,
+                         const FunctionSpace& target_space,
+                         bool use_prefilter = true);
+  /// @param source_search search over the source mesh to reuse; may be null
+  OmegaHMeshIntersection(std::shared_ptr<const OmegaHDiscretization> source,
+                         std::shared_ptr<const OmegaHDiscretization> target,
+                         const GridPointSearchVariant* source_search = nullptr,
+                         bool use_prefilter = true);
+
+  std::shared_ptr<const Discretization> GetSourceDiscretization()
+    const noexcept override;
+  std::shared_ptr<const Discretization> GetTargetDiscretization()
+    const noexcept override;
+  const IntersectionResults& GetTargetToSource() const noexcept override;
+  Omega_h::Mesh& GetSourceMesh() const noexcept;
+  Omega_h::Mesh& GetTargetMesh() const noexcept;
+
+private:
+  std::shared_ptr<const OmegaHDiscretization> source_;
+  std::shared_ptr<const OmegaHDiscretization> target_;
+  IntersectionResults results_;
+};
+
+/// The point search owned by an Omega_h Lagrange space; null for other spaces.
+const GridPointSearchVariant* SourceSearchFromSpace(const FunctionSpace& space);
+
+/// MeshIntersection for the spaces' discretizations, dispatched on their type.
+/// Throws pcms_error when no implementation covers the pair.
+std::shared_ptr<MeshIntersection> IntersectMeshes(
+  const FunctionSpace& source_space, const FunctionSpace& target_space,
+  bool use_prefilter = true);
+
 } // namespace pcms
 #endif // PCMS_TRANSFER_MESH_INTERSECTION_HPP
