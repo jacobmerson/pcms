@@ -30,6 +30,7 @@ if(PCMS_ENABLE_PETSC AND PCMS_ENABLE_MESHFIELDS)
       omega_h_conservative_projection.hpp
       omega_h_intersection_rhs_integrator.hpp
       omega_h_mass_integrator.hpp
+      mass_smoother.hpp
       omega_h_mc_rhs_integrator.hpp
       omega_h_control_variate_projection.hpp
       coo_assembly_utils.hpp
@@ -40,6 +41,7 @@ if(PCMS_ENABLE_PETSC AND PCMS_ENABLE_MESHFIELDS)
       omega_h_conservative_projection.cpp
       omega_h_intersection_rhs_integrator.cpp
       omega_h_mass_integrator.cpp
+      mass_smoother.cpp
       omega_h_mc_rhs_integrator.cpp
       omega_h_control_variate_projection.cpp
       petsc_utils.cpp
