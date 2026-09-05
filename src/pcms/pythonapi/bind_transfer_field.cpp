@@ -12,6 +12,7 @@
 #include "pcms/utility/types.h"
 #if defined(PCMS_ENABLE_PETSC) && defined(PCMS_ENABLE_MESHFIELDS)
 #include "pcms/transfer/mass_matrix_type.hpp"
+#include "pcms/transfer/mass_smoother.hpp"
 #include "pcms/transfer/omega_h_conservative_projection.hpp"
 #include "pcms/transfer/omega_h_control_variate_projection.hpp"
 #include "pcms/transfer/omega_h_mc_rhs_integrator.hpp"
@@ -112,6 +113,20 @@ void bind_transfer_field_module(py::module& m)
       py::arg("source"), py::arg("target"),
       "Conservatively project the source field onto the target space using "
       "exact mesh-intersection quadrature.");
+
+  // Same-space conservative smoother; one apply() is one sweep of inv(M_L) M.
+  py::class_<MassSmoother>(m, "MassSmoother")
+    .def(py::init(
+           [](const FunctionSpace& space) { return BuildMassSmoother(space); }),
+         py::arg("space"),
+         "Conservative, bounds-preserving smoother on one function space: "
+         "apply() performs one sweep u <- inv(M_L) M u (Farrell et al. 2009, "
+         "Eqs. 37-38, applied to the whole field). The mass matrix is "
+         "assembled once here; call apply() in a loop for more sweeps.")
+    .def(
+      "apply",
+      [](const MassSmoother& self, Field<Real>& field) { self.Apply(field); },
+      py::arg("field"), "Smooth the field in place (one sweep).");
 
   // Sampling strategy for the Monte Carlo RHS integrator.
   py::enum_<MonteCarloSampling>(m, "MonteCarloSampling")
