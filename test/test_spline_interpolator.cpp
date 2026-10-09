@@ -582,3 +582,14 @@ TEST_CASE("spline grids must be finite, ascending and non-degenerate",
   const auto nak = BoundaryCondition::NOT_A_KNOT;
   REQUIRE_THROWS_AS(Interp(span_of(x), span_of(f), nak, 0, nak, 0), pcms_error);
 }
+
+TEST_CASE("nearly uniform spline grids are rejected", "[spline]")
+{
+  // the solver assumes one spacing, so a 5e-4 relative deviation would be
+  // silently interpolated as if uniform
+  auto x = to_device({0.0, 1.0, 2.0005, 3.0});
+  auto f = to_device({0.0, 1.0, 8.0, 27.0});
+  using Interp = ExplicitCubicSplineInterpolator<double, TestMemorySpace>;
+  const auto nak = BoundaryCondition::NOT_A_KNOT;
+  REQUIRE_THROWS_AS(Interp(span_of(x), span_of(f), nak, 0, nak, 0), pcms_error);
+}

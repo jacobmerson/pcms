@@ -9,6 +9,7 @@
 #include <Kokkos_Core.hpp>
 #include <cmath>
 #include <iostream>
+#include <limits>
 
 namespace pcms
 {
@@ -68,7 +69,8 @@ void grid_valid(Rank1View<T, MemorySpace> x)
   if (x.extent(0) < 2) {
     throw pcms_error("spline grid needs at least two points");
   }
-  bool is_uniform_ascending = isUniformAscending<T, MemorySpace>(x, 1.0e-3);
+  bool is_uniform_ascending = isUniformAscending<T, MemorySpace>(
+    x, std::sqrt(std::numeric_limits<T>::epsilon()));
   if (!is_uniform_ascending) {
     throw pcms_error(
       "spline grid must be finite, strictly ascending and uniform");
