@@ -95,10 +95,10 @@ KOKKOS_INLINE_FUNCTION void clamp_to_grid_range(T xget, T& zxget,
                                                 Rank1View<T, MemorySpace> x,
                                                 LO nx, LO& ier, T tol)
 {
-  if (xget < x[0] || xget > x[nx - 1]) {
+  if (!(xget >= x[0] && xget <= x[nx - 1])) {
     T zxtol = tol * std::max(std::abs(x[0]), std::abs(x[nx - 1]));
 
-    if (xget < x[0] - zxtol || xget > x[nx - 1] + zxtol) {
+    if (!(xget >= x[0] - zxtol && xget <= x[nx - 1] + zxtol)) {
       ier = 1; // Error code for out of range
       printf("lookup:  xget=%.6f out of range %.6f to %.6f\n", xget, x[0],
              x[nx - 1]);
@@ -736,6 +736,8 @@ KOKKOS_INLINE_FUNCTION void cubic_lookup_explicit(T xget,
 
   // Range check
   clamp_to_grid_range(xget, zxget, x, nx, ier, lookup_tol);
+  if (ier != 0)
+    return;
 
   i = lookup_in_grid<T, MemorySpace>(zxget, x, nx);
 
@@ -887,6 +889,8 @@ KOKKOS_INLINE_FUNCTION void cubic_lookup_compact(T xget,
   T zxget = xget;
 
   clamp_to_grid_range(xget, zxget, x, nx, ier, lookup_tol);
+  if (ier != 0)
+    return;
 
   i = lookup_in_grid<T, MemorySpace>(zxget, x, nx);
 
@@ -1498,6 +1502,8 @@ KOKKOS_INLINE_FUNCTION void bicubic_lookup_compact(
 
   clamp_to_grid_range(xget, zxget, x, nx, ier, lookup_tol);
   clamp_to_grid_range(yget, zyget, y, ny, ier, lookup_tol);
+  if (ier != 0)
+    return;
 
   i = lookup_in_grid<T, MemorySpace>(zxget, x, nx);
   j = lookup_in_grid<T, MemorySpace>(zyget, y, ny);

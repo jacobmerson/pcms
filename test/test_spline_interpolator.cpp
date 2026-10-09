@@ -593,3 +593,39 @@ TEST_CASE("nearly uniform spline grids are rejected", "[spline]")
   const auto nak = BoundaryCondition::NOT_A_KNOT;
   REQUIRE_THROWS_AS(Interp(span_of(x), span_of(f), nak, 0, nak, 0), pcms_error);
 }
+
+TEMPLATE_TEST_CASE("1D queries outside the grid leave the output untouched",
+                   "[spline]",
+                   (ExplicitCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  auto xh = linspace(0, 1, 6);
+  auto x = to_device(xh);
+  auto f = to_device(xh);
+  TestType interp(span_of(x), span_of(f), BoundaryCondition::NOT_A_KNOT, 0,
+                  BoundaryCondition::NOT_A_KNOT, 0);
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  auto out = eval_1d(interp, {1, 1, 0}, {nan, -1.0e6, 1.0e6}, 2);
+  for (double v : out)
+    CHECK(v == 0.0);
+}
+
+TEMPLATE_TEST_CASE("2D queries outside the grid leave the output untouched",
+                   "[spline]",
+                   (ExplicitBiCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactBiCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  auto xh = linspace(0, 1, 6);
+  auto x = to_device(xh);
+  auto v =
+    to_device(sample_2d(xh, xh, [](double a, double b) { return a + b; }));
+  auto none = to_device({});
+  const auto nak = BoundaryCondition::NOT_A_KNOT;
+  TestType interp(span_of(x), span_of(x), span_of(v), nak, span_of(none), nak,
+                  span_of(none), nak, span_of(none), nak, span_of(none));
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  auto out = eval_2d(interp, {1, 1, 0, 0, 0, 0}, {nan, 0.5, -1.0e6, 0.5},
+                     {0.5, nan, 0.5, 1.0e6}, 2);
+  for (double val : out)
+    CHECK(val == 0.0);
+}
