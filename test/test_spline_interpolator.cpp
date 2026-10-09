@@ -472,6 +472,43 @@ std::vector<double> eval_1d(Interpolator& interp, const std::vector<LO>& sel,
   return std::vector<double>(h.data(), h.data() + h.extent(0));
 }
 
+/// Evaluate a 2D interpolator with a selector and return the n x ncol output
+template <typename Interpolator>
+std::vector<double> eval_2d(Interpolator& interp, const std::vector<LO>& sel,
+                            const std::vector<double>& xq,
+                            const std::vector<double>& yq, int ncol)
+{
+  auto xd = to_device(xq);
+  auto yd = to_device(yq);
+  Kokkos::View<double*, TestMemorySpace> out("out", xq.size() * ncol);
+  interp.evaluate(
+    selector_of(sel), span_of(xd), span_of(yd),
+    Rank2View<double, TestMemorySpace>(out.data(), xq.size(), ncol));
+  auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, out);
+  return std::vector<double>(h.data(), h.data() + h.extent(0));
+}
+
+/// Uniform grid of n points on [a, b]
+std::vector<double> linspace(double a, double b, int n)
+{
+  std::vector<double> x(n);
+  for (int i = 0; i < n; ++i)
+    x[i] = a + (b - a) * i / (n - 1);
+  return x;
+}
+
+/// Sample f on the tensor grid with x as the slow index
+template <typename F>
+std::vector<double> sample_2d(const std::vector<double>& x,
+                              const std::vector<double>& y, F f)
+{
+  std::vector<double> v;
+  for (double xi : x)
+    for (double yj : y)
+      v.push_back(f(xi, yj));
+  return v;
+}
+
 } // namespace
 
 TEMPLATE_TEST_CASE("two-point splines keep both endpoint derivatives",
@@ -496,4 +533,34 @@ TEMPLATE_TEST_CASE("two-point splines keep both endpoint derivatives",
     CHECK(out[3 * i + 1] == Catch::Approx(3 * xi * xi));
     CHECK(out[3 * i + 2] == Catch::Approx(6 * xi));
   }
+}
+
+TEMPLATE_TEST_CASE("non-zero boundary data on the lower side only is applied",
+                   "[spline]",
+                   (ExplicitBiCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactBiCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  // f = g(x) (y - y^2/2) has df/dy = g(x) at y = 0 and 0 at y = 1
+  auto g = [](double x) { return 1 + x + x * x + x * x * x; };
+  auto f = [&](double x, double y) { return g(x) * (y - 0.5 * y * y); };
+  auto xh = linspace(0, 1, 5);
+  auto yh = linspace(0, 1, 5);
+  std::vector<double> lo_h;
+  for (double xi : xh)
+    lo_h.push_back(g(xi));
+  auto x = to_device(xh);
+  auto y = to_device(yh);
+  auto v = to_device(sample_2d(xh, yh, f));
+  auto lo = to_device(lo_h);
+  auto hi = to_device(std::vector<double>(xh.size(), 0.0));
+  auto none = to_device({});
+  const auto nak = BoundaryCondition::NOT_A_KNOT;
+  const auto d1 = BoundaryCondition::FIRST_DERIVATIVE_MATCH;
+  TestType interp(span_of(x), span_of(y), span_of(v), nak, span_of(none), nak,
+                  span_of(none), d1, span_of(lo), d1, span_of(hi));
+  std::vector<double> xq = {0.1, 0.45, 0.8};
+  std::vector<double> yq = {0.05, 0.6, 0.95};
+  auto out = eval_2d(interp, {1, 0, 0, 0, 0, 0}, xq, yq, 1);
+  for (size_t i = 0; i < xq.size(); ++i)
+    CHECK(out[i] == Catch::Approx(f(xq[i], yq[i])));
 }

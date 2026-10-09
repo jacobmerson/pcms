@@ -125,6 +125,7 @@ void detect_inhomogeneous_bc(Rank1View<T, MemorySpace> bcmin, LO ibcmin,
 {
   using execution_space = typename MemorySpace::execution_space;
   if (ibcmin == 1 || ibcmin == 2) {
+    LO nonzero = 0;
     Kokkos::parallel_reduce(
       "check_nonzero", Kokkos::RangePolicy<execution_space>(0, nx),
       KOKKOS_LAMBDA(const LO ix, LO& local_flag) {
@@ -132,7 +133,8 @@ void detect_inhomogeneous_bc(Rank1View<T, MemorySpace> bcmin, LO ibcmin,
           local_flag = 1;
         }
       },
-      Kokkos::Max<LO>(iflg2));
+      Kokkos::Max<LO>(nonzero));
+    iflg2 = std::max(iflg2, nonzero);
   }
 }
 
