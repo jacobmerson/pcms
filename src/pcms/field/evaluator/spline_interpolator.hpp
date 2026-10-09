@@ -255,7 +255,6 @@ KOKKOS_FUNCTION void compute_spline_coefficients(LO k_bc1, LO k_bcn, LO n,
       f(2, 1) = 0.0;
       f(3, 1) = 0.0;
     } else if (iord1 == 1 && iord2 == 1) {
-      T a1 = f(1, 0), an = f(1, 1);
       f(1, 0) = a1;
       f(1, 1) = an;
       h = dx;
@@ -270,7 +269,6 @@ KOKKOS_FUNCTION void compute_spline_coefficients(LO k_bc1, LO k_bcn, LO n,
       f(2, 1) = f(3, 0) * h + f(2, 0);
 
     } else if (iord1 == 1 && iord2 == 2) {
-      T a1 = f(1, 0), bn = f(2, 1);
       f(1, 0) = a1;
       f(2, 1) = bn;
       h = dx;
@@ -285,7 +283,6 @@ KOKKOS_FUNCTION void compute_spline_coefficients(LO k_bc1, LO k_bcn, LO n,
       f(1, 1) = f(3, 0) * h * h / 2 + f(2, 0) * h + a1;
 
     } else if (iord1 == 2 && iord2 == 1) {
-      T b1 = f(2, 0), an = f(1, 1);
       f(2, 0) = b1;
       f(1, 1) = an;
       h = dx;
@@ -300,7 +297,6 @@ KOKKOS_FUNCTION void compute_spline_coefficients(LO k_bc1, LO k_bcn, LO n,
       f(2, 1) = f(3, 0) * h + f(2, 0);
 
     } else if (iord1 == 2 && iord2 == 2) {
-      T b1 = f(2, 0), bn = f(2, 1);
       f(2, 0) = b1;
       f(2, 1) = bn;
       h = dx;

@@ -2,8 +2,12 @@
 #include "pcms.h"
 #include <Kokkos_Core.hpp>
 #include <catch2/catch_approx.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <cmath>
+#include <tuple>
+#include <vector>
 #include "pcms/field/evaluator/spline_interpolator.hpp"
 
 using namespace pcms;
@@ -423,4 +427,73 @@ TEST_CASE("test_cubic_spline_interpolator")
   double time = timer.seconds();
   std::cout << "Total time for spline tests: " << time << " seconds"
             << std::endl;
+}
+
+namespace
+{
+
+Kokkos::View<double*, TestMemorySpace> to_device(const std::vector<double>& h)
+{
+  Kokkos::View<double*, TestMemorySpace> d("to_device", h.size());
+  auto m = Kokkos::create_mirror_view(d);
+  for (size_t i = 0; i < h.size(); ++i)
+    m(i) = h[i];
+  Kokkos::deep_copy(d, m);
+  return d;
+}
+
+Rank1View<double, TestMemorySpace> span_of(
+  const Kokkos::View<double*, TestMemorySpace>& v)
+{
+  return Rank1View<double, TestMemorySpace>(v.data(), v.extent(0));
+}
+
+Kokkos::View<LO*, TestMemorySpace> selector_of(const std::vector<LO>& h)
+{
+  Kokkos::View<LO*, TestMemorySpace> d("selector", h.size());
+  auto m = Kokkos::create_mirror_view(d);
+  for (size_t i = 0; i < h.size(); ++i)
+    m(i) = h[i];
+  Kokkos::deep_copy(d, m);
+  return d;
+}
+
+/// Evaluate a 1D interpolator with a selector and return the n x ncol output
+template <typename Interpolator>
+std::vector<double> eval_1d(Interpolator& interp, const std::vector<LO>& sel,
+                            const std::vector<double>& xq, int ncol)
+{
+  auto xd = to_device(xq);
+  Kokkos::View<double*, TestMemorySpace> out("out", xq.size() * ncol);
+  interp.evaluate(
+    selector_of(sel), span_of(xd),
+    Rank2View<double, TestMemorySpace>(out.data(), xq.size(), ncol));
+  auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, out);
+  return std::vector<double>(h.data(), h.data() + h.extent(0));
+}
+
+} // namespace
+
+TEMPLATE_TEST_CASE("two-point splines keep both endpoint derivatives",
+                   "[spline]",
+                   (ExplicitCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  // f = x^3 on [1, 3]: any pair of first/second derivative end conditions
+  // determines the cubic exactly
+  auto x = to_device({1.0, 3.0});
+  auto f = to_device({1.0, 27.0});
+  const auto d1 = BoundaryCondition::FIRST_DERIVATIVE_MATCH;
+  const auto d2 = BoundaryCondition::SECOND_DERIVATIVE_MATCH;
+  auto [lo, lo_data, hi, hi_data] = GENERATE_COPY(
+    std::make_tuple(d1, 3.0, d1, 27.0), std::make_tuple(d1, 3.0, d2, 18.0),
+    std::make_tuple(d2, 6.0, d1, 27.0), std::make_tuple(d2, 6.0, d2, 18.0));
+  TestType interp(span_of(x), span_of(f), lo, lo_data, hi, hi_data);
+  auto out = eval_1d(interp, {1, 1, 1}, {1.5, 2.0, 2.5}, 3);
+  for (int i = 0; i < 3; ++i) {
+    const double xi = 1.5 + 0.5 * i;
+    CHECK(out[3 * i] == Catch::Approx(xi * xi * xi));
+    CHECK(out[3 * i + 1] == Catch::Approx(3 * xi * xi));
+    CHECK(out[3 * i + 2] == Catch::Approx(6 * xi));
+  }
 }
