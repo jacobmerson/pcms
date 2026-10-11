@@ -81,7 +81,7 @@ Kokkos::Crs<LO, Kokkos::DefaultExecutionSpace, void, LO>
 construct_intersection_map_reference_3d(Omega_h::Mesh& mesh,
                                         Kokkos::View<Uniform3DGrid[1]> grid,
                                         int num_grid_cells);
-}
+} // namespace detail
 
 [[nodiscard]] KOKKOS_FUNCTION bool triangle_intersects_bbox(
   const Omega_h::Matrix<2, 3>& coords, const AABBox<2>& bbox);
@@ -90,6 +90,15 @@ template <int dim>
 class PointLocalizationSearch
 {
 public:
+  /**
+   * Where a query point was located. A non-negative `element_id` is the id of
+   * the entity of dimension `dimensionality` containing the point. For a point
+   * outside the mesh `element_id` is negative and encodes the nearest entity
+   * among the query cell's candidates as OutsideId(id), so that every entity
+   * id, 0 included, maps to a distinct negative value; EntityId() decodes both
+   * cases. When the query cell has no candidates at all the dimensionality is
+   * NO_INTERSECT and `element_id` is -1.
+   */
   struct Result
   {
     enum class Dimensionality
@@ -97,12 +106,36 @@ public:
       VERTEX = 0,
       EDGE = 1,
       FACE = 2,
-      REGION = 3
+      REGION = 3,
+      NO_INTERSECT = 4
     };
 
     Dimensionality dimensionality;
-    LO element_id; // ID of the actual entity (vertex/edge/face/region)
+    LO element_id;
     Omega_h::Vector<dim + 1> parametric_coords;
+
+    /// `element_id` of a point outside the mesh whose nearest entity is `id`.
+    [[nodiscard]] KOKKOS_INLINE_FUNCTION static constexpr LO OutsideId(LO id)
+    {
+      return -id - 1;
+    }
+
+    /// True when the point was not located inside any entity.
+    [[nodiscard]] KOKKOS_INLINE_FUNCTION constexpr bool IsOutside() const
+    {
+      return element_id < 0;
+    }
+
+    /// Id of the entity of dimension `dimensionality`: the containing entity
+    /// of a located point, the nearest entity of an outside point, or -1 for
+    /// NO_INTERSECT.
+    [[nodiscard]] KOKKOS_INLINE_FUNCTION constexpr LO EntityId() const
+    {
+      if (dimensionality == Dimensionality::NO_INTERSECT) {
+        return -1;
+      }
+      return element_id < 0 ? -element_id - 1 : element_id;
+    }
   };
 
   static constexpr auto DIM = dim;
@@ -152,11 +185,12 @@ public:
                     const PointSearchTolerances& tolerances);
 
   /**
-   *  given a point in global coordinates give the id of the triangle that the
-   * point lies within and the parametric coordinate of the point within the
-   * triangle. If the point does not lie within any triangle element. Then the
-   * id will be a negative number and (TODO) will return a negative id of the
-   * closest element
+   * Given points in global coordinates, returns for each the entity (vertex,
+   * edge or face, chosen with the vertex and edge tolerances) containing it
+   * and the point's barycentric coordinates in a face adjacent to that entity.
+   * For a point outside the mesh the result names the nearest vertex or edge
+   * among the query cell's candidates, encoded with Result::OutsideId, or is
+   * NO_INTERSECT when the cell has no candidates.
    */
   Kokkos::View<Result*> operator()(
     Kokkos::View<const Real* [DIM]> point) const override;
@@ -201,10 +235,11 @@ public:
    * returned; this is an interim tie-break that hides a genuine ambiguity,
    * see docs/point_search_shared_face_plan.md.
    *
-   * If no candidate contains the point, the id is the negative of the
-   * candidate whose most violated face plane is closest, with that
-   * candidate's barycentric coordinates; -1 if the grid cell has no
-   * candidates at all. The 2D tolerances are not used by the 3D search.
+   * If no candidate contains the point, the result is the candidate whose
+   * most violated face plane is closest, encoded with Result::OutsideId and
+   * carrying that candidate's barycentric coordinates, or NO_INTERSECT with
+   * id -1 when the grid cell has no candidates at all. The 2D tolerances are
+   * not used by the 3D search.
    */
   Kokkos::View<Result*> operator()(
     Kokkos::View<const Real* [DIM]> point) const override;

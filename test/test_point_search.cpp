@@ -316,34 +316,39 @@ TEST_CASE("uniform grid search")
       REQUIRE(face_idx >= 0);
     }
   }
-  // feature needs to be added
-  SECTION("Global coordinate outside mesh", "[!mayfail]")
+  SECTION("Global coordinate outside mesh")
   {
     auto out_of_bounds = results_h(2);
     auto top_right = results_h(3);
     REQUIRE(out_of_bounds.dimensionality ==
             GridPointSearch2D::Result::Dimensionality::VERTEX);
-    REQUIRE(-1 * out_of_bounds.element_id == top_right.element_id);
+    REQUIRE(out_of_bounds.IsOutside());
+    REQUIRE(out_of_bounds.EntityId() == top_right.element_id);
     REQUIRE(search.GetOwningElementId(out_of_bounds) >= 0);
 
     out_of_bounds = results_h(4);
     auto bot_left = results_h(0);
     REQUIRE(out_of_bounds.dimensionality ==
             GridPointSearch2D::Result::Dimensionality::VERTEX);
-    REQUIRE(-1 * out_of_bounds.element_id == bot_left.element_id);
+    REQUIRE(out_of_bounds.IsOutside());
+    REQUIRE(out_of_bounds.EntityId() == bot_left.element_id);
     REQUIRE(search.GetOwningElementId(out_of_bounds) >= 0);
 
     out_of_bounds = results_h(5);
     REQUIRE(out_of_bounds.dimensionality ==
             GridPointSearch2D::Result::Dimensionality::EDGE);
-    REQUIRE(out_of_bounds.element_id == -219);
+    REQUIRE(out_of_bounds.IsOutside());
+    REQUIRE(out_of_bounds.EntityId() == 219);
     REQUIRE(search.GetOwningElementId(out_of_bounds) >= 0);
 
-    out_of_bounds = results_h(6);
-    REQUIRE(out_of_bounds.dimensionality ==
+    // (0.05, -0.01) is within the edge tolerance of the bottom edge, so it is
+    // located on that edge rather than reported outside.
+    auto on_edge = results_h(6);
+    REQUIRE(on_edge.dimensionality ==
             GridPointSearch2D::Result::Dimensionality::EDGE);
-    REQUIRE(-1 * out_of_bounds.element_id == bot_left.element_id);
-    REQUIRE(search.GetOwningElementId(out_of_bounds) >= 0);
+    REQUIRE_FALSE(on_edge.IsOutside());
+    REQUIRE(on_edge.element_id == 0);
+    REQUIRE(search.GetOwningElementId(on_edge) >= 0);
   }
   SECTION("point on extension of an edge")
   {
@@ -392,19 +397,19 @@ TEST_CASE("point search locates points on shared faces",
 
   const int source_divisions = 10;
   const int query_divisions = 5;
-  auto mesh = Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1,
-                                 source_divisions, source_divisions,
-                                 source_divisions, false);
-  auto query_mesh = Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1,
-                                       query_divisions, query_divisions,
-                                       query_divisions, false);
+  auto mesh =
+    Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, source_divisions,
+                       source_divisions, source_divisions, false);
+  auto query_mesh =
+    Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, query_divisions,
+                       query_divisions, query_divisions, false);
 
   // Same grid resolution the intersection search uses for this mesh.
   const auto n = pcms::DivisionsPerAxisForMesh<3>(mesh.nelems());
   GridPointSearch3D search{mesh, n, n, n};
 
-  const auto centroids_h = Omega_h::HostRead<Omega_h::Real>(
-    pcms::get_entity_centroids(query_mesh, 3));
+  const auto centroids_h =
+    Omega_h::HostRead<Omega_h::Real>(pcms::get_entity_centroids(query_mesh, 3));
   const auto npoints = query_mesh.nelems();
 
   Kokkos::View<pcms::Real* [3]> points("query points", npoints);
@@ -428,4 +433,143 @@ TEST_CASE("point search locates points on shared faces",
   }
   CAPTURE(not_located.size(), npoints);
   REQUIRE(not_located.empty());
+}
+
+namespace
+{
+template <int Dim>
+Omega_h::Mesh BuildSimplexMesh(Omega_h::Library& lib, const Omega_h::LOs& ev2v,
+                               const Omega_h::Reals& coords)
+{
+  Omega_h::Mesh mesh(&lib);
+  Omega_h::build_from_elems_and_coords(&mesh, OMEGA_H_SIMPLEX, Dim, ev2v,
+                                       coords);
+  return mesh;
+}
+
+template <typename ResultView>
+auto HostCopy(const ResultView& view)
+{
+  return Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, view);
+}
+} // namespace
+
+// The nearest-entity fallback used to be encoded as -id, so entity 0 came back
+// as 0 and read as "inside entity 0", and the -1 "no candidates" sentinel was
+// decoded by GetOwningElementId(s) as entity 1. Entity 0 is the nearest
+// candidate for any point near the first element of a mesh, so both are hit on
+// ordinary meshes.
+TEST_CASE("point search encodes outside points unambiguously",
+          "[point_search][regression]")
+{
+  auto lib = Omega_h::Library{};
+
+  SECTION("3D: nearest tetrahedron 0 and an empty query cell")
+  {
+    using pcms::GridPointSearch3D;
+    using Dimensionality = GridPointSearch3D::Result::Dimensionality;
+    // Two tets at opposite corners of [0,10]^3, so the background grid has
+    // cells in between that no element touches.
+    auto mesh = BuildSimplexMesh<3>(
+      lib, Omega_h::LOs({0, 1, 2, 3, 4, 5, 6, 7}),
+      Omega_h::Reals({0.0, 0.0, 0.0, 1.0,  0.0, 0.0, 0.0, 1.0,
+                      0.0, 0.0, 0.0, 1.0,  9.0, 9.0, 9.0, 10.0,
+                      9.0, 9.0, 9.0, 10.0, 9.0, 9.0, 9.0, 10.0}));
+    const auto n = pcms::DivisionsPerAxisForMesh<3>(mesh.nelems());
+    GridPointSearch3D search{mesh, n, n, n};
+
+    Kokkos::View<pcms::Real* [3]> points("points", 4);
+    auto points_h = Kokkos::create_mirror_view(points);
+    // inside tet 0
+    points_h(0, 0) = 0.1;
+    points_h(0, 1) = 0.1;
+    points_h(0, 2) = 0.1;
+    // in tet 0's grid cell but outside it: the nearest candidate is tet 0
+    points_h(1, 0) = 0.5;
+    points_h(1, 1) = 0.5;
+    points_h(1, 2) = 0.5;
+    // in a grid cell with no candidates
+    points_h(2, 0) = 5.0;
+    points_h(2, 1) = 5.0;
+    points_h(2, 2) = 5.0;
+    // inside tet 1
+    points_h(3, 0) = 9.1;
+    points_h(3, 1) = 9.1;
+    points_h(3, 2) = 9.1;
+    Kokkos::deep_copy(points, points_h);
+
+    auto results = search(points);
+    auto results_h = HostCopy(results);
+    auto owners_h = HostCopy(search.GetOwningElementIds(results));
+
+    REQUIRE(results_h(0).dimensionality == Dimensionality::REGION);
+    REQUIRE_FALSE(results_h(0).IsOutside());
+    REQUIRE(results_h(0).element_id == 0);
+    REQUIRE(results_h(0).EntityId() == 0);
+    REQUIRE(owners_h(0) == 0);
+
+    REQUIRE(results_h(1).dimensionality == Dimensionality::REGION);
+    REQUIRE(results_h(1).IsOutside());
+    REQUIRE(results_h(1).EntityId() == 0);
+    REQUIRE(search.GetOwningElementId(results_h(1)) == 0);
+    REQUIRE(owners_h(1) == 0);
+
+    REQUIRE(results_h(2).dimensionality == Dimensionality::NO_INTERSECT);
+    REQUIRE(results_h(2).IsOutside());
+    REQUIRE(results_h(2).EntityId() == -1);
+    REQUIRE(search.GetOwningElementId(results_h(2)) == -1);
+    REQUIRE(owners_h(2) == -1);
+
+    REQUIRE(results_h(3).dimensionality == Dimensionality::REGION);
+    REQUIRE_FALSE(results_h(3).IsOutside());
+    REQUIRE(results_h(3).element_id == 1);
+    REQUIRE(owners_h(3) == 1);
+  }
+
+  SECTION("2D: nearest vertex 0 and an empty query cell")
+  {
+    using pcms::GridPointSearch2D;
+    using Dimensionality = GridPointSearch2D::Result::Dimensionality;
+    // One triangle in the unit square: the cells above its hypotenuse hold no
+    // candidates.
+    auto mesh =
+      BuildSimplexMesh<2>(lib, Omega_h::LOs({0, 1, 2}),
+                          Omega_h::Reals({0.0, 0.0, 1.0, 0.0, 0.0, 1.0}));
+    const auto n = pcms::DivisionsPerAxisForMesh<2>(mesh.nelems());
+    GridPointSearch2D search{mesh, n, n};
+
+    Kokkos::View<pcms::Real* [2]> points("points", 3);
+    auto points_h = Kokkos::create_mirror_view(points);
+    // beyond vertex 0: the nearest entity is vertex 0
+    points_h(0, 0) = -0.05;
+    points_h(0, 1) = -0.05;
+    // in a grid cell the triangle does not reach
+    points_h(1, 0) = 0.6;
+    points_h(1, 1) = 0.6;
+    // inside the triangle
+    points_h(2, 0) = 0.2;
+    points_h(2, 1) = 0.2;
+    Kokkos::deep_copy(points, points_h);
+
+    auto results = search(points);
+    auto results_h = HostCopy(results);
+    auto owners_h = HostCopy(search.GetOwningElementIds(results));
+
+    REQUIRE(results_h(0).dimensionality == Dimensionality::VERTEX);
+    REQUIRE(results_h(0).IsOutside());
+    REQUIRE(results_h(0).EntityId() == 0);
+    REQUIRE(search.GetOwningElementId(results_h(0)) == 0);
+    REQUIRE(owners_h(0) == 0);
+
+    REQUIRE(results_h(1).dimensionality == Dimensionality::NO_INTERSECT);
+    REQUIRE(results_h(1).IsOutside());
+    REQUIRE(results_h(1).EntityId() == -1);
+    REQUIRE(search.GetOwningElementId(results_h(1)) == -1);
+    REQUIRE(owners_h(1) == -1);
+
+    REQUIRE(results_h(2).dimensionality == Dimensionality::FACE);
+    REQUIRE_FALSE(results_h(2).IsOutside());
+    REQUIRE(results_h(2).element_id == 0);
+    REQUIRE(owners_h(2) == 0);
+  }
 }
