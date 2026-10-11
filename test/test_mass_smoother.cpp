@@ -238,7 +238,7 @@ TEST_CASE("MassSmoother: works on any integrator and honours the permutation",
                                 std::make_unique<DenseIntegrator>(chain));
     const std::vector<double> w = {0.9, 0.3, 0.7, 0.1};
     std::vector<double> interleaved(8);
-    for (int i = 0; i < 4; ++i) {
+    for (std::size_t i = 0; i < 4; ++i) {
       interleaved[2 * i] = v[i];
       interleaved[2 * i + 1] = w[i];
     }
@@ -249,7 +249,7 @@ TEST_CASE("MassSmoother: works on any integrator and honours the permutation",
 
     smoother.Apply(field);
     const auto got = HolderValues(field);
-    for (int i = 0; i < 4; ++i) {
+    for (std::size_t i = 0; i < 4; ++i) {
       CAPTURE(i);
       CHECK(got[2 * i] == Catch::Approx(expected_v[i]).margin(1e-14));
       CHECK(got[2 * i + 1] == Catch::Approx(expected_w[i]).margin(1e-14));

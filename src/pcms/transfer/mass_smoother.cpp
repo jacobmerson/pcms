@@ -72,7 +72,13 @@ MassSmoother::MassSmoother(std::shared_ptr<const FieldLayout> layout,
   }
   const auto num_rows = static_cast<PetscInt>(layout_->GetNumOwnedDofHolder());
   Check(createSeqVec(PETSC_COMM_SELF, num_rows, &lumped_mass_));
-  CheckSmootherMatrix(*mass_, num_rows, lumped_mass_);
+  try {
+    CheckSmootherMatrix(*mass_, num_rows, lumped_mass_);
+  } catch (...) {
+    // the destructor does not run for a constructor that throws
+    VecDestroy(&lumped_mass_);
+    throw;
+  }
   Check(createSeqVec(PETSC_COMM_SELF, num_rows, &q_));
   Check(createSeqVec(PETSC_COMM_SELF, num_rows, &tmp_));
   host_values_.resize(static_cast<std::size_t>(layout_->OwnedSize()));
