@@ -50,8 +50,12 @@ public:
   {
   }
 
-  void Evaluate(const Field<T>& field,
-                ValueView<T, DeviceMemorySpace> values) const override
+  [[nodiscard]] LO NumPoints() const override { return inner_->NumPoints(); }
+
+  // Public because CUDA forbids extended lambdas in non-public member
+  // functions; call Evaluate, which checks the output first.
+  void EvaluateImpl(const Field<T>& field,
+                    ValueView<T, DeviceMemorySpace> values) const override
   {
     PCMS_FUNCTION_TIMER;
     const ValueBasis inner_out =
@@ -61,9 +65,6 @@ public:
       return;
     }
     if constexpr (std::is_same_v<T, Real>) {
-      detail::CheckWrittenValueBasis("TransformedPointEvaluator::Evaluate",
-                                     values.GetBasis(),
-                                     bound_->OutputBasis(inner_out));
       const ValueView<Real, DeviceMemorySpace> source_values(
         inner_out, values.GetValues());
       inner_->Evaluate(field, source_values);
