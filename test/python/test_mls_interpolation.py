@@ -58,11 +58,13 @@ class TestMLSInterpolation:
             opts.adapt_radius = False
             opts.basis = pcms.RadialBasisFunction.NO_OP
 
-            factory = pcms.PolynomialReconstructionFunctionSpace.from_coords(
-                source_xy, pcms.CoordinateSystem.Cartesian(), opts
+            factory = pcms.PolynomialReconstructionFunctionSpace.create(
+                pcms.CoordinateView(pcms.csys.Cartesian.deferred(), source_xy),
+                opts,
             )
-            field = factory.create_field()
-            request = pcms.EvaluationRequest.from_coordinates(target_xy)
+            field = factory.create_function()
+            request = pcms.EvaluationRequest.from_coordinates(
+            pcms.CoordinateView(pcms.csys.Cartesian.deferred(), target_xy))
             evaluator = factory.create_point_evaluator(request)
             results = np.zeros((num_targets, 1), dtype=np.float64)
 
@@ -76,7 +78,7 @@ class TestMLSInterpolation:
                     dtype=np.float64,
                 )
 
-                field.set_dof_holder_data(source_values)
+                field.set_dof_holder_data(source_values[:, np.newaxis])
                 evaluator.evaluate(field, results)
                 approx_target_values = results[:, 0]
 
