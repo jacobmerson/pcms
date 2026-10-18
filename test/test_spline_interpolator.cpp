@@ -5,9 +5,12 @@
 #include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <tuple>
+#include <type_traits>
+#include <utility>
 #include <vector>
 #include "pcms/field/evaluator/spline_interpolator.hpp"
 
@@ -462,10 +465,12 @@ Kokkos::View<LO*, TestMemorySpace> selector_of(const std::vector<LO>& h)
 /// Evaluate a 1D interpolator with a selector and return the n x ncol output
 template <typename Interpolator>
 std::vector<double> eval_1d(Interpolator& interp, const std::vector<LO>& sel,
-                            const std::vector<double>& xq, int ncol)
+                            const std::vector<double>& xq, int ncol,
+                            double fill = 0.0)
 {
   auto xd = to_device(xq);
   Kokkos::View<double*, TestMemorySpace> out("out", xq.size() * ncol);
+  Kokkos::deep_copy(out, fill);
   interp.evaluate(
     selector_of(sel), span_of(xd),
     Rank2View<double, TestMemorySpace>(out.data(), xq.size(), ncol));
@@ -477,11 +482,13 @@ std::vector<double> eval_1d(Interpolator& interp, const std::vector<LO>& sel,
 template <typename Interpolator>
 std::vector<double> eval_2d(Interpolator& interp, const std::vector<LO>& sel,
                             const std::vector<double>& xq,
-                            const std::vector<double>& yq, int ncol)
+                            const std::vector<double>& yq, int ncol,
+                            double fill = 0.0)
 {
   auto xd = to_device(xq);
   auto yd = to_device(yq);
   Kokkos::View<double*, TestMemorySpace> out("out", xq.size() * ncol);
+  Kokkos::deep_copy(out, fill);
   interp.evaluate(
     selector_of(sel), span_of(xd), span_of(yd),
     Rank2View<double, TestMemorySpace>(out.data(), xq.size(), ncol));
@@ -628,4 +635,246 @@ TEMPLATE_TEST_CASE("2D queries outside the grid leave the output untouched",
                      {0.5, nan, 0.5, 1.0e6}, 2);
   for (double val : out)
     CHECK(val == 0.0);
+}
+
+namespace
+{
+
+/// d^k/dx^k of the cubic with coefficients c
+double cubic(const double (&c)[4], double x, int k)
+{
+  const double fall[4][4] = {
+    {1, 1, 1, 1}, {0, 1, 2, 3}, {0, 0, 2, 6}, {0, 0, 0, 6}};
+  double sum = 0;
+  for (int j = k; j < 4; ++j)
+    sum += c[j] * fall[k][j] * std::pow(x, j - k);
+  return sum;
+}
+
+double px(double x, int k)
+{
+  const double c[4] = {1, 2, -1, 0.5};
+  return cubic(c, x, k);
+}
+
+double py(double y, int k)
+{
+  const double c[4] = {2, -1, 0.3, 0.2};
+  return cubic(c, y, k);
+}
+
+struct SelectorCase
+{
+  std::vector<LO> selector;
+  std::vector<std::array<int, 2>> orders;
+};
+
+} // namespace
+
+TEMPLATE_TEST_CASE("1D selectors pick derivatives in PSPLINE order", "[spline]",
+                   (ExplicitCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  auto xh = linspace(-1, 2, 6);
+  std::vector<double> fh;
+  for (double x : xh)
+    fh.push_back(px(x, 0));
+  auto x = to_device(xh);
+  auto f = to_device(fh);
+  TestType interp(span_of(x), span_of(f), BoundaryCondition::NOT_A_KNOT, 0,
+                  BoundaryCondition::NOT_A_KNOT, 0);
+  const std::vector<SelectorCase> cases = {{{1, 1, 1}, {{0}, {1}, {2}}},
+                                           {{0, 1, 0}, {{1}}},
+                                           {{0, 0, 1}, {{2}}},
+                                           {{3, 0, 0}, {{3}}}};
+  const std::vector<double> xq = {-1.0, 0.3, 1.7, 2.0};
+  const int ncol = 4;
+  for (const auto& c : cases) {
+    auto out = eval_1d(interp, c.selector, xq, ncol, -999.0);
+    for (size_t i = 0; i < xq.size(); ++i) {
+      for (int j = 0; j < ncol; ++j) {
+        INFO("selector " << c.selector[0] << c.selector[1] << c.selector[2]
+                         << " point " << i << " column " << j);
+        const double v = out[i * ncol + j];
+        if (j < static_cast<int>(c.orders.size()))
+          CHECK(v == Catch::Approx(px(xq[i], c.orders[j][0])));
+        else
+          CHECK(v == -999.0);
+      }
+    }
+  }
+}
+
+TEMPLATE_TEST_CASE("2D selectors pick derivatives in PSPLINE order", "[spline]",
+                   (ExplicitBiCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactBiCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  constexpr bool is_explicit =
+    std::is_same_v<TestType,
+                   ExplicitBiCubicSplineInterpolator<double, TestMemorySpace>>;
+  auto xh = linspace(0, 2, 6);
+  auto yh = linspace(-1, 1, 5);
+  auto x = to_device(xh);
+  auto y = to_device(yh);
+  auto v = to_device(
+    sample_2d(xh, yh, [](double a, double b) { return px(a, 0) * py(b, 0); }));
+  auto none = to_device({});
+  const auto nak = BoundaryCondition::NOT_A_KNOT;
+  TestType interp(span_of(x), span_of(y), span_of(v), nak, span_of(none), nak,
+                  span_of(none), nak, span_of(none), nak, span_of(none));
+
+  std::vector<SelectorCase> cases = {
+    {{1, 1, 1, 1, 1, 1}, {{0, 0}, {1, 0}, {0, 1}, {2, 0}, {0, 2}, {1, 1}}},
+    {{0, 1, 0, 0, 1, 0}, {{1, 0}, {0, 2}}},
+    {{3, 1, 1, 1, 1}, {{3, 0}, {2, 1}, {1, 2}, {0, 3}}},
+    {{3, 0, 1, 0, 1}, {{2, 1}, {0, 3}}},
+    {{4, 1, 1, 1}, {{3, 1}, {2, 2}, {1, 3}}},
+    {{5, 1, 1}, {{3, 2}, {2, 3}}},
+    {{6}, {{3, 3}}}};
+  if (is_explicit)
+    cases.push_back({{-1, 0, 0, 0, 0, 0}, {{0, 0}, {2, 0}, {0, 2}, {2, 2}}});
+  const std::vector<double> xq = {0.0, 0.7, 1.3, 2.0};
+  const std::vector<double> yq = {-1.0, 0.1, -0.45, 1.0};
+  const int ncol = 7;
+  for (const auto& c : cases) {
+    auto out = eval_2d(interp, c.selector, xq, yq, ncol, -999.0);
+    for (size_t i = 0; i < xq.size(); ++i) {
+      for (int j = 0; j < ncol; ++j) {
+        INFO("selector " << c.selector[0] << " point " << i << " column " << j);
+        const double val = out[i * ncol + j];
+        if (j < static_cast<int>(c.orders.size())) {
+          const double expected =
+            px(xq[i], c.orders[j][0]) * py(yq[i], c.orders[j][1]);
+          CHECK(val == Catch::Approx(expected).margin(1e-9));
+        } else {
+          CHECK(val == -999.0);
+        }
+      }
+    }
+  }
+}
+
+TEST_CASE("explicit and compact splines agree for every boundary condition",
+          "[spline]")
+{
+  using BC = BoundaryCondition;
+  const double pi2 = 2 * M_PI;
+  auto [lo, hi] = GENERATE(
+    std::make_pair(BC::NOT_A_KNOT, BC::NOT_A_KNOT),
+    std::make_pair(BC::PERIODIC, BC::PERIODIC),
+    std::make_pair(BC::FIRST_DERIVATIVE_MATCH, BC::SECOND_DERIVATIVE_MATCH),
+    std::make_pair(BC::FIRST_DERIVATIVE_ZERO, BC::SECOND_DERIVATIVE_ZERO),
+    std::make_pair(BC::FIRST_DIV_DIFF_MATCH, BC::SECOND_DIV_DIFF_MATCH),
+    std::make_pair(BC::THIRD_DIV_DIFF_MATCH, BC::NOT_A_KNOT));
+  INFO("boundary conditions " << static_cast<int>(lo) << " "
+                              << static_cast<int>(hi));
+  auto xh = linspace(0, pi2, 9);
+  auto yh = linspace(0, pi2, 7);
+  auto f = [](double a, double b) { return std::sin(a) * std::cos(b) + 1; };
+  auto x = to_device(xh);
+  auto y = to_device(yh);
+  std::vector<double> fx;
+  for (double a : xh)
+    fx.push_back(f(a, 0.4));
+  auto f1 = to_device(fx);
+  auto f2 = to_device(sample_2d(xh, yh, f));
+  std::vector<double> bcx(yh.size()), bcy(xh.size());
+  for (size_t j = 0; j < yh.size(); ++j)
+    bcx[j] = 0.3 + j;
+  for (size_t i = 0; i < xh.size(); ++i)
+    bcy[i] = -0.2 * i;
+  auto bx = to_device(bcx);
+  auto by = to_device(bcy);
+
+  std::vector<double> xq, yq;
+  for (int i = 0; i < 25; ++i) {
+    xq.push_back(pi2 * std::fmod(0.137 * i + 0.01, 1.0));
+    yq.push_back(pi2 * std::fmod(0.291 * i + 0.02, 1.0));
+  }
+
+  ExplicitCubicSplineInterpolator<double, TestMemorySpace> e1(
+    span_of(x), span_of(f1), lo, 0.7, hi, -0.4);
+  CompactCubicSplineInterpolator<double, TestMemorySpace> c1(
+    span_of(x), span_of(f1), lo, 0.7, hi, -0.4);
+  auto oe1 = eval_1d(e1, {1, 1, 1}, xq, 3);
+  auto oc1 = eval_1d(c1, {1, 1, 1}, xq, 3);
+  for (size_t i = 0; i < oe1.size(); ++i)
+    CHECK(oc1[i] == Catch::Approx(oe1[i]).margin(1e-10));
+
+  ExplicitBiCubicSplineInterpolator<double, TestMemorySpace> e2(
+    span_of(x), span_of(y), span_of(f2), lo, span_of(bx), hi, span_of(bx), lo,
+    span_of(by), hi, span_of(by));
+  CompactBiCubicSplineInterpolator<double, TestMemorySpace> c2(
+    span_of(x), span_of(y), span_of(f2), lo, span_of(bx), hi, span_of(bx), lo,
+    span_of(by), hi, span_of(by));
+  auto oe2 = eval_2d(e2, {1, 1, 1, 1, 1, 1}, xq, yq, 6);
+  auto oc2 = eval_2d(c2, {1, 1, 1, 1, 1, 1}, xq, yq, 6);
+  for (size_t i = 0; i < oe2.size(); ++i)
+    CHECK(oc2[i] == Catch::Approx(oe2[i]).margin(1e-10));
+}
+
+namespace
+{
+
+/// End data that a product of the test cubics satisfies for condition bc
+double end_data(BoundaryCondition bc, double (*p)(double, int), double x)
+{
+  switch (bc) {
+    case BoundaryCondition::FIRST_DERIVATIVE_MATCH: return p(x, 1);
+    case BoundaryCondition::SECOND_DERIVATIVE_MATCH: return p(x, 2);
+    default: return 0;
+  }
+}
+
+} // namespace
+
+TEMPLATE_TEST_CASE(
+  "2D splines reproduce bicubics for every exact end condition", "[spline]",
+  (ExplicitBiCubicSplineInterpolator<double, TestMemorySpace>),
+  (CompactBiCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  using BC = BoundaryCondition;
+  const std::vector<BC> conditions = {
+    BC::NOT_A_KNOT, BC::FIRST_DERIVATIVE_MATCH, BC::SECOND_DERIVATIVE_MATCH,
+    BC::THIRD_DIV_DIFF_MATCH};
+  auto xh = linspace(0, 2, 5);
+  auto yh = linspace(-1, 1, 6);
+  auto x = to_device(xh);
+  auto y = to_device(yh);
+  auto v = to_device(
+    sample_2d(xh, yh, [](double a, double b) { return px(a, 0) * py(b, 0); }));
+  const std::vector<double> xq = {0.0, 0.7, 1.3, 2.0, 0.0, 2.0};
+  const std::vector<double> yq = {-1.0, 0.1, -0.45, 1.0, 1.0, -1.0};
+  const std::vector<std::array<int, 2>> orders = {{0, 0}, {1, 0}, {0, 1},
+                                                  {2, 0}, {0, 2}, {1, 1}};
+  for (BC lo : conditions) {
+    for (BC hi : conditions) {
+      INFO("lo " << static_cast<int>(lo) << " hi " << static_cast<int>(hi));
+      // x faces carry d^k f / dx^k as a function of y, y faces as one of x
+      std::vector<double> bx_lo, bx_hi, by_lo, by_hi;
+      for (double b : yh) {
+        bx_lo.push_back(end_data(lo, px, xh.front()) * py(b, 0));
+        bx_hi.push_back(end_data(hi, px, xh.back()) * py(b, 0));
+      }
+      for (double a : xh) {
+        by_lo.push_back(px(a, 0) * end_data(lo, py, yh.front()));
+        by_hi.push_back(px(a, 0) * end_data(hi, py, yh.back()));
+      }
+      auto bxl = to_device(bx_lo);
+      auto bxh = to_device(bx_hi);
+      auto byl = to_device(by_lo);
+      auto byh = to_device(by_hi);
+      TestType s(span_of(x), span_of(y), span_of(v), lo, span_of(bxl), hi,
+                 span_of(bxh), lo, span_of(byl), hi, span_of(byh));
+      auto out = eval_2d(s, {1, 1, 1, 1, 1, 1}, xq, yq, 6);
+      for (size_t q = 0; q < xq.size(); ++q) {
+        for (size_t j = 0; j < orders.size(); ++j) {
+          INFO("point " << q << " column " << j);
+          const double expected =
+            px(xq[q], orders[j][0]) * py(yq[q], orders[j][1]);
+          CHECK(out[6 * q + j] == Catch::Approx(expected).margin(1e-9));
+        }
+      }
+    }
+  }
 }
