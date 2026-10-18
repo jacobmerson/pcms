@@ -54,7 +54,7 @@ bool isUniformAscending(Rank1View<T, MemorySpace> x, T ztol)
     KOKKOS_LAMBDA(const LO ix, bool& local_flag) {
       T zdiffx = x(ix) - x(ix - 1);
       T zdiff = zdiffx - dxavg;
-      if (zdiffx < 0.0 || std::abs(zdiff) > zeps) {
+      if (!(zdiffx > 0) || !(std::abs(zdiff) <= zeps)) {
         local_flag = false;
       }
     },
@@ -65,9 +65,14 @@ bool isUniformAscending(Rank1View<T, MemorySpace> x, T ztol)
 template <typename T, typename MemorySpace>
 void grid_valid(Rank1View<T, MemorySpace> x)
 {
-  PCMS_ALWAYS_ASSERT(x.extent(0) >= 2);
+  if (x.extent(0) < 2) {
+    throw pcms_error("spline grid needs at least two points");
+  }
   bool is_uniform_ascending = isUniformAscending<T, MemorySpace>(x, 1.0e-3);
-  PCMS_ALWAYS_ASSERT(is_uniform_ascending);
+  if (!is_uniform_ascending) {
+    throw pcms_error(
+      "spline grid must be finite, strictly ascending and uniform");
+  }
 }
 
 /** \brief Clamp xget to the grid range [x[0], x[nx-1]] with tolerance

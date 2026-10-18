@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <cmath>
+#include <limits>
 #include <tuple>
 #include <vector>
 #include "pcms/field/evaluator/spline_interpolator.hpp"
@@ -563,4 +564,21 @@ TEMPLATE_TEST_CASE("non-zero boundary data on the lower side only is applied",
   auto out = eval_2d(interp, {1, 0, 0, 0, 0, 0}, xq, yq, 1);
   for (size_t i = 0; i < xq.size(); ++i)
     CHECK(out[i] == Catch::Approx(f(xq[i], yq[i])));
+}
+
+TEST_CASE("spline grids must be finite, ascending and non-degenerate",
+          "[spline]")
+{
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const double inf = std::numeric_limits<double>::infinity();
+  auto grid = GENERATE_COPY(std::vector<double>{1.0},
+                            std::vector<double>{1.0, 1.0, 1.0, 1.0},
+                            std::vector<double>{3.0, 2.0, 1.0, 0.0},
+                            std::vector<double>{0.0, nan, 2.0, 3.0},
+                            std::vector<double>{0.0, 1.0, 2.0, inf});
+  auto x = to_device(grid);
+  auto f = to_device(std::vector<double>(grid.size(), 1.0));
+  using Interp = CompactCubicSplineInterpolator<double, TestMemorySpace>;
+  const auto nak = BoundaryCondition::NOT_A_KNOT;
+  REQUIRE_THROWS_AS(Interp(span_of(x), span_of(f), nak, 0, nak, 0), pcms_error);
 }
