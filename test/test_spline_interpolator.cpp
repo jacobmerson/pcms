@@ -1014,3 +1014,55 @@ TEMPLATE_TEST_CASE(
     }
   }
 }
+
+TEMPLATE_TEST_CASE("periodic 1D splines wrap queries outside the period",
+                   "[spline]",
+                   (ExplicitCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  const double pi2 = 2 * M_PI;
+  auto xh = linspace(0, pi2, 16);
+  std::vector<double> fh;
+  for (double a : xh)
+    fh.push_back(std::sin(a) + 0.5 * std::cos(2 * a));
+  fh.back() = fh.front();
+  auto x = to_device(xh);
+  auto f = to_device(fh);
+  const auto per = BoundaryCondition::PERIODIC;
+  TestType s(span_of(x), span_of(f), per, 0, per, 0);
+  const std::vector<double> outside = {-0.1, pi2 + 0.1, -pi2 + 0.3,
+                                       2 * pi2 + 1.0};
+  const std::vector<double> inside = {pi2 - 0.1, 0.1, 0.3, 1.0};
+  auto o = eval_1d(s, {1, 1, 1}, outside, 3, -999.0);
+  auto i = eval_1d(s, {1, 1, 1}, inside, 3);
+  for (size_t k = 0; k < o.size(); ++k)
+    CHECK(o[k] == Catch::Approx(i[k]).margin(1e-10));
+}
+
+TEMPLATE_TEST_CASE("periodic 2D splines wrap queries outside the period",
+                   "[spline]",
+                   (ExplicitBiCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactBiCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  const double pi2 = 2 * M_PI;
+  auto xh = linspace(0, pi2, 12);
+  auto yh = linspace(0, pi2, 10);
+  auto x = to_device(xh);
+  auto y = to_device(yh);
+  // sin and cos of the grid ends agree to round-off, so the samples are
+  // periodic in both directions
+  auto v = to_device(sample_2d(
+    xh, yh, [](double a, double b) { return std::sin(a) * std::cos(b) + 1; }));
+  auto none = to_device({});
+  const auto per = BoundaryCondition::PERIODIC;
+  TestType s(span_of(x), span_of(y), span_of(v), per, span_of(none), per,
+             span_of(none), per, span_of(none), per, span_of(none));
+  const std::vector<double> xo = {-0.1, pi2 + 0.2, 1.0, -0.4};
+  const std::vector<double> yo = {1.0, -0.3, pi2 + 0.5, pi2 + 0.1};
+  const std::vector<double> xi = {pi2 - 0.1, 0.2, 1.0, pi2 - 0.4};
+  const std::vector<double> yi = {1.0, pi2 - 0.3, 0.5, 0.1};
+  auto o = eval_2d(s, {1, 1, 1, 1, 1, 1}, xo, yo, 6, -999.0);
+  auto i = eval_2d(s, {1, 1, 1, 1, 1, 1}, xi, yi, 6);
+  for (size_t k = 0; k < o.size(); ++k)
+    CHECK(o[k] == Catch::Approx(i[k]).margin(1e-10));
+}

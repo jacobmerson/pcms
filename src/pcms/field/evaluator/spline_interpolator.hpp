@@ -121,6 +121,29 @@ KOKKOS_INLINE_FUNCTION void clamp_to_grid_range(T xget, T& zxget,
   }
 }
 
+/** \brief Shift xget by whole periods into [x[0], x[nx-1]]
+ *
+ * \param xget input coordinate
+ * \param x input grid points
+ * \param nx number of grid points
+ * \param periodic whether the axis is periodic
+ *
+ * \details Coordinates inside the grid range, and all coordinates on a
+ * non-periodic axis, are returned unchanged.
+ */
+template <typename T, typename MemorySpace>
+KOKKOS_INLINE_FUNCTION T wrap_periodic(T xget, Rank1View<T, MemorySpace> x,
+                                       LO nx, bool periodic)
+{
+  if (!periodic || (xget >= x[0] && xget <= x[nx - 1]))
+    return xget;
+  const T period = x[nx - 1] - x[0];
+  T offset = Kokkos::fmod(xget - x[0], period);
+  if (offset < 0)
+    offset += period;
+  return x[0] + offset;
+}
+
 /** \brief Detect if the boundary conditions are homogeneous
  *
  * \param bcmin boundary condition data
@@ -2232,6 +2255,7 @@ public:
 
 private:
   Rank1View<T, MemorySpace> x_;
+  bool periodic_x_ = false;
   Kokkos::View<T*, MemorySpace> coefficients_;
   Rank2View<T, MemorySpace> get_coefficients_view();
 };
@@ -2306,6 +2330,7 @@ public:
 
 private:
   Rank1View<T, MemorySpace> x_;
+  bool periodic_x_ = false;
   Kokkos::View<T*, MemorySpace> coefficients_;
   Rank2View<T, MemorySpace> get_coefficients_view();
 };
@@ -2411,6 +2436,8 @@ public:
 private:
   Rank1View<T, MemorySpace> x_;
   Rank1View<T, MemorySpace> y_;
+  bool periodic_x_ = false;
+  bool periodic_y_ = false;
   Kokkos::View<T*, MemorySpace> coefficients_;
   Rank4View<T, MemorySpace> get_coefficients_view();
 };
@@ -2506,6 +2533,8 @@ public:
 private:
   Rank1View<T, MemorySpace> x_;
   Rank1View<T, MemorySpace> y_;
+  bool periodic_x_ = false;
+  bool periodic_y_ = false;
   Kokkos::View<T*, MemorySpace> coefficients_;
   Rank3View<T, MemorySpace> get_coefficients_view();
 };
@@ -2652,6 +2681,7 @@ ExplicitCubicSplineInterpolator<T, MemorySpace>::
 {
   detail::grid_valid<T, MemorySpace>(x);
   x_ = x;
+  periodic_x_ = ibcxmin == BoundaryCondition::PERIODIC;
   LO nx = x.extent(0);
   Kokkos::View<T*, MemorySpace> fspl_view("coefficients", 4 * nx);
   coefficients_ = fspl_view;
@@ -2688,6 +2718,7 @@ CompactCubicSplineInterpolator<T, MemorySpace>::CompactCubicSplineInterpolator(
 {
   detail::grid_valid<T, MemorySpace>(x);
   x_ = x;
+  periodic_x_ = ibcxmin == BoundaryCondition::PERIODIC;
   LO nx = x.extent(0);
   Kokkos::View<T*, MemorySpace> fspl_view("coefficients", 2 * nx);
   coefficients_ = fspl_view;
@@ -2729,8 +2760,10 @@ void ExplicitCubicSplineInterpolator<T, MemorySpace>::evaluate(
     KOKKOS_CLASS_LAMBDA(const LO i) {
       LO ier = 0;
       detail::RowView<Rank2View<T, MemorySpace>> fval_view{fval, i};
-      detail::cubic_eval_explicit(xvec(i), selector, fval_view, x_,
-                                  x_.extent(0), fspl, ier, lookup_tol);
+      const T xq =
+        detail::wrap_periodic(xvec(i), x_, x_.extent(0), periodic_x_);
+      detail::cubic_eval_explicit(xq, selector, fval_view, x_, x_.extent(0),
+                                  fspl, ier, lookup_tol);
     });
 }
 
@@ -2757,7 +2790,9 @@ void CompactCubicSplineInterpolator<T, MemorySpace>::evaluate(
     KOKKOS_CLASS_LAMBDA(const LO i) {
       LO ier = 0;
       detail::RowView<Rank2View<T, MemorySpace>> fval_view{fval, i};
-      detail::cubic_eval_compact(xvec(i), selector, fval_view, x_, x_.extent(0),
+      const T xq =
+        detail::wrap_periodic(xvec(i), x_, x_.extent(0), periodic_x_);
+      detail::cubic_eval_compact(xq, selector, fval_view, x_, x_.extent(0),
                                  fspl, ier, lookup_tol);
     });
 }
@@ -2791,7 +2826,11 @@ void ExplicitBiCubicSplineInterpolator<T, MemorySpace>::evaluate(
     KOKKOS_CLASS_LAMBDA(const LO i) {
       LO ier = 0;
       detail::RowView<Rank2View<T, MemorySpace>> fval_view{fval, i};
-      detail::bicubic_eval_explicit(xvec(i), yvec(i), iselect, fval_view, x_,
+      const T xq =
+        detail::wrap_periodic(xvec(i), x_, x_.extent(0), periodic_x_);
+      const T yq =
+        detail::wrap_periodic(yvec(i), y_, y_.extent(0), periodic_y_);
+      detail::bicubic_eval_explicit(xq, yq, iselect, fval_view, x_,
                                     x_.extent(0), y_, y_.extent(0), fspl, ier,
                                     lookup_tol);
     });
@@ -2824,9 +2863,12 @@ void CompactBiCubicSplineInterpolator<T, MemorySpace>::evaluate(
     KOKKOS_CLASS_LAMBDA(const LO i) {
       LO ier = 0;
       detail::RowView<Rank2View<T, MemorySpace>> fval_view{fval, i};
-      detail::bicubic_eval_compact(xvec(i), yvec(i), iselect, fval_view, x_,
-                                   x_.extent(0), y_, y_.extent(0), fspl, ier,
-                                   lookup_tol);
+      const T xq =
+        detail::wrap_periodic(xvec(i), x_, x_.extent(0), periodic_x_);
+      const T yq =
+        detail::wrap_periodic(yvec(i), y_, y_.extent(0), periodic_y_);
+      detail::bicubic_eval_compact(xq, yq, iselect, fval_view, x_, x_.extent(0),
+                                   y_, y_.extent(0), fspl, ier, lookup_tol);
     });
 }
 
@@ -2898,6 +2940,8 @@ ExplicitBiCubicSplineInterpolator<T, MemorySpace>::
 
   x_ = x;
   y_ = y;
+  periodic_x_ = ibcxmin == BoundaryCondition::PERIODIC;
+  periodic_y_ = ibcymin == BoundaryCondition::PERIODIC;
   LO ny = y.extent(0);
   LO nx = x.extent(0);
   Kokkos::View<T*, MemorySpace> fspl_view("fspl view", 4 * 4 * nx * ny);
@@ -2946,6 +2990,8 @@ CompactBiCubicSplineInterpolator<T, MemorySpace>::
 
   x_ = x;
   y_ = y;
+  periodic_x_ = ibcxmin == BoundaryCondition::PERIODIC;
+  periodic_y_ = ibcymin == BoundaryCondition::PERIODIC;
   LO ny = y.extent(0);
   LO nx = x.extent(0);
   Kokkos::View<T*, MemorySpace> fspl_view("fspl view", 4 * nx * ny);
