@@ -1066,3 +1066,336 @@ TEMPLATE_TEST_CASE("periodic 2D splines wrap queries outside the period",
   for (size_t k = 0; k < o.size(); ++k)
     CHECK(o[k] == Catch::Approx(i[k]).margin(1e-10));
 }
+
+TEMPLATE_TEST_CASE("short-grid splines agree with the two-point spline",
+                   "[spline]",
+                   (ExplicitCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  // a two-point spline with derivative ends is a cubic; splines on finer
+  // grids sampled from it, with the same ends, must be that cubic (PSPLINE
+  // smalltest)
+  using BC = BoundaryCondition;
+  const auto d1 = BC::FIRST_DERIVATIVE_MATCH;
+  const auto d2 = BC::SECOND_DERIVATIVE_MATCH;
+  auto [lo, lo_data, hi, hi_data] = GENERATE_COPY(
+    std::make_tuple(d1, 1.0, d1, 2.0), std::make_tuple(d1, 1.0, d2, -3.0),
+    std::make_tuple(d2, 0.5, d1, 2.0), std::make_tuple(d2, 0.5, d2, -3.0));
+  INFO("lo " << static_cast<int>(lo) << " hi " << static_cast<int>(hi));
+  auto x2 = to_device({0.0, 1.0});
+  auto f2 = to_device({0.25, 0.75});
+  TestType s2(span_of(x2), span_of(f2), lo, lo_data, hi, hi_data);
+  const std::vector<double> xq = {0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0};
+  auto expected = eval_1d(s2, {1, 1, 1}, xq, 3);
+  for (int n : {3, 4, 5}) {
+    INFO("n " << n);
+    auto xh = linspace(0, 1, n);
+    auto samples = eval_1d(s2, {1, 0, 0}, xh, 1);
+    auto x = to_device(xh);
+    auto f = to_device(samples);
+    TestType s(span_of(x), span_of(f), lo, lo_data, hi, hi_data);
+    auto out = eval_1d(s, {1, 1, 1}, xq, 3);
+    for (size_t k = 0; k < out.size(); ++k)
+      CHECK(out[k] == Catch::Approx(expected[k]).margin(1e-10));
+  }
+}
+
+namespace
+{
+
+/// 2 + sin(y) sampled on y, with the last sample set to the first so the
+/// data is exactly periodic
+std::vector<double> periodic_samples(const std::vector<double>& y)
+{
+  std::vector<double> g;
+  for (double b : y)
+    g.push_back(2 + std::sin(b));
+  g.back() = g.front();
+  return g;
+}
+
+} // namespace
+
+TEMPLATE_TEST_CASE("2D splines take periodic ends on one axis only", "[spline]",
+                   (ExplicitBiCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactBiCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  // f = px(x) (2 + sin y): non-periodic in x, periodic in y (PSPLINE
+  // bpspline and bpsplinb)
+  using BC = BoundaryCondition;
+  const double pi2 = 2 * M_PI;
+  auto xh = linspace(0, 2, 6);
+  auto yh = linspace(0, pi2, 12);
+  const auto g = periodic_samples(yh);
+  std::vector<double> vh;
+  for (double a : xh)
+    for (double gj : g)
+      vh.push_back(px(a, 0) * gj);
+  auto x = to_device(xh);
+  auto y = to_device(yh);
+  auto v = to_device(vh);
+  auto none = to_device({});
+  const auto per = BC::PERIODIC;
+  const BC xbc = GENERATE(BC::NOT_A_KNOT, BC::FIRST_DERIVATIVE_MATCH);
+  INFO("x condition " << static_cast<int>(xbc));
+  std::vector<double> bx_lo, bx_hi;
+  for (double gj : g) {
+    bx_lo.push_back(px(xh.front(), 1) * gj);
+    bx_hi.push_back(px(xh.back(), 1) * gj);
+  }
+  auto bxl = to_device(bx_lo);
+  auto bxh = to_device(bx_hi);
+  TestType s(span_of(x), span_of(y), span_of(v), xbc, span_of(bxl), xbc,
+             span_of(bxh), per, span_of(none), per, span_of(none));
+
+  // along a y node the spline is the x spline of a cubic, so it is exact
+  std::vector<double> xq, yq;
+  for (double a : {0.0, 0.3, 1.1, 2.0})
+    for (int j : {0, 3, 7, 11}) {
+      xq.push_back(a);
+      yq.push_back(yh[j]);
+    }
+  auto out = eval_2d(s, {1, 1, 0, 0, 0, 0}, xq, yq, 2);
+  for (size_t q = 0; q < xq.size(); ++q) {
+    const double gj = g[std::lround(yq[q] / (yh[1] - yh[0])) % 11];
+    CHECK(out[2 * q] == Catch::Approx(px(xq[q], 0) * gj).margin(1e-9));
+    CHECK(out[2 * q + 1] == Catch::Approx(px(xq[q], 1) * gj).margin(1e-9));
+  }
+
+  // y wraps; x does not
+  const std::vector<double> xi = {0.4, 1.7, 0.9};
+  const std::vector<double> yi = {0.2, 5.9, 3.0};
+  const std::vector<double> yo = {0.2 + pi2, 5.9 - pi2, 3.0 - 2 * pi2};
+  auto inside = eval_2d(s, {1, 1, 1, 1, 1, 1}, xi, yi, 6);
+  auto wrapped = eval_2d(s, {1, 1, 1, 1, 1, 1}, xi, yo, 6, -999.0);
+  for (size_t k = 0; k < inside.size(); ++k)
+    CHECK(wrapped[k] == Catch::Approx(inside[k]).margin(1e-10));
+  auto outside =
+    eval_2d(s, {1, 0, 0, 0, 0, 0}, {-0.1, 2.1}, {1.0, 1.0}, 1, -999.0);
+  for (double val : outside)
+    CHECK(val == -999.0);
+}
+
+namespace
+{
+
+/// log2 of the ratio of successive errors
+std::vector<double> observed_orders(const std::vector<double>& err)
+{
+  std::vector<double> order;
+  for (size_t i = 1; i < err.size(); ++i)
+    order.push_back(std::log2(err[i - 1] / err[i]));
+  return order;
+}
+
+} // namespace
+
+TEMPLATE_TEST_CASE("1D spline errors converge at fourth order", "[spline]",
+                   (ExplicitCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  // f = exp(x) on [0, 1]; the value, f' and f'' errors fall as h^4, h^3 and
+  // h^2 for exact first derivative and not-a-knot ends
+  using BC = BoundaryCondition;
+  const BC bc = GENERATE(BC::FIRST_DERIVATIVE_MATCH, BC::NOT_A_KNOT);
+  INFO("ends " << static_cast<int>(bc));
+  const auto xq = linspace(0, 1, 101);
+  std::vector<double> err[3];
+  for (int n : {10, 20, 40}) {
+    auto xh = linspace(0, 1, n);
+    std::vector<double> fh;
+    for (double a : xh)
+      fh.push_back(std::exp(a));
+    auto x = to_device(xh);
+    auto f = to_device(fh);
+    TestType s(span_of(x), span_of(f), bc, 1.0, bc, std::exp(1.0));
+    auto out = eval_1d(s, {1, 1, 1}, xq, 3);
+    double e[3] = {0, 0, 0};
+    for (size_t q = 0; q < xq.size(); ++q)
+      for (int k = 0; k < 3; ++k)
+        e[k] = std::max(e[k], std::abs(out[3 * q + k] - std::exp(xq[q])));
+    for (int k = 0; k < 3; ++k)
+      err[k].push_back(e[k]);
+  }
+  const double expected[3] = {4, 3, 2};
+  for (int k = 0; k < 3; ++k)
+    for (double order : observed_orders(err[k])) {
+      INFO("derivative " << k);
+      CHECK(order > expected[k] - 0.5);
+    }
+}
+
+TEMPLATE_TEST_CASE("2D spline errors converge at fourth order", "[spline]",
+                   (ExplicitBiCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactBiCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  // f = exp(2x - 1) (2 + sin y) with exact x derivative faces and periodic
+  // y, at 10, 20 and 40 points per axis (PSPLINE pspltest2)
+  const double pi2 = 2 * M_PI;
+  auto f = [](double a, double b) {
+    return std::exp(2 * a - 1) * (2 + std::sin(b));
+  };
+  std::vector<double> xq, yq;
+  for (double a : linspace(0, 1, 31))
+    for (double b : linspace(0, pi2, 31)) {
+      xq.push_back(a);
+      yq.push_back(b);
+    }
+  std::vector<double> err;
+  for (int n : {10, 20, 40}) {
+    auto xh = linspace(0, 1, n);
+    auto yh = linspace(0, pi2, n);
+    const auto g = periodic_samples(yh);
+    std::vector<double> vh, bx_lo, bx_hi;
+    for (double a : xh)
+      for (double gj : g)
+        vh.push_back(std::exp(2 * a - 1) * gj);
+    for (double gj : g) {
+      bx_lo.push_back(2 * std::exp(-1.0) * gj);
+      bx_hi.push_back(2 * std::exp(1.0) * gj);
+    }
+    auto x = to_device(xh);
+    auto y = to_device(yh);
+    auto v = to_device(vh);
+    auto bxl = to_device(bx_lo);
+    auto bxh = to_device(bx_hi);
+    auto none = to_device({});
+    const auto d1 = BoundaryCondition::FIRST_DERIVATIVE_MATCH;
+    const auto per = BoundaryCondition::PERIODIC;
+    TestType s(span_of(x), span_of(y), span_of(v), d1, span_of(bxl), d1,
+               span_of(bxh), per, span_of(none), per, span_of(none));
+    auto out = eval_2d(s, {1, 0, 0, 0, 0, 0}, xq, yq, 1);
+    double e = 0;
+    for (size_t q = 0; q < xq.size(); ++q)
+      e = std::max(e, std::abs(out[q] - f(xq[q], yq[q])));
+    err.push_back(e);
+  }
+  for (double order : observed_orders(err))
+    CHECK(order > 3.5);
+}
+
+TEMPLATE_TEST_CASE("1D splines of zero data follow the end conditions",
+                   "[spline]",
+                   (ExplicitCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  // zero samples with non-zero end data, and periodic splines of constant
+  // data (PSPLINE smalltest)
+  using BC = BoundaryCondition;
+  for (int n : {2, 3, 5}) {
+    auto xh = linspace(0, 1, n);
+    auto x = to_device(xh);
+    for (auto [bc, deriv] : {std::pair{BC::FIRST_DERIVATIVE_MATCH, 1},
+                             std::pair{BC::SECOND_DERIVATIVE_MATCH, 2}}) {
+      INFO("n " << n << " ends " << static_cast<int>(bc));
+      auto f = to_device(std::vector<double>(n, 0.0));
+      TestType s(span_of(x), span_of(f), bc, 1.0, bc, 2.0);
+      auto nodes = eval_1d(s, {1, 0, 0}, xh, 1);
+      for (double val : nodes)
+        CHECK(val == Catch::Approx(0.0).margin(1e-12));
+      std::vector<LO> sel = {0, 0, 0};
+      sel[deriv] = 1;
+      auto ends = eval_1d(s, sel, {0.0, 1.0}, 1);
+      CHECK(ends[0] == Catch::Approx(1.0));
+      CHECK(ends[1] == Catch::Approx(2.0));
+    }
+    INFO("n " << n << " periodic");
+    auto c = to_device(std::vector<double>(n, 0.7));
+    const auto per = BC::PERIODIC;
+    TestType s(span_of(x), span_of(c), per, 0, per, 0);
+    auto out = eval_1d(s, {1, 1, 1}, {0.0, 0.3, 0.8, 1.0}, 3);
+    for (size_t q = 0; q < 4; ++q) {
+      CHECK(out[3 * q] == Catch::Approx(0.7));
+      CHECK(out[3 * q + 1] == Catch::Approx(0.0).margin(1e-12));
+      CHECK(out[3 * q + 2] == Catch::Approx(0.0).margin(1e-12));
+    }
+  }
+}
+
+TEMPLATE_TEST_CASE("2D splines of zero data follow the face data", "[spline]",
+                   (ExplicitBiCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactBiCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  // all-zero values: only the x face derivative data drives the spline
+  auto xh = linspace(0, 1, 5);
+  auto yh = linspace(-1, 1, 6);
+  std::vector<double> lo_h, hi_h;
+  for (double b : yh) {
+    lo_h.push_back(1 + b);
+    hi_h.push_back(b * b);
+  }
+  auto x = to_device(xh);
+  auto y = to_device(yh);
+  auto v = to_device(std::vector<double>(xh.size() * yh.size(), 0.0));
+  auto lo = to_device(lo_h);
+  auto hi = to_device(hi_h);
+  auto none = to_device({});
+  const auto nak = BoundaryCondition::NOT_A_KNOT;
+  const auto d1 = BoundaryCondition::FIRST_DERIVATIVE_MATCH;
+  TestType s(span_of(x), span_of(y), span_of(v), d1, span_of(lo), d1,
+             span_of(hi), nak, span_of(none), nak, span_of(none));
+  std::vector<double> xn, yn, xf, yf, expected;
+  for (double a : xh)
+    for (double b : yh) {
+      xn.push_back(a);
+      yn.push_back(b);
+    }
+  for (size_t j = 0; j < yh.size(); ++j) {
+    xf.insert(xf.end(), {0.0, 1.0});
+    yf.insert(yf.end(), {yh[j], yh[j]});
+    expected.insert(expected.end(), {lo_h[j], hi_h[j]});
+  }
+  auto nodes = eval_2d(s, {1, 0, 0, 0, 0, 0}, xn, yn, 1);
+  for (double val : nodes)
+    CHECK(val == Catch::Approx(0.0).margin(1e-12));
+  auto faces = eval_2d(s, {0, 1, 0, 0, 0, 0}, xf, yf, 1);
+  for (size_t k = 0; k < faces.size(); ++k)
+    CHECK(faces[k] == Catch::Approx(expected[k]).margin(1e-10));
+}
+
+TEMPLATE_TEST_CASE("1D queries just outside the grid are clamped", "[spline]",
+                   (ExplicitCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  // the default lookup tolerance is 4e-7 relative to max(|x0|, |xn|) = 2
+  auto xh = linspace(0, 2, 6);
+  std::vector<double> fh;
+  for (double a : xh)
+    fh.push_back(px(a, 0));
+  auto x = to_device(xh);
+  auto f = to_device(fh);
+  const auto nak = BoundaryCondition::NOT_A_KNOT;
+  TestType s(span_of(x), span_of(f), nak, 0, nak, 0);
+  auto clamped = eval_1d(s, {1, 1, 1}, {-4e-7, 2 + 4e-7}, 3, -999.0);
+  auto ends = eval_1d(s, {1, 1, 1}, {0.0, 2.0}, 3);
+  for (size_t k = 0; k < ends.size(); ++k)
+    CHECK(clamped[k] == ends[k]);
+  auto outside = eval_1d(s, {1, 1, 1}, {-2e-6, 2 + 2e-6}, 3, -999.0);
+  for (double val : outside)
+    CHECK(val == -999.0);
+}
+
+TEMPLATE_TEST_CASE("2D queries just outside the grid are clamped", "[spline]",
+                   (ExplicitBiCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactBiCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  auto xh = linspace(0, 2, 6);
+  auto yh = linspace(-1, 1, 5);
+  auto x = to_device(xh);
+  auto y = to_device(yh);
+  auto v = to_device(
+    sample_2d(xh, yh, [](double a, double b) { return px(a, 0) * py(b, 0); }));
+  auto none = to_device({});
+  const auto nak = BoundaryCondition::NOT_A_KNOT;
+  TestType s(span_of(x), span_of(y), span_of(v), nak, span_of(none), nak,
+             span_of(none), nak, span_of(none), nak, span_of(none));
+  const std::vector<LO> all = {1, 1, 1, 1, 1, 1};
+  auto clamped = eval_2d(s, all, {2 + 4e-7, 0.5, -4e-7},
+                         {0.3, 1 + 4e-7, -1 - 4e-7}, 6, -999.0);
+  auto ends = eval_2d(s, all, {2.0, 0.5, 0.0}, {0.3, 1.0, -1.0}, 6);
+  for (size_t k = 0; k < ends.size(); ++k)
+    CHECK(clamped[k] == ends[k]);
+  auto outside = eval_2d(s, all, {2 + 2e-6, 0.5}, {0.3, -1 - 2e-6}, 6, -999.0);
+  for (double val : outside)
+    CHECK(val == -999.0);
+}
