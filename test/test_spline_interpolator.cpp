@@ -816,6 +816,35 @@ TEST_CASE("explicit and compact splines agree for every boundary condition",
 namespace
 {
 
+/// Divided difference f[x_i, .., x_{i+k}]
+double divided_difference(const std::vector<double>& x,
+                          const std::vector<double>& f, int i, int k)
+{
+  if (k == 0)
+    return f[i];
+  return (divided_difference(x, f, i + 1, k - 1) -
+          divided_difference(x, f, i, k - 1)) /
+         (x[i + k] - x[i]);
+}
+
+/// The conditions the solver applies on n points: two points take the first
+/// divided difference, three points cannot use the third one and take the
+/// parabola for not-a-knot at both ends
+std::pair<int, int> effective_conditions(int n, int lo, int hi)
+{
+  if (n == 2) {
+    lo = (lo <= 0 || lo > 5) ? 5 : lo;
+    hi = (hi <= 0 || hi > 5) ? 5 : hi;
+  }
+  if (n == 3) {
+    lo = lo == 7 ? 6 : lo;
+    hi = hi == 7 ? 6 : hi;
+    if (lo == 0 && hi == 0)
+      hi = 7;
+  }
+  return {lo, hi};
+}
+
 /// End data that a product of the test cubics satisfies for condition bc
 double end_data(BoundaryCondition bc, double (*p)(double, int), double x)
 {
@@ -827,6 +856,113 @@ double end_data(BoundaryCondition bc, double (*p)(double, int), double x)
 }
 
 } // namespace
+
+TEMPLATE_TEST_CASE("every end condition holds on grids of 2 to 8 points",
+                   "[spline]",
+                   (ExplicitCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  const double lo_data = 0.7, hi_data = -0.4;
+  for (int n = 2; n <= 8; ++n) {
+    for (int lo = -1; lo <= 7; ++lo) {
+      for (int hi = lo == -1 ? -1 : 0; hi <= (lo == -1 ? -1 : 7); ++hi) {
+        INFO("n " << n << " lo " << lo << " hi " << hi);
+        auto xh = linspace(0.5, 2.0, n);
+        const double h = xh[1] - xh[0];
+        std::vector<double> fh;
+        for (double x : xh)
+          fh.push_back(std::sin(1.3 * x) + 0.2 * x * x);
+        if (lo == -1)
+          fh.back() = fh.front();
+        auto x = to_device(xh);
+        auto f = to_device(fh);
+        TestType s(span_of(x), span_of(f), static_cast<BoundaryCondition>(lo),
+                   lo_data, static_cast<BoundaryCondition>(hi), hi_data);
+
+        // s', s'', s''' at both ends and in the two cells next to each end
+        auto mid = [&](int cell) { return xh[cell] + h / 2; };
+        const std::vector<double> pts = {xh[0],
+                                         mid(0),
+                                         mid(std::min(1, n - 2)),
+                                         mid(std::max(n - 3, 0)),
+                                         mid(n - 2),
+                                         xh[n - 1]};
+        auto d12 = eval_1d(s, {0, 1, 1}, pts, 2);
+        auto d3 = eval_1d(s, {3, 0, 0}, pts, 1);
+        auto at = [&](int point, int deriv) {
+          return deriv == 3 ? d3[point] : d12[2 * point + deriv - 1];
+        };
+
+        auto check_end = [&](int side, int bc) {
+          const int end = side == 0 ? 0 : 5;
+          const double d1 = at(end, 1), d2 = at(end, 2);
+          const double d3 = at(side == 0 ? 1 : 4, 3);
+          const double d3_next = at(side == 0 ? 2 : 3, 3);
+          const double data = side == 0 ? lo_data : hi_data;
+          auto dd = [&](int k) {
+            return divided_difference(xh, fh, side == 0 ? 0 : n - 1 - k, k);
+          };
+          auto approx = [](double v) {
+            return Catch::Approx(v).margin(1e-9).epsilon(1e-9);
+          };
+          switch (bc) {
+            case 0: CHECK(d3 == approx(d3_next)); break;
+            case 1: CHECK(d1 == approx(data)); break;
+            case 2: CHECK(d2 == approx(data)); break;
+            case 3: CHECK(d1 == approx(0)); break;
+            case 4: CHECK(d2 == approx(0)); break;
+            case 5: CHECK(d1 == approx(dd(1))); break;
+            case 6: CHECK(d2 == approx(2 * dd(2))); break;
+            case 7: CHECK(d3 == approx(n < 4 ? 0 : 6 * dd(3))); break;
+          }
+        };
+        if (lo == -1) {
+          CHECK(at(0, 1) == Catch::Approx(at(5, 1)).margin(1e-9));
+          CHECK(at(0, 2) == Catch::Approx(at(5, 2)).margin(1e-9));
+        } else {
+          const auto [elo, ehi] = effective_conditions(n, lo, hi);
+          check_end(0, elo);
+          check_end(1, ehi);
+        }
+      }
+    }
+  }
+}
+
+TEMPLATE_TEST_CASE("1D splines reproduce cubics for every exact end condition",
+                   "[spline]",
+                   (ExplicitCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  using BC = BoundaryCondition;
+  const std::vector<BC> conditions = {
+    BC::NOT_A_KNOT, BC::FIRST_DERIVATIVE_MATCH, BC::SECOND_DERIVATIVE_MATCH,
+    BC::THIRD_DIV_DIFF_MATCH};
+  for (int n = 4; n <= 8; ++n) {
+    for (BC lo : conditions) {
+      for (BC hi : conditions) {
+        INFO("n " << n << " lo " << static_cast<int>(lo) << " hi "
+                  << static_cast<int>(hi));
+        auto xh = linspace(-1, 2, n);
+        std::vector<double> fh;
+        for (double x : xh)
+          fh.push_back(px(x, 0));
+        auto x = to_device(xh);
+        auto f = to_device(fh);
+        TestType s(span_of(x), span_of(f), lo, end_data(lo, px, xh.front()), hi,
+                   end_data(hi, px, xh.back()));
+        const std::vector<double> xq = {-1.0, -0.2, 0.9, 1.6, 2.0};
+        auto out = eval_1d(s, {1, 1, 1}, xq, 3);
+        auto d3 = eval_1d(s, {3, 0, 0}, xq, 1);
+        for (size_t q = 0; q < xq.size(); ++q) {
+          for (int j = 0; j < 3; ++j)
+            CHECK(out[3 * q + j] == Catch::Approx(px(xq[q], j)).margin(1e-10));
+          CHECK(d3[q] == Catch::Approx(px(xq[q], 3)).margin(1e-9));
+        }
+      }
+    }
+  }
+}
 
 TEMPLATE_TEST_CASE(
   "2D splines reproduce bicubics for every exact end condition", "[spline]",

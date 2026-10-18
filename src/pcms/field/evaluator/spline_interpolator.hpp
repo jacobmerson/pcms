@@ -487,6 +487,11 @@ KOKKOS_FUNCTION void compute_spline_coefficients(LO k_bc1, LO k_bcn, LO n,
     T elem21 = f(3, 0);
     T elemnn1 = f(3, n - 2);
 
+    // Read before the left condition: at n = 4 a not-a-knot left end rescales
+    // f(2, n - 3)
+    const T third_diff_n =
+      i_bcn == 7 ? f(2, n - 2) / (2 * dx) - f(2, n - 3) / (2 * dx) : T(0);
+
     // Left boundary conditions
     if (i_bc1 == -1) {
       f(1, 0) = 2.0 * (f(3, 0) + f(3, n - 2));
@@ -524,8 +529,7 @@ KOKKOS_FUNCTION void compute_spline_coefficients(LO k_bc1, LO k_bcn, LO n,
       elemnn1 = 0.0;
     } else if (i_bcn == 7) {
       f(1, n - 1) = -f(3, n - 2);
-      f(2, n - 1) = f(2, n - 2) / (2 * dx) - f(2, n - 3) / (2 * dx);
-      f(2, n - 1) = -f(2, n - 1) * f(3, n - 2) * f(3, n - 2) / (3 * dx);
+      f(2, n - 1) = -third_diff_n * f(3, n - 2) * f(3, n - 2) / (3 * dx);
     } else if (i_bc1 != -1) {
       imax = n - 2;
       f(1, n - 2) = 2.0 * f(3, n - 3) + f(3, n - 2);
