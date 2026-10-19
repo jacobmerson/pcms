@@ -146,8 +146,7 @@ omega_h_field = omega_h_factory.create_function()
 # Initialize field with f(x,y) = x + 2*y
 coords = omega_h_field.get_layout().get_dof_holder_coordinates().get_values()
 num_nodes = omega_h_field.get_layout().get_num_owned_dof_holder()
-# DOF holder data has shape (num_dof_holders, num_components)
-omega_h_data = np.zeros((num_nodes, 1))
+omega_h_data = np.zeros(num_nodes)
 
 for i in range(num_nodes):
     x = coords[i, 0]
@@ -177,7 +176,7 @@ omega_h_factory = pcms.LagrangeFunctionSpace.from_mesh(
     mesh, 1, 1, pcms.csys.Cartesian.deferred()
 )
 omega_h_field = omega_h_factory.create_function()
-omega_h_field.set_dof_holder_data(vertex_field[:, np.newaxis])
+omega_h_field.set_dof_holder_data(vertex_field)
 
 ```
 
@@ -278,12 +277,12 @@ snake_case form of the C++ method (`GetDOFHolderData` is
 - `field.get_layout().get_num_components()` - Number of field components per DOF holder
 - `field.get_layout().get_dof_holder_coordinates()` - DOF holder coordinates as a `CoordinateView`
 - `field.get_dof_holder_data()` - Field values as a `ValueView` whose array (`.get_values()`, shape `(num_dof_holders, num_components)`) is read-only and valid until the field is next modified (use `.copy()` to keep values)
-- `field.set_dof_holder_data(value_view)` - Set field values; the basis must match the field's. Scalar fields also accept a plain array
+- `field.set_dof_holder_data(value_view)` - Set field values; the basis must match the field's. Scalar fields also accept a plain array, of shape `(num_dof_holders,)` when the field has one component
 - `field.set_dof_holder_data_unchecked(data)` - Set field values without checking their basis
 - `EvaluationRequest.from_coordinates(coordinate_view, policy=...)` - Build an explicit coordinate-based evaluation request
 - `EvaluationRequest.from_function_space(space, policy=...)` - Build an evaluation request from another FunctionSpace's DOF-holder sites
 - `factory.create_point_evaluator(request)` - Create a reusable point evaluator; the request's points must be in `factory.get_coordinate_system()`
-- `evaluator.evaluate(field, output)` - Evaluate into a `ValueView` tagged `evaluator.output_basis(field.get_data().get_value_basis())` (a plain array for scalar fields); the output array must be writeable, C-contiguous float64
+- `evaluator.evaluate(field, output)` - Evaluate into a `ValueView` tagged `evaluator.output_basis(field.get_data().get_value_basis())` (a plain array for scalar fields, of shape `(num_points,)` when the output has one component); the output array must be writeable, C-contiguous float64
 - `Interpolator(source, target_space)` - Create an interpolator from a `PointEvaluatorFactory` (cached localization)
 - `operator.apply(source_field, target_field)` - Apply any `TransferOperator` (`Interpolator`, `Copy`, projections)
 - `Copy(source_space, target_space)` - Create a copy operator for compatible FunctionSpaces

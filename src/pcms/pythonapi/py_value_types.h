@@ -91,13 +91,30 @@ inline DeviceCoordinates CopyCoordinatesToDevice(const PyCoordinateView& coords)
                                       coords.system, MakeRank2View(storage))};
 }
 
+// Number of components of per-entity data shaped (n, num_components), where a
+// 1D array of length n has one component. The call the data is passed to
+// checks the extents against what it expects.
+inline LO PerEntityComponents(const py::array& arr)
+{
+  if (arr.ndim() == 1) {
+    return 1;
+  }
+  if (arr.ndim() == 2) {
+    return static_cast<LO>(arr.shape(1));
+  }
+  throw std::invalid_argument(
+    "expected an array of shape (n, num_components) or (n,), got " +
+    detail::ShapeString(arr));
+}
+
 // Calls f with a device view over the caller's writeable output buffer and
 // makes what f writes visible in that buffer. On host builds f writes the
 // buffer in place; otherwise it writes a device copy that is copied back.
 template <typename F>
 void WithDeviceOutput(py::array& output, F&& f)
 {
-  auto output_host = NumpyOutputToHostView<2, Real>(output);
+  auto output_host =
+    NumpyOutputToHostComponentView<Real>(output, PerEntityComponents(output));
 #ifdef PCMS_HAS_DISTINCT_DEVICE_MEMORY_SPACE
   // TODO: write in place on the device via DLPack.
   auto output_view = MakeUnmanagedKokkosView(output_host);

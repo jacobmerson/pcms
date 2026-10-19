@@ -41,7 +41,7 @@ def _num_dof_holders(field):
 def _linear_field(space):
     field = space.create_function()
     coords = _coordinates(field)
-    field.set_dof_holder_data(_linear(coords[:, 0], coords[:, 1])[:, None])
+    field.set_dof_holder_data(_linear(coords[:, 0], coords[:, 1]))
     return field
 
 
@@ -79,13 +79,34 @@ class TestFieldData:
         np.testing.assert_array_equal(field.get_dof_holder_data(),
                                       data.astype(np.float64))
 
+    def test_scalar_field_accepts_1d(self, p1_space):
+        field = p1_space.create_function()
+        n = _num_dof_holders(field)
+        data = np.arange(n, dtype=np.float64)
+        field.set_dof_holder_data(data)
+        result = field.get_dof_holder_data().get_values()
+        assert result.shape == (n, 1)
+        np.testing.assert_array_equal(result[:, 0], data)
+
     @pytest.mark.parametrize("shape", [
-        lambda n: (n,), lambda n: (n, 2), lambda n: (n + 1, 1),
-    ], ids=["1d", "wrong-components", "wrong-dof-holders"])
+        lambda n: (n, 2), lambda n: (n + 1, 1), lambda n: (n + 1,),
+        lambda n: (n, 1, 1),
+    ], ids=["wrong-components", "wrong-dof-holders", "1d-wrong-dof-holders",
+            "3d"])
     def test_set_rejects_wrong_shape(self, p1_space, shape):
         field = p1_space.create_function()
         with pytest.raises(ValueError):
             field.set_dof_holder_data(np.zeros(shape(_num_dof_holders(field))))
+
+    def test_vector_field_rejects_1d(self, mesh):
+        space = pcms.LagrangeFunctionSpace.from_mesh(
+            mesh, 1, 2, pcms.csys.Cartesian.deferred()
+        )
+        field = space.create_function()
+        n = _num_dof_holders(field)
+        for shape in [(n,), (2 * n,)]:
+            with pytest.raises(ValueError):
+                field.set_dof_holder_data(np.zeros(shape))
 
     def test_returned_arrays_are_read_only(self, p1_space):
         field = _linear_field(p1_space)
@@ -139,6 +160,13 @@ class TestPointEvaluation:
         np.testing.assert_allclose(
             out[:, 0], _linear(self.QUERY[:, 0], self.QUERY[:, 1]),
             atol=1e-12)
+
+    def test_evaluate_into_1d_output(self, p1_space):
+        field = _linear_field(p1_space)
+        out = np.zeros(len(self.QUERY))
+        self._evaluator(p1_space, self.QUERY).evaluate(field, out)
+        np.testing.assert_allclose(
+            out, _linear(self.QUERY[:, 0], self.QUERY[:, 1]), atol=1e-12)
 
     def test_evaluate_rejects_wrong_components(self, p1_space):
         field = _linear_field(p1_space)

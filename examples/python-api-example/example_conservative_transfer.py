@@ -82,7 +82,7 @@ def evaluate_function_onto_field(space, func):
     """Create a field on `space` and fill it from `func` at the DOF holders."""
     field = space.create_function()
     coords = field.get_layout().get_dof_holder_coordinates().get_values()
-    field.set_dof_holder_data(func(coords[:, 0], coords[:, 1])[:, np.newaxis])
+    field.set_dof_holder_data(func(coords[:, 0], coords[:, 1]))
     return field
 
 

@@ -57,7 +57,8 @@ void bind_transfer_field_module(py::module& m)
       },
       py::arg("field"), py::arg("output").noconvert(),
       "Evaluate a scalar field into a writeable C-contiguous float64 array "
-      "(num_points × num_components)")
+      "(num_points × num_components). A 1D array (num_points,) is accepted "
+      "when the output has one component.")
     .def("num_points", &PointEvaluator<Real>::NumPoints)
     .def("output_basis", &PointEvaluator<Real>::OutputBasis, py::arg("stored"),
          "The basis this evaluator writes for a field stored in `stored`")

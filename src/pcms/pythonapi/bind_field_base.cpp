@@ -112,31 +112,32 @@ void bind_create_field_module(py::module& m)
         RequireScalarForPlainArray("set_dof_holder_data",
                                    self.GetData().GetValueBasis());
         self.SetDOFHolderDataHost(ValueView<const Real, HostMemorySpace>(
-          ValueBasis{}, NumpyToHostView<2, Real>(data)));
+          ValueBasis{},
+          NumpyToHostComponentView<Real>(data, PerEntityComponents(data))));
       },
       py::arg("data"),
       "Set a scalar field's DOF-holder values from a plain 2D array "
-      "(num_dof_holders × num_components)")
+      "(num_dof_holders × num_components). A 1D array (num_dof_holders,) is "
+      "accepted when the field has one component.")
     .def(
       "set_dof_holder_data_unchecked",
       [](Field<Real>& self, const NumpyInput<Real>& data) {
-        auto view = NumpyToHostView<2, Real>(data);
         const auto& layout = self.GetLayout();
-        if (view.extent(0) !=
-              static_cast<size_t>(layout.GetNumOwnedDofHolder()) ||
-            view.extent(1) != static_cast<size_t>(layout.GetNumComponents())) {
+        const LO num_dof_holders = layout.GetNumOwnedDofHolder();
+        auto view =
+          NumpyToHostComponentView<Real>(data, layout.GetNumComponents());
+        if (view.extent(0) != static_cast<size_t>(num_dof_holders)) {
           throw std::invalid_argument(
-            "set_dof_holder_data_unchecked: data must have shape (" +
-            std::to_string(layout.GetNumOwnedDofHolder()) + ", " +
-            std::to_string(layout.GetNumComponents()) + "), got (" +
-            std::to_string(view.extent(0)) + ", " +
-            std::to_string(view.extent(1)) + ")");
+            "set_dof_holder_data_unchecked: data must have " +
+            std::to_string(num_dof_holders) + " rows, got " +
+            std::to_string(view.extent(0)));
         }
         self.SetDOFHolderDataUncheckedHost(view);
       },
       py::arg("data"),
       "Set the DOF-holder values without checking their basis (the shape is "
-      "still checked)");
+      "still checked). A 1D array (num_dof_holders,) is accepted when the "
+      "field has one component.");
 
   py::class_<Function<Real>, Field<Real>>(
     m, "Function", "A Field that knows its FunctionSpace")

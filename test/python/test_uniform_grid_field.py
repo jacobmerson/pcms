@@ -123,7 +123,7 @@ class TestUniformGridField:
         field = factory.create_function()
         coords = _coordinates(field)
         num_dofs = _num_dof_holders(field)
-        data = np.zeros((num_dofs, 1), dtype=np.float64)
+        data = np.zeros(num_dofs, dtype=np.float64)
         for i in range(num_dofs):
             data[i] = coords[i, 0] + 2.0 * coords[i, 1]
         field.set_dof_holder_data(data)
@@ -164,10 +164,10 @@ class TestUniformGridOmegaHWorkflow:
             mesh, 1, 1, pcms.csys.Cartesian.deferred())
         omega_h_field = omega_h_factory.create_function()
         coords = _coordinates(omega_h_field)
-        omega_h_data = np.zeros((_num_dof_holders(omega_h_field), 1),
+        omega_h_data = np.zeros(_num_dof_holders(omega_h_field),
                                 dtype=np.float64)
         for i in range(_num_dof_holders(omega_h_field)):
-            omega_h_data[i, 0] = coords[i, 0] + 2.0 * coords[i, 1]
+            omega_h_data[i] = coords[i, 0] + 2.0 * coords[i, 1]
         omega_h_field.set_dof_holder_data(omega_h_data)
 
         ug_factory = pcms.LagrangeFunctionSpace.from_uniform_grid(
@@ -208,7 +208,7 @@ class TestUniformGridOmegaHWorkflow:
         tgt_field = tgt_factory.create_function()
 
         src_coords = _coordinates(src_field)
-        src_data = np.zeros((_num_dof_holders(src_field), 1))
+        src_data = np.zeros(_num_dof_holders(src_field))
         for i in range(len(src_data)):
             src_data[i] = src_coords[i, 0] + 2.0 * src_coords[i, 1]
         src_field.set_dof_holder_data(src_data)
