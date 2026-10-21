@@ -2771,7 +2771,7 @@ template <typename T, typename MemorySpace>
 void ExplicitCubicSplineInterpolator<T, MemorySpace>::evaluate(
   Rank1View<T, MemorySpace> xvec, Rank2View<T, MemorySpace> fval)
 {
-  std::array<LO, 3> ict_arr = {1, 0, 0};
+  Kokkos::Array<LO, 3> ict_arr = {1, 0, 0};
   Kokkos::View<LO*, MemorySpace> selector("select", 3);
   Kokkos::parallel_for(
     Kokkos::RangePolicy<execution_space>(0, selector.size()),
@@ -2804,7 +2804,7 @@ template <typename T, typename MemorySpace>
 void CompactCubicSplineInterpolator<T, MemorySpace>::evaluate(
   Rank1View<T, MemorySpace> xvec, Rank2View<T, MemorySpace> fval)
 {
-  std::array<LO, 3> ict_arr = {1, 0, 0};
+  Kokkos::Array<LO, 3> ict_arr = {1, 0, 0};
   Kokkos::View<LO*, MemorySpace> selector("select", 3);
   Kokkos::parallel_for(
     Kokkos::RangePolicy<execution_space>(0, selector.size()),
@@ -2841,7 +2841,7 @@ void ExplicitBiCubicSplineInterpolator<T, MemorySpace>::evaluate(
   Rank1View<T, MemorySpace> xvec, Rank1View<T, MemorySpace> yvec,
   Rank2View<T, MemorySpace> fval)
 {
-  LO ict_arr[6] = {1, 0, 0, 0, 0, 0};
+  Kokkos::Array<LO, 6> ict_arr = {1, 0, 0, 0, 0, 0};
   Kokkos::View<LO*, MemorySpace> ict("select", 6);
   Kokkos::parallel_for(
     Kokkos::RangePolicy<execution_space>(0, ict.size()),
@@ -2877,7 +2877,7 @@ void CompactBiCubicSplineInterpolator<T, MemorySpace>::evaluate(
   Rank1View<T, MemorySpace> xvec, Rank1View<T, MemorySpace> yvec,
   Rank2View<T, MemorySpace> fval)
 {
-  LO ict_arr[6] = {1, 0, 0, 0, 0, 0};
+  Kokkos::Array<LO, 6> ict_arr = {1, 0, 0, 0, 0, 0};
   Kokkos::View<LO*, MemorySpace> ict("select", 6);
   Kokkos::parallel_for(
     Kokkos::RangePolicy<execution_space>(0, ict.size()),

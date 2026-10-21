@@ -754,6 +754,64 @@ TEMPLATE_TEST_CASE("2D selectors pick derivatives in PSPLINE order", "[spline]",
   }
 }
 
+TEMPLATE_TEST_CASE("1D evaluate without a selector writes every value",
+                   "[spline]",
+                   (ExplicitCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  // the overload builds its own value-only selector on the device; NaN marks
+  // outputs it never wrote
+  auto xh = linspace(-1, 2, 6);
+  std::vector<double> fh;
+  for (double x : xh)
+    fh.push_back(px(x, 0));
+  auto x = to_device(xh);
+  auto f = to_device(fh);
+  TestType interp(span_of(x), span_of(f), BoundaryCondition::NOT_A_KNOT, 0,
+                  BoundaryCondition::NOT_A_KNOT, 0);
+  const std::vector<double> xq = {-1.0, 0.3, 1.7, 2.0};
+  auto xd = to_device(xq);
+  Kokkos::View<double*, TestMemorySpace> out("out", xq.size());
+  Kokkos::deep_copy(out, std::numeric_limits<double>::quiet_NaN());
+  interp.evaluate(span_of(xd),
+                  Rank2View<double, TestMemorySpace>(out.data(), xq.size(), 1));
+  auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, out);
+  for (size_t i = 0; i < xq.size(); ++i) {
+    INFO("point " << i);
+    CHECK(h(i) == Catch::Approx(px(xq[i], 0)));
+  }
+}
+
+TEMPLATE_TEST_CASE("2D evaluate without a selector writes every value",
+                   "[spline]",
+                   (ExplicitBiCubicSplineInterpolator<double, TestMemorySpace>),
+                   (CompactBiCubicSplineInterpolator<double, TestMemorySpace>))
+{
+  auto xh = linspace(0, 2, 6);
+  auto yh = linspace(-1, 1, 5);
+  auto x = to_device(xh);
+  auto y = to_device(yh);
+  auto v = to_device(
+    sample_2d(xh, yh, [](double a, double b) { return px(a, 0) * py(b, 0); }));
+  auto none = to_device({});
+  const auto nak = BoundaryCondition::NOT_A_KNOT;
+  TestType interp(span_of(x), span_of(y), span_of(v), nak, span_of(none), nak,
+                  span_of(none), nak, span_of(none), nak, span_of(none));
+  const std::vector<double> xq = {0.0, 0.7, 1.3, 2.0};
+  const std::vector<double> yq = {-1.0, 0.1, -0.45, 1.0};
+  auto xd = to_device(xq);
+  auto yd = to_device(yq);
+  Kokkos::View<double*, TestMemorySpace> out("out", xq.size());
+  Kokkos::deep_copy(out, std::numeric_limits<double>::quiet_NaN());
+  interp.evaluate(span_of(xd), span_of(yd),
+                  Rank2View<double, TestMemorySpace>(out.data(), xq.size(), 1));
+  auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, out);
+  for (size_t i = 0; i < xq.size(); ++i) {
+    INFO("point " << i);
+    CHECK(h(i) == Catch::Approx(px(xq[i], 0) * py(yq[i], 0)).margin(1e-9));
+  }
+}
+
 TEST_CASE("explicit and compact splines agree for every boundary condition",
           "[spline]")
 {
