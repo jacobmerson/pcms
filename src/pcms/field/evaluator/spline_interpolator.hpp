@@ -1459,7 +1459,8 @@ void solve_bicubic_spline_explicit(Rank1View<T, MemorySpace> x, LO inx,
       });
 
     Kokkos::parallel_for(
-      Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {inx, iny - 1}),
+      Kokkos::MDRangePolicy<execution_space, Kokkos::Rank<2>>({0, 0},
+                                                              {inx, iny - 1}),
       KOKKOS_LAMBDA(const LO ix, const LO iy) {
         auto corr_y = Rank2View<T, MemorySpace>(
           fspl_l_y.data_handle() + 4 * ix * iny, 4, iny);
@@ -2110,7 +2111,7 @@ void solve_bicubic_spline_compact(Rank1View<T, MemorySpace> x, LO nx,
       });
 
     Kokkos::parallel_for(
-      Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {nx, ny}),
+      Kokkos::MDRangePolicy<execution_space, Kokkos::Rank<2>>({0, 0}, {nx, ny}),
       KOKKOS_LAMBDA(const LO ix, const LO iy) {
         f(2, ix, iy) += fcorr(0, ix, iy);
         f(3, ix, iy) += fcorr(1, ix, iy);
@@ -2687,7 +2688,9 @@ ExplicitCubicSplineInterpolator<T, MemorySpace>::
   coefficients_ = fspl_view;
   auto fspl = get_coefficients_view();
   InitCubicCoeffFunctor<T, MemorySpace> init_functor(fspl, values);
-  Kokkos::parallel_for("initialize_coefficients", nx, init_functor);
+  Kokkos::parallel_for("initialize_coefficients",
+                       Kokkos::RangePolicy<execution_space>(0, nx),
+                       init_functor);
 
   Kokkos::View<T*, MemorySpace> wk_view("working space", nx);
   auto wk = Rank1View<T, MemorySpace>(wk_view.data(), nx);
@@ -2724,7 +2727,9 @@ CompactCubicSplineInterpolator<T, MemorySpace>::CompactCubicSplineInterpolator(
   coefficients_ = fspl_view;
   auto fspl = get_coefficients_view();
   InitCubicCoeffFunctor<T, MemorySpace> init_functor(fspl, values);
-  Kokkos::parallel_for("initialize_coefficients", nx, init_functor);
+  Kokkos::parallel_for("initialize_coefficients",
+                       Kokkos::RangePolicy<execution_space>(0, nx),
+                       init_functor);
 
   Kokkos::View<T*, MemorySpace> fspl4_view("explicit coefficients", 4 * nx);
   auto fspl4 = Rank2View<T, MemorySpace>(fspl4_view.data(), 4, nx);
@@ -2949,8 +2954,9 @@ ExplicitBiCubicSplineInterpolator<T, MemorySpace>::
   auto fspl = get_coefficients_view();
   InitExplicitBiCubicCoeffFunctor<T, MemorySpace> init_functor(fspl, values,
                                                                ny);
-  Kokkos::parallel_for(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {ny, nx}),
-                       init_functor);
+  Kokkos::parallel_for(
+    Kokkos::MDRangePolicy<execution_space, Kokkos::Rank<2>>({0, 0}, {ny, nx}),
+    init_functor);
 
   Kokkos::View<T*, MemorySpace> wk_view("wk", 9 * nx * ny);
   auto wk = Rank1View<T, MemorySpace>(wk_view.data(), 9 * nx * ny);
@@ -2999,8 +3005,9 @@ CompactBiCubicSplineInterpolator<T, MemorySpace>::
   auto fspl = get_coefficients_view();
 
   InitCompactBiCubicCoeffFunctor<T, MemorySpace> init_functor(fspl, values, ny);
-  Kokkos::parallel_for(Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {ny, nx}),
-                       init_functor);
+  Kokkos::parallel_for(
+    Kokkos::MDRangePolicy<execution_space, Kokkos::Rank<2>>({0, 0}, {ny, nx}),
+    init_functor);
 
   Kokkos::View<T*, MemorySpace> wk_view("wk", 9 * nx * ny);
   auto wk = Rank1View<T, MemorySpace>(wk_view.data(), 9 * nx * ny);

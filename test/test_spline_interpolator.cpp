@@ -812,6 +812,63 @@ TEMPLATE_TEST_CASE("2D evaluate without a selector writes every value",
   }
 }
 
+TEMPLATE_TEST_CASE("1D splines build and evaluate in host memory", "[spline]",
+                   (ExplicitCubicSplineInterpolator<double, Kokkos::HostSpace>),
+                   (CompactCubicSplineInterpolator<double, Kokkos::HostSpace>))
+{
+  // every kernel must run in the interpolator's own space, even when the
+  // default execution space is a device
+  auto xh = linspace(-1, 2, 6);
+  std::vector<double> fh;
+  for (double x : xh)
+    fh.push_back(px(x, 0));
+  const std::vector<double> xq = {-1.0, 0.3, 1.7, 2.0};
+  std::vector<double> out(xq.size(), std::numeric_limits<double>::quiet_NaN());
+  using H = Kokkos::HostSpace;
+  TestType interp(Rank1View<double, H>(xh.data(), xh.size()),
+                  Rank1View<double, H>(fh.data(), fh.size()),
+                  BoundaryCondition::NOT_A_KNOT, 0,
+                  BoundaryCondition::NOT_A_KNOT, 0);
+  interp.evaluate(Rank1View<double, H>(const_cast<double*>(xq.data()),
+                                       xq.size()),
+                  Rank2View<double, H>(out.data(), xq.size(), 1));
+  Kokkos::fence();
+  for (size_t i = 0; i < xq.size(); ++i) {
+    INFO("point " << i);
+    CHECK(out[i] == Catch::Approx(px(xq[i], 0)));
+  }
+}
+
+TEMPLATE_TEST_CASE(
+  "2D splines build and evaluate in host memory", "[spline]",
+  (ExplicitBiCubicSplineInterpolator<double, Kokkos::HostSpace>),
+  (CompactBiCubicSplineInterpolator<double, Kokkos::HostSpace>))
+{
+  auto xh = linspace(0, 2, 6);
+  auto yh = linspace(-1, 1, 5);
+  auto v =
+    sample_2d(xh, yh, [](double a, double b) { return px(a, 0) * py(b, 0); });
+  const std::vector<double> xq = {0.0, 0.7, 1.3, 2.0};
+  const std::vector<double> yq = {-1.0, 0.1, -0.45, 1.0};
+  std::vector<double> out(xq.size(), std::numeric_limits<double>::quiet_NaN());
+  using H = Kokkos::HostSpace;
+  Rank1View<double, H> none(nullptr, 0);
+  const auto nak = BoundaryCondition::NOT_A_KNOT;
+  TestType interp(Rank1View<double, H>(xh.data(), xh.size()),
+                  Rank1View<double, H>(yh.data(), yh.size()),
+                  Rank1View<double, H>(v.data(), v.size()), nak, none, nak,
+                  none, nak, none, nak, none);
+  interp.evaluate(
+    Rank1View<double, H>(const_cast<double*>(xq.data()), xq.size()),
+    Rank1View<double, H>(const_cast<double*>(yq.data()), yq.size()),
+    Rank2View<double, H>(out.data(), xq.size(), 1));
+  Kokkos::fence();
+  for (size_t i = 0; i < xq.size(); ++i) {
+    INFO("point " << i);
+    CHECK(out[i] == Catch::Approx(px(xq[i], 0) * py(yq[i], 0)).margin(1e-9));
+  }
+}
+
 TEST_CASE("explicit and compact splines agree for every boundary condition",
           "[spline]")
 {
