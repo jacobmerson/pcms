@@ -105,7 +105,7 @@ KOKKOS_INLINE_FUNCTION void clamp_to_grid_range(T xget, T& zxget,
                                                 LO nx, LO& ier, T tol)
 {
   if (!(xget >= x[0] && xget <= x[nx - 1])) {
-    T zxtol = tol * std::max(std::abs(x[0]), std::abs(x[nx - 1]));
+    T zxtol = tol * Kokkos::max(std::abs(x[0]), std::abs(x[nx - 1]));
 
     if (!(xget >= x[0] - zxtol && xget <= x[nx - 1] + zxtol)) {
       ier = 1; // Error code for out of range
@@ -215,8 +215,8 @@ KOKKOS_FUNCTION void compute_spline_coefficients(LO k_bc1, LO k_bcn, LO n,
   LO i3perio = 0;
 
   if (n == 3) {
-    i_bc1 = std::min(6, i_bc1);
-    i_bcn = std::min(6, i_bcn);
+    i_bc1 = Kokkos::min(6, i_bc1);
+    i_bcn = Kokkos::min(6, i_bcn);
 
     if (i_bc1 == 0)
       i3knots += 1;
@@ -743,11 +743,11 @@ KOKKOS_INLINE_FUNCTION LO lookup_in_grid(T zxget, Rank1View<T, MemorySpace> x,
 {
   LO nxm = nx - 1;
   LO ii = static_cast<LO>(nxm * (zxget - x[0]) / (x[nx - 1] - x[0]));
-  LO i = std::min(nxm - 1, ii);
+  LO i = Kokkos::min(nxm - 1, ii);
   if (zxget < x[i]) {
-    i = std::max(0, i - 1);
+    i = Kokkos::max(0, i - 1);
   } else if (zxget > x[i + 1]) {
-    i = std::min(nxm - 1, i + 1);
+    i = Kokkos::min(nxm - 1, i + 1);
   }
   return i;
 }
