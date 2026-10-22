@@ -18,6 +18,7 @@ if(PCMS_ENABLE_ASAN AND CMAKE_COMPILER_IS_GNUCXX MATCHES 1)
   set(PCMS_HAS_ASAN ON)
 endif()
 option(PCMS_ENABLE_CLANG_TIDY "enable clang tidy target" OFF)
+option(PCMS_ENABLE_WERROR "treat selected compiler warnings as errors" OFF)
 
 # based on Professional CMake: A Practical Guide
 # this approach works around some issues with CMakes internal handling using co-compilation
@@ -149,6 +150,17 @@ endif()
 # adios2 adds C and Fortran depending on how it was built
 find_package(ADIOS2 CONFIG 2.10.2 REQUIRED)
 find_package(Kokkos CONFIG 4.5 REQUIRED)
+# nvcc only warns (#20013) when device code calls a constexpr host function
+# such as std::min, but the call is undefined on the device and silently stops
+# the thread. Attached to Kokkos::kokkos so it reaches exactly the sources the
+# Kokkos launcher redirects to nvcc_wrapper.
+if(PCMS_ENABLE_WERROR AND Kokkos_ENABLE_CUDA
+   AND Kokkos_CXX_COMPILER_ID STREQUAL "NVIDIA")
+  target_compile_options(
+    Kokkos::kokkos
+    INTERFACE
+      "$<$<COMPILE_LANGUAGE:CXX,CUDA>:SHELL:-Xcudafe --diag_error=20013>")
+endif()
 
 option(PCMS_ENABLE_MESHFIELDS "Enable MeshFields support" ON)
 option(PCMS_ENABLE_PETSC "Enable PETSc support" OFF)

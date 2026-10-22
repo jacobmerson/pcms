@@ -94,7 +94,8 @@ jobs:
             -DPCMS_ENABLE_PETSC=OFF \
             -DPETSC_ARCH="" \
             -DPETSC_DIR=$DEPENDENCY_DIR/${DEVICE_ARCH}/petsc/install \
-            -DPCMS_ENABLE_SPDLOG=OFF
+            -DPCMS_ENABLE_SPDLOG=OFF \
+            -DPCMS_ENABLE_WERROR=ON
 
           cmake --build $bdir -j 4
           ctest --test-dir $bdir --output-on-failure
@@ -122,7 +123,8 @@ jobs:
             -DPETSC_ARCH="" \
             -DPETSC_DIR=$DEPENDENCY_DIR/${DEVICE_ARCH}/petsc/install \
             -Dpybind11_ROOT=$DEPENDENCY_DIR/pybind11/install \
-            -DPCMS_ENABLE_SPDLOG=OFF
+            -DPCMS_ENABLE_SPDLOG=OFF \
+            -DPCMS_ENABLE_WERROR=ON
 
           cmake --build $bdir -j 4
           ctest --test-dir $bdir --output-on-failure
@@ -173,7 +175,8 @@ jobs:
             -DPETSC_ARCH="" \
             -DPETSC_DIR=$DEPENDENCY_DIR/${DEVICE_ARCH}/petsc/install \
             -Dpybind11_ROOT=$DEPENDENCY_DIR/pybind11/install \
-            -DPCMS_ENABLE_SPDLOG=OFF
+            -DPCMS_ENABLE_SPDLOG=OFF \
+            -DPCMS_ENABLE_WERROR=ON
 
           cmake --build $bdir -j 4
           ctest --test-dir $bdir --output-on-failure
