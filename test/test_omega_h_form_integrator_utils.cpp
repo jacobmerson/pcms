@@ -4,18 +4,28 @@
 
 #include <array>
 #include <cmath>
-#include <utility>
 
 // ---------------------------------------------------------------------------
 // ForEachPolytopeFaceTriangle: the 3D face-walk that ForEachIntersectionSubtet
 // relies on to star-decompose a clipped intersection polyhedron.
 // ---------------------------------------------------------------------------
 
+// The walks are OMEGA_H_INLINE, so nvcc also compiles them for the device; the
+// helpers below are OMEGA_H_INLINE too so the callbacks they pass are callable
+// there.
 namespace
 {
 
-double TetVolume(const r3d::Vector<3>& a, const r3d::Vector<3>& b,
-                 const r3d::Vector<3>& c, const r3d::Vector<3>& d)
+struct WalkTotals
+{
+  double sum;
+  int count;
+};
+
+OMEGA_H_INLINE double TetVolume(const r3d::Vector<3>& a,
+                                const r3d::Vector<3>& b,
+                                const r3d::Vector<3>& c,
+                                const r3d::Vector<3>& d)
 {
   const double bx = b[0] - a[0], by = b[1] - a[1], bz = b[2] - a[2];
   const double cx = c[0] - a[0], cy = c[1] - a[1], cz = c[2] - a[2];
@@ -27,7 +37,7 @@ double TetVolume(const r3d::Vector<3>& a, const r3d::Vector<3>& b,
 
 // Star-decompose `poly` from its centroid exactly as ForEachIntersectionSubtet
 // does, summing the sub-tet volumes and counting the emitted face triangles.
-std::pair<double, int> DecomposeFromCentroid(const r3d::Polytope<3>& poly)
+OMEGA_H_INLINE WalkTotals DecomposeFromCentroid(const r3d::Polytope<3>& poly)
 {
   r3d::Vector<3> apex;
   apex[0] = apex[1] = apex[2] = 0.0;
@@ -49,6 +59,19 @@ std::pair<double, int> DecomposeFromCentroid(const r3d::Polytope<3>& poly)
     ++ntri;
   });
   return {total_vol, ntri};
+}
+
+// Sum the shoelace terms of the 2D boundary walk and count its edges.
+OMEGA_H_INLINE WalkTotals BoundaryShoelace(const r3d::Polytope<2>& poly)
+{
+  double shoelace = 0.0;
+  int nedges = 0;
+  pcms::detail::ForEachPolytopeBoundarySimplex(
+    poly, [&](const r3d::Few<r3d::Vector<2>, 2>& e) {
+      shoelace += 0.5 * (e[0][0] * e[1][1] - e[1][0] * e[0][1]);
+      ++nedges;
+    });
+  return {shoelace, nedges};
 }
 
 r3d::Few<r3d::Vector<3>, 4> MakeTetVerts(
@@ -132,13 +155,7 @@ TEST_CASE("ForEachPolytopeBoundarySimplex: a triangle yields its 3 edges once, "
   r3d::Polytope<2> poly;
   r3d::init(poly, verts);
 
-  int nedges = 0;
-  double shoelace = 0.0;
-  pcms::detail::ForEachPolytopeBoundarySimplex(
-    poly, [&](const r3d::Few<r3d::Vector<2>, 2>& e) {
-      shoelace += 0.5 * (e[0][0] * e[1][1] - e[1][0] * e[0][1]);
-      ++nedges;
-    });
+  const auto [shoelace, nedges] = BoundaryShoelace(poly);
   REQUIRE(nedges == 3);
   // Consistent orientation around the cycle: the edges alone integrate to the
   // (signed) area.

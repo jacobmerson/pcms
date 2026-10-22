@@ -452,8 +452,10 @@ r3d::Polytope<2> FoldedPolygon()
   return poly;
 }
 
+// OMEGA_H_INLINE so the callback is callable from the device instantiation of
+// ForEachPolytopeStarSimplex
 template <int Dim>
-double StarDecompositionMeasure(const r3d::Polytope<Dim>& poly)
+OMEGA_H_INLINE double StarDecompositionMeasure(const r3d::Polytope<Dim>& poly)
 {
   const double eps = PCMS_INTERSECTION_ABS_TOL +
                      PCMS_INTERSECTION_REL_TOL * std::fabs(r3d::measure(poly));
