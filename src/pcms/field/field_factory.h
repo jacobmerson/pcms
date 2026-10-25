@@ -70,6 +70,14 @@ protected:
     return Field<T>(std::string{}, std::move(layout), std::move(data));
   }
 
+  template <typename T>
+  static Field<T> WrapField(std::string name,
+                            std::shared_ptr<const FieldLayout> layout,
+                            std::unique_ptr<FieldData<T>> data)
+  {
+    return Field<T>(std::move(name), std::move(layout), std::move(data));
+  }
+
   virtual FieldVariant CreateFieldImpl(Type storage_type,
                                        ValueBasis basis) const = 0;
 

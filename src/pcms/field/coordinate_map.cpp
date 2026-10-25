@@ -307,4 +307,43 @@ std::unique_ptr<BoundCoordinateMap> CylindricalToCartesian::BindImpl(
                          PointDirection::ToCartesian);
 }
 
+namespace
+{
+
+/// Writes (R, theta0, Z) for each (R, Z) row of `in`.
+void EmbedPoloidalPoints(Rank2View<const Real, DeviceMemorySpace> in,
+                         Kokkos::View<Real**, DeviceMemorySpace> out,
+                         Real theta0)
+{
+  Kokkos::parallel_for(
+    "embed_poloidal_points",
+    Kokkos::RangePolicy<ExecutionSpace>(0, static_cast<LO>(in.extent(0))),
+    KOKKOS_LAMBDA(const LO i) {
+      out(i, 0) = in(i, 0);
+      out(i, 1) = theta0;
+      out(i, 2) = in(i, 1);
+    });
+}
+
+} // namespace
+
+PoloidalPlaneEmbedding::PoloidalPlaneEmbedding(Real theta0)
+  : CoordinateMap(csys::CylindricalRZ::Create(),
+                  csys::CylindricalRThetaZ::Create()),
+    theta0_(theta0)
+{
+}
+
+std::unique_ptr<BoundCoordinateMap> PoloidalPlaneEmbedding::BindImpl(
+  const CoordinateView<DeviceMemorySpace>& query_points) const
+{
+  const auto in = query_points.GetValues();
+  auto mapped = AllocateCoordinates(in.extent(0), 3);
+  EmbedPoloidalPoints(in, mapped, theta0_);
+  // Points only: the base bound map rejects vector values, and scalars never
+  // reach it.
+  return std::make_unique<BoundCoordinateMap>(GetTargetCoordinateSystem(),
+                                              std::move(mapped));
+}
+
 } // namespace pcms

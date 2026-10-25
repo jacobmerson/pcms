@@ -20,7 +20,10 @@ set(PCMS_FIELD_HEADERS
         point_evaluator.h
         point_evaluator_factory.hpp
         transformed_source.hpp
+        external_source.hpp
         data/simple.h
+        data/handle.hpp
+        evaluator/host_point_evaluator.hpp
         function_space/polynomial_reconstruction.hpp
         layout/point_cloud.h
         data/point_cloud.h
@@ -30,6 +33,7 @@ set(PCMS_FIELD_SOURCES
         coordinate_system.cpp
         coordinate_map.cpp
         transformed_source.cpp
+        external_source.cpp
         gid_permutation.cpp
         function_space/polynomial_reconstruction.cpp
         layout/empty.cpp
