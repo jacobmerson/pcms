@@ -620,6 +620,22 @@ if(PCMS_ENABLE_Fortran)
   endif()
 endif()
 
+if(PCMS_ENABLE_NIMROD)
+  find_package(Catch2 3 QUIET)
+  if(Catch2_FOUND)
+    add_executable(test_nimrod_eval test_nimrod_eval.cpp)
+    target_link_libraries(test_nimrod_eval PUBLIC
+      Catch2::Catch2 pcms::core MPI::MPI_CXX Kokkos::kokkos)
+    target_include_directories(test_nimrod_eval PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    # NIMROD reads nimrod.in + the dump from the working directory, so run the
+    # test in the prepared case directory.
+    add_test(NAME test_nimrod_eval COMMAND test_nimrod_eval
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/nimrod_test/cylrwtm)
+  else()
+    message(WARNING "Catch2 not found; NIMROD eval test disabled")
+  endif()
+endif()
+
 find_package(KokkosKernels REQUIRED)
 
 add_executable(xgc_n0_server xgc_n0_coupling_server.cpp)

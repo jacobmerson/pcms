@@ -18,6 +18,14 @@ pybind11_add_module(pcms
 target_compile_features(pcms PUBLIC cxx_std_20)
 target_link_libraries(pcms PRIVATE Kokkos::kokkos pybind11::module MPI::MPI_C pcms::core pcms::transfer)
 
+if(PCMS_ENABLE_NIMROD)
+  # NIMROD evaluation backend bindings. The NimrodFunctionSpace symbols live in
+  # pcms_field (linked transitively via pcms::transfer); nimeval is carried on
+  # that target's link interface, so no extra link line is needed here.
+  target_sources(pcms PRIVATE bind_nimrod.cpp)
+  target_compile_definitions(pcms PRIVATE PCMS_ENABLE_NIMROD)
+endif()
+
 # The conservative/Monte Carlo projection bindings include transfer headers
 # that transitively pull in PETSc (petscvec.h). PETSc is linked PRIVATE into
 # pcms_transfer, so its include directories do not propagate; link it here so

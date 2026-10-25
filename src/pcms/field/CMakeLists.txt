@@ -75,6 +75,14 @@ if(PCMS_ENABLE_XGC)
             layout/xgc.cpp)
 endif()
 
+if(PCMS_ENABLE_NIMROD)
+    list(APPEND PCMS_FIELD_HEADERS
+            function_space/nimrod_ffi.h
+            function_space/nimrod.h)
+    list(APPEND PCMS_FIELD_SOURCES
+            function_space/nimrod.cpp)
+endif()
+
 add_library(pcms_field ${PCMS_FIELD_SOURCES})
 set_target_properties(pcms_field PROPERTIES
         OUTPUT_NAME pcmsfield
@@ -100,6 +108,14 @@ endif()
 if (PCMS_ENABLE_MESHFIELDS)
     target_link_libraries(pcms_field PUBLIC meshfields::meshfields)
 endif ()
+
+if(PCMS_ENABLE_NIMROD)
+    # Link NIMROD's evaluator shared libraries by full path (PRIVATE keeps them
+    # out of the public/export surface; only nimrod.cpp needs them).
+    target_link_libraries(pcms_field PRIVATE
+            ${NIMROD_NIMEVAL_LIBRARY}
+            ${NIMROD_NIMLIB_LIBRARY})
+endif()
 
 target_include_directories(pcms_field INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>

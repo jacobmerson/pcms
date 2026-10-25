@@ -36,6 +36,10 @@ void bind_mls_interpolation_module(py::module& m);
 
 void bind_mesh_utilities_module(py::module& m);
 
+#ifdef PCMS_ENABLE_NIMROD
+void bind_nimrod_module(py::module& m);
+#endif
+
 } // namespace pcms
 PYBIND11_MODULE(pcms, m)
 {
@@ -88,4 +92,10 @@ PYBIND11_MODULE(pcms, m)
 
   // Bind mesh utility functions
   pcms::bind_mesh_utilities_module(m);
+
+#ifdef PCMS_ENABLE_NIMROD
+  // Bind the NIMROD evaluation backend (NimrodFunctionSpace + traits). Registers
+  // after FunctionSpace so the base class is available for the subclass binding.
+  pcms::bind_nimrod_module(m);
+#endif
 }

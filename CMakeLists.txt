@@ -43,6 +43,7 @@ option(PCMS_ENABLE_SERVER "enable the coupling server implementation" ON)
 option(PCMS_ENABLE_CLIENT "enable the coupling client implementation" ON)
 
 option(PCMS_ENABLE_XGC "enable xgc field adapter" ON)
+option(PCMS_ENABLE_NIMROD "enable NIMROD field evaluation adapter" OFF)
 option(PCMS_ENABLE_OMEGA_H "enable Omega_h field adapter" OFF)
 option(PCMS_ENABLE_C "Enable pcms C api" ON)
 option(PCMS_ENABLE_Python "Enable pcms Python api" OFF)
@@ -122,6 +123,28 @@ endif()
 # adios2 adds C and Fortran depending on how it was built
 find_package(ADIOS2 CONFIG 2.10.2 REQUIRED)
 find_package(Kokkos CONFIG 4.5 REQUIRED)
+
+if(PCMS_ENABLE_NIMROD)
+  # NIMROD exposes a C-callable evaluator in its `nimeval` shared library
+  # (nimdevel/nimcore/eval_field.F90). We link it directly rather than
+  # reimplementing NIMROD's high-order bases, point location, or FFT -- the same
+  # symbols nimpy wraps. Point NIMROD_DIR (or the NIMSOFT env used by nimpy) at a
+  # NIMROD build/install configured with BUILD_SHARED_CORE_LIBS=ON.
+  set(_nimrod_lib_hints
+      ${NIMROD_DIR} ${NIMROD_DIR}/lib
+      $ENV{NIMROD_DIR} $ENV{NIMROD_DIR}/lib
+      $ENV{NIMSOFT}/nimdevel/lib)
+  find_library(NIMROD_NIMEVAL_LIBRARY NAMES nimeval HINTS ${_nimrod_lib_hints})
+  find_library(NIMROD_NIMLIB_LIBRARY NAMES nimlib HINTS ${_nimrod_lib_hints})
+  if(NOT NIMROD_NIMEVAL_LIBRARY OR NOT NIMROD_NIMLIB_LIBRARY)
+    message(FATAL_ERROR
+      "PCMS_ENABLE_NIMROD=ON but could not find the NIMROD nimeval/nimlib shared "
+      "libraries. Set -DNIMROD_DIR=<nimrod build/install> or the NIMSOFT env var "
+      "(nimeval=${NIMROD_NIMEVAL_LIBRARY} nimlib=${NIMROD_NIMLIB_LIBRARY}).")
+  endif()
+  message(STATUS "Found NIMROD nimeval: ${NIMROD_NIMEVAL_LIBRARY}")
+  message(STATUS "Found NIMROD nimlib:  ${NIMROD_NIMLIB_LIBRARY}")
+endif()
 
 option(PCMS_ENABLE_MESHFIELDS "Enable MeshFields support" ON)
 option(PCMS_ENABLE_PETSC "Enable PETSc support" OFF)
