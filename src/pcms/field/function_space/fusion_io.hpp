@@ -68,6 +68,11 @@ std::vector<std::string> AvailableQuantities(const FusionIOSource& source);
 ///
 /// A space holds quantities with one component count (1 for scalars, 3 for
 /// vectors); create one space per count over the same source.
+///
+/// Evaluators of derivative order 1 give the gradient of scalar quantities as
+/// physical cylindrical components (d/dR, (1/R) d/dphi, d/dZ). Fusion-IO
+/// provides them for M3D-C1 and geqdsk sources; for other formats Evaluate
+/// throws.
 class FusionIOFunctionSpace final : public FunctionSpace
 {
 public:
