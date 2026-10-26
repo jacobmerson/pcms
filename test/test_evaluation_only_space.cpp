@@ -45,15 +45,28 @@ private:
   ValueBasis basis_;
 };
 
+// The mock's per-point state: its own copy of the query points.
+class MockBound final : public pcms::BoundSource
+{
+public:
+  explicit MockBound(const pcms::EvaluationRequest& request)
+    : BoundSource(request),
+      points("mock_points", request.coords.GetValues().extent(0),
+             request.coords.GetValues().extent(1))
+  {
+    pcms::CopyDeviceRank2ViewToRank2View(pcms::MakeRank2View(points),
+                                         request.coords.GetValues());
+  }
+
+  Kokkos::View<Real**, DeviceMemorySpace> points;
+};
+
 class MockEvaluator final : public pcms::PointEvaluator<Real>
 {
 public:
-  explicit MockEvaluator(const pcms::EvaluationRequest& request)
-    : points_("mock_points", request.coords.GetValues().extent(0),
-              request.coords.GetValues().extent(1))
+  explicit MockEvaluator(Kokkos::View<Real**, DeviceMemorySpace> points)
+    : points_(std::move(points))
   {
-    pcms::CopyDeviceRank2ViewToRank2View(pcms::MakeRank2View(points_),
-                                         request.coords.GetValues());
   }
 
   void Evaluate(const pcms::Field<Real>& field,
@@ -113,11 +126,22 @@ protected:
     return WrapField<Real>(layout_, std::move(real));
   }
 
-  pcms::PointEvaluatorVariant CreatePointEvaluatorImpl(
-    pcms::Type, const pcms::EvaluationRequest& request) const override
+  std::shared_ptr<pcms::BoundSource> BindImpl(
+    const pcms::EvaluationRequest& request) const override
   {
+    return std::make_shared<MockBound>(request);
+  }
+
+  pcms::PointEvaluatorVariant CreatePointEvaluatorImpl(
+    pcms::Type, std::shared_ptr<const pcms::BoundSource> bound,
+    int derivative_order) const override
+  {
+    if (derivative_order != 0) {
+      throw pcms::pcms_error("MockSpace: derivatives are not supported");
+    }
     return std::unique_ptr<pcms::PointEvaluator<Real>>(
-      std::make_unique<MockEvaluator>(request));
+      std::make_unique<MockEvaluator>(
+        static_cast<const MockBound&>(*bound).points));
   }
 
 private:
@@ -169,8 +193,7 @@ TEST_CASE("Evaluation-only space interpolates onto a poloidal plane")
   }
 
   // The embedding maps points only, so vector values cannot pass through it.
-  auto evaluator = on_plane.CreatePointEvaluator<Real>(
-    pcms::EvaluationRequest::FromFunctionSpace(*target));
+  auto evaluator = on_plane.CreatePointEvaluator<Real>(on_plane.Bind(*target));
   REQUIRE_THROWS_WITH(
     evaluator->OutputBasis(ValueBasis{pcms::csys::CylindricalRThetaZ::Create(),
                                       pcms::ComponentScaling::Physical,

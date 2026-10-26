@@ -42,8 +42,8 @@ auto EvaluateAt(const pcms::FunctionSpace& space,
 {
   const auto coords = pcms::test::CreateDeviceCoordinateView(
     points, space.GetCoordinateSystem(), 3);
-  const auto evaluator = space.CreatePointEvaluator<Real>(
-    pcms::EvaluationRequest::FromCoordinates(coords.coordinate_view));
+  const auto evaluator =
+    space.CreatePointEvaluator<Real>(space.Bind(coords.coordinate_view));
   Kokkos::View<Real**, DeviceMemorySpace> out(
     "out", points.size() / 3, field.GetLayout().GetNumComponents());
   evaluator->Evaluate(field, pcms::test::TagLike(field, out));
@@ -278,8 +278,8 @@ TEST_CASE("Fusion-IO evaluation errors")
   // Fusion-IO writes one row per query point.
   const auto coords = pcms::test::CreateDeviceCoordinateView(
     {1.8, 0.0, 0.1, 2.0, 0.0, 0.1}, scalars->GetCoordinateSystem(), 3);
-  const auto evaluator = scalars->CreatePointEvaluator<Real>(
-    pcms::EvaluationRequest::FromCoordinates(coords.coordinate_view));
+  const auto evaluator =
+    scalars->CreatePointEvaluator<Real>(scalars->Bind(coords.coordinate_view));
   Kokkos::View<Real**, DeviceMemorySpace> short_out("short_out", 1, 1);
   REQUIRE_THROWS_WITH(
     evaluator->Evaluate(psi, pcms::test::TagLike(psi, short_out)),

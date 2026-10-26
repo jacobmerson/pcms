@@ -42,7 +42,7 @@ TEST_CASE("PointEvaluator: OmegaH order-1 linear evaluation")
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     pts, pcms::csys::Cartesian::Deferred());
   auto evaluator = factory->CreatePointEvaluator<Real>(
-    pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view));
+    factory->Bind(device_coords.coordinate_view));
   pcms::test::CheckEvaluation(
     *evaluator, field_data, pts,
     OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); });
@@ -78,7 +78,7 @@ TEST_CASE("PointEvaluator: same evaluator reused for two FieldData objects")
 
   // Create the PointEvaluator once and reuse it for both fields.
   auto evaluator = factory->CreatePointEvaluator<Real>(
-    pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view));
+    factory->Bind(device_coords.coordinate_view));
 
   pcms::test::CheckEvaluation(
     *evaluator, field_a, pts,
@@ -112,8 +112,7 @@ TEST_CASE("PointEvaluator: OmegaH order-1 out-of-bounds fill")
     outside_pts, pcms::csys::Cartesian::Deferred());
   pcms::OutOfBoundsPolicy policy{pcms::OutOfBoundsMode::FILL, -999.0};
   auto evaluator = factory->CreatePointEvaluator<Real>(
-    pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view,
-                                             policy));
+    factory->Bind(device_coords.coordinate_view, policy));
   pcms::test::CheckFillMode(*evaluator, field_data, -999.0, outside_pts);
 }
 
@@ -142,7 +141,7 @@ TEST_CASE("PointEvaluator: UniformGrid order-1 linear evaluation")
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     pts, pcms::csys::Cartesian::Deferred());
   auto evaluator = factory->CreatePointEvaluator<Real>(
-    pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view));
+    factory->Bind(device_coords.coordinate_view));
   pcms::test::CheckEvaluation(
     *evaluator, field_data, pts,
     OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); },
@@ -169,7 +168,7 @@ TEST_CASE("PointEvaluator: SplineFunctionSpace uniform-grid evaluation")
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     pts, pcms::csys::Cartesian::Deferred());
   auto evaluator = factory->CreatePointEvaluator<Real>(
-    pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view));
+    factory->Bind(device_coords.coordinate_view));
   pcms::test::CheckEvaluation(
     *evaluator, field_data, pts,
     OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); },
@@ -213,10 +212,9 @@ TEST_CASE("PointEvaluator: uniform grids report the points they fill")
       grid, 1, pcms::csys::Cartesian::Deferred(), 1);
     auto coords = pcms::test::CreateDeviceCoordinateView(
       pts, pcms::csys::Cartesian::Deferred());
-    auto evaluator = factory->CreatePointEvaluator<Real>(
-      pcms::EvaluationRequest::FromCoordinates(
-        coords.coordinate_view,
-        pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::NEAREST_BOUNDARY}));
+    auto evaluator = factory->CreatePointEvaluator<Real>(factory->Bind(
+      coords.coordinate_view,
+      pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::NEAREST_BOUNDARY}));
     REQUIRE(evaluator->FilledPoints().extent(0) == 0);
   }
 }
@@ -345,7 +343,7 @@ TEST_CASE("PointEvaluator: MeshFields order-1 linear evaluation")
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     pts, pcms::csys::Cartesian::Deferred());
   auto evaluator = factory->CreatePointEvaluator<Real>(
-    pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view));
+    factory->Bind(device_coords.coordinate_view));
   pcms::test::CheckEvaluation(
     *evaluator, field_data, pts,
     OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); });
@@ -371,8 +369,7 @@ TEST_CASE("PointEvaluator: MeshFields out-of-bounds fill")
     outside_pts, pcms::csys::Cartesian::Deferred());
   pcms::OutOfBoundsPolicy policy{pcms::OutOfBoundsMode::FILL, -999.0};
   auto evaluator = factory->CreatePointEvaluator<Real>(
-    pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view,
-                                             policy));
+    factory->Bind(device_coords.coordinate_view, policy));
   pcms::test::CheckFillMode(*evaluator, field_data, -999.0, outside_pts);
 }
 
@@ -401,7 +398,7 @@ TEST_CASE(
 
   // Create the PointEvaluator once and reuse it for both fields.
   auto evaluator = factory->CreatePointEvaluator<Real>(
-    pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view));
+    factory->Bind(device_coords.coordinate_view));
 
   pcms::test::CheckEvaluation(
     *evaluator, field_a, pts,
@@ -449,7 +446,7 @@ TEST_CASE("PointEvaluator: MeshFields order-1 multi-component (2) evaluation")
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     pts, pcms::csys::Cartesian::Deferred());
   auto evaluator = factory->CreatePointEvaluator<Real>(
-    pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view));
+    factory->Bind(device_coords.coordinate_view));
 
   Kokkos::View<Real**, pcms::DeviceMemorySpace> out("out", n, 2);
   evaluator->Evaluate(field, pcms::test::TagLike(field, out));
@@ -505,7 +502,7 @@ TEST_CASE("PointEvaluator: MeshFields order-1 multi-component (3) evaluation")
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     pts, pcms::csys::Cartesian::Deferred());
   auto evaluator = factory->CreatePointEvaluator<Real>(
-    pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view));
+    factory->Bind(device_coords.coordinate_view));
 
   Kokkos::View<Real**, pcms::DeviceMemorySpace> out("out", n, 3);
   evaluator->Evaluate(field, pcms::test::TagLike(field, out));
