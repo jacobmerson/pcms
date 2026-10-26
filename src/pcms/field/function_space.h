@@ -139,6 +139,17 @@ Function<T> FunctionSpace::CreateFunction(
                          std::move(field.data_), shared_from_this());
 }
 
+inline EvaluationRequest EvaluationRequest::ForLayout(
+  std::shared_ptr<const FieldLayout> layout, OutOfBoundsPolicy policy)
+{
+  if (layout == nullptr) {
+    throw pcms_error("EvaluationRequest: layout must not be null");
+  }
+  // Must evaluate GetDOFHolderCoordinates() before std::move(layout)
+  auto coords = layout->GetDOFHolderCoordinates();
+  return EvaluationRequest(coords, std::move(layout), policy);
+}
+
 inline EvaluationRequest EvaluationRequest::FromCoordinates(
   CoordinateView<DeviceMemorySpace> coords, OutOfBoundsPolicy policy)
 {
@@ -148,18 +159,13 @@ inline EvaluationRequest EvaluationRequest::FromCoordinates(
 inline EvaluationRequest EvaluationRequest::FromLayout(
   std::shared_ptr<const FieldLayout> layout, OutOfBoundsPolicy policy)
 {
-  if (layout == nullptr) {
-    throw pcms_error("EvaluationRequest::FromLayout: layout must not be null");
-  }
-  // Must evaluate GetDOFHolderCoordinates() before std::move(layout)
-  auto coords = layout->GetDOFHolderCoordinates();
-  return EvaluationRequest(coords, std::move(layout), policy);
+  return ForLayout(std::move(layout), policy);
 }
 
 inline EvaluationRequest EvaluationRequest::FromFunctionSpace(
   const FunctionSpace& function_space, OutOfBoundsPolicy policy)
 {
-  return FromLayout(function_space.GetLayout(), policy);
+  return ForLayout(function_space.GetLayout(), policy);
 }
 
 } // namespace pcms

@@ -54,10 +54,11 @@ public:
   [[nodiscard]] std::unique_ptr<PointEvaluator<T>> CreatePointEvaluator(
     std::shared_ptr<const BoundSource> bound, int derivative_order = 0) const;
 
-  /// Shorthand for CreatePointEvaluator<T>(Bind(request)).
+  /// Binds and creates in one step, for one evaluator per binding.
   template <typename T>
-  [[nodiscard]] std::unique_ptr<PointEvaluator<T>> CreatePointEvaluator(
-    const EvaluationRequest& request) const;
+  [[deprecated("bind with Bind(coords | space, policy) and pass the bound "
+               "source")]] [[nodiscard]] std::unique_ptr<PointEvaluator<T>>
+  CreatePointEvaluator(const EvaluationRequest& request) const;
 
   /// The factory that performs this factory's binds, whose bound sources this
   /// factory accepts: itself, unless it wraps another source and evaluates over
