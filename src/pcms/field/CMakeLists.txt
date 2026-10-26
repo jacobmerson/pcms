@@ -90,6 +90,11 @@ if (PCMS_ENABLE_FUSIONIO)
     list(APPEND PCMS_FIELD_HEADERS function_space/fusion_io.hpp)
 endif ()
 
+if (PCMS_ENABLE_NIMROD)
+    list(APPEND PCMS_FIELD_SOURCES function_space/nimrod.cpp)
+    list(APPEND PCMS_FIELD_HEADERS function_space/nimrod.hpp)
+endif ()
+
 if (PCMS_ENABLE_MESHFIELDS)
     list(APPEND PCMS_FIELD_SOURCES
             layout/mesh_fields.cpp
@@ -139,6 +144,10 @@ endif()
 
 if(PCMS_ENABLE_FUSIONIO)
     target_link_libraries(pcms_field PRIVATE fusionio::fusionio_fusionio)
+endif()
+
+if(PCMS_ENABLE_NIMROD)
+    target_link_libraries(pcms_field PRIVATE ${NIMROD_NIMEVAL_LIBRARY})
 endif()
 
 if (PCMS_ENABLE_MESHFIELDS)

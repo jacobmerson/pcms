@@ -46,6 +46,7 @@ option(PCMS_ENABLE_XGC "enable xgc field adapter" ON)
 option(PCMS_ENABLE_OMEGA_H "enable Omega_h field adapter" OFF)
 option(PCMS_ENABLE_MFEM "enable MFEM field adapter" OFF)
 option(PCMS_ENABLE_FUSIONIO "enable Fusion-IO field evaluation" OFF)
+option(PCMS_ENABLE_NIMROD "enable NIMROD field evaluation" OFF)
 option(PCMS_ENABLE_TRANSIENT "Enable pcms transient module" ON)
 option(PCMS_ENABLE_C "Enable pcms C api" ON)
 option(PCMS_ENABLE_Python "Enable pcms Python api" OFF)
@@ -152,6 +153,15 @@ endif()
 if(PCMS_ENABLE_FUSIONIO)
   find_package(fusionio CONFIG REQUIRED)
   message(STATUS "Found Fusion-IO: ${fusionio_DIR}")
+endif()
+
+if(PCMS_ENABLE_NIMROD)
+  # NIMROD's C-callable evaluator (nimcore/eval_field.F90), the library nimpy
+  # wraps. It carries its own RPATH to its dependencies.
+  find_library(NIMROD_NIMEVAL_LIBRARY nimeval HINTS ${NIMROD_DIR}
+                                                     ENV NIMROD_DIR
+               PATH_SUFFIXES lib REQUIRED)
+  message(STATUS "Found NIMROD nimeval: ${NIMROD_NIMEVAL_LIBRARY}")
 endif()
 # adios2 adds C and Fortran depending on how it was built
 find_package(ADIOS2 CONFIG 2.10.2 REQUIRED)

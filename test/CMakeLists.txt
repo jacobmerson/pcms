@@ -452,6 +452,17 @@ if(Catch2_FOUND)
                  "PCMS_TEST_FUSIONIO_DIR=\"${PCMS_TEST_DATA_DIR}/fusion-io\"")
   endif()
 
+  # The NIMROD case is not distributed with the test data; point
+  # PCMS_TEST_NIMROD_DIR at a local copy (nimrod.in and dump_gs.00000.h5).
+  set(PCMS_TEST_NIMROD_DIR "" CACHE PATH "NIMROD case for the NIMROD tests")
+  if(PCMS_ENABLE_NIMROD AND PCMS_TEST_NIMROD_DIR)
+    list(APPEND PCMS_UNIT_TEST_SOURCES test_nimrod.cpp)
+    set_source_files_properties(
+      test_nimrod.cpp
+      PROPERTIES COMPILE_DEFINITIONS
+                 "PCMS_TEST_NIMROD_DIR=\"${PCMS_TEST_NIMROD_DIR}\"")
+  endif()
+
   if(PCMS_ENABLE_MESHFIELDS)
     list(APPEND PCMS_UNIT_TEST_SOURCES
       test_omega_h_form_integrator_utils.cpp)
@@ -482,6 +493,11 @@ if(Catch2_FOUND)
 
   if(PCMS_ENABLE_FUSIONIO)
     target_link_libraries(unit_tests PUBLIC fusionio::fusionio_fusionio)
+  endif()
+
+  if(PCMS_ENABLE_NIMROD AND PCMS_TEST_NIMROD_DIR)
+    # the tests compare with nimeval directly
+    target_link_libraries(unit_tests PUBLIC ${NIMROD_NIMEVAL_LIBRARY})
   endif()
 
   target_link_libraries(unit_tests PUBLIC Catch2::Catch2 pcms::core
