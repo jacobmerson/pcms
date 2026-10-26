@@ -39,11 +39,10 @@ template <typename T>
 class TransformedPointEvaluator final : public PointEvaluator<T>
 {
 public:
-  /// @param bound map bound to the query points; owns the mapped coordinates
-  ///        `inner` was built over, so it is declared first and outlives it
+  /// @param bound map bound to the query points
   /// @param inner evaluator bound to `bound`'s mapped points
   /// @param policy out-of-bounds policy `inner` was built with
-  TransformedPointEvaluator(std::unique_ptr<BoundCoordinateMap> bound,
+  TransformedPointEvaluator(std::shared_ptr<const BoundCoordinateMap> bound,
                             std::unique_ptr<PointEvaluator<T>> inner,
                             OutOfBoundsPolicy policy)
     : bound_(std::move(bound)), inner_(std::move(inner)), policy_(policy)
@@ -96,7 +95,7 @@ public:
   }
 
 private:
-  std::unique_ptr<BoundCoordinateMap> bound_;
+  std::shared_ptr<const BoundCoordinateMap> bound_;
   std::unique_ptr<PointEvaluator<T>> inner_;
   OutOfBoundsPolicy policy_;
 };
@@ -120,13 +119,20 @@ public:
   }
 
 protected:
+  /// @brief Binds the map to the query points and the source to the mapped
+  ///        points.
+  /// @param request query points and out-of-bounds policy
+  /// @return bound source holding both bindings
+  std::shared_ptr<BoundSource> BindImpl(
+    const EvaluationRequest& request) const override;
   PointEvaluatorVariant CreatePointEvaluatorImpl(
-    Type value_type, const EvaluationRequest& request) const override;
+    Type value_type, std::shared_ptr<const BoundSource> bound,
+    int derivative_order) const override;
 
 private:
   template <typename T>
-  std::unique_ptr<PointEvaluator<T>> Create(
-    const EvaluationRequest& request) const;
+  std::unique_ptr<PointEvaluator<T>> Create(const BoundSource& bound,
+                                            int derivative_order) const;
 
   std::shared_ptr<const PointEvaluatorFactory> source_;
   std::shared_ptr<const CoordinateMap> to_source_;
