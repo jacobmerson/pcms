@@ -20,6 +20,7 @@ set(PCMS_FIELD_HEADERS
         point_evaluator.h
         point_evaluator_factory.hpp
         bound_source.hpp
+        gradient_source.hpp
         transformed_source.hpp
         data/simple.h
         function_space/polynomial_reconstruction.hpp
@@ -33,6 +34,7 @@ set(PCMS_FIELD_SOURCES
         transformed_source.cpp
         point_evaluator_factory.cpp
         bound_source.cpp
+        gradient_source.cpp
         gid_permutation.cpp
         function_space/polynomial_reconstruction.cpp
         layout/empty.cpp
