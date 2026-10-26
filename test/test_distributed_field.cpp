@@ -146,10 +146,9 @@ void check_distributed_evaluation(Omega_h::Mesh& mesh,
     }
   }
   auto device_coords = make_device_coordinates(points);
-  auto evaluator =
-    space.CreatePointEvaluator<Real>(pcms::EvaluationRequest::FromCoordinates(
-      device_coords.coordinate_view,
-      pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::FILL, kFillValue}));
+  auto evaluator = space.CreatePointEvaluator<Real>(space.Bind(
+    device_coords.coordinate_view,
+    pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::FILL, kFillValue}));
 
   const LO n_points = n_elements;
   Kokkos::View<Real**, pcms::DeviceMemorySpace> result("result", n_points, 1);

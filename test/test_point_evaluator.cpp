@@ -66,9 +66,8 @@ std::unique_ptr<pcms::PointEvaluator<Real>> CreateFillEvaluator(
   auto coords = pcms::test::CreateDeviceCoordinateView(
     kMixedPoints, pcms::csys::Cartesian::Deferred());
   return space.CreatePointEvaluator<Real>(
-    pcms::EvaluationRequest::FromCoordinates(
-      coords.coordinate_view,
-      pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::FILL, -1.0}));
+    space.Bind(coords.coordinate_view,
+               pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::FILL, -1.0}));
 }
 
 } // namespace
@@ -135,8 +134,8 @@ TEST_CASE("PointEvaluator::Evaluate checks the output for every evaluator")
     const auto pts = pcms::test::StandardEvalCoords2D();
     auto coords = pcms::test::CreateDeviceCoordinateView(
       pts, pcms::csys::Cartesian::Deferred());
-    auto evaluator = space->CreatePointEvaluator<Real>(
-      pcms::EvaluationRequest::FromCoordinates(coords.coordinate_view));
+    auto evaluator =
+      space->CreatePointEvaluator<Real>(space->Bind(coords.coordinate_view));
     CheckOutputValidation(*evaluator, space->CreateFunction<Real>(),
                           static_cast<int>(pts.size()) / 2);
   }

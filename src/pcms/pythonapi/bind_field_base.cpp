@@ -54,6 +54,10 @@ void SetDOFHolderData(Field<Real>& self, const PyValueView& v)
 
 } // namespace
 
+// The Python bindings construct EvaluationRequests.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 void bind_create_field_module(py::module& m)
 {
   py::class_<FieldLayout, std::shared_ptr<FieldLayout>>(
@@ -349,5 +353,7 @@ void bind_create_field_module(py::module& m)
     py::arg("mesh"), py::arg("divisions"),
     "Create a 2D vertex mask field indicating inside/outside mesh");
 }
+
+#pragma GCC diagnostic pop
 
 } // namespace pcms

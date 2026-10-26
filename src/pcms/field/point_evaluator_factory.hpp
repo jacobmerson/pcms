@@ -61,10 +61,14 @@ public:
   [[nodiscard]] std::unique_ptr<PointEvaluator<T>> CreatePointEvaluator(
     std::shared_ptr<const BoundSource> bound, int derivative_order = 0) const;
 
-  /// Shorthand for CreatePointEvaluator<T>(Bind(request)).
+  /// @brief Binds to the request's points and creates an evaluator.
+  /// @tparam T field value type
+  /// @param request query points and out-of-bounds policy
+  /// @return evaluator of the field values
   template <typename T>
-  [[nodiscard]] std::unique_ptr<PointEvaluator<T>> CreatePointEvaluator(
-    const EvaluationRequest& request) const;
+  [[deprecated("bind with Bind(coords | space, policy) and pass the bound "
+               "source")]] [[nodiscard]] std::unique_ptr<PointEvaluator<T>>
+  CreatePointEvaluator(const EvaluationRequest& request) const;
 
   /// @return the source whose Bind this source uses and whose bound sources
   ///         it accepts: itself, unless it wraps another source

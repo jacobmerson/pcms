@@ -148,19 +148,13 @@ inline EvaluationRequest EvaluationRequest::FromCoordinates(
 inline EvaluationRequest EvaluationRequest::FromLayout(
   std::shared_ptr<const FieldLayout> layout, OutOfBoundsPolicy policy)
 {
-  if (layout == nullptr) {
-    throw pcms_error("EvaluationRequest::FromLayout: layout must not be null");
-  }
-  // The layout's owned DOF holders: the rows its fields' setters write.
-  // Must evaluate GetDOFHolderCoordinates() before std::move(layout)
-  auto coords = layout->GetDOFHolderCoordinates();
-  return EvaluationRequest(coords, std::move(layout), policy);
+  return EvaluationRequest(std::move(layout), policy);
 }
 
 inline EvaluationRequest EvaluationRequest::FromFunctionSpace(
   const FunctionSpace& function_space, OutOfBoundsPolicy policy)
 {
-  return FromLayout(function_space.GetLayout(), policy);
+  return EvaluationRequest(function_space.GetLayout(), policy);
 }
 
 } // namespace pcms
