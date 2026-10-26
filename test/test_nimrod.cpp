@@ -75,6 +75,23 @@ auto EvaluateAt(const pcms::FunctionSpace& space,
   return Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
 }
 
+// Gradient of the scalar `field` at `points`, (dR, (1/R) dtheta, dZ) per row.
+auto EvaluateGradientAt(const pcms::FunctionSpace& space,
+                        const pcms::Field<Real>& field,
+                        const std::vector<Real>& points)
+{
+  const auto coords = pcms::test::CreateDeviceCoordinateView(
+    points, space.GetCoordinateSystem(), 3);
+  const auto evaluator =
+    space.CreatePointEvaluator<Real>(space.Bind(coords.coordinate_view), 1);
+  Kokkos::View<Real**, DeviceMemorySpace> out("out", points.size() / 3, 3);
+  evaluator->Evaluate(field,
+                      pcms::ValueView<Real, DeviceMemorySpace>(
+                        evaluator->OutputBasis(field.GetData().GetValueBasis()),
+                        pcms::MakeRank2View(out)));
+  return Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
+}
+
 // nimeval's own value of `quantity` at its (R, Z, phi) point `rzp`.
 std::vector<double> EvaluateDirectly(const std::string& quantity,
                                      std::array<double, 3> rzp, int nqty,
@@ -171,6 +188,51 @@ TEST_CASE("NIMROD parts select equilibrium and perturbation")
                                         pcms::test::EvalTol));
   }
   REQUIRE(perturbed(0, 0) != 0.0);
+}
+
+TEST_CASE("NIMROD gradients match direct nimeval evaluation")
+{
+  const CaseCopy copy("gradient");
+  auto source = pcms::OpenNimrodSource(copy.DumpPath(), "bn", copy.Dir());
+  auto scalars = pcms::NimrodFunctionSpace::Create(source, 1);
+  auto vectors = pcms::NimrodFunctionSpace::Create(source, 3);
+  // The cylrwtm case has no scalar with a physical gradient (its density is
+  // uniform, its pressure and temperatures zero), so this checks only that
+  // NIMROD's (d/dR, d/dZ, (1/R) d/dphi) is reordered to (R, theta, Z) with
+  // phi = -theta, against nimeval's own dmode 1 output. The density's
+  // gradient is round-off that depends on the search's starting guess, so
+  // each point is bound alone and, like the direct call, searched from
+  // scratch.
+  auto n = scalars->CreateFunction("n", "n");
+  const std::vector<Real> points = {10.6, 0.4, 0.3, 10.2, 2.0, -0.1};
+  for (size_t i = 0; i < points.size() / 3; ++i) {
+    const auto grad = EvaluateGradientAt(
+      *scalars, n, {points[3 * i], points[3 * i + 1], points[3 * i + 2]});
+    std::array<double, 3> rzp{points[3 * i], points[3 * i + 2],
+                              -points[3 * i + 1]};
+    std::array<double, 4> raw{};
+    std::array<double, 2> guess{-1.0, -1.0};
+    int nqty = 1, ifail = 0, eq = 2;
+    const int dmode = 1;
+    c_eval_field_dm(rzp.data(), "n", raw.data(), &nqty, guess.data(), &ifail,
+                    &dmode, &eq);
+    REQUIRE(ifail == 0);
+    const double expected[3] = {raw[1], -raw[3], raw[2]};
+    for (int c = 0; c < 3; ++c) {
+      CAPTURE(i, c);
+      REQUIRE_THAT(grad(0, c), WithinRel(expected[c], pcms::test::ExactTol) ||
+                                 WithinAbs(expected[c], pcms::test::ExactTol));
+    }
+  }
+
+  const auto coords = pcms::test::CreateDeviceCoordinateView(
+    points, vectors->GetCoordinateSystem(), 3);
+  REQUIRE_THROWS_WITH(vectors->CreatePointEvaluator<Real>(
+                        vectors->Bind(coords.coordinate_view), 1),
+                      ContainsSubstring("not supported yet"));
+  REQUIRE_THROWS_WITH(scalars->CreatePointEvaluator<Real>(
+                        scalars->Bind(coords.coordinate_view), 2),
+                      ContainsSubstring("derivative order 2"));
 }
 
 TEST_CASE("NIMROD evaluation errors")
