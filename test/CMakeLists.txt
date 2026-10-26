@@ -435,7 +435,8 @@ if(Catch2_FOUND)
       test_point_evaluator.cpp
       test_tagged_outputs.cpp
       test_transformed_source.cpp
-      test_evaluation_only_space.cpp)
+      test_evaluation_only_space.cpp
+      test_bound_source.cpp)
   endif()
 
   if(PCMS_ENABLE_MFEM)
