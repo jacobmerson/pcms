@@ -44,13 +44,16 @@ private:
   ValueBasis basis_;
 };
 
-// Fusion-IO evaluation is not thread safe, don't call Evaluate concurrently
-class FusionIOEvaluator final : public PointEvaluator<Real>
+// The query points in Fusion-IO's layout and the per-point search hints. The
+// hints let Fusion-IO start each point's search where it last found it; they
+// belong to the source, so every field and every evaluator created from this
+// bound source shares them.
+class FusionIOBoundSource final : public BoundSource
 {
 public:
-  FusionIOEvaluator(std::shared_ptr<FusionIOSource> source,
-                    const EvaluationRequest& request)
-    : source_(std::move(source))
+  FusionIOBoundSource(const FusionIOSource& source,
+                      const EvaluationRequest& request)
+    : BoundSource(request)
   {
     if (request.policy.mode != OutOfBoundsMode::ERROR) {
       throw pcms_error("FusionIOFunctionSpace: only OutOfBoundsMode::ERROR is "
@@ -62,16 +65,34 @@ public:
     Kokkos::View<Real**, DeviceMemorySpace> staged(
       "fusion_io_points", coords.extent(0), coords.extent(1));
     CopyDeviceRank2ViewToRank2View(MakeRank2View(staged), coords);
-    points_ =
-      decltype(points_)("fusion_io_points", coords.extent(0), coords.extent(1));
-    DeepCopyMismatchLayouts(points_, staged);
-    // Search hints let Fusion-IO start each point's search where it last
-    // found it; they belong to the source, so every field shares them. As in
-    // Fusion-IO's korc_example, they are one zero-initialized block of
-    // sizeof_search_hint() bytes per point. For M3D-C1 a hint is an element to
-    // try first, so zero is a valid starting guess.
-    hint_size_ = source_->Get().sizeof_search_hint();
-    hints_.assign(hint_size_ * points_.extent(0), 0);
+    points =
+      decltype(points)("fusion_io_points", coords.extent(0), coords.extent(1));
+    DeepCopyMismatchLayouts(points, staged);
+    // As in Fusion-IO's korc_example, the hints are one zero-initialized block
+    // of sizeof_search_hint() bytes per point. For M3D-C1 a hint is an element
+    // to try first, so zero is a valid starting guess.
+    hint_size = source.Get().sizeof_search_hint();
+    hints.assign(hint_size * points.extent(0), 0);
+  }
+
+  [[nodiscard]] fio_hint Hint(size_t i) const
+  {
+    return hint_size > 0 ? &hints[i * hint_size] : nullptr;
+  }
+
+  Kokkos::View<Real**, Kokkos::LayoutRight, HostMemorySpace> points;
+  size_t hint_size = 0;
+  mutable std::vector<char> hints;
+};
+
+// Fusion-IO evaluation is not thread safe, don't call Evaluate concurrently
+class FusionIOEvaluator final : public PointEvaluator<Real>
+{
+public:
+  FusionIOEvaluator(std::shared_ptr<FusionIOSource> source,
+                    std::shared_ptr<const FusionIOBoundSource> bound)
+    : source_(std::move(source)), bound_(std::move(bound))
+  {
   }
 
   void Evaluate(const Field<Real>& field,
@@ -88,19 +109,19 @@ public:
     // Fusion-IO writes the field's components into each row.
     const auto num_components =
       static_cast<size_t>(field.GetLayout().GetNumComponents());
-    if (out.extent(0) != points_.extent(0) || out.extent(1) != num_components) {
+    const auto& points = bound_->points;
+    if (out.extent(0) != points.extent(0) || out.extent(1) != num_components) {
       throw pcms_error("FusionIOFunctionSpace: output is shaped [" +
                        std::to_string(out.extent(0)) + "][" +
                        std::to_string(out.extent(1)) + "] but expected [" +
-                       std::to_string(points_.extent(0)) + "][" +
+                       std::to_string(points.extent(0)) + "][" +
                        std::to_string(num_components) + "]");
     }
     Kokkos::View<Real**, Kokkos::LayoutRight, HostMemorySpace> host_out(
       "fusion_io_values", out.extent(0), out.extent(1));
-    for (size_t i = 0; i < points_.extent(0); ++i) {
-      const fio_hint hint = hint_size_ > 0 ? &hints_[i * hint_size_] : nullptr;
+    for (size_t i = 0; i < points.extent(0); ++i) {
       const int status =
-        data->field->eval(&points_(i, 0), &host_out(i, 0), hint);
+        data->field->eval(&points(i, 0), &host_out(i, 0), bound_->Hint(i));
       if (status == FIO_OUT_OF_BOUNDS) {
         throw pcms_error("FusionIOFunctionSpace: query point " +
                          std::to_string(i) + " is outside the source's domain");
@@ -125,9 +146,7 @@ public:
 
 private:
   std::shared_ptr<FusionIOSource> source_;
-  Kokkos::View<Real**, Kokkos::LayoutRight, HostMemorySpace> points_;
-  size_t hint_size_ = 0;
-  mutable std::vector<char> hints_;
+  std::shared_ptr<const FusionIOBoundSource> bound_;
 };
 
 } // namespace
@@ -280,15 +299,27 @@ FieldVariant FusionIOFunctionSpace::CreateFieldImpl(FieldDataVariant data) const
     layout_, std::get<std::unique_ptr<FieldData<Real>>>(std::move(data)));
 }
 
+std::shared_ptr<BoundSource> FusionIOFunctionSpace::BindImpl(
+  const EvaluationRequest& request) const
+{
+  return std::make_shared<FusionIOBoundSource>(*source_, request);
+}
+
 PointEvaluatorVariant FusionIOFunctionSpace::CreatePointEvaluatorImpl(
-  Type value_type, const EvaluationRequest& request) const
+  Type value_type, std::shared_ptr<const BoundSource> bound,
+  int derivative_order) const
 {
   if (value_type != Type::Real) {
     throw pcms_error("FusionIOFunctionSpace: only Real evaluation is "
                      "supported");
   }
+  if (derivative_order != 0) {
+    throw pcms_error("FusionIOFunctionSpace: derivatives are not supported");
+  }
+  detail::BoundSourceAs<FusionIOBoundSource>(*bound, "FusionIOFunctionSpace");
   return std::unique_ptr<PointEvaluator<Real>>(
-    std::make_unique<FusionIOEvaluator>(source_, request));
+    std::make_unique<FusionIOEvaluator>(
+      source_, std::static_pointer_cast<const FusionIOBoundSource>(bound)));
 }
 
 } // namespace pcms

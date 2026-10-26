@@ -158,6 +158,31 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
     REQUIRE_FALSE(total(1, 0) == total(0, 0));
   }
 
+  SECTION("evaluators created from one bound source share its search")
+  {
+    const std::vector<Real> points = {1.6, 0.1, 0.2, 2.0, 2.5, -0.4};
+    const auto coords = pcms::test::CreateDeviceCoordinateView(
+      points, scalars->GetCoordinateSystem(), 3);
+    const auto bound = scalars->Bind(coords.coordinate_view);
+    auto psi_eq = scalars->CreateFunction(
+      "psi_eq", "poloidal flux", {.part = FusionIOOptions::Part::Equilibrium});
+    for (const auto* f : {&psi, &psi_eq}) {
+      const auto evaluator = scalars->CreatePointEvaluator<Real>(bound);
+      Kokkos::View<Real**, DeviceMemorySpace> out("out", 2, 1);
+      evaluator->Evaluate(*f, pcms::test::TagLike(*f, out));
+      const auto shared =
+        Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
+      const auto separate = EvaluateAt(*scalars, *f, points);
+      for (size_t i = 0; i < 2; ++i) {
+        CAPTURE(f->GetName(), i);
+        REQUIRE_THAT(shared(i, 0),
+                     WithinRel(separate(i, 0), pcms::test::ExactTol));
+      }
+    }
+    REQUIRE_THROWS_WITH(vectors->CreatePointEvaluator<Real>(bound),
+                        ContainsSubstring("bound by another factory"));
+  }
+
   SECTION("values match direct fusion-io evaluation")
   {
     const FusionIOOptions options{.timeslice = 1,

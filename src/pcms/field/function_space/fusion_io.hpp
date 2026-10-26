@@ -89,8 +89,11 @@ protected:
   FieldVariant CreateFieldImpl(Type storage_type,
                                ValueBasis basis) const override;
   FieldVariant CreateFieldImpl(FieldDataVariant data) const override;
+  std::shared_ptr<BoundSource> BindImpl(
+    const EvaluationRequest& request) const override;
   PointEvaluatorVariant CreatePointEvaluatorImpl(
-    Type value_type, const EvaluationRequest& request) const override;
+    Type value_type, std::shared_ptr<const BoundSource> bound,
+    int derivative_order) const override;
 
 private:
   FusionIOFunctionSpace(std::shared_ptr<FusionIOSource> source,
