@@ -26,6 +26,36 @@ void FillRows(Rank2View<Real, DeviceMemorySpace> values,
 
 } // namespace detail
 
+namespace
+{
+
+class TransformedBoundSource final : public BoundSource
+{
+public:
+  TransformedBoundSource(const EvaluationRequest& request,
+                         std::shared_ptr<const BoundCoordinateMap> map,
+                         std::shared_ptr<const BoundSource> inner)
+    : BoundSource(request), map_(std::move(map)), inner_(std::move(inner))
+  {
+  }
+
+  [[nodiscard]] const std::shared_ptr<const BoundCoordinateMap>& Map()
+    const noexcept
+  {
+    return map_;
+  }
+  [[nodiscard]] const std::shared_ptr<const BoundSource>& Inner() const noexcept
+  {
+    return inner_;
+  }
+
+private:
+  std::shared_ptr<const BoundCoordinateMap> map_;
+  std::shared_ptr<const BoundSource> inner_;
+};
+
+} // namespace
+
 TransformedSource::TransformedSource(
   std::shared_ptr<const PointEvaluatorFactory> source,
   std::shared_ptr<const CoordinateMap> to_source)
@@ -50,27 +80,39 @@ TransformedSource::TransformedSource(
   system_ = to_source_->GetSourceCoordinateSystem();
 }
 
-template <typename T>
-std::unique_ptr<PointEvaluator<T>> TransformedSource::Create(
+std::shared_ptr<BoundSource> TransformedSource::BindImpl(
   const EvaluationRequest& request) const
 {
   PCMS_FUNCTION_TIMER;
-  auto bound = to_source_->Bind(request.coords);
-  auto inner = source_->CreatePointEvaluator<T>(
-    EvaluationRequest::FromCoordinates(bound->MappedPoints(), request.policy));
+  std::shared_ptr<const BoundCoordinateMap> map =
+    to_source_->Bind(request.coords);
+  auto inner = source_->Bind(map->MappedPoints(), request.policy);
+  return std::make_shared<TransformedBoundSource>(request, std::move(map),
+                                                  std::move(inner));
+}
+
+template <typename T>
+std::unique_ptr<PointEvaluator<T>> TransformedSource::Create(
+  const BoundSource& bound, int derivative_order) const
+{
+  const auto& transformed =
+    detail::BoundSourceAs<TransformedBoundSource>(bound, "TransformedSource");
+  auto inner =
+    source_->CreatePointEvaluator<T>(transformed.Inner(), derivative_order);
   return std::make_unique<TransformedPointEvaluator<T>>(
-    std::move(bound), std::move(inner), request.policy);
+    transformed.Map(), std::move(inner), bound.Policy());
 }
 
 PointEvaluatorVariant TransformedSource::CreatePointEvaluatorImpl(
-  Type value_type, const EvaluationRequest& request) const
+  Type value_type, std::shared_ptr<const BoundSource> bound,
+  int derivative_order) const
 {
   switch (value_type) {
-    case Type::Real: return Create<Real>(request);
-    case Type::LO: return Create<LO>(request);
-    case Type::GO: return Create<GO>(request);
-    case Type::Int8: return Create<int8_t>(request);
-    case Type::Float: return Create<float>(request);
+    case Type::Real: return Create<Real>(*bound, derivative_order);
+    case Type::LO: return Create<LO>(*bound, derivative_order);
+    case Type::GO: return Create<GO>(*bound, derivative_order);
+    case Type::Int8: return Create<int8_t>(*bound, derivative_order);
+    case Type::Float: return Create<float>(*bound, derivative_order);
   }
   throw pcms_error("TransformedSource::CreatePointEvaluator: unsupported "
                    "value type");
