@@ -22,10 +22,10 @@ OmegaHControlVariateProjection::OmegaHControlVariateProjection(
     control_variate_(target_space.CreateFunction<Real>())
 {
   const auto sample_coords = rhs_integrator_->GetIntegrationPoints();
-  source_at_samples_ = source.CreatePointEvaluator<Real>(
-    EvaluationRequest::FromCoordinates(sample_coords));
-  control_variate_at_samples_ = target_space.CreatePointEvaluator<Real>(
-    EvaluationRequest::FromCoordinates(sample_coords));
+  source_at_samples_ =
+    source.CreatePointEvaluator<Real>(source.Bind(sample_coords));
+  control_variate_at_samples_ =
+    target_space.CreatePointEvaluator<Real>(target_space.Bind(sample_coords));
 
   // Mass integrator is only needed to build the solver; PETSc reference-counts
   // the matrix so it remains alive inside the KSP after this scope ends.
