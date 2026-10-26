@@ -3,7 +3,10 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <Kokkos_Core.hpp>
 #include <pcms/field/coordinate_systems/cartesian.hpp>
+#include <pcms/field/function_space/lagrange.h>
 #include <pcms/field/function_space/spline.h>
+#include <pcms/field/gradient_source.hpp>
+#include <pcms/transfer/interpolator.h>
 #include "field_test_utils.h"
 #include <vector>
 
@@ -107,4 +110,68 @@ TEST_CASE("Gradients fill the out-of-bounds rows")
                WithinAbs(2.0 * 0.5 + 3.0 * 0.5, pcms::test::EvalTol));
   REQUIRE(grad(1, 0) == -7.0);
   REQUIRE(grad(1, 1) == -7.0);
+}
+
+TEST_CASE("Interpolating a field and its gradient over one localization")
+{
+  std::shared_ptr<const pcms::SplineFunctionSpace> source = MakeSplineSpace();
+  auto f = source->CreateFunction<Real>("f");
+  pcms::test::SetField(
+    f, OMEGA_H_LAMBDA(Real x, Real y) { return Cubic(x, y); });
+
+  // Targets on a coarser grid strictly inside the source grid.
+  pcms::UniformGrid<2> grid;
+  grid.bot_left = {0.2, -0.8};
+  grid.edge_length = {1.5, 1.4};
+  grid.divisions = {5, 7};
+  auto value_space = pcms::LagrangeFunctionSpace::FromUniformGrid(
+    grid, 1, source->GetCoordinateSystem());
+  auto gradient_space = pcms::LagrangeFunctionSpace::FromUniformGrid(
+    grid, 2, source->GetCoordinateSystem());
+  auto value = value_space->CreateFunction<Real>("f");
+  auto gradient =
+    gradient_space->CreateFunction<Real>("grad f", pcms::values::Covector);
+
+  const auto bound = source->Bind(*value_space);
+  const auto grad_source = pcms::Gradient(source);
+  pcms::Interpolator<Real> values(*source, *value_space, bound);
+  pcms::Interpolator<Real> gradients(*grad_source, *gradient_space, bound);
+  values.Apply(f, value);
+  gradients.Apply(f, gradient);
+
+  const auto coords = pcms::test::CopyCoordinatesToHost(
+    value_space->GetLayout()->GetDOFHolderCoordinates().GetValues());
+  const auto v = value.GetDOFHolderDataHost().GetValues();
+  const auto g = gradient.GetDOFHolderDataHost().GetValues();
+  for (size_t i = 0; i < coords.extent(0); ++i) {
+    const Real x = coords(i, 0), y = coords(i, 1);
+    CAPTURE(i, x, y);
+    REQUIRE_THAT(v(i, 0), WithinAbs(Cubic(x, y), pcms::test::EvalTol));
+    REQUIRE_THAT(g(i, 0), WithinAbs(2.0 * x + 3.0 * y, pcms::test::EvalTol));
+    REQUIRE_THAT(g(i, 1),
+                 WithinAbs(3.0 * x - 3.0 * y * y, pcms::test::EvalTol));
+  }
+
+  // A gradient source binds through the source, so it can also bind itself.
+  pcms::Interpolator<Real> self_bound(*grad_source, *gradient_space);
+  self_bound.Apply(f, gradient);
+  REQUIRE_THAT(gradient.GetDOFHolderDataHost().GetValues()(0, 0),
+               WithinAbs(g(0, 0), pcms::test::ExactTol));
+
+  // Values are not written into a covector target.
+  REQUIRE_THROWS_WITH(
+    pcms::Interpolator<Real>(*source, *gradient_space, bound)
+      .Apply(f, gradient),
+    ContainsSubstring("differs from the target's declared basis"));
+  // The bound points must be the target's DOF holders.
+  pcms::UniformGrid<2> other_grid = grid;
+  other_grid.divisions = {4, 7};
+  auto other_space = pcms::LagrangeFunctionSpace::FromUniformGrid(
+    other_grid, 1, source->GetCoordinateSystem());
+  REQUIRE_THROWS_WITH(pcms::Interpolator<Real>(*source, *other_space, bound),
+                      ContainsSubstring("target's DOF-holder sites"));
+  // Second derivatives are not available from the spline yet.
+  REQUIRE_THROWS_WITH(
+    pcms::Gradient(grad_source)->CreatePointEvaluator<Real>(bound),
+    ContainsSubstring("derivative order 2"));
 }
