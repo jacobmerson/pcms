@@ -263,7 +263,7 @@ public:
 
   bool SupportsNearestBoundary() const override { return true; }
 
-  std::unique_ptr<PointEvaluator<Real>> CreatePointEvaluator(
+  std::shared_ptr<BoundSource> Bind(
     const EvaluationRequest& request) const override
   {
     PCMS_FUNCTION_TIMER;
@@ -329,8 +329,26 @@ public:
       cell_indices_device, coordinates_device, policy.mode,
       is_out_of_bounds_device, num_out_of_bounds);
 
+    return std::make_shared<
+      detail::HintBoundSource<UniformGridFieldLocalizationHint<Dim>>>(
+      request, std::move(hint));
+  }
+
+  std::unique_ptr<PointEvaluator<Real>> CreatePointEvaluator(
+    std::shared_ptr<const BoundSource> bound,
+    int derivative_order) const override
+  {
+    if (derivative_order != 0) {
+      throw pcms_error(
+        "UniformGridEvaluatorFactory: derivatives are not supported");
+    }
+    const auto& hint =
+      detail::BoundSourceAs<
+        detail::HintBoundSource<UniformGridFieldLocalizationHint<Dim>>>(
+        *bound, "UniformGridEvaluatorFactory")
+        .GetHint();
     return std::make_unique<UniformGridPointEvaluator<Dim>>(
-      layout_, std::move(hint), policy.fill_value);
+      layout_, hint, bound->Policy().fill_value);
   }
 
   CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const override

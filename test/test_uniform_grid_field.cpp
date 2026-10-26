@@ -151,7 +151,9 @@ TEST_CASE("UniformGrid order-0 field creation and evaluation")
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     eval_coords, pcms::csys::Cartesian::Deferred());
   auto evaluator = eval_factory.CreatePointEvaluator(
-    pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view));
+    eval_factory.Bind(
+      pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view)),
+    0);
 
   Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> results_device(
     "results_device", 4, 1);
@@ -232,7 +234,9 @@ TEST_CASE("UniformGrid field evaluation - piecewise constant")
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     eval_coords, pcms::csys::Cartesian::Deferred());
   auto evaluator = eval_factory.CreatePointEvaluator(
-    pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view));
+    eval_factory.Bind(
+      pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view)),
+    0);
 
   Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> results_device(
     "results_device", 4, 1);
@@ -710,7 +714,9 @@ TEST_CASE("UniformGrid Order-1 multi-component field evaluation")
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     eval_coords, pcms::csys::Cartesian::Deferred());
   auto evaluator = eval_factory.CreatePointEvaluator(
-    pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view));
+    eval_factory.Bind(
+      pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view)),
+    0);
 
   Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> results_device(
     "results_device", num_points, num_components);
@@ -775,7 +781,9 @@ TEST_CASE("UniformGrid Order-0 multi-component field (regression)")
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     eval_coords, pcms::csys::Cartesian::Deferred());
   auto evaluator = eval_factory.CreatePointEvaluator(
-    pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view));
+    eval_factory.Bind(
+      pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view)),
+    0);
 
   Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> results_device(
     "results_device", 4, num_components);

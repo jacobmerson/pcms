@@ -9,6 +9,8 @@
 #include "pcms/utility/types.h"
 #include <Kokkos_Core.hpp>
 #include <memory>
+#include <string>
+#include <utility>
 
 namespace pcms
 {
@@ -83,6 +85,23 @@ public:
 private:
   Kokkos::View<Real**, DeviceMemorySpace> points_;
   EvaluationRequest request_;
+};
+
+/// Bound source of a backend whose search result is one copyable value, such
+/// as a struct of Kokkos views that evaluators copy.
+template <typename Hint>
+class HintBoundSource final : public BoundSource
+{
+public:
+  HintBoundSource(const EvaluationRequest& request, Hint hint)
+    : BoundSource(request), hint_(std::move(hint))
+  {
+  }
+
+  [[nodiscard]] const Hint& GetHint() const noexcept { return hint_; }
+
+private:
+  Hint hint_;
 };
 
 /// Downcasts a bound source to the type the backend binds; throws if it is
