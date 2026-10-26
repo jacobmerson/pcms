@@ -9,6 +9,8 @@
 #include "pcms/utility/types.h"
 #include <Kokkos_Core.hpp>
 #include <memory>
+#include <string>
+#include <utility>
 
 namespace pcms
 {
@@ -82,6 +84,26 @@ public:
 private:
   Kokkos::View<Real**, DeviceMemorySpace> points_;
   EvaluationRequest request_;
+};
+
+/// @brief Bound source that stores a backend's search result as one value.
+/// @tparam Hint copyable search result, such as a struct of Kokkos views
+template <typename Hint>
+class HintBoundSource final : public BoundSource
+{
+public:
+  /// @param request bound query points and out-of-bounds policy
+  /// @param hint search result for the query points
+  HintBoundSource(const EvaluationRequest& request, Hint hint)
+    : BoundSource(request), hint_(std::move(hint))
+  {
+  }
+
+  /// @return the search result
+  [[nodiscard]] const Hint& GetHint() const noexcept { return hint_; }
+
+private:
+  Hint hint_;
 };
 
 /// @brief Casts a bound source to the type a backend creates.

@@ -212,7 +212,7 @@ public:
 
   bool SupportsNearestBoundary() const override { return false; }
 
-  std::unique_ptr<PointEvaluator<Real>> CreatePointEvaluator(
+  std::shared_ptr<BoundSource> Bind(
     const EvaluationRequest& request) const override
   {
     const auto coords = request.coords;
@@ -285,8 +285,26 @@ public:
     UniformGridFieldLocalizationHint<2> hint(
       cell_indices_device, coordinates_d, policy.mode, is_out_of_bounds_device,
       num_out_of_bounds);
+    return std::make_shared<
+      detail::HintBoundSource<UniformGridFieldLocalizationHint<2>>>(
+      request, std::move(hint));
+  }
+
+  std::unique_ptr<PointEvaluator<Real>> CreatePointEvaluator(
+    std::shared_ptr<const BoundSource> bound,
+    int derivative_order) const override
+  {
+    if (derivative_order != 0) {
+      throw pcms_error(
+        "UniformGridSplineEvaluatorFactory2D: derivatives are not supported");
+    }
+    const auto& hint =
+      detail::BoundSourceAs<
+        detail::HintBoundSource<UniformGridFieldLocalizationHint<2>>>(
+        *bound, "UniformGridSplineEvaluatorFactory2D")
+        .GetHint();
     return std::make_unique<UniformGridSplinePointEvaluator2D<>>(
-      layout_, std::move(hint), policy.fill_value);
+      layout_, hint, bound->Policy().fill_value);
   }
 
   CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const override
