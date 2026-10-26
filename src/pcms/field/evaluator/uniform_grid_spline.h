@@ -33,6 +33,8 @@ struct InitCoordsFunctor
 
 } // namespace detail
 
+// Evaluates the bicubic spline through a field's grid values, or with
+// derivative_order 1 its gradient (df/dx, df/dy).
 template <typename LayoutPolicy =
             detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
 class UniformGridSplinePointEvaluator2D
@@ -41,11 +43,13 @@ class UniformGridSplinePointEvaluator2D
 public:
   UniformGridSplinePointEvaluator2D(
     std::shared_ptr<const UniformGridFieldLayout<2>> layout,
-    UniformGridFieldLocalizationHint<2> hint, Real fill_value)
+    UniformGridFieldLocalizationHint<2> hint, Real fill_value,
+    int derivative_order = 0)
     : layout_(std::move(layout)),
       grid_(layout_->GetGrid()),
       hint_(std::move(hint)),
       fill_value_(fill_value),
+      derivative_order_(derivative_order),
       filled_points_(detail::FilledPointIndices(hint_)),
       x_coords_("uniform_grid_spline_x", grid_.divisions[0] + 1),
       y_coords_("uniform_grid_spline_y", grid_.divisions[1] + 1)
@@ -74,6 +78,14 @@ public:
     return filled_points_;
   }
 
+  [[nodiscard]] ValueBasis OutputBasis(const ValueBasis& stored) const override
+  {
+    if (derivative_order_ == 0) {
+      return stored;
+    }
+    return FirstDerivativeBasis(stored, layout_->GetCoordinateSystem());
+  }
+
   void Evaluate(
     const Field<Real>& field,
     ValueView<Real, DeviceMemorySpace, LayoutPolicy> out) const override
@@ -83,7 +95,9 @@ public:
     const auto values = out.GetValues();
     LO num_points = static_cast<LO>(hint_.coordinates_.extent(0));
     PCMS_ALWAYS_ASSERT(values.extent(0) == static_cast<size_t>(num_points));
-    PCMS_ALWAYS_ASSERT(values.extent(1) == 1);
+    // One column per selected spline output: f, or (df/dx, df/dy).
+    const int num_outputs = derivative_order_ == 0 ? 1 : 2;
+    PCMS_ALWAYS_ASSERT(values.extent(1) == static_cast<size_t>(num_outputs));
 
     const auto dof_data = field.GetDOFHolderData().GetValues();
     LO nx = grid_.divisions[0] + 1;
@@ -104,7 +118,11 @@ public:
       Kokkos::parallel_for(
         "fill_out_of_bounds_values",
         Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, num_points),
-        KOKKOS_CLASS_LAMBDA(LO i) { values(i, 0) = fill_value_; });
+        KOKKOS_CLASS_LAMBDA(LO i) {
+          for (int c = 0; c < num_outputs; ++c) {
+            values(i, c) = fill_value_;
+          }
+        });
       return;
     }
 
@@ -137,7 +155,7 @@ public:
       });
 
     Kokkos::View<Real**, DeviceMemorySpace> spline_output(
-      "uniform_grid_spline_output", num_in_bounds, 1);
+      "uniform_grid_spline_output", num_in_bounds, num_outputs);
     Kokkos::View<Real*, DeviceMemorySpace> empty_bc(
       "uniform_grid_spline_empty_bc", 0);
 
@@ -154,11 +172,22 @@ public:
       Rank1View<Real, DeviceMemorySpace>(empty_bc.data(), empty_bc.extent(0)),
       BoundaryCondition::NOT_A_KNOT,
       Rank1View<Real, DeviceMemorySpace>(empty_bc.data(), empty_bc.extent(0)));
+    // The selector picks f, df/dx, df/dy, d2f/dx2, d2f/dy2, d2f/dxdy.
+    Kokkos::View<LO*, DeviceMemorySpace> select("uniform_grid_spline_select",
+                                                6);
+    const int order = derivative_order_;
+    Kokkos::parallel_for(
+      "uniform_grid_spline_select",
+      Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, 6),
+      KOKKOS_LAMBDA(LO k) {
+        select(k) = order == 0 ? (k == 0) : (k == 1 || k == 2);
+      });
     interpolator.evaluate(
+      select,
       Rank1View<Real, DeviceMemorySpace>(eval_x.data(), eval_x.extent(0)),
       Rank1View<Real, DeviceMemorySpace>(eval_y.data(), eval_y.extent(0)),
       Rank2View<Real, DeviceMemorySpace>(spline_output.data(),
-                                         spline_output.extent(0), 1));
+                                         spline_output.extent(0), num_outputs));
 
     if (hint_.mode_ == OutOfBoundsMode::FILL) {
       Kokkos::parallel_for(
@@ -166,7 +195,9 @@ public:
         Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, num_points),
         KOKKOS_CLASS_LAMBDA(LO i) {
           if (hint_.is_out_of_bounds_(i)) {
-            values(i, 0) = fill_value_;
+            for (int c = 0; c < num_outputs; ++c) {
+              values(i, c) = fill_value_;
+            }
           }
         });
     }
@@ -175,7 +206,9 @@ public:
       "copy_in_bounds_values",
       Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, num_in_bounds),
       KOKKOS_LAMBDA(LO i) {
-        values(in_bounds_indices(i), 0) = spline_output(i, 0);
+        for (int c = 0; c < num_outputs; ++c) {
+          values(in_bounds_indices(i), c) = spline_output(i, c);
+        }
       });
   }
 
@@ -184,6 +217,7 @@ private:
   UniformGrid<2> grid_;
   UniformGridFieldLocalizationHint<2> hint_;
   Real fill_value_;
+  int derivative_order_;
   Kokkos::View<const LO*, DeviceMemorySpace> filled_points_;
   Kokkos::View<Real*, DeviceMemorySpace> x_coords_;
   Kokkos::View<Real*, DeviceMemorySpace> y_coords_;
@@ -286,9 +320,10 @@ public:
     std::shared_ptr<const BoundSource> bound,
     int derivative_order) const override
   {
-    if (derivative_order != 0) {
+    if (derivative_order > 1) {
       throw pcms_error(
-        "UniformGridSplineEvaluatorFactory2D: derivatives are not supported");
+        "UniformGridSplineEvaluatorFactory2D: derivative order " +
+        std::to_string(derivative_order) + " is not supported");
     }
     const auto& hint =
       detail::BoundSourceAs<
@@ -296,7 +331,7 @@ public:
         *bound, "UniformGridSplineEvaluatorFactory2D")
         .GetHint();
     return std::make_unique<UniformGridSplinePointEvaluator2D<>>(
-      layout_, hint, bound->Policy().fill_value);
+      layout_, hint, bound->Policy().fill_value, derivative_order);
   }
 
   CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const override
