@@ -85,14 +85,27 @@ public:
   mutable std::vector<char> hints;
 };
 
+// Evaluates a quantity, or with derivative_order 1 its gradient, which
+// Fusion-IO provides for scalar quantities of some formats.
 // Fusion-IO evaluation is not thread safe, don't call Evaluate concurrently
 class FusionIOEvaluator final : public PointEvaluator<Real>
 {
 public:
   FusionIOEvaluator(std::shared_ptr<FusionIOSource> source,
-                    std::shared_ptr<const FusionIOBoundSource> bound)
-    : source_(std::move(source)), bound_(std::move(bound))
+                    std::shared_ptr<const FusionIOBoundSource> bound,
+                    int derivative_order)
+    : source_(std::move(source)),
+      bound_(std::move(bound)),
+      derivative_order_(derivative_order)
   {
+  }
+
+  [[nodiscard]] ValueBasis OutputBasis(const ValueBasis& stored) const override
+  {
+    if (derivative_order_ == 0) {
+      return stored;
+    }
+    return FirstDerivativeBasis(stored, csys::CylindricalRThetaZ::Create());
   }
 
   void Evaluate(const Field<Real>& field,
@@ -106,9 +119,12 @@ public:
         "FusionIOFunctionSpace: field is not a quantity of this source");
     }
     const auto out = values.GetValues();
-    // Fusion-IO writes the field's components into each row.
+    // Fusion-IO writes the field's components, or the three partials of a
+    // scalar, into each row.
     const auto num_components =
-      static_cast<size_t>(field.GetLayout().GetNumComponents());
+      derivative_order_ == 0
+        ? static_cast<size_t>(field.GetLayout().GetNumComponents())
+        : size_t{3};
     const auto& points = bound_->points;
     if (out.extent(0) != points.extent(0) || out.extent(1) != num_components) {
       throw pcms_error("FusionIOFunctionSpace: output is shaped [" +
@@ -120,8 +136,15 @@ public:
     Kokkos::View<Real**, Kokkos::LayoutRight, HostMemorySpace> host_out(
       "fusion_io_values", out.extent(0), out.extent(1));
     for (size_t i = 0; i < points.extent(0); ++i) {
+      Real* row = &host_out(i, 0);
       const int status =
-        data->field->eval(&points(i, 0), &host_out(i, 0), bound_->Hint(i));
+        derivative_order_ == 0
+          ? data->field->eval(&points(i, 0), row, bound_->Hint(i))
+          : data->field->eval_deriv(&points(i, 0), row, bound_->Hint(i));
+      if (status == FIO_UNSUPPORTED && derivative_order_ > 0) {
+        throw pcms_error("FusionIOFunctionSpace: Fusion-IO does not provide "
+                         "derivatives of this quantity for this format");
+      }
       if (status == FIO_OUT_OF_BOUNDS) {
         throw pcms_error("FusionIOFunctionSpace: query point " +
                          std::to_string(i) + " is outside the source's domain");
@@ -131,6 +154,11 @@ public:
                          "point " +
                          std::to_string(i) + " (Fusion-IO error " +
                          std::to_string(status) + ")");
+      }
+      if (derivative_order_ == 1) {
+        // Fusion-IO gives the coordinate partial along phi; the physical
+        // component is (1/R) d/dphi.
+        row[1] /= points(i, 0);
       }
     }
     Kokkos::View<Real**, DeviceMemorySpace> device_out(
@@ -147,6 +175,7 @@ public:
 private:
   std::shared_ptr<FusionIOSource> source_;
   std::shared_ptr<const FusionIOBoundSource> bound_;
+  int derivative_order_;
 };
 
 } // namespace
@@ -313,13 +342,19 @@ PointEvaluatorVariant FusionIOFunctionSpace::CreatePointEvaluatorImpl(
     throw pcms_error("FusionIOFunctionSpace: only Real evaluation is "
                      "supported");
   }
-  if (derivative_order != 0) {
-    throw pcms_error("FusionIOFunctionSpace: derivatives are not supported");
+  if (derivative_order > 1) {
+    throw pcms_error("FusionIOFunctionSpace: derivative order " +
+                     std::to_string(derivative_order) + " is not supported");
+  }
+  if (derivative_order == 1 && layout_->GetNumComponents() != 1) {
+    throw pcms_error("FusionIOFunctionSpace: derivatives of vector quantities "
+                     "are not supported yet");
   }
   detail::BoundSourceAs<FusionIOBoundSource>(*bound, "FusionIOFunctionSpace");
   return std::unique_ptr<PointEvaluator<Real>>(
     std::make_unique<FusionIOEvaluator>(
-      source_, std::static_pointer_cast<const FusionIOBoundSource>(bound)));
+      source_, std::static_pointer_cast<const FusionIOBoundSource>(bound),
+      derivative_order));
 }
 
 } // namespace pcms
