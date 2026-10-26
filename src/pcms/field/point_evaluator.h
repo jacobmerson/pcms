@@ -14,15 +14,11 @@ template <typename T>
 class Field;
 
 // PointEvaluator<T> is bound to a specific set of query points. Created by
-// calling CreatePointEvaluator(coords) on either a concrete field factory or a
-// FieldEvaluatorFactory directly. Performs and caches all backend-specific
-// localization work (spatial search, barycentric coordinate computation, etc.)
-// at construction time. Evaluate may then be called repeatedly for different
-// FieldData objects at zero additional localization cost.
-//
-// Replaces the previous design's FieldEvaluator + EvaluationCache pair.
-// LocalizationHint from older code maps to the internal state of
-// PointEvaluator.
+// PointEvaluatorFactory::CreatePointEvaluator from a bound source, which holds
+// the backend-specific localization work (spatial search, barycentric
+// coordinate computation, etc.) done once by Bind and shared by every
+// evaluator created from it. Evaluate may then be called repeatedly for
+// different FieldData objects at zero additional localization cost.
 //
 // Field compatibility with a PointEvaluator is a precondition of Evaluate.
 // Implementations should check this with a cheap backend-specific identity

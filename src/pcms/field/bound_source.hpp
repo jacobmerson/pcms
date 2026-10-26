@@ -1,0 +1,105 @@
+#ifndef PCMS_FIELD_BOUND_SOURCE_HPP
+#define PCMS_FIELD_BOUND_SOURCE_HPP
+
+#include "pcms/field/evaluation_request.h"
+#include "pcms/field/field_layout.h"
+#include "pcms/field/out_of_bounds_policy.h"
+#include "pcms/utility/arrays.h"
+#include "pcms/utility/memory_spaces.h"
+#include "pcms/utility/types.h"
+#include <Kokkos_Core.hpp>
+#include <memory>
+
+namespace pcms
+{
+
+class PointEvaluatorFactory;
+
+// The result of binding a source to one query point set: everything the source
+// computes per point (its point search), owned and complete. It does not
+// depend on the value type, the derivative order or the field, so every
+// evaluator created from it at that point set shares the search. Backends
+// subclass it; callers treat it as opaque.
+//
+// Evaluators sharing a bound source may share mutable per-point state, so they
+// must not be evaluated concurrently.
+class BoundSource
+{
+public:
+  [[nodiscard]] LO NumPoints() const noexcept { return num_points_; }
+
+  [[nodiscard]] const OutOfBoundsPolicy& Policy() const noexcept
+  {
+    return policy_;
+  }
+
+  /// Layout whose DOF holders are the bound points; null when bound to raw
+  /// points.
+  [[nodiscard]] const FieldLayout* QueryLayout() const noexcept
+  {
+    return query_layout_.get();
+  }
+
+  virtual ~BoundSource() noexcept = default;
+
+  BoundSource(const BoundSource&) = delete;
+  BoundSource& operator=(const BoundSource&) = delete;
+
+protected:
+  explicit BoundSource(const EvaluationRequest& request)
+    : num_points_(static_cast<LO>(request.coords.GetValues().extent(0))),
+      policy_(request.policy),
+      query_layout_(request.query_layout)
+  {
+  }
+
+private:
+  // PointEvaluatorFactory::Bind records which factory bound this object, so
+  // CreatePointEvaluator can reject one bound by another factory.
+  friend class PointEvaluatorFactory;
+  const PointEvaluatorFactory* bound_by_ = nullptr;
+
+  LO num_points_;
+  OutOfBoundsPolicy policy_;
+  std::shared_ptr<const FieldLayout> query_layout_;
+};
+
+namespace detail
+{
+
+/// Bound source of a backend that searches when its evaluators are created:
+/// it keeps the request, with its own copy of raw query points.
+class DeferredBoundSource final : public BoundSource
+{
+public:
+  explicit DeferredBoundSource(const EvaluationRequest& request);
+
+  /// The request as bound, valid for this object's lifetime.
+  [[nodiscard]] const EvaluationRequest& Request() const noexcept
+  {
+    return request_;
+  }
+
+private:
+  Kokkos::View<Real**, DeviceMemorySpace> points_;
+  EvaluationRequest request_;
+};
+
+/// Downcasts a bound source to the type the backend binds; throws if it is
+/// another backend's.
+template <typename Bound>
+const Bound& BoundSourceAs(const BoundSource& bound, const char* context)
+{
+  const auto* typed = dynamic_cast<const Bound*>(&bound);
+  if (typed == nullptr) {
+    throw pcms_error(std::string(context) +
+                     ": the bound source was not created by this backend");
+  }
+  return *typed;
+}
+
+} // namespace detail
+
+} // namespace pcms
+
+#endif // PCMS_FIELD_BOUND_SOURCE_HPP
