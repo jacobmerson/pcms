@@ -4,6 +4,7 @@
 #include "field_layout.h"
 #include "pcms/field/coordinate_view.hpp"
 #include "evaluation_request.h"
+#include "pcms/field/bound_source.hpp"
 #include "out_of_bounds_policy.h"
 #include "point_evaluator.h"
 #include "pcms/utility/arrays.h"
@@ -27,7 +28,7 @@ namespace pcms
 //   - A PointEvaluator created by this factory may be reused with multiple
 //     FieldData objects only when they are compatible with this factory's
 //     layout/backend contract.
-//   - OutOfBoundsPolicy is fixed at evaluator creation time.
+//   - OutOfBoundsPolicy is fixed when the factory is bound to query points.
 //
 // FieldEvaluatorFactory<T> is a standalone abstract type rather than being
 // merged into concrete field factories (LagrangeFunctionSpace, etc.). This is
@@ -37,8 +38,7 @@ namespace pcms
 // own field creation interface.
 //
 // Concrete field factories store a FieldEvaluatorFactory<T> by composition and
-// expose CreatePointEvaluator(request) as a convenience that delegates to the
-// internal factory.
+// implement their BindImpl and CreatePointEvaluatorImpl by delegating to it.
 //
 // Example (sketch of a concrete field factory):
 //
@@ -47,9 +47,12 @@ namespace pcms
 //     std::unique_ptr<FieldData<Real>>   CreateFieldReal() const;
 //     std::shared_ptr<const FieldLayout> GetLayout() const;
 //
-//     // convenience — delegates to the internal FieldEvaluatorFactory:
-//     std::unique_ptr<PointEvaluator<Real>> CreatePointEvaluator(
-//       const EvaluationRequest& request) const;
+//     // delegate to the internal FieldEvaluatorFactory:
+//     std::shared_ptr<BoundSource> BindImpl(
+//       const EvaluationRequest& request) const override;
+//     PointEvaluatorVariant CreatePointEvaluatorImpl(
+//       Type value_type, std::shared_ptr<const BoundSource> bound,
+//       int derivative_order) const override;
 //
 //   private:
 //     std::shared_ptr<FieldEvaluatorFactory<Real>> evaluator_factory_;
@@ -71,15 +74,19 @@ public:
   // NearestBoundary is requested via OutOfBoundsPolicy.
   virtual bool SupportsNearestBoundary() const = 0;
 
-  // Performs all localization work for the given evaluation request and
-  // returns a PointEvaluator that caches the resolved evaluation state. The
-  // PointEvaluator may be reused across Evaluate calls as long as the query
-  // points and underlying geometry/layout remain unchanged. Implementations may
-  // discard construction-time request metadata once the cached evaluator state
-  // has been built. On misuse or unsupported capability, implementations
+  // Performs all localization work for the request's query points and returns
+  // it as a bound source that every evaluator created from it shares.
+  // Implementations copy what they keep, so the request's points may be
+  // released on return. On misuse or unsupported capability, implementations
   // should throw pcms_error.
-  virtual std::unique_ptr<PointEvaluator<T>> CreatePointEvaluator(
+  virtual std::shared_ptr<BoundSource> Bind(
     const EvaluationRequest& request) const = 0;
+
+  // Creates an evaluator over the points `bound` was bound to, without
+  // searching again. `bound` must come from this factory's Bind. Throws
+  // pcms_error for a derivative order the backend cannot evaluate.
+  virtual std::unique_ptr<PointEvaluator<T>> CreatePointEvaluator(
+    std::shared_ptr<const BoundSource> bound, int derivative_order) const = 0;
 
   virtual ~FieldEvaluatorFactory() noexcept = default;
 };
