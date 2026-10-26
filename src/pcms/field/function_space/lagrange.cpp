@@ -278,8 +278,20 @@ FieldVariant LagrangeFunctionSpace::CreateFieldImpl(FieldDataVariant data) const
     std::move(data));
 }
 
+std::shared_ptr<BoundSource> LagrangeFunctionSpace::BindImpl(
+  const EvaluationRequest& request) const
+{
+  if (!evaluator_factory_) {
+    throw pcms_error("LagrangeFunctionSpace::Bind: evaluator construction is "
+                     "not available for this "
+                     "backend");
+  }
+  return evaluator_factory_->Bind(request);
+}
+
 PointEvaluatorVariant LagrangeFunctionSpace::CreatePointEvaluatorImpl(
-  Type value_type, const EvaluationRequest& request) const
+  Type value_type, std::shared_ptr<const BoundSource> bound,
+  int derivative_order) const
 {
   if (value_type != Type::Real) {
     throw pcms_error(
@@ -290,7 +302,8 @@ PointEvaluatorVariant LagrangeFunctionSpace::CreatePointEvaluatorImpl(
       "LagrangeFunctionSpace::CreatePointEvaluatorImpl: evaluator construction "
       "is not available for this backend");
   }
-  return evaluator_factory_->CreatePointEvaluator(request);
+  return evaluator_factory_->CreatePointEvaluator(std::move(bound),
+                                                  derivative_order);
 }
 
 } // namespace pcms

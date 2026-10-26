@@ -44,7 +44,7 @@ public:
 
   bool SupportsNearestBoundary() const override { return false; }
 
-  std::unique_ptr<PointEvaluator<Real>> CreatePointEvaluator(
+  std::shared_ptr<BoundSource> Bind(
     const EvaluationRequest& request) const override
   {
     const auto coords = request.coords;
@@ -83,12 +83,37 @@ public:
       supports = localization_->Build(coords);
     }
 
+    return std::make_shared<detail::HintBoundSource<MLSBinding>>(
+      request, MLSBinding{std::move(source_coords), std::move(target_coords_oh),
+                          std::move(supports)});
+  }
+
+  std::unique_ptr<PointEvaluator<Real>> CreatePointEvaluator(
+    std::shared_ptr<const BoundSource> bound,
+    int derivative_order) const override
+  {
+    if (derivative_order != 0) {
+      throw pcms_error(
+        "PointCloudEvaluatorFactory: derivatives are not supported");
+    }
+    const auto& binding =
+      detail::BoundSourceAs<detail::HintBoundSource<MLSBinding>>(
+        *bound, "PointCloudEvaluatorFactory")
+        .GetHint();
     return std::make_unique<MLSPointEvaluator<>>(
-      std::move(source_coords), std::move(target_coords_oh),
-      std::move(supports), dim, options_);
+      binding.source_coords, binding.target_coords, binding.supports,
+      layout_->GetDimension(), options_);
   }
 
 private:
+  // The MLS supports of the bound points and the coordinates the solve uses.
+  struct MLSBinding
+  {
+    Omega_h::Reals source_coords;
+    Omega_h::Reals target_coords;
+    SupportResults supports;
+  };
+
   std::shared_ptr<const FieldLayout> layout_;
   std::shared_ptr<LocalizationFactory> localization_;
   MLSOptions options_;

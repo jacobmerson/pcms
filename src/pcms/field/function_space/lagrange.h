@@ -94,8 +94,12 @@ protected:
   [[nodiscard]] FieldVariant CreateFieldImpl(
     FieldDataVariant data) const override;
 
+  [[nodiscard]] std::shared_ptr<BoundSource> BindImpl(
+    const EvaluationRequest& request) const override;
+
   [[nodiscard]] PointEvaluatorVariant CreatePointEvaluatorImpl(
-    Type value_type, const EvaluationRequest& request) const override;
+    Type value_type, std::shared_ptr<const BoundSource> bound,
+    int derivative_order) const override;
 
 private:
   std::shared_ptr<const FieldLayout> layout_;

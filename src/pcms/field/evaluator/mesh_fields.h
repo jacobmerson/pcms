@@ -115,7 +115,7 @@ public:
 
   bool SupportsNearestBoundary() const override { return false; }
 
-  std::unique_ptr<PointEvaluator<T>> CreatePointEvaluator(
+  std::shared_ptr<BoundSource> Bind(
     const EvaluationRequest& request) const override
   {
     PCMS_FUNCTION_TIMER;
@@ -143,8 +143,26 @@ public:
     MeshFieldsAdapter2LocalizationHint hint(mesh_, results, coords_search,
                                             owning_ids, policy.mode);
 
+    return std::make_shared<
+      detail::HintBoundSource<MeshFieldsAdapter2LocalizationHint>>(
+      request, std::move(hint));
+  }
+
+  std::unique_ptr<PointEvaluator<T>> CreatePointEvaluator(
+    std::shared_ptr<const BoundSource> bound,
+    int derivative_order) const override
+  {
+    if (derivative_order != 0) {
+      throw pcms_error(
+        "MeshFieldsEvaluatorFactory: derivatives are not supported");
+    }
+    const auto& hint =
+      detail::BoundSourceAs<
+        detail::HintBoundSource<MeshFieldsAdapter2LocalizationHint>>(
+        *bound, "MeshFieldsEvaluatorFactory")
+        .GetHint();
     return std::make_unique<MeshFieldsPointEvaluator<T>>(
-      layout_, std::move(hint), policy.fill_value);
+      layout_, hint, bound->Policy().fill_value);
   }
 
   CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const override
