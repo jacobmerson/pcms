@@ -244,6 +244,31 @@ inline const VarianceSignature Tensor{Variance::Contravariant,
 
 } // namespace values
 
+/// Basis of the first derivatives of values stored in `stored`, taken with
+/// respect to the coordinates of `system`: the stored indices with one
+/// covariant index in front, so component (i, j...) is the derivative along
+/// coordinate i of stored component (j...). Components are physical on
+/// orthogonal systems and natural otherwise. Only scalar values are supported
+/// so far: derivatives of vector components are not tensor components without
+/// the system's connection terms.
+[[nodiscard]] inline ValueBasis FirstDerivativeBasis(
+  const ValueBasis& stored, std::shared_ptr<const CoordinateSystem> system)
+{
+  if (stored.Rank() != 0) {
+    throw pcms_error("FirstDerivativeBasis: derivatives of rank-" +
+                     std::to_string(stored.Rank()) +
+                     " values are not supported yet");
+  }
+  if (system == nullptr) {
+    throw pcms_error(
+      "FirstDerivativeBasis: derivatives require a coordinate system");
+  }
+  const ComponentScaling scaling = system->HasOrthogonalBasis()
+                                     ? ComponentScaling::Physical
+                                     : ComponentScaling::Natural;
+  return ValueBasis{std::move(system), scaling, values::Covector};
+}
+
 // view for field values that is tagged with the coordinate system
 template <typename ElementType, typename MemorySpace,
           typename LayoutPolicy =

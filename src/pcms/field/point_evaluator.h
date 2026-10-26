@@ -30,11 +30,12 @@ class Field;
 // The caller must provide the full output buffer. Successful Evaluate calls
 // fill the entire buffer.
 //
-// The write is tagged: an evaluator produces the source field's stored value
-// basis, so the ValueView the caller supplies must claim that basis (all
-// rank-0 bases compare equal, so scalar callers may tag with ValueBasis{}).
-// Implementations gate on it with CheckEvaluateWriteTag and throw pcms_error
-// on mismatch.
+// The write is tagged: an evaluator produces OutputBasis(stored) for a field
+// stored in basis `stored` -- the stored basis itself for values, and one more
+// covariant index for derivatives -- so the ValueView the caller supplies must
+// claim that basis (all rank-0 bases compare equal, so scalar callers may tag
+// with ValueBasis{}). Implementations gate on it with CheckEvaluateWriteTag
+// and throw pcms_error on mismatch.
 template <typename T,
           typename LayoutPolicy =
             detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
@@ -60,14 +61,14 @@ public:
   virtual ~PointEvaluator() noexcept = default;
 
 protected:
-  /// Throws pcms_error unless the output view claims the source field's
-  /// stored value basis, which is what every evaluator writes.
-  static void CheckEvaluateWriteTag(
+  /// Throws pcms_error unless the output view claims the basis this evaluator
+  /// writes for the source field, OutputBasis of its stored basis.
+  void CheckEvaluateWriteTag(
     const char* context, const Field<T>& field,
-    const ValueView<T, DeviceMemorySpace, LayoutPolicy>& values)
+    const ValueView<T, DeviceMemorySpace, LayoutPolicy>& values) const
   {
-    detail::CheckWrittenValueBasis(context, values.GetBasis(),
-                                   field.GetData().GetValueBasis());
+    detail::CheckWrittenValueBasis(
+      context, values.GetBasis(), OutputBasis(field.GetData().GetValueBasis()));
   }
 };
 
