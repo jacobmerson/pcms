@@ -4,10 +4,7 @@
 #include "pcms/field/evaluation_request.h"
 #include "pcms/field/field_layout.h"
 #include "pcms/field/out_of_bounds_policy.h"
-#include "pcms/utility/arrays.h"
-#include "pcms/utility/memory_spaces.h"
 #include "pcms/utility/types.h"
-#include <Kokkos_Core.hpp>
 #include <memory>
 #include <string>
 #include <utility>
@@ -68,24 +65,6 @@ private:
 
 namespace detail
 {
-
-/// Bound source of a backend that searches when its evaluators are created:
-/// it keeps the request, with its own copy of raw query points.
-class DeferredBoundSource final : public BoundSource
-{
-public:
-  explicit DeferredBoundSource(const EvaluationRequest& request);
-
-  /// The request as bound, valid for this object's lifetime.
-  [[nodiscard]] const EvaluationRequest& Request() const noexcept
-  {
-    return request_;
-  }
-
-private:
-  Kokkos::View<Real**, DeviceMemorySpace> points_;
-  EvaluationRequest request_;
-};
 
 /// Bound source of a backend whose search result is one copyable value, such
 /// as a struct of Kokkos views that evaluators copy.

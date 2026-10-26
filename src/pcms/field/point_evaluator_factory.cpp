@@ -48,31 +48,4 @@ void PointEvaluatorFactory::CheckBoundByThis(const BoundSource& bound) const
   }
 }
 
-std::shared_ptr<BoundSource> PointEvaluatorFactory::BindImpl(
-  const EvaluationRequest& request) const
-{
-  return std::make_shared<detail::DeferredBoundSource>(request);
-}
-
-PointEvaluatorVariant PointEvaluatorFactory::CreatePointEvaluatorImpl(
-  Type value_type, std::shared_ptr<const BoundSource> bound,
-  int derivative_order) const
-{
-  if (derivative_order != 0) {
-    throw pcms_error("CreatePointEvaluator: this source does not evaluate "
-                     "derivatives (requested order " +
-                     std::to_string(derivative_order) + ")");
-  }
-  const auto& deferred = detail::BoundSourceAs<detail::DeferredBoundSource>(
-    *bound, "PointEvaluatorFactory::CreatePointEvaluatorImpl");
-  return CreatePointEvaluatorImpl(value_type, deferred.Request());
-}
-
-PointEvaluatorVariant PointEvaluatorFactory::CreatePointEvaluatorImpl(
-  Type, const EvaluationRequest&) const
-{
-  throw pcms_error("CreatePointEvaluator: this source implements neither "
-                   "BindImpl nor CreatePointEvaluatorImpl");
-}
-
 } // namespace pcms

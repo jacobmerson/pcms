@@ -71,23 +71,18 @@ public:
   virtual ~PointEvaluatorFactory() noexcept = default;
 
 protected:
-  /// Performs the per-point work for `request`, whose points are in
-  /// GetCoordinateSystem(). The default defers the search to
-  /// CreatePointEvaluatorImpl(Type, const EvaluationRequest&).
+  /// Performs every per-point computation for `request`, whose points are in
+  /// GetCoordinateSystem(), and returns the results. Implementations copy what
+  /// they keep: the request's points may be released on return.
   virtual std::shared_ptr<BoundSource> BindImpl(
-    const EvaluationRequest& request) const;
+    const EvaluationRequest& request) const = 0;
 
-  /// Creates an evaluator from a bound source produced by BindImpl. The default
-  /// serves the deferred bound source of the default BindImpl, for values
-  /// only.
+  /// Creates an evaluator from a bound source this factory's BindImpl
+  /// produced. Throws pcms_error for a value type or derivative order the
+  /// source cannot evaluate.
   virtual PointEvaluatorVariant CreatePointEvaluatorImpl(
     Type value_type, std::shared_ptr<const BoundSource> bound,
-    int derivative_order) const;
-
-  /// Searches and creates an evaluator in one step. Implemented by backends
-  /// that do not implement BindImpl.
-  virtual PointEvaluatorVariant CreatePointEvaluatorImpl(
-    Type value_type, const EvaluationRequest& request) const;
+    int derivative_order) const = 0;
 
 private:
   std::shared_ptr<const BoundSource> BindRequest(
