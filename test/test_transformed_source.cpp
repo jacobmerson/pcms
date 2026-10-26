@@ -18,7 +18,6 @@ using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
 using pcms::ComponentScaling;
 using pcms::DeviceMemorySpace;
-using pcms::EvaluationRequest;
 using pcms::GO;
 using pcms::HostMemorySpace;
 using pcms::LagrangeFunctionSpace;
@@ -102,8 +101,8 @@ TEST_CASE("TransformedSource: scalar evaluation maps the query points")
 
   const auto pts = tgt->GetLayout()->GetDOFHolderCoordinates();
   const int n = static_cast<int>(pts.GetValues().extent(0));
-  auto evaluator = src_as_cartesian.CreatePointEvaluator<Real>(
-    EvaluationRequest::FromCoordinates(pts));
+  auto evaluator =
+    src_as_cartesian.CreatePointEvaluator<Real>(src_as_cartesian.Bind(pts));
   REQUIRE(SameValueBasis(evaluator->OutputBasis(ValueBasis{}), ValueBasis{}));
 
   const auto coords = pcms::test::CopyCoordinatesToHost(pts.GetValues());
@@ -135,8 +134,8 @@ TEST_CASE("TransformedSource: vector evaluation rotates into the target basis")
     src, std::make_shared<pcms::CartesianToCylindrical>());
   const auto pts = tgt->GetLayout()->GetDOFHolderCoordinates();
   const int n = static_cast<int>(pts.GetValues().extent(0));
-  auto evaluator = src_as_cartesian.CreatePointEvaluator<Real>(
-    EvaluationRequest::FromCoordinates(pts));
+  auto evaluator =
+    src_as_cartesian.CreatePointEvaluator<Real>(src_as_cartesian.Bind(pts));
   REQUIRE(SameValueBasis(evaluator->OutputBasis(CylindricalVector()),
                          CartesianVector()));
   REQUIRE(SameValueBasis(evaluator->OutputBasis(CartesianVector()),
@@ -193,8 +192,7 @@ TEST_CASE("TransformedSource: FILL rows survive the rotation untouched")
   const auto pts = tgt->GetLayout()->GetDOFHolderCoordinates();
   const int n = static_cast<int>(pts.GetValues().extent(0));
   auto evaluator = src_as_cartesian.CreatePointEvaluator<Real>(
-    EvaluationRequest::FromCoordinates(
-      pts, OutOfBoundsPolicy{OutOfBoundsMode::FILL, fill}));
+    src_as_cartesian.Bind(pts, OutOfBoundsPolicy{OutOfBoundsMode::FILL, fill}));
 
   const auto coords = pcms::test::CopyCoordinatesToHost(pts.GetValues());
   const auto result = EvaluateToHost(*evaluator, b, CartesianVector(), n, 3);
@@ -238,8 +236,7 @@ TEST_CASE("TransformedSource: in-bounds values equal to the fill value are "
   const auto pts = tgt->GetLayout()->GetDOFHolderCoordinates();
   const int n = static_cast<int>(pts.GetValues().extent(0));
   auto evaluator = src_as_cartesian.CreatePointEvaluator<Real>(
-    EvaluationRequest::FromCoordinates(
-      pts, OutOfBoundsPolicy{OutOfBoundsMode::FILL, fill}));
+    src_as_cartesian.Bind(pts, OutOfBoundsPolicy{OutOfBoundsMode::FILL, fill}));
 
   const auto coords = pcms::test::CopyCoordinatesToHost(pts.GetValues());
   const auto result = EvaluateToHost(*evaluator, b, CartesianVector(), n, 3);
@@ -292,7 +289,7 @@ TEST_CASE("TransformedSource: evaluator creation and evaluation errors")
       cart_pts, pcms::csys::CylindricalRThetaZ::Create(), 3);
     REQUIRE_THROWS_WITH(
       src_as_cartesian.CreatePointEvaluator<Real>(
-        EvaluationRequest::FromCoordinates(cyl_query.coordinate_view)),
+        src_as_cartesian.Bind(cyl_query.coordinate_view)),
       ContainsSubstring("not the factory's coordinate system"));
   }
 
@@ -301,10 +298,9 @@ TEST_CASE("TransformedSource: evaluator creation and evaluation errors")
     // No in-tree backend evaluates integer fields at points, so a
     // TransformedSource simply forwards the inner factory's refusal; the
     // T != Real guard in TransformedPointEvaluator::Evaluate is defensive.
-    REQUIRE_THROWS_WITH(
-      src_as_cartesian.CreatePointEvaluator<GO>(
-        EvaluationRequest::FromCoordinates(query.coordinate_view)),
-      ContainsSubstring("only supports double"));
+    REQUIRE_THROWS_WITH(src_as_cartesian.CreatePointEvaluator<GO>(
+                          src_as_cartesian.Bind(query.coordinate_view)),
+                        ContainsSubstring("only supports double"));
   }
 }
 
@@ -380,7 +376,7 @@ TEST_CASE("TransformedSource: nesting composes maps and rotations")
     cyl_pts, pcms::csys::CylindricalRThetaZ::Create(), 3);
   const int n = 3;
   auto evaluator = src_as_cylindrical.CreatePointEvaluator<Real>(
-    EvaluationRequest::FromCoordinates(query.coordinate_view));
+    src_as_cylindrical.Bind(query.coordinate_view));
   const auto result = EvaluateToHost(*evaluator, b, CylindricalVector(), n, 3);
   for (int i = 0; i < n; ++i) {
     CAPTURE(i);

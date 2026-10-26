@@ -128,7 +128,6 @@ TEST_CASE("UniformGrid order-0 field creation and evaluation")
   auto field_space = pcms::LagrangeFunctionSpace::FromUniformGrid(
     grid, 1, pcms::csys::Cartesian::Deferred(), 0);
   auto field = field_space->CreateFunction<pcms::Real>();
-  pcms::UniformGridEvaluatorFactory<2> eval_factory(layout);
 
   REQUIRE(layout->GetOrder() == 0);
   REQUIRE(layout->GetNumOwnedDofHolder() == 4);
@@ -150,10 +149,8 @@ TEST_CASE("UniformGrid order-0 field creation and evaluation")
                                          1.0, 9.0, 9.0, 9.0};
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     eval_coords, pcms::csys::Cartesian::Deferred());
-  auto evaluator = eval_factory.CreatePointEvaluator(
-    eval_factory.Bind(
-      pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view)),
-    0);
+  auto evaluator = field_space->CreatePointEvaluator<pcms::Real>(
+    field_space->Bind(device_coords.coordinate_view));
 
   Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> results_device(
     "results_device", 4, 1);
@@ -207,7 +204,6 @@ TEST_CASE("UniformGrid field evaluation - piecewise constant")
   auto field_space = pcms::LagrangeFunctionSpace::FromUniformGrid(
     grid, 1, pcms::csys::Cartesian::Deferred());
   auto field = field_space->CreateFunction<pcms::Real>();
-  pcms::UniformGridEvaluatorFactory<2> eval_factory(layout);
 
   // Set vertex values for a 2x2 cell grid (3x3 = 9 vertices)
   // Vertex layout:
@@ -233,10 +229,8 @@ TEST_CASE("UniformGrid field evaluation - piecewise constant")
   };
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     eval_coords, pcms::csys::Cartesian::Deferred());
-  auto evaluator = eval_factory.CreatePointEvaluator(
-    eval_factory.Bind(
-      pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view)),
-    0);
+  auto evaluator = field_space->CreatePointEvaluator<pcms::Real>(
+    field_space->Bind(device_coords.coordinate_view));
 
   Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> results_device(
     "results_device", 4, 1);
@@ -673,7 +667,6 @@ TEST_CASE("UniformGrid Order-1 multi-component field evaluation")
   auto field_space = pcms::LagrangeFunctionSpace::FromUniformGrid(
     grid, num_components, pcms::csys::Cartesian::Deferred());
   auto field = field_space->CreateFunction<pcms::Real>();
-  pcms::UniformGridEvaluatorFactory<2> eval_factory(layout);
 
   // Vertex layout:
   //   v6---v7---v8
@@ -713,10 +706,8 @@ TEST_CASE("UniformGrid Order-1 multi-component field evaluation")
   };
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     eval_coords, pcms::csys::Cartesian::Deferred());
-  auto evaluator = eval_factory.CreatePointEvaluator(
-    eval_factory.Bind(
-      pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view)),
-    0);
+  auto evaluator = field_space->CreatePointEvaluator<pcms::Real>(
+    field_space->Bind(device_coords.coordinate_view));
 
   Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> results_device(
     "results_device", num_points, num_components);
@@ -755,7 +746,6 @@ TEST_CASE("UniformGrid Order-0 multi-component field (regression)")
   auto field_space = pcms::LagrangeFunctionSpace::FromUniformGrid(
     grid, num_components, pcms::csys::Cartesian::Deferred(), 0);
   auto field = field_space->CreateFunction<pcms::Real>();
-  pcms::UniformGridEvaluatorFactory<2> eval_factory(layout);
 
   // Set cell values (4 cells, 2 components each)
   std::vector<pcms::Real> data = {
@@ -780,10 +770,8 @@ TEST_CASE("UniformGrid Order-0 multi-component field (regression)")
   };
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     eval_coords, pcms::csys::Cartesian::Deferred());
-  auto evaluator = eval_factory.CreatePointEvaluator(
-    eval_factory.Bind(
-      pcms::EvaluationRequest::FromCoordinates(device_coords.coordinate_view)),
-    0);
+  auto evaluator = field_space->CreatePointEvaluator<pcms::Real>(
+    field_space->Bind(device_coords.coordinate_view));
 
   Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> results_device(
     "results_device", 4, num_components);

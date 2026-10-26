@@ -479,9 +479,8 @@ void CheckEvaluation(const PointEvaluator<Real>& evaluator,
   }
 }
 
-// Overload that creates the evaluator from any factory with
-// CreatePointEvaluator and GetCoordinateSystem (e.g. LagrangeFunctionSpace,
-// FieldEvaluatorFactory<Real>).
+// Overload that creates the evaluator from any point evaluator factory (e.g.
+// LagrangeFunctionSpace).
 template <typename Factory, typename ExecutionSpace = DefaultExecutionSpace,
           typename Func>
 void CheckEvaluation(const Factory& factory, const Field<Real>& field,
@@ -491,7 +490,7 @@ void CheckEvaluation(const Factory& factory, const Field<Real>& field,
   auto device_coords =
     CreateDeviceCoordinateView(pts, factory->GetCoordinateSystem());
   auto evaluator = factory->template CreatePointEvaluator<Real>(
-    EvaluationRequest::FromCoordinates(device_coords.coordinate_view));
+    factory->Bind(device_coords.coordinate_view));
   CheckEvaluation<ExecutionSpace>(*evaluator, field, pts, func, abs_tol);
 }
 
@@ -539,7 +538,7 @@ void CheckFillMode(const Factory& factory, const Field<Real>& field,
     CreateDeviceCoordinateView(outside_pts, factory->GetCoordinateSystem());
   OutOfBoundsPolicy policy{OutOfBoundsMode::FILL, fill_value};
   auto evaluator = factory->template CreatePointEvaluator<Real>(
-    EvaluationRequest::FromCoordinates(device_coords.coordinate_view, policy));
+    factory->Bind(device_coords.coordinate_view, policy));
   CheckFillMode(*evaluator, field, fill_value, outside_pts);
 }
 
@@ -559,7 +558,7 @@ void CheckEvaluationWithFill(const Factory& factory, const Field<Real>& field,
     CreateDeviceCoordinateView(pts, factory->GetCoordinateSystem());
   OutOfBoundsPolicy policy{OutOfBoundsMode::FILL, fill_value};
   auto evaluator = factory->template CreatePointEvaluator<Real>(
-    EvaluationRequest::FromCoordinates(device_coords.coordinate_view, policy));
+    factory->Bind(device_coords.coordinate_view, policy));
 
   Kokkos::View<Real**, DeviceMemorySpace> out_device("out_device", n, 1);
   evaluator->Evaluate(field, TagLike(field, out_device));
@@ -596,8 +595,8 @@ inline void EvaluateAndAssemble(
 {
   const auto& pts = integrator.GetIntegrationPoints();
   const std::size_t npts = pts.GetValues().extent(0);
-  auto evaluator = source_space->CreatePointEvaluator<Real>(
-    EvaluationRequest::FromCoordinates(pts));
+  auto evaluator =
+    source_space->CreatePointEvaluator<Real>(source_space->Bind(pts));
   Kokkos::View<Real**, DeviceMemorySpace> sampled("sampled", npts, 1);
   evaluator->Evaluate(source_field, TagLike(source_field, sampled));
   integrator.Assemble(MakeConstRank2View(sampled));
