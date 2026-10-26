@@ -15,29 +15,17 @@ namespace pcms
 template <typename T>
 class Field;
 
-// PointEvaluator<T> is bound to a specific set of query points. Created by
-// PointEvaluatorFactory::CreatePointEvaluator from a bound source, which holds
-// the backend-specific localization work (spatial search, barycentric
-// coordinate computation, etc.) done once by Bind and shared by every
-// evaluator created from it. Evaluate may then be called repeatedly for
-// different FieldData objects at zero additional localization cost.
-//
-// Field compatibility with a PointEvaluator is a precondition of Evaluate.
-// Implementations should check this with a cheap backend-specific identity
-// check rather than deep structural comparison and should throw pcms_error on
-// mismatch.
-//
-// Evaluate writes results into a tagged rank-2 output view with shape:
-//   [NumPoints()][num_components of the field]
-// The caller must provide the full output buffer. Successful Evaluate calls
-// fill the entire buffer.
-//
-// The write is tagged: the ValueView the caller supplies must claim
-// OutputBasis(stored basis of the field) (all rank-0 bases compare equal, so
-// scalar callers may tag with ValueBasis{}).
-//
-// Evaluate checks the output's shape and tag before calling EvaluateImpl, so
-// implementations may assume both.
+/// @brief Evaluates fields at a fixed set of query points.
+///
+/// Created by PointEvaluatorFactory::CreatePointEvaluator from a bound source.
+/// Evaluate writes OutputBasis(stored basis of the field): the stored basis for
+/// values, with one covariant index added per derivative order. The output has
+/// one row per query point and the field's number of components times the
+/// coordinate dimension per added index as columns. Implementations of
+/// EvaluateImpl may assume the output's shape and basis are checked, and throw
+/// pcms_error for an incompatible field.
+/// @tparam T field value type
+/// @tparam LayoutPolicy layout of the output view
 template <typename T,
           typename LayoutPolicy =
             detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
@@ -46,7 +34,7 @@ class PointEvaluator
 public:
   /// Writes the field's values at the query points into `values`.
   /// @throws std::invalid_argument if `values` is not shaped
-  ///         [NumPoints()][number of components of the field]
+  ///         [NumPoints()][number of output components]
   /// @throws pcms_error if `values` does not claim the basis this evaluator
   ///         writes for the field
   void Evaluate(const Field<T>& field,
@@ -88,15 +76,21 @@ private:
     const ValueView<T, DeviceMemorySpace, LayoutPolicy>& values) const
   {
     const auto num_points = static_cast<size_t>(NumPoints());
-    const auto num_components =
+    // the field's components times the dimension per index OutputBasis adds
+    const ValueBasis stored = field.GetData().GetValueBasis();
+    const ValueBasis written = OutputBasis(stored);
+    auto num_components =
       static_cast<size_t>(field.GetLayout().GetNumComponents());
+    for (int i = stored.Rank(); i < written.Rank(); ++i) {
+      num_components *= static_cast<size_t>(written.system->Dimension());
+    }
     if (values.extent(0) != num_points || values.extent(1) != num_components) {
       throw std::invalid_argument(
         "PointEvaluator::Evaluate: the output view is shaped [" +
         std::to_string(values.extent(0)) + "][" +
         std::to_string(values.extent(1)) + "] but must be [" +
         std::to_string(num_points) + "][" + std::to_string(num_components) +
-        "] (query points x field components)");
+        "] (query points x output components)");
     }
   }
 };
