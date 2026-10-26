@@ -160,14 +160,27 @@ public:
   mutable std::vector<std::array<double, 2>> guesses;
 };
 
-// NIMROD evaluation is not thread safe, don't call Evaluate concurrently
+// Evaluates a quantity, or with derivative_order 1 the gradient of a scalar
+// quantity. NIMROD evaluation is not thread safe, don't call Evaluate
+// concurrently.
 class NimrodEvaluator final : public PointEvaluator<Real>
 {
 public:
   NimrodEvaluator(std::shared_ptr<NimrodSource> source,
-                  std::shared_ptr<const NimrodBoundSource> bound)
-    : source_(std::move(source)), bound_(std::move(bound))
+                  std::shared_ptr<const NimrodBoundSource> bound,
+                  int derivative_order)
+    : source_(std::move(source)),
+      bound_(std::move(bound)),
+      derivative_order_(derivative_order)
   {
+  }
+
+  [[nodiscard]] ValueBasis OutputBasis(const ValueBasis& stored) const override
+  {
+    if (derivative_order_ == 0) {
+      return stored;
+    }
+    return FirstDerivativeBasis(stored, csys::CylindricalRThetaZ::Create());
   }
 
   void Evaluate(const Field<Real>& field,
@@ -184,16 +197,21 @@ public:
     const auto& points = bound_->points;
     auto& guesses = bound_->guesses;
     const int num_components = field.GetLayout().GetNumComponents();
+    // A scalar's gradient has three components.
+    const int num_outputs = derivative_order_ == 0 ? num_components : 3;
     if (out.extent(0) != points.extent(0) ||
-        out.extent(1) != static_cast<size_t>(num_components)) {
+        out.extent(1) != static_cast<size_t>(num_outputs)) {
       throw pcms_error("NimrodFunctionSpace: output is shaped [" +
                        std::to_string(out.extent(0)) + "][" +
                        std::to_string(out.extent(1)) + "] but expected [" +
                        std::to_string(points.extent(0)) + "][" +
-                       std::to_string(num_components) + "]");
+                       std::to_string(num_outputs) + "]");
     }
     const bool vector = data->GetValueType() == FieldValueType::Vector;
-    const int dmode = 0;
+    const int dmode = derivative_order_;
+    // NIMROD writes the value and, for dmode 1, (d/dR, d/dZ, (1/R) d/dphi)
+    // after it.
+    std::array<double, 4> scalar_and_gradient{};
     Kokkos::View<Real**, Kokkos::LayoutRight, HostMemorySpace> host_out(
       "nimrod_values", out.extent(0), out.extent(1));
     for (size_t i = 0; i < points.extent(0); ++i) {
@@ -206,14 +224,20 @@ public:
         guess = guesses[i - 1];
       }
       int ifail = 0;
-      c_eval_field_dm(rzp.data(), data->quantity.c_str(), &host_out(i, 0),
-                      &num_components, guess.data(), &ifail, &dmode, &data->eq);
+      double* fval = dmode == 0 ? &host_out(i, 0) : scalar_and_gradient.data();
+      c_eval_field_dm(rzp.data(), data->quantity.c_str(), fval, &num_components,
+                      guess.data(), &ifail, &dmode, &data->eq);
       if (ifail != 0) {
         guess = {-1.0, -1.0};
         throw pcms_error("NimrodFunctionSpace: query point " +
                          std::to_string(i) + " is outside the dump's domain");
       }
-      if (vector) {
+      if (dmode == 1) {
+        // d/dtheta = -d/dphi
+        host_out(i, 0) = scalar_and_gradient[1];
+        host_out(i, 1) = -scalar_and_gradient[3];
+        host_out(i, 2) = scalar_and_gradient[2];
+      } else if (vector) {
         // (v_R, v_Z, v_phi) -> (v_R, v_theta, v_Z)
         const Real v_z = host_out(i, 1);
         host_out(i, 1) = -host_out(i, 2);
@@ -234,6 +258,7 @@ public:
 private:
   std::shared_ptr<NimrodSource> source_;
   std::shared_ptr<const NimrodBoundSource> bound_;
+  int derivative_order_;
 };
 
 } // namespace
@@ -407,13 +432,19 @@ PointEvaluatorVariant NimrodFunctionSpace::CreatePointEvaluatorImpl(
     throw pcms_error("NimrodFunctionSpace: only Real evaluation is "
                      "supported");
   }
-  if (derivative_order != 0) {
-    throw pcms_error("NimrodFunctionSpace: derivatives are not supported");
+  if (derivative_order > 1) {
+    throw pcms_error("NimrodFunctionSpace: derivative order " +
+                     std::to_string(derivative_order) + " is not supported");
+  }
+  if (derivative_order == 1 && layout_->GetNumComponents() != 1) {
+    throw pcms_error("NimrodFunctionSpace: derivatives of vector and "
+                     "multi-component quantities are not supported yet");
   }
   detail::BoundSourceAs<NimrodBoundSource>(*bound, "NimrodFunctionSpace");
   return std::unique_ptr<PointEvaluator<Real>>(
     std::make_unique<NimrodEvaluator>(
-      source_, std::static_pointer_cast<const NimrodBoundSource>(bound)));
+      source_, std::static_pointer_cast<const NimrodBoundSource>(bound),
+      derivative_order));
 }
 
 } // namespace pcms

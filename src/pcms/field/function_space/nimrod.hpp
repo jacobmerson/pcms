@@ -53,6 +53,10 @@ std::vector<std::string> AvailableQuantities(const NimrodSource& source);
 ///
 /// A space holds quantities with one component count (e.g. 1 for pressure, 3
 /// for vectors); create one space per count over the same source.
+///
+/// Evaluators of derivative order 1 give the gradient of single-component
+/// scalar quantities as physical cylindrical components
+/// (d/dR, (1/R) d/dtheta, d/dZ).
 class NimrodFunctionSpace final : public FunctionSpace
 {
 public:
