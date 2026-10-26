@@ -127,8 +127,9 @@ void RotateValues(const Kokkos::View<Real*, DeviceMemorySpace>& c,
     });
 }
 
-/// Rotates physical vector components about z by +theta (cylindrical to
-/// Cartesian) or -theta (Cartesian to cylindrical) at each bound point.
+/// Rotates physical vector or covector components about z by +theta
+/// (cylindrical to Cartesian) or -theta (Cartesian to cylindrical) at each
+/// bound point.
 class BoundCylindricalRotation final : public BoundCoordinateMap
 {
 public:
@@ -158,10 +159,12 @@ public:
         "in '" +
         std::string(stored_.system->Kind()) + "' or '" +
         std::string(output_.system->Kind()) +
-        "' physical contravariant components; it cannot re-express the basis "
-        "the field declares");
+        "' physical components; it cannot re-express the basis the field "
+        "declares");
     }
-    return output_;
+    // Physical components rotate the same way for either variance, so a
+    // gradient (covariant) stays covariant.
+    return ValueBasis{output_.system, output_.scaling, stored.variance};
   }
 
   ValueView<Real, DeviceMemorySpace> TransformValues(
