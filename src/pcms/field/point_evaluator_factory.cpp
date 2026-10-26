@@ -8,13 +8,13 @@ namespace pcms
 std::shared_ptr<const BoundSource> PointEvaluatorFactory::Bind(
   CoordinateView<DeviceMemorySpace> coords, OutOfBoundsPolicy policy) const
 {
-  return BindRequest(EvaluationRequest::FromCoordinates(coords, policy));
+  return BindRequest(EvaluationRequest(coords, nullptr, policy));
 }
 
 std::shared_ptr<const BoundSource> PointEvaluatorFactory::Bind(
   const FunctionSpace& target, OutOfBoundsPolicy policy) const
 {
-  return BindRequest(EvaluationRequest::FromFunctionSpace(target, policy));
+  return BindRequest(EvaluationRequest::ForLayout(target.GetLayout(), policy));
 }
 
 std::shared_ptr<const BoundSource> PointEvaluatorFactory::BindRequest(

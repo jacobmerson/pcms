@@ -136,6 +136,10 @@ void bind_coordinate_system_module(py::module& m)
       "shares memory with this CoordinateView.");
 }
 
+// The Python API keeps EvaluationRequest until its bindings move to Bind.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 void bind_create_field_module(py::module& m)
 {
   py::class_<PythonEvaluationRequest>(m, "EvaluationRequest")
@@ -402,6 +406,8 @@ void bind_create_field_module(py::module& m)
     py::arg("mesh"), py::arg("divisions"),
     "Create a 2D vertex mask field indicating inside/outside mesh");
 }
+
+#pragma GCC diagnostic pop
 
 // bind_field_module is kept for compatibility but now registers nothing that
 // refers to the deleted FieldT / LocalizationHint / FieldDataView types.
