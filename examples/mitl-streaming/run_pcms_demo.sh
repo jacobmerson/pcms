@@ -7,7 +7,7 @@
 # MPI jobs; options are passed to both, e.g.
 #   ./run_pcms_demo.sh 8 --source exodus --exo flow.exo --plot demo.png
 # Consumer-only options (--plot, --record, --model, --verify, ...) are
-# dropped for the producer, and --rate for the consumer. MPIEXEC overrides the launcher (default: mpiexec).
+# dropped for the producer, and --rate and --partition for the consumer. MPIEXEC overrides the launcher (default: mpiexec).
 set -euo pipefail
 nprod=${1:?usage: $0 NPRODUCER [options...]}
 shift
@@ -32,8 +32,8 @@ skip=0
 for arg in "$@"; do
   if ((skip)); then skip=0; continue; fi
   case $arg in
-    --rate) skip=1 ;;
-    --rate=*) ;;
+    --rate|--partition) skip=1 ;;
+    --rate=*|--partition=*) ;;
     *) consumer_args+=("$arg") ;;
   esac
 done

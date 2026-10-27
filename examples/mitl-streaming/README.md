@@ -18,7 +18,7 @@ streaming).
 | Conservative / point rasterizer (`rasterizer.py`) | Working (exact electron count) |
 | Loopback transport, SST-like block/discard queue (`transport.py`) | Working |
 | PCMS coupler transport over ADIOS2 SST or BP4 (`PcmsTransport`) | Working, two programs, Block policy only (see Notes) |
-| Partitioned producer, N ranks -> 1 consumer rank (`partition.py`) | Working; EMPIRE's own `PROC_ID` decomposition for Exodus input |
+| Partitioned producer, N ranks -> 1 consumer rank (`partition.py`) | Working; a distributed Omega_h mesh balanced by Omega_h (default), or serial pieces of EMPIRE's own `PROC_ID` decomposition (`--partition source`) |
 | Cheap models: persistence, linear, pooled torch (`models.py`) | Working |
 | hnode surrogate adapter (`hnode_model.py`) | Working (smoke test on hnode's bundled frames, CPU) |
 | Consumer with re-anchoring and gap handling (`consumer.py`) | Working |
@@ -33,7 +33,7 @@ streaming).
 | `sources.py` | Source and frame-grid selection shared by producer and consumer |
 | `rasterizer.py` | `GridRasterizer` (conservative P1 on covered pixels, or point interpolation) and `make_frame` |
 | `transport.py` | `LoopbackTransport` (one process) and `PcmsTransport` (coupler) |
-| `partition.py` | Per-rank mesh pieces with global IDs and vertex ownership |
+| `partition.py` | Per-rank meshes: Omega_h-balanced distributed mesh, or serial pieces with global IDs and vertex ownership |
 | `producer.py` | `run_producer(source, transport, rate)` |
 | `consumer.py` | `Consumer`: rasterize, count, forecast, compare |
 | `models.py` | `rollout(frames[3, C, H, W], horizon)` implementations |
@@ -67,10 +67,12 @@ electron count against the exact source integral, and forecast error.
 `run_pcms_demo.sh N` starts the consumer (one rank) and the producer (N
 ranks) as two MPI jobs that rendezvous over ADIOS2 (SST by default, BP4 with
 `--transport BP4`); run it in an empty directory, which receives the ADIOS2
-contact files. Options go to both programs.
+contact files, and the producer's temporary mesh file, so it must be visible
+to every producer rank. Options go to both programs.
 
 ```bash
-# EMPIRE test run from 8 producer ranks (EMPIRE's own decomposition):
+# EMPIRE test run from 8 producer ranks (distributed mesh balanced by Omega_h;
+# add --partition source for EMPIRE's own decomposition):
 ./run_pcms_demo.sh 8 --source exodus --exo $PCMS_TEST_DATA_DIR/exodus/flow/flow.exo \
     --verify --plot flow.png --record flow.npz
 # Synthetic source with the hnode checkpoint in the loop:

@@ -66,10 +66,12 @@ class PcmsTransport:
 
     The consumer is the coupler server, on one rank; the producer is the
     client, on one or more ranks. Each side reads its mesh from disk: the
-    consumer the whole mesh, a producer rank the whole mesh or its piece of a
-    partition (partition.py). Entities are matched by the "global" tag, so
-    pieces must carry the global IDs of the consumer's mesh and give each
-    shared vertex a single owner (node_owned).
+    consumer the whole mesh, a producer rank the whole mesh, its part of a
+    distributed mesh, or its serial piece of a partition (partition.py).
+    Entities are matched by the "global" tag, so every part must carry the
+    global IDs of the consumer's mesh, and each shared vertex must have a
+    single owner: the mesh's own for a distributed mesh, node_owned for
+    serial pieces.
 
     Per step the producer sends every field in field_centering plus a small
     meta array [step, time]; step -1 marks the end of the stream.

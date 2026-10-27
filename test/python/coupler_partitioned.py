@@ -3,19 +3,28 @@ coupler bindings.
 
 Run as two MPI jobs (see test/CMakeLists.txt):
 
-    mpiexec -n N coupler_partitioned.py client <BP4|SST>
-    mpiexec -n 1 coupler_partitioned.py server <BP4|SST>
+    mpiexec -n N coupler_partitioned.py client <BP4|SST> <pieces|balanced>
+    mpiexec -n 1 coupler_partitioned.py server <BP4|SST> <pieces|balanced>
 
-Every client rank builds a serial mesh of its own piece of a structured
-triangle mesh (x strips), on a single-rank communicator. The pieces carry
-the full mesh's numbering in the "global" tag and each vertex shared between
-pieces is owned by the lowest rank, so the coupler must assemble the full P0
-and P1 fields on the server. Values encode the global ID, so arrival is
-checked bit for bit and the numbering invariant along with it.
+The client holds a structured triangle mesh partitioned over its N ranks:
+
+pieces: every rank builds a serial mesh of its own piece (x strips), on a
+single-rank communicator. The pieces carry the full mesh's numbering in the
+"global" tag and each vertex shared between pieces is owned by the lowest
+rank (owned_mask).
+
+balanced: a distributed Omega_h mesh. Rank 0 writes the full mesh in
+Omega_h's binary format, all ranks read it and balance() spreads it; Omega_h
+keeps the file order as the global numbering and owns the vertices.
+
+Either way the coupler must assemble the full P0 and P1 fields on the
+server. Values encode the global ID, so arrival is checked bit for bit and
+the numbering invariant along with it.
 """
 
 import gc
 import os
+import shutil
 import sys
 import tempfile
 
@@ -64,7 +73,7 @@ def values(gids, order):
     return 1000.0 * order + gids.astype(np.float64)
 
 
-def run(role, transport_name):
+def run(role, transport_name, mode):
     is_server = role == "server"
     lib = omega_h.OmegaHLibrary()
     world = lib.world()
@@ -75,6 +84,20 @@ def run(role, transport_name):
     if is_server:
         mesh = mesh_from_arrays(points, tris, local)
         gids = {0: np.arange(len(tris)), 1: np.arange(len(points))}
+    elif mode == "balanced":
+        # In the working directory, which every rank sees; one name per test.
+        path = f"coupler_partitioned_{transport_name}_{size}.osh"
+        if rank == 0:
+            omega_h.write_mesh_binary(path,
+                                      mesh_from_arrays(points, tris, local))
+        world.barrier()
+        mesh = omega_h.read_mesh_binary(path, world)
+        mesh.balance()
+        world.barrier()
+        if rank == 0:
+            shutil.rmtree(path)
+        gids = {0: np.asarray(mesh.globals(2)),
+                1: np.asarray(mesh.globals(0))}
     else:
         # x strips of whole columns of cells, one per rank
         column = np.concatenate([np.tile(np.arange(NX), NY)] * 2)
@@ -94,7 +117,7 @@ def run(role, transport_name):
     transport = pcms.TransportType.__members__[transport_name]
     params = SST_PARAMS if transport == pcms.TransportType.SST else None
     partition = pcms.RCBPartition(2, [0], [0.0]) if is_server else None
-    coupler = pcms.CouplerComm("coupler_partitioned", None, is_server,
+    coupler = pcms.CouplerComm(f"coupler_partitioned_{mode}", None, is_server,
                                partition)
     app = coupler.add_application("partitioned", transport=transport,
                                   params=params)
@@ -136,4 +159,4 @@ def run(role, transport_name):
 
 
 if __name__ == "__main__":
-    sys.exit(0 if run(sys.argv[1], sys.argv[2]) else 1)
+    sys.exit(0 if run(*sys.argv[1:4]) else 1)

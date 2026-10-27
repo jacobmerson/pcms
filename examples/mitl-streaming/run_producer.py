@@ -3,16 +3,21 @@
 
     mpiexec -n N python run_producer.py --source exodus --exo flow.exo
 
-With N > 1 each rank sends only its piece of the mesh: EMPIRE's own
-decomposition (PROC_ID, merged to N parts) for Exodus input, x strips for
-the synthetic source. Start run_consumer.py (one rank) alongside; see
+With N > 1 each rank sends only its part of the mesh. By default the mesh is
+a distributed Omega_h mesh partitioned by Omega_h (--partition balance);
+--partition source instead gives each rank a serial piece of the source's
+own decomposition (EMPIRE's PROC_ID merged to N parts, x strips for the
+synthetic source). Start run_consumer.py (one rank) alongside; see
 run_pcms_demo.sh.
 """
 
 import argparse
 
+import numpy as np
+
 import runtime
-from partition import (PieceSource, merge_parts, mesh_piece, strip_parts)
+from partition import (PieceSource, balanced_mesh, merge_parts, mesh_piece,
+                       strip_parts)
 from producer import run_producer
 from sources import add_source_args, make_source
 from transport import SST_PARAMS, PcmsTransport
@@ -23,6 +28,10 @@ def parse_args():
     add_source_args(p)
     p.add_argument("--rate", type=float, default=None,
                    help="steps per second (default: unthrottled)")
+    p.add_argument("--partition", choices=["balance", "source"],
+                   default="balance",
+                   help="N > 1: Omega_h-balanced distributed mesh, or serial "
+                        "pieces of the source's decomposition")
     add_transport_args(p)
     return p.parse_args()
 
@@ -51,20 +60,23 @@ def run(args):
         source = make_source(args, world)
         mesh = source.mesh
     else:
-        # Every rank reads the whole run (cheap at this size) and builds a
-        # serial mesh of its own piece.
+        # Every rank reads the whole run (cheap at this size) and sends the
+        # fields of its own elements and vertices.
         local = world.split(rank, 0)
-        if args.source == "exodus":
-            full = make_source(args, None)
-            parts = merge_parts(full.proc_id(), size)
+        full = make_source(args, local if args.source == "synthetic" else None)
+        if args.partition == "balance":
+            piece = balanced_mesh(full.points, full.tris, world, args.path)
         else:
-            full = make_source(args, local)
-            parts = strip_parts(full.points, full.tris, size)
-        piece = mesh_piece(full.points, full.tris, parts, rank, local)
+            parts = (merge_parts(full.proc_id(), size)
+                     if args.source == "exodus"
+                     else strip_parts(full.points, full.tris, size))
+            piece = mesh_piece(full.points, full.tris, parts, rank, local)
         source = PieceSource(full, piece)
         mesh, node_owned = piece.mesh, piece.node_owned
+        owned = (node_owned if node_owned is not None
+                 else np.asarray(mesh.owned(0)))
         print(f"producer rank {rank}/{size}: {mesh.nelems()} elements, "
-              f"{int(node_owned.sum())} of {mesh.nverts()} vertices owned",
+              f"{int(owned.sum())} of {mesh.nverts()} vertices owned",
               flush=True)
     transport = PcmsTransport("producer", mesh, source.field_centering,
                               path=args.path, transport=args.transport,

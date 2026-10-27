@@ -1,16 +1,28 @@
-"""Per-rank pieces of a mesh for a partitioned producer (plan 8.5, task P1).
+"""Per-rank meshes for a partitioned producer (plan 8.5, task P1).
 
-Each producer rank builds its own serial Omega_h mesh holding only its
-elements, on a single-rank communicator, so no distributed mesh is needed.
-The pieces carry the consumer's numbering in the "global" tag (element and
-vertex index in the full mesh, which is the Exodus file order), and a vertex
-on a piece boundary is owned by the lowest rank that touches it, so the
-coupler sends every DOF exactly once.
+Two ways to give each producer rank its part of the full mesh:
+
+balanced_mesh (the default): a distributed Omega_h mesh. Rank 0 writes the
+full mesh in Omega_h's binary format, all ranks read it and balance() spreads
+it over them. Omega_h keeps the file order as the global numbering and
+decides vertex ownership itself.
+
+mesh_piece: a serial mesh of a given partition (EMPIRE's PROC_ID, or x
+strips), one per rank on a single-rank communicator. The pieces carry the
+full-mesh numbering in the "global" tag and a vertex on a piece boundary is
+owned by the lowest part that touches it.
+
+Either way the "global" tag is the element and vertex index in the full mesh
+(the Exodus file order), which is how the coupler matches the consumer's
+mesh, and every DOF is sent exactly once.
 """
 
+import os
+import shutil
 from dataclasses import dataclass
 
 import numpy as np
+import PyOmega_h as omega_h
 
 from geometry import compact, mesh_from_arrays
 
@@ -46,7 +58,28 @@ class MeshPiece:
     mesh: object
     elem_gids: np.ndarray     # local element -> full-mesh element
     vert_gids: np.ndarray     # local vertex -> full-mesh vertex
-    node_owned: np.ndarray    # int8 per local vertex, 1 = this rank sends it
+    node_owned: np.ndarray    # int8 per local vertex, 1 = this rank sends
+                              # it; None = the mesh's own ownership
+
+
+def balanced_mesh(points, tris, world, directory):
+    """The full mesh (points, tris) distributed over world by Omega_h's
+    balance() (recursive inertial bisection). directory must be visible to
+    every rank; the mesh file is removed again."""
+    rank = world.rank()
+    path = os.path.join(directory, "mitl_source_mesh.osh")
+    local = world.split(rank, 0)
+    if rank == 0:
+        omega_h.write_mesh_binary(path, mesh_from_arrays(points, tris, local))
+    world.barrier()
+    # A one-part file read on N ranks: the elements land on rank 0.
+    mesh = omega_h.read_mesh_binary(path, world)
+    mesh.balance()
+    world.barrier()
+    if rank == 0:
+        shutil.rmtree(path)
+    return MeshPiece(mesh, np.asarray(mesh.globals(2)),
+                     np.asarray(mesh.globals(0)), None)
 
 
 def mesh_piece(points, tris, parts, part, comm):

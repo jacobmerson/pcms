@@ -1173,15 +1173,27 @@ real one is ever needed, prefer `RCBPtn`: `ClassPtn` needs model
 classification and a `.cpn` file, and a mesh that came through the gmsh
 round trip likely has only trivial classification.
 
-**Resolved: no distributed mesh needed.** Each producer rank builds a
-*serial* Omega_h mesh of its own piece on a single-rank communicator
-(`lib.world().split(rank, 0)`, gmsh round trip), sets the "global" tag of
-elements and vertices to the full-mesh index (the Exodus order) with
-`set_tag`, and passes a vertex `owned_mask` (lowest touching rank owns) to
-`from_mesh`. The coupler only needs owned flags, GIDs, coordinates and
-classification per DOF holder, so pieces on separate communicators work
-(`examples/mitl-streaming/partition.py`). PyOmega_h reading partitioned
-`.osh` files was not needed and not checked.
+**Resolved: a distributed Omega_h mesh from Python.** Rank 0 writes the
+full mesh with `write_mesh_binary`, all producer ranks call
+`read_mesh_binary(path, world)` (a one-part file read on N ranks puts every
+element on rank 0) and then `mesh.balance()`, which repartitions it by
+recursive inertial bisection. Omega_h keeps the file order as the global
+numbering, so the "global" tag is the Exodus index the consumer uses, and
+Omega_h's own vertex ownership is what the coupler needs: `from_mesh` takes
+no mask. This is the producer's default
+(`examples/mitl-streaming/partition.py`, `balanced_mesh`). Reading the gmsh
+file on N ranks, or on rank 0 followed by `set_comm`, segfaults; only the
+binary route works.
+
+The partition is Omega_h's, not EMPIRE's `PROC_ID`. Imposing a given
+partition on the distributed mesh needs `Mesh::migrate`, which PyOmega_h does
+not bind. For that case `--partition source` keeps the first approach: each
+producer rank builds a *serial* mesh of its own piece on a single-rank
+communicator (`lib.world().split(rank, 0)`), sets the "global" tag of
+elements and vertices to the full-mesh index with `set_tag`, and passes a
+vertex `owned_mask` (lowest touching rank owns) to `from_mesh`. The coupler
+only needs owned flags, GIDs, coordinates and classification per DOF holder,
+so pieces on separate communicators work too.
 
 ### 8.6 Tasks
 
@@ -1230,8 +1242,8 @@ the training dataset as a by-product.
 | S1 | Done | `src/pcms/pythonapi/bind_coupler.cpp`; `from_mesh(layout_name=, owned_mask=)` |
 | S2 | Done | ctests `python_coupler_exchange_{BP4,SST}` (P0+P1+data, both directions, bit for bit) |
 | S3b | Done | `PcmsTransport`, `run_producer.py` / `run_consumer.py` / `run_pcms_demo.sh` |
-| P1 | Done | `partition.py` (serial pieces, see 8.5); `flow.exo` split by `PROC_ID` |
-| P2 | Done | ctests `python_coupler_partitioned_{2,4}to1_{BP4,SST}` (values encode GIDs) |
+| P1 | Done | `partition.py`: Omega_h-balanced distributed mesh (default), or serial pieces split by `PROC_ID` (8.5) |
+| P2 | Done | ctests `python_coupler_partitioned_{pieces,balanced}_{2,4}to1_BP4` (values encode GIDs); SST N -> 1 crashes intermittently, see below |
 | P3 | Done | `run_pcms_demo.sh 8 --source exodus ...` |
 | S4 | Done | `exodus_source.py` (netCDF4; mm units; electron moments) |
 | S5 | Adapter done | `hnode_model.py`, `hnode_smoke.py`; CPU only here |
@@ -1245,6 +1257,9 @@ Measured on a workstation container (8 cores, no GPU):
   electron count of the conservative 600 x 99 frames equal to the mesh
   integral to 2e-15 at every step.
 - The same with 1 and 2 producer ranks, and over BP4.
+- The same, 8 ranks, on the Omega_h-balanced distributed mesh (now the
+  default; 6880-6885 elements per rank): bit for bit and 1.7e-15 again,
+  ~300 ms/step, 3 of 3 runs over SST and 1 over BP4.
 - Synthetic source (6 channels, 600 x 100) in one process (loopback): count
   exact to 6e-15, ~1.2 s/step for the 6 projections (CPU).
 - hnode checkpoint on its bundled frames 0-2 -> 3-9 through `rollout`:
@@ -1262,6 +1277,21 @@ Findings:
   `StepStatus::OK`). Making ML never throttle the simulation needs redev to
   keep its setup out of the discardable queue and to report end of stream,
   or a separate channel. The demo uses Block.
+- **N -> 1 over SST crashes intermittently.** With 2 or 4 client ranks the
+  server sometimes segfaults inside the ADIOS2 SST WAN data plane (evpath
+  `CMDataAvailable` -> `memcpy` in `adios2_core`) while it is still in
+  `add_field`, i.e. during the coupler's exchange-plan setup. Clients then
+  fail redev's `StepStatus::OK` assert. Rates over 20 runs: serial pieces
+  0/20 (2 ranks) and 6/20 (4 ranks), balanced mesh 1/20 and 10/20; never in
+  the 1 -> 1 exchange or over BP4. `MarshalMethod=BP5` and
+  `ControlTransport=sockets` do not help, FFS always fails, and keeping the
+  clients alive until the server acknowledges does not help either. No C++
+  test exercises the coupler over SST, so this is not new. redev's
+  receive path keeps its deferred-`Get` buffers alive correctly; finding the
+  cause needs a debug ADIOS2 build. The N -> 1 ctests run on BP4 only.
+  Separately, the container's 64 MB `/dev/shm` fills up with MPICH segments
+  left by killed runs and then every run dies with a bus error at import;
+  start the container with a larger `--shm-size`.
 - The prototype had drifted from the bindings: `from_mesh` was passed
   `CoordinateSystem.Cartesian` (the factory, not a system) and
   `get_dof_holder_data()` now always has a component axis. Fixed.
@@ -1269,7 +1299,8 @@ Findings:
   of it need the per-pixel coverage of 3.5 (not implemented).
 
 Not done: per-pixel coverage (3.5) for non-conforming grids; a live view;
-S7; checking PyOmega_h with partitioned `.osh` (not needed).
+S7; binding `Mesh::migrate` to distribute a mesh by a given partition; the
+SST N -> 1 crash above.
 
 ### 8.8 Comparison with the training study
 
@@ -1333,6 +1364,6 @@ cluster), assuming code is written and tested off-cluster:
 9. GPU availability (count and class) for the comparison runs.
 10. Local mesh grading in the plasma region, which sets how coarse the grid
     can go (6.1).
-11. ~~Whether PyOmega_h can read a partitioned `.osh`~~ Not needed: serial
-    pieces on split communicators (8.5).
+11. ~~Whether PyOmega_h can give the producer a distributed mesh~~ Yes:
+    `read_mesh_binary` on N ranks, then `balance()` (8.5).
 12. ~~Whether SST `QueueFullPolicy=Discard` is safe with redev~~ No (8.9).

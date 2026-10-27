@@ -1,9 +1,10 @@
+import tempfile
 import unittest
 
 import numpy as np
 
-from partition import (PieceSource, merge_parts, mesh_piece, strip_parts,
-                       vertex_owners)
+from partition import (PieceSource, balanced_mesh, merge_parts, mesh_piece,
+                       strip_parts, vertex_owners)
 from synthetic_source import SyntheticMITLSource
 from tests.common import SMALL_MESH, comm
 
@@ -50,6 +51,21 @@ class PartitionTest(unittest.TestCase):
                 src.points[piece.vert_gids])
         np.testing.assert_array_equal(elem_seen, 1)
         np.testing.assert_array_equal(vert_owned, 1)
+
+    def test_balanced_mesh_keeps_file_numbering(self):
+        # One rank here; the N-rank case is covered by the coupler ctests.
+        src = self.source
+        with tempfile.TemporaryDirectory() as directory:
+            piece = balanced_mesh(src.points, src.tris, comm(), directory)
+        self.assertIsNone(piece.node_owned)
+        np.testing.assert_array_equal(piece.elem_gids,
+                                      np.arange(len(src.tris)))
+        np.testing.assert_array_equal(piece.vert_gids,
+                                      np.arange(len(src.points)))
+        np.testing.assert_array_equal(
+            piece.mesh.ask_elem_verts().reshape(-1, 3), src.tris)
+        np.testing.assert_allclose(piece.mesh.coords().reshape(-1, 2),
+                                   src.points, rtol=0, atol=0)
 
     def test_vertex_owner_is_lowest_touching_part(self):
         tris = np.array([[0, 1, 2], [1, 3, 2]])
