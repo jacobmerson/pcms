@@ -1,0 +1,108 @@
+# MITL streaming example
+
+Streaming ML ingestion for the hnode plasma-gun (inner MITL) surrogate
+(arXiv:2604.21101, Fig. 3). A producer sends native unstructured-mesh fields
+step by step; the consumer ingests them conservatively with PCMS into
+hnode-style node frames and runs a surrogate in the loop against the
+streamed truth.
+
+Design and rationale: `docs/mitl_pcms_data_loader_plan.md` (section 8 for
+streaming).
+
+## Status
+
+| Piece | State |
+|---|---|
+| Synthetic EMPIRE stand-in (`synthetic_source.py`) | Working |
+| EMPIRE Exodus replay (`exodus_source.py`) | Working on pcms_testcases `exodus/flow/flow.exo` |
+| Conservative / point rasterizer (`rasterizer.py`) | Working (exact electron count) |
+| Loopback transport, SST-like block/discard queue (`transport.py`) | Working |
+| PCMS coupler transport over ADIOS2 SST or BP4 (`PcmsTransport`) | Working, two programs, Block policy only (see Notes) |
+| Partitioned producer, N ranks -> 1 consumer rank (`partition.py`) | Working; EMPIRE's own `PROC_ID` decomposition for Exodus input |
+| Cheap models: persistence, linear, pooled torch (`models.py`) | Working |
+| hnode surrogate adapter (`hnode_model.py`) | Working (smoke test on hnode's bundled frames, CPU) |
+| Consumer with re-anchoring and gap handling (`consumer.py`) | Working |
+
+## Files
+
+| File | Role |
+|---|---|
+| `geometry.py` | L-shaped domain, `Grid` (600 x 100 default), mesh helpers |
+| `synthetic_source.py` | Analytic, deterministic run on a ~55k-triangle jittered mesh |
+| `exodus_source.py` | `ExodusRun`: EMPIRE Exodus replay (netCDF4, no SEACAS) |
+| `sources.py` | Source and frame-grid selection shared by producer and consumer |
+| `rasterizer.py` | `GridRasterizer` (conservative P1 on covered pixels, or point interpolation) and `make_frame` |
+| `transport.py` | `LoopbackTransport` (one process) and `PcmsTransport` (coupler) |
+| `partition.py` | Per-rank mesh pieces with global IDs and vertex ownership |
+| `producer.py` | `run_producer(source, transport, rate)` |
+| `consumer.py` | `Consumer`: rasterize, count, forecast, compare |
+| `models.py` | `rollout(frames[3, C, H, W], horizon)` implementations |
+| `hnode_model.py` | The pretrained hnode checkpoint behind `rollout` |
+| `report.py` | Console summary and figure |
+| `runtime.py` | One `OmegaHLibrary` per process, released at exit |
+| `run_loopback_demo.py` | One-process end-to-end demo |
+| `run_producer.py`, `run_consumer.py`, `run_pcms_demo.sh` | Two-program demo over the PCMS coupler |
+| `hnode_smoke.py` | hnode adapter check on hnode's bundled frames |
+| `tests/` | `unittest` suites (no pytest needed) |
+
+## Running
+
+`pcms` (built with PETSc, MeshFields and Python), `PyOmega_h` and `numpy`
+must be importable; `netCDF4` for Exodus input; `torch` and `matplotlib` are
+optional. Run from this directory:
+
+```bash
+PCMS_TEST_DATA_DIR=/path/to/pcms_testcases python -m unittest discover -s tests -t .
+python run_loopback_demo.py --steps 120                 # 600 x 100, conservative
+python run_loopback_demo.py --steps 120 --mode point    # hnode-style sampling
+python run_loopback_demo.py --nx 120 --ny 20 --policy discard --queue-limit 1 \
+    --model pooled-torch --plot demo.png
+```
+
+The demo reports received/dropped steps, per-step cost, the ingested
+electron count against the exact source integral, and forecast error.
+
+### Over the PCMS coupler (two programs)
+
+`run_pcms_demo.sh N` starts the consumer (one rank) and the producer (N
+ranks) as two MPI jobs that rendezvous over ADIOS2 (SST by default, BP4 with
+`--transport BP4`); run it in an empty directory, which receives the ADIOS2
+contact files. Options go to both programs.
+
+```bash
+# EMPIRE test run from 8 producer ranks (EMPIRE's own decomposition):
+./run_pcms_demo.sh 8 --source exodus --exo $PCMS_TEST_DATA_DIR/exodus/flow/flow.exo \
+    --verify --plot flow.png --record flow.npz
+# Synthetic source with the hnode checkpoint in the loop:
+./run_pcms_demo.sh 2 --source synthetic --steps 12 --anchor-every 5 \
+    --model hnode --hnode-dir /path/to/hnode --plot synthetic_hnode.png
+```
+
+`--verify` checks every received field bit for bit against the source read
+locally by the consumer. The two programs can also be started by hand:
+`mpiexec -n 1 python run_consumer.py ...` and
+`mpiexec -n N python run_producer.py ...` with the same source and
+transport options.
+
+`python hnode_smoke.py /path/to/hnode` checks the hnode adapter on hnode's
+bundled `example_traj` frames (needs `einops` and `scikit-fem`).
+
+## Notes
+
+- The synthetic step lies on grid lines of the frame grid, so the
+  conservative target mesh conforms to the domain and integrals are exact.
+- The EMPIRE mesh (`flow.exo`) is the same L shape in metres with the step
+  at y = 5 mm, which is on a grid line only for ny a multiple of 33; the
+  Exodus demo uses 600 x 99 (square 1/12 mm pixels). hnode's 600 x 100 grid
+  needs per-pixel coverage (plan section 3.5).
+- `flow.exo` has electron moments only, so Exodus frames have 3 channels
+  (vx, vy, n_e) and the hnode checkpoint cannot run on them; the in-loop
+  model is a cheap stand-in there.
+- SST `QueueFullPolicy=Discard` does not work with redev: with
+  `QueueLimit=1` the channel setup fails, and with a larger queue a dropped
+  end-of-stream step leaves the consumer at EndOfStream, where redev aborts.
+  Use Block (the default).
+- Frames stay float64 inside the pipeline; hnode stores float32, so cast at
+  the disk or model boundary.
+- Density uses a lumped mass matrix (non-negative). Consistent projection
+  undershoots below zero at sharp density fronts.
