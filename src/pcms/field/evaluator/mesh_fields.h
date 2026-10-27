@@ -77,21 +77,19 @@ private:
   Kokkos::View<LO*> indices_;
 };
 
-/// @brief Evaluates MeshFields fields at the bound points with the field's
-///        MeshFields backend.
+/// @brief Evaluates MeshFields fields, or the gradient of scalar ones, at the
+///        bound points with the field's MeshFields backend.
 template <typename T,
           typename LayoutPolicy =
             detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
 class MeshFieldsPointEvaluator : public PointEvaluator<T, LayoutPolicy>
 {
 public:
-  /// @param layout MeshFields layout of the evaluated fields
   /// @param binding found query points grouped by element
-  MeshFieldsPointEvaluator(
-    std::shared_ptr<const MeshFieldsAdapterLayout> layout,
-    std::shared_ptr<const MeshFieldsBinding> binding)
-    : PointEvaluator<T, LayoutPolicy>(binding),
-      layout_(std::move(layout)),
+  /// @param derivative_order 0 for values, 1 for the gradient
+  explicit MeshFieldsPointEvaluator(
+    std::shared_ptr<const MeshFieldsBinding> binding, int derivative_order = 0)
+    : PointEvaluator<T, LayoutPolicy>(binding, derivative_order),
       binding_(std::move(binding))
   {
   }
@@ -112,10 +110,15 @@ public:
         "MeshFieldsPointEvaluator::Evaluate: incompatible FieldData type");
     }
 
-    auto eval_results = mesh_field_data->GetMeshFieldBackend()->evaluate(
-      binding_->LocalCoordinates(), binding_->Offsets());
+    const auto& backend = *mesh_field_data->GetMeshFieldBackend();
+    auto eval_results =
+      this->DerivativeOrder() == 0
+        ? backend.evaluate(binding_->LocalCoordinates(), binding_->Offsets())
+        : backend.evaluateGradient(binding_->LocalCoordinates(),
+                                   binding_->Offsets());
 
-    int ncomp = layout_->GetNumComponents();
+    // the components, or for the gradient d/dx_j of each component
+    const auto ncomp = static_cast<int>(values.extent(1));
     int num_eval = static_cast<int>(eval_results.extent(0));
     const auto indices = binding_->Indices();
     Kokkos::parallel_for(
@@ -127,7 +130,6 @@ public:
   }
 
 private:
-  std::shared_ptr<const MeshFieldsAdapterLayout> layout_;
   std::shared_ptr<const MeshFieldsBinding> binding_;
 };
 
@@ -143,7 +145,8 @@ public:
   /// @param layout MeshFields layout of the evaluated fields
   explicit MeshFieldsEvaluatorFactory(
     std::shared_ptr<const MeshFieldsAdapterLayout> layout)
-    : TypedPointEvaluatorFactory<T, Bound>(layout->GetCoordinateSystem()),
+    : TypedPointEvaluatorFactory<T, Bound>(layout->GetCoordinateSystem(),
+                                           /*max_derivative_order=*/1),
       layout_(std::move(layout)),
       mesh_(layout_->GetMesh()),
       search_(mesh_, 10, 10)
@@ -161,10 +164,14 @@ protected:
   }
 
   std::unique_ptr<PointEvaluator<T>> CreateEvaluator(
-    std::shared_ptr<const Bound> bound, int /*derivative_order*/) const override
+    std::shared_ptr<const Bound> bound, int derivative_order) const override
   {
-    return std::make_unique<MeshFieldsPointEvaluator<T>>(layout_,
-                                                         std::move(bound));
+    if (derivative_order == 1 && layout_->GetNumComponents() != 1) {
+      throw pcms_error("MeshFieldsEvaluatorFactory: derivatives of "
+                       "multi-component fields are not supported yet");
+    }
+    return std::make_unique<MeshFieldsPointEvaluator<T>>(std::move(bound),
+                                                         derivative_order);
   }
 
 private:

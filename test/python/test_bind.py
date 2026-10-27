@@ -25,12 +25,16 @@ def space(mesh):
         mesh, 1, 1, backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
 
 
-@pytest.fixture
-def field(space):
+def _linear_function(space):
     f = space.create_function()
     xy = f.get_layout().get_dof_holder_coordinates().get_values()
     f.set_dof_holder_data(_linear(xy[:, 0], xy[:, 1]))
     return f
+
+
+@pytest.fixture
+def field(space):
+    return _linear_function(space)
 
 
 def test_evaluators_share_a_bound_source(space, field):
@@ -82,3 +86,45 @@ def test_interpolator_reuses_a_bound_source(mesh, space, field):
     np.testing.assert_allclose(out.get_dof_holder_data().get_values(),
                                field.get_dof_holder_data().get_values(),
                                atol=1e-12)
+
+
+def _meshfields_space(mesh, num_components=1):
+    try:
+        return pcms.LagrangeFunctionSpace.from_mesh(
+            mesh, 1, num_components,
+            backend=pcms.LagrangeFunctionSpace.Backend.MeshFields)
+    except RuntimeError:
+        pytest.skip("pcms was built without MeshFields")
+
+
+def test_meshfields_gradients(mesh):
+    space = _meshfields_space(mesh)
+    f = _linear_function(space)
+    bound = space.bind(pcms.CoordinateView([[0.3, 0.6], [0.8, 0.25]]))
+
+    for evaluator in (space.create_point_evaluator(bound, derivative_order=1),
+                      pcms.gradient(space).create_point_evaluator(bound)):
+        basis = evaluator.output_basis(f.get_data().get_value_basis())
+        out = np.zeros((2, 2))
+        evaluator.evaluate(f, pcms.ValueView(basis, out))
+        np.testing.assert_allclose(out, [[2.0, 3.0], [2.0, 3.0]], atol=1e-10)
+
+
+def test_field_and_gradient_share_a_localization(mesh):
+    space = _meshfields_space(mesh)
+    f = _linear_function(space)
+    target = _meshfields_space(mesh)
+    grad_target = _meshfields_space(mesh, 2)
+    bound = space.bind(target)
+
+    values = target.create_function()
+    pcms.Interpolator(space, target, bound).apply(f, values)
+    np.testing.assert_allclose(values.get_dof_holder_data().get_values(),
+                               f.get_dof_holder_data().get_values(),
+                               atol=1e-12)
+
+    grad = grad_target.create_function("grad", pcms.values.Covector)
+    pcms.Interpolator(pcms.gradient(space), grad_target, bound).apply(f, grad)
+    g = grad.get_dof_holder_data().get_values()
+    np.testing.assert_allclose(g, np.broadcast_to([2.0, 3.0], g.shape),
+                               atol=1e-10)
