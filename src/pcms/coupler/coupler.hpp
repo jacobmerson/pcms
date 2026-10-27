@@ -253,6 +253,8 @@ public:
     return channel_.ReceivePhase(func, std::forward<Args>(args)...);
   }
 
+  [[nodiscard]] MPI_Comm GetMPIComm() const noexcept { return mpi_comm_; }
+
   [[nodiscard]] std::size_t GetLayoutCommunicatorCount() const noexcept
   {
     return field_layout_communicators_.size();

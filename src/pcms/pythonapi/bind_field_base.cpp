@@ -287,17 +287,20 @@ void bind_create_field_module(py::module& m)
       "from_mesh",
       [](Omega_h::Mesh& mesh, int order, int num_components,
          const PyCoordinateSystem& coordinate_system,
-         std::string global_id_name, LagrangeFunctionSpace::Backend backend) {
+         std::string global_id_name, LagrangeFunctionSpace::Backend backend,
+         std::string layout_name) {
         return LagrangeFunctionSpace::FromMesh(
           mesh, order, num_components, coordinate_system.system,
-          std::move(global_id_name), backend);
+          std::move(global_id_name), backend, std::move(layout_name));
       },
       py::arg("mesh"), py::arg("order"), py::arg("num_components") = 1,
       py::arg("mesh_coordinate_system") =
         PyCoordinateSystem{csys::Cartesian::Deferred()},
       py::arg("global_id_name") = "global",
       py::arg("backend") = LagrangeFunctionSpace::DefaultBackend,
-      "Create a LagrangeFunctionSpace from an Omega_h mesh")
+      py::arg("layout_name") = "",
+      "Create a LagrangeFunctionSpace from an Omega_h mesh. layout_name is "
+      "required to exchange its fields through a coupler.")
 
     .def_static(
       "from_uniform_grid",

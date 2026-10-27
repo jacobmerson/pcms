@@ -37,6 +37,8 @@ void bind_mls_interpolation_module(py::module& m);
 
 void bind_mesh_utilities_module(py::module& m);
 
+void bind_coupler_module(py::module& m);
+
 } // namespace pcms
 
 namespace
@@ -86,4 +88,8 @@ PYBIND11_MODULE(pcms, m)
 
   // Bind mesh utility functions
   pcms::bind_mesh_utilities_module(m);
+
+  // Bind the coupler (CouplerComm/ApplicationComm) for field exchange over
+  // ADIOS2
+  pcms::bind_coupler_module(m);
 }
