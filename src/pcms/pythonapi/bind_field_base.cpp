@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <optional>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
@@ -288,19 +290,37 @@ void bind_create_field_module(py::module& m)
       [](Omega_h::Mesh& mesh, int order, int num_components,
          const PyCoordinateSystem& coordinate_system,
          std::string global_id_name, LagrangeFunctionSpace::Backend backend,
-         std::string layout_name) {
+         std::string layout_name,
+         std::optional<NumpyInput<Omega_h::I8>> owned_mask) {
+        if (!owned_mask) {
+          return LagrangeFunctionSpace::FromMesh(
+            mesh, order, num_components, coordinate_system.system,
+            std::move(global_id_name), backend, std::move(layout_name));
+        }
+        const int entity_dim = order == 0 ? mesh.dim() : 0;
+        if (owned_mask->size() != mesh.nents(entity_dim)) {
+          throw std::invalid_argument(
+            "owned_mask must have one entry per DOF holder (" +
+            std::to_string(mesh.nents(entity_dim)) + "), got " +
+            std::to_string(owned_mask->size()));
+        }
+        Omega_h::HostWrite<Omega_h::I8> mask(owned_mask->size());
+        std::copy_n(owned_mask->data(), owned_mask->size(), mask.data());
         return LagrangeFunctionSpace::FromMesh(
           mesh, order, num_components, coordinate_system.system,
-          std::move(global_id_name), backend, std::move(layout_name));
+          Omega_h::Read<Omega_h::I8>(mask.write()), std::move(global_id_name),
+          backend, std::move(layout_name));
       },
       py::arg("mesh"), py::arg("order"), py::arg("num_components") = 1,
       py::arg("mesh_coordinate_system") =
         PyCoordinateSystem{csys::Cartesian::Deferred()},
       py::arg("global_id_name") = "global",
       py::arg("backend") = LagrangeFunctionSpace::DefaultBackend,
-      py::arg("layout_name") = "",
+      py::arg("layout_name") = "", py::arg("owned_mask") = py::none(),
       "Create a LagrangeFunctionSpace from an Omega_h mesh. layout_name is "
-      "required to exchange its fields through a coupler.")
+      "required to exchange its fields through a coupler. owned_mask (one "
+      "int8 per DOF holder, nonzero = owned) restricts which DOF holders this "
+      "rank owns, e.g. shared vertices of a pre-partitioned mesh piece.")
 
     .def_static(
       "from_uniform_grid",

@@ -564,6 +564,45 @@ if(PCMS_ENABLE_Python AND PCMS_ENABLE_OMEGA_H AND HOST_NPROC GREATER_EQUAL 2)
       PROPERTY ENVIRONMENT
                "PYTHONPATH=$<TARGET_FILE_DIR:pcms>:$ENV{PYTHONPATH}")
   endforeach()
+
+  # Partitioned client (serial mesh pieces with global IDs) -> one server
+  foreach(nclient 2 4)
+    if(HOST_NPROC GREATER nclient)
+      foreach(transport BP4 SST)
+        set(name python_coupler_partitioned_${nclient}to1_${transport})
+        dual_mpi_test(
+          TESTNAME
+          ${name}
+          TIMEOUT
+          60
+          NAME1
+          client
+          EXE1
+          ${Python_EXECUTABLE}
+          PROCS1
+          ${nclient}
+          ARGS1
+          ${CMAKE_CURRENT_SOURCE_DIR}/python/coupler_partitioned.py
+          client
+          ${transport}
+          NAME2
+          server
+          EXE2
+          ${Python_EXECUTABLE}
+          PROCS2
+          1
+          ARGS2
+          ${CMAKE_CURRENT_SOURCE_DIR}/python/coupler_partitioned.py
+          server
+          ${transport})
+        set_property(
+          TEST ${name}
+          APPEND
+          PROPERTY ENVIRONMENT
+                   "PYTHONPATH=$<TARGET_FILE_DIR:pcms>:$ENV{PYTHONPATH}")
+      endforeach()
+    endif()
+  endforeach()
 endif()
 
 if(PCMS_ENABLE_C)
