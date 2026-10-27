@@ -26,11 +26,21 @@ class MeshFieldsPointEvaluator : public PointEvaluator<T, LayoutPolicy>
 public:
   MeshFieldsPointEvaluator(
     std::shared_ptr<const MeshFieldsAdapterLayout> layout,
-    MeshFieldsAdapter2LocalizationHint hint, Real fill_value)
+    MeshFieldsAdapter2LocalizationHint hint, Real fill_value,
+    int derivative_order = 0)
     : layout_(std::move(layout)),
       hint_(std::move(hint)),
-      fill_value_(fill_value)
+      fill_value_(fill_value),
+      derivative_order_(derivative_order)
   {
+  }
+
+  [[nodiscard]] ValueBasis OutputBasis(const ValueBasis& stored) const override
+  {
+    if (derivative_order_ == 0) {
+      return stored;
+    }
+    return FirstDerivativeBasis(stored, layout_->GetCoordinateSystem());
   }
 
   void Evaluate(
@@ -43,8 +53,11 @@ public:
     const auto values = out.GetValues();
     PCMS_ALWAYS_ASSERT(values.extent(0) ==
                        hint_.coordinates_.extent(0) + hint_.num_missing_);
-    PCMS_ALWAYS_ASSERT(values.extent(1) ==
-                       static_cast<size_t>(layout_->GetNumComponents()));
+    // Components, or with derivative order 1 the derivative along each mesh
+    // coordinate of each component.
+    const int ncomp = layout_->GetNumComponents() *
+                      (derivative_order_ == 0 ? 1 : layout_->GetMesh().dim());
+    PCMS_ALWAYS_ASSERT(values.extent(1) == static_cast<size_t>(ncomp));
     auto const* mesh_field_data =
       dynamic_cast<const MeshFieldsFieldData<T>*>(&field.GetData());
     if (!mesh_field_data) {
@@ -52,10 +65,12 @@ public:
         "MeshFieldsPointEvaluator::Evaluate: incompatible FieldData type");
     }
 
-    auto eval_results = mesh_field_data->GetMeshFieldBackend()->evaluate(
-      hint_.coordinates_d_, hint_.offsets_d_);
+    const auto& backend = *mesh_field_data->GetMeshFieldBackend();
+    auto eval_results =
+      derivative_order_ == 0
+        ? backend.evaluate(hint_.coordinates_d_, hint_.offsets_d_)
+        : backend.evaluateGradient(hint_.coordinates_d_, hint_.offsets_d_);
 
-    int ncomp = layout_->GetNumComponents();
     int num_eval = static_cast<int>(eval_results.extent(0));
     Kokkos::parallel_for(
       "CopyEvalResultsToValues",
@@ -89,6 +104,7 @@ private:
   std::shared_ptr<const MeshFieldsAdapterLayout> layout_;
   MeshFieldsAdapter2LocalizationHint hint_;
   Real fill_value_;
+  int derivative_order_;
 };
 
 // MeshFieldsEvaluatorFactory<T> implements FieldEvaluatorFactory<T> for
@@ -152,9 +168,13 @@ public:
     std::shared_ptr<const BoundSource> bound,
     int derivative_order) const override
   {
-    if (derivative_order != 0) {
-      throw pcms_error(
-        "MeshFieldsEvaluatorFactory: derivatives are not supported");
+    if (derivative_order > 1) {
+      throw pcms_error("MeshFieldsEvaluatorFactory: derivative order " +
+                       std::to_string(derivative_order) + " is not supported");
+    }
+    if (derivative_order == 1 && layout_->GetNumComponents() != 1) {
+      throw pcms_error("MeshFieldsEvaluatorFactory: derivatives of "
+                       "multi-component fields are not supported yet");
     }
     const auto& hint =
       detail::BoundSourceAs<
@@ -162,7 +182,7 @@ public:
         *bound, "MeshFieldsEvaluatorFactory")
         .GetHint();
     return std::make_unique<MeshFieldsPointEvaluator<T>>(
-      layout_, hint, bound->Policy().fill_value);
+      layout_, hint, bound->Policy().fill_value, derivative_order);
   }
 
   CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const override

@@ -29,6 +29,10 @@ public:
   virtual ~MeshFieldBackend() = default;
   virtual Kokkos::View<T**> evaluate(Kokkos::View<T**> localCoords,
                                      Kokkos::View<LO*> offsets) const = 0;
+  /// Gradient at the same points as evaluate: row i holds d/dx_j of component
+  /// c at column j * num_components + c.
+  virtual Kokkos::View<T**> evaluateGradient(
+    Kokkos::View<T**> localCoords, Kokkos::View<LO*> offsets) const = 0;
   virtual void SetData(Rank1View<const T, DeviceMemorySpace> data,
                        size_t num_nodes, size_t num_components, int dim) = 0;
   virtual void GetData(Rank1View<T, DeviceMemorySpace> data, size_t num_nodes,
@@ -57,6 +61,70 @@ public:
       const_cast<MeshFieldBackendImpl<T, Dim, Order, NumComponents>*>(this);
     return self->mesh_field_.triangleLocalPointEval(localCoords, offsets,
                                                     shape_field_.field);
+  }
+
+  // grad f = J^{-1} df/dxi, with J_ij = dx_j/dxi_i from the (linear)
+  // coordinate field, so the gradient is that of the field on the mesh's
+  // straight-sided elements.
+  Kokkos::View<T**> evaluateGradient(Kokkos::View<T**> localCoords,
+                                     Kokkos::View<LO*> offsets) const override
+  {
+    if constexpr (Dim != 2) {
+      throw pcms_error(
+        "MeshFieldBackend: gradients are only supported on triangles");
+    } else {
+      auto self =
+        const_cast<MeshFieldBackendImpl<T, Dim, Order, NumComponents>*>(this);
+      const auto field_element =
+        self->mesh_field_.CreateLagrangeElement(shape_field_.field);
+      const auto coord_element = self->mesh_field_.CreateLagrangeElement(
+        self->mesh_field_.getCoordField().field);
+      Kokkos::View<T**> gradient("mesh_fields_gradient", localCoords.extent(0),
+                                 Dim * NumComponents);
+      Kokkos::parallel_for(
+        "mesh_fields_gradient", static_cast<LO>(field_element.numMeshEnts),
+        KOKKOS_LAMBDA(const LO ent) {
+          const auto coords = coord_element.getNodeValues(ent);
+          for (LO pt = offsets(ent); pt < offsets(ent + 1); ++pt) {
+            Kokkos::Array<Real, Dim> xi;
+            for (int d = 0; d < Dim; ++d) {
+              xi[d] = localCoords(pt, d);
+            }
+            const auto coord_grads =
+              coord_element.shapeFn.getLocalGradients(xi);
+            Real jac[Dim][Dim] = {};
+            for (size_t n = 0; n < coord_element.shapeFn.numNodes; ++n) {
+              for (int i = 0; i < Dim; ++i) {
+                for (int j = 0; j < Dim; ++j) {
+                  jac[i][j] += coord_grads[n * Dim + i] * coords[n * Dim + j];
+                }
+              }
+            }
+            const Real det = jac[0][0] * jac[1][1] - jac[0][1] * jac[1][0];
+            const Real inv[Dim][Dim] = {{jac[1][1] / det, -jac[0][1] / det},
+                                        {-jac[1][0] / det, jac[0][0] / det}};
+            const auto grads = field_element.shapeFn.getLocalGradients(xi);
+            for (size_t c = 0; c < NumComponents; ++c) {
+              Real dfdxi[Dim] = {};
+              for (auto topo : field_element.elm2dof.getTopology()) {
+                for (size_t n = 0; n < field_element.shapeFn.numNodes; ++n) {
+                  const auto map = field_element.elm2dof(n, c, ent, topo);
+                  const Real value = field_element.field(
+                    map.entity, map.node, map.component, map.topo);
+                  for (int i = 0; i < Dim; ++i) {
+                    dfdxi[i] += grads[n * Dim + i] * value;
+                  }
+                }
+              }
+              for (int j = 0; j < Dim; ++j) {
+                gradient(pt, j * NumComponents + c) =
+                  inv[j][0] * dfdxi[0] + inv[j][1] * dfdxi[1];
+              }
+            }
+          }
+        });
+      return gradient;
+    }
   }
 
   void SetData(Rank1View<const T, DeviceMemorySpace> data, size_t num_nodes,

@@ -2,6 +2,9 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <Kokkos_Core.hpp>
+#include <Omega_h_build.hpp>
+#include <Omega_h_library.hpp>
+#include <pcms/configuration.h>
 #include <pcms/field/coordinate_systems/cartesian.hpp>
 #include <pcms/field/function_space/lagrange.h>
 #include <pcms/field/function_space/spline.h>
@@ -175,3 +178,109 @@ TEST_CASE("Interpolating a field and its gradient over one localization")
     pcms::Gradient(grad_source)->CreatePointEvaluator<Real>(bound),
     ContainsSubstring("derivative order 2"));
 }
+
+#ifdef PCMS_ENABLE_MESHFIELDS
+
+namespace
+{
+
+// Gradient of `f` at the interleaved 2D `pts`, copied to the host.
+auto GradientAt(const pcms::FunctionSpace& space, const pcms::Field<Real>& f,
+                const std::vector<Real>& pts)
+{
+  auto coords =
+    pcms::test::CreateDeviceCoordinateView(pts, space.GetCoordinateSystem());
+  auto gradient =
+    space.CreatePointEvaluator<Real>(space.Bind(coords.coordinate_view), 1);
+  Kokkos::View<Real**, DeviceMemorySpace> out("grad", pts.size() / 2, 2);
+  gradient->Evaluate(f, ValueView<Real, DeviceMemorySpace>(
+                          gradient->OutputBasis(f.GetData().GetValueBasis()),
+                          pcms::MakeRank2View(out)));
+  return Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
+}
+
+KOKKOS_INLINE_FUNCTION Real Quadratic(Real x, Real y)
+{
+  return x * x + 3.0 * x * y - y * y;
+}
+
+} // namespace
+
+TEST_CASE("MeshFields gradients")
+{
+  auto lib = Omega_h::Library{};
+  auto mesh =
+    Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1, 1, 0, 8, 8, 0, false);
+  const std::vector<Real> pts = {0.1, 0.2, 0.5, 0.5, 0.7, 0.3, 0.33, 0.81};
+  const size_t n = pts.size() / 2;
+
+  SECTION("P1 reproduces the gradient of a linear field")
+  {
+    auto space = pcms::LagrangeFunctionSpace::FromMesh(
+      mesh, 1, 1, pcms::csys::Cartesian::Create(2), "global",
+      pcms::LagrangeFunctionSpace::Backend::MeshFields);
+    auto f = space->CreateFunction<Real>("f");
+    pcms::test::SetField(
+      f, OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); });
+    const auto grad = GradientAt(*space, f, pts);
+    for (size_t i = 0; i < n; ++i) {
+      CAPTURE(i);
+      REQUIRE_THAT(grad(i, 0), WithinAbs(1.0, pcms::test::EvalTol));
+      REQUIRE_THAT(grad(i, 1), WithinAbs(2.0, pcms::test::EvalTol));
+    }
+  }
+
+  SECTION("P2 reproduces the gradient of a quadratic field")
+  {
+    std::shared_ptr<const pcms::LagrangeFunctionSpace> space =
+      pcms::LagrangeFunctionSpace::FromMesh(
+        mesh, 2, 1, pcms::csys::Cartesian::Create(2), "global",
+        pcms::LagrangeFunctionSpace::Backend::MeshFields);
+    auto f = space->CreateFunction<Real>("f");
+    pcms::test::SetField(
+      f, OMEGA_H_LAMBDA(Real x, Real y) { return Quadratic(x, y); });
+    const auto grad = GradientAt(*space, f, pts);
+    for (size_t i = 0; i < n; ++i) {
+      const Real x = pts[2 * i], y = pts[2 * i + 1];
+      CAPTURE(i, x, y);
+      REQUIRE_THAT(grad(i, 0),
+                   WithinAbs(2.0 * x + 3.0 * y, pcms::test::EvalTol));
+      REQUIRE_THAT(grad(i, 1),
+                   WithinAbs(3.0 * x - 2.0 * y, pcms::test::EvalTol));
+    }
+
+    // Interpolated onto a grid through Gradient().
+    pcms::UniformGrid<2> grid;
+    grid.bot_left = {0.1, 0.15};
+    grid.edge_length = {0.8, 0.7};
+    grid.divisions = {4, 3};
+    auto target = pcms::LagrangeFunctionSpace::FromUniformGrid(
+      grid, 2, space->GetCoordinateSystem());
+    auto grad_t =
+      target->CreateFunction<Real>("grad f", pcms::values::Covector);
+    pcms::Interpolator<Real>(*pcms::Gradient(space), *target).Apply(f, grad_t);
+    const auto coords = pcms::test::CopyCoordinatesToHost(
+      target->GetLayout()->GetDOFHolderCoordinates().GetValues());
+    const auto g = grad_t.GetDOFHolderDataHost().GetValues();
+    for (size_t i = 0; i < coords.extent(0); ++i) {
+      const Real x = coords(i, 0), y = coords(i, 1);
+      CAPTURE(i, x, y);
+      REQUIRE_THAT(g(i, 0), WithinAbs(2.0 * x + 3.0 * y, pcms::test::EvalTol));
+      REQUIRE_THAT(g(i, 1), WithinAbs(3.0 * x - 2.0 * y, pcms::test::EvalTol));
+    }
+  }
+
+  SECTION("multi-component fields are rejected")
+  {
+    auto space = pcms::LagrangeFunctionSpace::FromMesh(
+      mesh, 1, 2, pcms::csys::Cartesian::Create(2), "global",
+      pcms::LagrangeFunctionSpace::Backend::MeshFields);
+    auto coords =
+      pcms::test::CreateDeviceCoordinateView(pts, space->GetCoordinateSystem());
+    REQUIRE_THROWS_WITH(
+      space->CreatePointEvaluator<Real>(space->Bind(coords.coordinate_view), 1),
+      ContainsSubstring("multi-component"));
+  }
+}
+
+#endif
