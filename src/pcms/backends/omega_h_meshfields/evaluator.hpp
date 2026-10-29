@@ -86,7 +86,7 @@ GroupFoundPointsByElement(
         }
       }
       for (int j = 0; j < Dim; ++j) {
-        local_coords(index, j) = bary[j];
+        local_coords(index, j) = bary[j + 1];
       }
       indices(index) = found(k);
     });
