@@ -566,13 +566,10 @@ if(PCMS_ENABLE_Python AND PCMS_ENABLE_OMEGA_H AND HOST_NPROC GREATER_EQUAL 2)
   endforeach()
 
   # Partitioned client -> one server. pieces: serial per-rank meshes with
-  # global IDs and owned_mask; balanced: a distributed Omega_h mesh. BP4 only:
-  # with several SST writers the server intermittently segfaults in the ADIOS2
-  # SST data plane during coupler setup (docs/mitl_pcms_data_loader_plan.md,
-  # 8.9).
+  # global IDs and owned_mask; balanced: a distributed Omega_h mesh
   foreach(nclient 2 4)
     if(HOST_NPROC GREATER nclient)
-      foreach(transport BP4)
+      foreach(transport BP4 SST)
         foreach(mode pieces balanced)
           set(name python_coupler_partitioned_${mode}_${nclient}to1_${transport})
           dual_mpi_test(

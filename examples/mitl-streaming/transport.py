@@ -145,12 +145,18 @@ class PcmsTransport:
                 for name, h in self._handles.items()})
 
 
-# ADIOS2 SST engine parameters for the PCMS transport. Start with "Block":
-# redev exchanges setup messages over the same channel, and discarding those
-# would break the handshake (to verify before switching to "Discard").
+# ADIOS2 SST engine parameters for the PCMS transport. "Block": redev
+# exchanges setup messages over the same channel and needs every step, so
+# "Discard" breaks it (docs/mitl_pcms_data_loader_plan.md, 8.9).
+# SpeculativePreloadMode OFF: with one reader rank SST preloads by default, and
+# ADIOS2 (2.12.1, still on master) then matches a pending read against the
+# timestep of a late preload of another step from the same writer; an empty
+# block there segfaults the reader (N -> 1 coupler setup). See
+# docs/mitl_pcms_data_loader_plan.md, 8.9.
 SST_PARAMS = {
     "OpenTimeoutSecs": "300",
     "DataTransport": "WAN",
     "QueueLimit": "4",
     "QueueFullPolicy": "Block",
+    "SpeculativePreloadMode": "OFF",
 }

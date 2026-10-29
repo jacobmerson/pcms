@@ -1243,7 +1243,7 @@ the training dataset as a by-product.
 | S2 | Done | ctests `python_coupler_exchange_{BP4,SST}` (P0+P1+data, both directions, bit for bit) |
 | S3b | Done | `PcmsTransport`, `run_producer.py` / `run_consumer.py` / `run_pcms_demo.sh` |
 | P1 | Done | `partition.py`: Omega_h-balanced distributed mesh (default), or serial pieces split by `PROC_ID` (8.5) |
-| P2 | Done | ctests `python_coupler_partitioned_{pieces,balanced}_{2,4}to1_BP4` (values encode GIDs); SST N -> 1 crashes intermittently, see below |
+| P2 | Done | ctests `python_coupler_partitioned_{pieces,balanced}_{2,4}to1_{BP4,SST}` (values encode GIDs); SST needs `SpeculativePreloadMode=OFF`, see below |
 | P3 | Done | `run_pcms_demo.sh 8 --source exodus ...` |
 | S4 | Done | `exodus_source.py` (netCDF4; mm units; electron moments) |
 | S5 | Adapter done | `hnode_model.py`, `hnode_smoke.py`; CPU only here |
@@ -1277,18 +1277,40 @@ Findings:
   `StepStatus::OK`). Making ML never throttle the simulation needs redev to
   keep its setup out of the discardable queue and to report end of stream,
   or a separate channel. The demo uses Block.
-- **N -> 1 over SST crashes intermittently.** With 2 or 4 client ranks the
-  server sometimes segfaults inside the ADIOS2 SST WAN data plane (evpath
-  `CMDataAvailable` -> `memcpy` in `adios2_core`) while it is still in
-  `add_field`, i.e. during the coupler's exchange-plan setup. Clients then
-  fail redev's `StepStatus::OK` assert. Rates over 20 runs: serial pieces
-  0/20 (2 ranks) and 6/20 (4 ranks), balanced mesh 1/20 and 10/20; never in
-  the 1 -> 1 exchange or over BP4. `MarshalMethod=BP5` and
-  `ControlTransport=sockets` do not help, FFS always fails, and keeping the
-  clients alive until the server acknowledges does not help either. No C++
-  test exercises the coupler over SST, so this is not new. redev's
-  receive path keeps its deferred-`Get` buffers alive correctly; finding the
-  cause needs a debug ADIOS2 build. The N -> 1 ctests run on BP4 only.
+- **N -> 1 over SST crashed intermittently: an ADIOS2 bug, worked around
+  with `SpeculativePreloadMode=OFF`.** With several client ranks the server
+  segfaulted during coupler setup (`add_field`): 6/20 runs at 4 clients with
+  serial pieces, 10/20 with the balanced mesh; never 1 -> 1 or over BP4.
+  With a debug, AddressSanitizer build of ADIOS2 2.12.1 the fault is a NULL
+  read in `HandleRequestWithPreloaded` (`toolkit/sst/dp/evpath_dp.c`), on
+  the reader's network thread. A reader with few ranks gets speculative
+  preload by default (`SpeculativePreloadMode=AUTO`): every writer rank
+  pushes its data for each step to the reader. When a preload arrives,
+  `EvpathPreloadHandler` matches every pending read request against the
+  *preload's* timestep instead of the request's (the request handle does not
+  even record its timestep). redev's first setup step is written by client
+  rank 0 only, so the other ranks' preloads for it are empty, and each
+  writer rank's data connection opens on its first preload, so those empty
+  preloads can arrive after the reader has advanced and requested the next
+  step's block from the same rank. The request is then "satisfied" from the
+  empty entry: memcpy from NULL. With data in the stale entry it would
+  silently copy the wrong step's values instead. SST's verbose trace of a
+  failing run shows exactly this order. Still present on ADIOS2 master.
+  Not a PCMS or redev bug; redev's deferred-`Get` buffers are fine.
+
+  Evidence: a standalone ADIOS2 reproducer (no PCMS/redev; 8 writers, step
+  0 written by rank 0 only) crashes the reader in 17/40 runs, 0/40 with
+  `SpeculativePreloadMode=OFF`, and 0/40 with a 3-line ADIOS2 fix (store
+  the timestep in the request handle and match preloads against it). The
+  same fix runs the PCMS 4 -> 1 tests 45/45 clean under AddressSanitizer
+  with preload on. Workaround here: `SpeculativePreloadMode=OFF` in the SST
+  parameters of the tests and the demo; the SST N -> 1 ctests are back and
+  passed 10 repeats each, and the 8 -> 1 demo 3/3 bit for bit (about 350
+  ms/step instead of 300: data is pulled per step instead of pushed). Any
+  PCMS user running several SST writers into a small reader with default
+  parameters is exposed, C++ included (`AddApplication`'s default
+  parameters do not set it).
+
   Separately, the container's 64 MB `/dev/shm` fills up with MPICH segments
   left by killed runs and then every run dies with a bus error at import;
   start the container with a larger `--shm-size`.
@@ -1299,8 +1321,10 @@ Findings:
   of it need the per-pixel coverage of 3.5 (not implemented).
 
 Not done: per-pixel coverage (3.5) for non-conforming grids; a live view;
-S7; binding `Mesh::migrate` to distribute a mesh by a given partition; the
-SST N -> 1 crash above.
+S7; binding `Mesh::migrate` to distribute a mesh by a given partition;
+reporting the SST preload bug upstream (ADIOS2) with the fix and reproducer;
+deciding whether redev or PCMS should default `SpeculativePreloadMode=OFF`
+for SST.
 
 ### 8.8 Comparison with the training study
 
