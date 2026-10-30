@@ -1311,6 +1311,12 @@ Findings:
   parameters is exposed, C++ included (`AddApplication`'s default
   parameters do not set it).
 
+  Reported upstream with the reproducer and fix as ADIOS2#5249
+  (https://github.com/ornladios/ADIOS2/issues/5249, 2026-10-30). Decision:
+  keep `SpeculativePreloadMode=OFF` in the demo and tests, no redev/PCMS
+  default change; once a fixed ADIOS2 release is out, bump the minimum
+  ADIOS2 version and drop the parameter.
+
   Separately, the container's 64 MB `/dev/shm` fills up with MPICH segments
   left by killed runs and then every run dies with a bus error at import;
   start the container with a larger `--shm-size`.
@@ -1322,9 +1328,8 @@ Findings:
 
 Not done: per-pixel coverage (3.5) for non-conforming grids; a live view;
 S7; binding `Mesh::migrate` to distribute a mesh by a given partition;
-reporting the SST preload bug upstream (ADIOS2) with the fix and reproducer;
-deciding whether redev or PCMS should default `SpeculativePreloadMode=OFF`
-for SST.
+bumping the minimum ADIOS2 version and dropping `SpeculativePreloadMode=OFF`
+once ADIOS2#5249 is fixed in a release.
 
 ### 8.8 Comparison with the training study
 
