@@ -22,6 +22,8 @@ streaming).
 | Cheap models: persistence, linear, pooled torch (`models.py`) | Working |
 | hnode surrogate adapter (`hnode_model.py`) | Working (smoke test on hnode's bundled frames, CPU) |
 | Consumer with re-anchoring and gap handling (`consumer.py`) | Working |
+| Online training on the stream, point vs conservative (`online_model.py`, `run_trainer.py`) | Working; video via `make_video.py` |
+| hnode fine-tuning on the stream (`HNODEStreamTrainer`) | Working on the synthetic source (code path only), CPU |
 
 ## Files
 
@@ -37,11 +39,13 @@ streaming).
 | `producer.py` | `run_producer(source, transport, rate)` |
 | `consumer.py` | `Consumer`: rasterize, count, forecast, compare |
 | `models.py` | `rollout(frames[3, C, H, W], horizon)` implementations |
-| `hnode_model.py` | The pretrained hnode checkpoint behind `rollout` |
+| `hnode_model.py` | The pretrained hnode checkpoint behind `rollout`; `train_step` and `HNODEStreamTrainer` fine-tune it on streamed frames |
+| `online_model.py` | `OnlineTrainer`: small next-frame CNN trained on frames as they arrive, scored before it trains on each |
 | `report.py` | Console summary and figure |
 | `runtime.py` | One `OmegaHLibrary` per process, released at exit |
 | `run_loopback_demo.py` | One-process end-to-end demo |
 | `run_producer.py`, `run_consumer.py`, `run_pcms_demo.sh` | Two-program demo over the PCMS coupler |
+| `run_trainer.py`, `make_video.py` | Consumer that trains online (CNN per rasterization mode, or hnode fine-tuning), and its video |
 | `hnode_smoke.py` | hnode adapter check on hnode's bundled frames |
 | `tests/` | `unittest` suites (no pytest needed) |
 
@@ -80,6 +84,35 @@ to every producer rank. Options go to both programs.
     --model hnode --hnode-dir /path/to/hnode --plot synthetic_hnode.png
 ```
 
+### Training on the stream
+
+`run_trainer.py` is a consumer that trains instead of only forecasting. By
+default it trains two identical next-frame CNNs (same initial weights and
+sample order) on the same stream, one on point-interpolated frames and one
+on frames from the conservative transfer. Every received frame is first
+predicted by the model (scored against persistence), then added to a replay
+buffer, then trained on (`--train-steps` optimizer steps on random patches).
+`make_video.py` renders the record: per mode the ingested density, the
+prediction made before arrival and the forecast from `--horizon` steps
+earlier, plus the training loss, error relative to persistence and the
+electron count against the exact source integral.
+
+```bash
+CONSUMER=run_trainer.py PRODUCER_NICE=19 ./run_pcms_demo.sh 8 --source exodus \
+    --exo $PCMS_TEST_DATA_DIR/exodus/flow/flow.exo --record train.npz
+python make_video.py train.npz train.mp4           # needs imageio-ffmpeg
+# Fine-tune the pretrained hnode checkpoint on the synthetic 6-channel stream:
+CONSUMER=run_trainer.py PRODUCER_NICE=19 ./run_pcms_demo.sh 8 --source synthetic \
+    --steps 12 --model hnode --hnode-dir /path/to/hnode --modes point \
+    --lr 1e-6 --record hnode.npz
+python make_video.py hnode.npz hnode.mp4
+```
+
+`PRODUCER_NICE` matters when producer and trainer share a node: producer
+ranks blocked by a slow consumer busy-wait in MPI and would take the
+trainer's cores. Under `mpiexec` torch defaults to one thread, so the trainer
+sets its thread count to the cores it may use (`--threads` overrides).
+
 `--verify` checks every received field bit for bit against the source read
 locally by the consumer. The two programs can also be started by hand:
 `mpiexec -n 1 python run_consumer.py ...` and
@@ -104,6 +137,16 @@ bundled `example_traj` frames (needs `einops` and `scikit-fem`).
   `QueueLimit=1` the channel setup fails, and with a larger queue a dropped
   end-of-stream step leaves the consumer at EndOfStream, where redev aborts.
   Use Block (the default).
+- `flow.exo` is 51 noisy particle-in-cell frames 0.2 ns apart: the
+  change from one frame to the next is mostly noise, so an online model
+  trained on it does not beat persistence on unseen frames (even spatial
+  smoothing only reaches 0.90-0.95 of persistence's error). Its training
+  loss falls; forecast skill needs more and denser output.
+- hnode training differentiates through the solver's implicit backward,
+  which needs a double backward of attention; on the CPU this uses the math
+  attention kernel. One step takes about 20 s and 10 GB on 4-8 cores.
+  Adam at lr 1e-5 already raises the loss of the pretrained model after one
+  step; use about 1e-6.
 - Frames stay float64 inside the pipeline; hnode stores float32, so cast at
   the disk or model boundary.
 - Density uses a lumped mass matrix (non-negative). Consistent projection

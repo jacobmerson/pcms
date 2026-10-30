@@ -134,6 +134,88 @@ class HNODEModel:
             out = torch.where(self.mask > 0, out, 0.0)
         return out.numpy()
 
+    def train_step(self, frames, targets, leads, optimizer):
+        """One optimizer step on streamed frames, as in the notebook's
+        training loop: encode three consecutive frames, reconstruct the two
+        oldest, evolve the latent one rollout and decode the frames `leads`
+        (even) after the newest input. targets[k] is the frame leads[k]
+        after frames[-1]. Returns (loss, decoded targets in physical
+        units)."""
+        from torch.nn.attention import SDPBackend, sdpa_kernel
+        # The solver's backward differentiates through the RHS model's
+        # gradient; the CPU flash attention kernel has no double backward.
+        with sdpa_kernel(SDPBackend.MATH):
+            return self._train_step(frames, targets, leads, optimizer)
+
+    def _train_step(self, frames, targets, leads, optimizer):
+        torch = self._torch
+        F = torch.nn.functional
+        for module in (self.encoder, self.decoder, self.rhs):
+            module.train()
+        x = self._normalize(frames)                               # [3, 7, ...]
+        y = self._normalize(targets)
+        latents = self.encoder(x)
+        batch = {"J_init": ((latents[2] - latents[0]) / DT)[None],
+                 "u_init": latents[1][None], "z": self.z}
+        saved = self.solver.num_training_rollouts
+        self.solver.num_training_rollouts = 1
+        try:
+            _, u_hat = self.solver.evolve_batch(batch)
+        finally:
+            self.solver.num_training_rollouts = saved
+        index = [lead // FRAMES_PER_LATENT_STEP for lead in leads]
+        decoded = self.decoder(torch.cat([latents[:2], u_hat[0, index]]))
+        decoded = torch.where(self._padded_mask > 0, decoded, 0.0)
+        target = torch.cat([x[:2], y])
+        covered = self._padded_mask.expand_as(decoded) > 0
+        loss = F.l1_loss(decoded[covered], target[covered])
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        for module in (self.encoder, self.decoder, self.rhs):
+            module.eval()
+        with torch.no_grad():
+            out = decoded[2:, :6, :self.shape[0], :self.shape[1]].cpu()
+            out = torch.where(self.mask > 0, out * self.std + self.mean, 0.0)
+        return float(loss.detach()), out.numpy()
+
+    def parameters(self):
+        for module in (self.encoder, self.decoder, self.rhs):
+            yield from module.parameters()
+
+
+class HNODEStreamTrainer:
+    """Fine-tunes the pretrained model on a stream: once a frame arrives
+    that completes a sample (three inputs and the targets `leads` after
+    them), take one optimizer step on it. The decoded targets come from the
+    forward pass before the update, so they are predictions of frames the
+    model has not trained on yet."""
+
+    def __init__(self, model, leads=(2, 4), lr=1e-5, max_steps=None):
+        import torch
+        self.model = model
+        self.leads = list(leads)
+        self.max_steps = max_steps
+        self.optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+        self.frames = []
+        self.losses = []
+
+    def receive(self, frame):
+        """Returns None, or (loss, seconds, prediction of `frame`)."""
+        import time
+        self.frames.append(frame)
+        newest = len(self.frames) - 1 - max(self.leads)
+        if newest < 2 or (self.max_steps is not None
+                          and len(self.losses) >= self.max_steps):
+            return None
+        t0 = time.perf_counter()
+        loss, decoded = self.model.train_step(
+            np.stack(self.frames[newest - 2:newest + 1]),
+            np.stack([self.frames[newest + lead] for lead in self.leads]),
+            self.leads, self.optimizer)
+        self.losses.append(loss)
+        return loss, time.perf_counter() - t0, decoded[-1]
+
 
 def _strip_compile_prefix(state_dict):
     """The checkpoint was saved from torch.compile'd modules."""
