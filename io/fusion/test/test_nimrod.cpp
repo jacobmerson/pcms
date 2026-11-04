@@ -6,6 +6,7 @@
 #include "nimeval.hpp"
 #include "test_utils.hpp"
 #include <unistd.h>
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -125,14 +126,14 @@ TEST_CASE("NIMROD values match direct nimeval evaluation")
   struct Case
   {
     const char* quantity;
-    NimrodOptions::Part part;
+    fio::Part part;
     int eq;
     std::shared_ptr<fio::detail::NimrodFunctionSpace> space;
   };
   for (const auto& [quantity, part, eq, space] :
-       {Case{"b", NimrodOptions::Part::Total, 2, vectors},
-        Case{"v", NimrodOptions::Part::Perturbed, 0, vectors},
-        Case{"n", NimrodOptions::Part::Equilibrium, 1, scalars}}) {
+       {Case{"b", fio::Part::Total, 2, vectors},
+        Case{"v", fio::Part::Perturbed, 0, vectors},
+        Case{"n", fio::Part::Equilibrium, 1, scalars}}) {
     CAPTURE(quantity);
     const auto values = EvaluateAt(
       *space, space->CreateFunction("f", quantity, {.part = part}), Points);
@@ -168,12 +169,10 @@ TEST_CASE("NIMROD parts select equilibrium and perturbation")
     10.6, 0.4, 0.3, 10.6, 0.4 + std::numbers::pi, 0.3};
 
   const auto equilibrium = EvaluateAt(
-    *space,
-    space->CreateFunction("b", "b", {.part = NimrodOptions::Part::Equilibrium}),
+    *space, space->CreateFunction("b", "b", {.part = fio::Part::Equilibrium}),
     points);
   const auto perturbed = EvaluateAt(
-    *space,
-    space->CreateFunction("b", "b", {.part = NimrodOptions::Part::Perturbed}),
+    *space, space->CreateFunction("b", "b", {.part = fio::Part::Perturbed}),
     points);
   const auto total =
     EvaluateAt(*space, space->CreateFunction("b", "b"), points);
@@ -301,4 +300,51 @@ TEST_CASE("NIMROD sources are checked before opening")
   REQUIRE_THROWS_WITH(
     fio::detail::OpenNimrodSource(copy.DumpPath(), "b", copy.Dir()),
     ContainsSubstring("only toroidal cases"));
+}
+
+TEST_CASE("fio::OpenNimrod gives Fusion-IO's quantities")
+{
+  const CaseCopy copy("fio");
+  const auto source = fio::OpenNimrod(copy.DumpPath(), "bvn", copy.Dir());
+
+  const auto quantities = source->Quantities();
+  const auto components = [&](fio::Quantity quantity) {
+    const auto found =
+      std::ranges::find(quantities, quantity, &fio::QuantityInfo::quantity);
+    return found == quantities.end() ? 0 : found->num_components;
+  };
+  REQUIRE(components(fio::Quantity::MagneticField) == 3);
+  REQUIRE(components(fio::Quantity::FluidVelocity) == 3);
+  REQUIRE(components(fio::Quantity::Density) >= 1);
+  REQUIRE(components(fio::Quantity::Temperature) == 0);
+  REQUIRE(source->Times().empty());
+
+  SECTION("functions match the NIMROD function space")
+  {
+    const auto b = source->CreateFunction(fio::Quantity::MagneticField,
+                                          {.part = fio::Part::Equilibrium});
+    REQUIRE(b.GetName() == "magnetic field");
+    const auto& space =
+      dynamic_cast<const fio::detail::NimrodFunctionSpace&>(b.GetSpace());
+    const auto expected =
+      space.CreateFunction("b", "b", {.part = fio::Part::Equilibrium});
+    const auto actual_values = pcms::test::EvaluateAt(b, Points);
+    const auto expected_values = pcms::test::EvaluateAt(expected, Points);
+    for (size_t i = 0; i < Points.size() / 3; ++i) {
+      for (size_t c = 0; c < 3; ++c) {
+        REQUIRE(actual_values(i, c) == expected_values(i, c));
+      }
+    }
+  }
+
+  SECTION("unsupported options and quantities throw")
+  {
+    REQUIRE_THROWS_WITH(
+      source->CreateFunction(fio::Quantity::MagneticField, {.timeslice = 0}),
+      ContainsSubstring("only the part option"));
+    REQUIRE_THROWS_WITH(source->CreateFunction(fio::Quantity::Temperature),
+                        ContainsSubstring("does not provide"));
+    REQUIRE_THROWS_WITH(source->CreateFunction(fio::Quantity::Viscosity),
+                        ContainsSubstring("do not provide"));
+  }
 }
