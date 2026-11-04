@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace fio::detail
 {
@@ -49,10 +50,19 @@ public:
   /// whether a point is inside the source's domain. Read on first use.
   [[nodiscard]] fio_field& DomainProbe() const;
 
+  /// Search hints for `num_points` query points: sizeof_search_hint() bytes
+  /// per point. Consecutive bindings to the same number of points share them,
+  /// so point i starts where point i of the previous binding was found (the
+  /// warm start lockstep tracers need). Hints are only first guesses, so
+  /// unrelated bindings sharing them lose speed, never correctness.
+  [[nodiscard]] std::shared_ptr<std::vector<char>> SearchHints(
+    size_t num_points) const;
+
 private:
   FusionIOSourcePtr source_;
   std::map<std::string, field_type> quantities_;
   mutable FusionIOFieldPtr probe_;
+  mutable std::shared_ptr<std::vector<char>> hints_;
 };
 
 } // namespace fio::detail

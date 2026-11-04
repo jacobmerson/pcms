@@ -51,9 +51,9 @@ private:
 };
 
 // The query points in Fusion-IO's layout and the per-point search hints. The
-// hints let Fusion-IO start each point's search where it last found it; they
-// belong to the source, so every field and every evaluator created from this
-// bound source shares them.
+// hints let Fusion-IO start each point's search where it last found it; every
+// field and evaluator created from this bound source shares them, and the
+// next binding of the source to as many points starts from them.
 //
 // With OutOfBoundsMode::FILL the points outside the source's domain are found
 // here by evaluating the source's domain probe at every point; the fields of
@@ -69,11 +69,8 @@ public:
   {
     // A LayoutRight host copy, so each point's coordinates are contiguous.
     DeepCopyMismatchLayouts(points, PointValues());
-    // As in Fusion-IO's korc_example, the hints are one zero-initialized block
-    // of sizeof_search_hint() bytes per point. For M3D-C1 a hint is an element
-    // to try first, so zero is a valid starting guess.
     hint_size = source.Get().sizeof_search_hint();
-    hints.assign(hint_size * points.extent(0), 0);
+    hints = source.SearchHints(points.extent(0));
     if (request.policy.mode == OutOfBoundsMode::FILL) {
       FindPointsInDomain(source.DomainProbe());
     }
@@ -83,12 +80,12 @@ public:
 
   [[nodiscard]] fio_hint Hint(size_t i) const
   {
-    return hint_size > 0 ? &hints[i * hint_size] : nullptr;
+    return hint_size > 0 ? &(*hints)[i * hint_size] : nullptr;
   }
 
   Kokkos::View<Real**, Kokkos::LayoutRight, HostMemorySpace> points;
   size_t hint_size = 0;
-  mutable std::vector<char> hints;
+  std::shared_ptr<std::vector<char>> hints;
   /// FoundPoints() on the host
   Kokkos::View<const LO*, HostMemorySpace> found;
 
@@ -283,6 +280,20 @@ fio_field& FusionIOSource::DomainProbe() const
   }
   throw pcms_error("FusionIOSource: none of the source's quantities can be "
                    "read to locate points");
+}
+
+std::shared_ptr<std::vector<char>> FusionIOSource::SearchHints(
+  size_t num_points) const
+{
+  // As in Fusion-IO's korc_example, the hints are one zero-initialized block
+  // of sizeof_search_hint() bytes per point. For M3D-C1 a hint is an element
+  // to try first, so zero is a valid starting guess.
+  const size_t size =
+    static_cast<size_t>(source_->sizeof_search_hint()) * num_points;
+  if (hints_ == nullptr || hints_->size() != size) {
+    hints_ = std::make_shared<std::vector<char>>(size, 0);
+  }
+  return hints_;
 }
 
 std::shared_ptr<FusionIOSource> OpenFusionIOSource(Format format,
