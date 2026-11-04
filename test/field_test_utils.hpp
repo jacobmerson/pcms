@@ -18,7 +18,7 @@
 #include <Omega_h_mesh.hpp>
 #include <Omega_h_shape.hpp>
 #include "pcms/backends/omega_h/geometry.hpp"
-#include "pcms/field/function_space/lagrange.hpp"
+#include "pcms/field/function_spaces.hpp"
 #include "pcms/backends/omega_h/adj_search.hpp"
 #endif
 #if defined(PCMS_ENABLE_PETSC) && defined(PCMS_ENABLE_MESHFIELDS)
