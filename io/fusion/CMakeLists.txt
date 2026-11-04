@@ -57,6 +57,14 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/fusion_io-config.cmake
               ${CMAKE_CURRENT_BINARY_DIR}/fusion_io-config-version.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fusion_io)
 
+option(FUSION_IO_BUILD_TOOLS "Build the Fusion-IO tools (fio_trace)" ON)
+if(FUSION_IO_BUILD_TOOLS)
+  find_package(MPI REQUIRED COMPONENTS CXX)
+  add_executable(fio_trace tools/trace/main.cpp)
+  target_link_libraries(fio_trace PRIVATE fusion_io MPI::MPI_CXX)
+  install(TARGETS fio_trace)
+endif()
+
 include(CTest)
 if(BUILD_TESTING)
   add_subdirectory(test)
