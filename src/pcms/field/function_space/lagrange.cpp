@@ -7,11 +7,11 @@
 #include "pcms/backends/omega_h_meshfields/evaluator.hpp"
 #include "pcms/backends/omega_h_meshfields/field_data.hpp"
 #endif
-#include "pcms/field/layout/omega_h_lagrange.hpp"
-#include "pcms/field/evaluator/omega_h_lagrange.hpp"
+#include "pcms/backends/omega_h/lagrange_layout.hpp"
+#include "pcms/backends/omega_h/lagrange_evaluator.hpp"
 #include "pcms/backends/uniform_grid/layout.hpp"
 #include "pcms/backends/uniform_grid/evaluator.hpp"
-#include "pcms/field/data/omega_h.hpp"
+#include "pcms/backends/omega_h/field_data.hpp"
 #include "pcms/field/data/simple.hpp"
 #include "pcms/utility/uniform_grid.hpp"
 

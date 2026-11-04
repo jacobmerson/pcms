@@ -1,11 +1,11 @@
 #ifndef PCMS_OMEGA_H_LAGRANGE_EVALUATOR_FACTORY_H
 #define PCMS_OMEGA_H_LAGRANGE_EVALUATOR_FACTORY_H
 
-#include "pcms/field/layout/omega_h_lagrange.hpp"
+#include "pcms/backends/omega_h/lagrange_layout.hpp"
 #include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/field/point_evaluator.hpp"
 #include "pcms/field/field_data.hpp"
-#include "pcms/field/data/omega_h.hpp"
+#include "pcms/backends/omega_h/field_data.hpp"
 #include "pcms/localization/point_search.hpp"
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/arrays.hpp"
