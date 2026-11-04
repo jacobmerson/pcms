@@ -13,7 +13,7 @@
 #ifdef PCMS_ENABLE_OMEGA_H
 #include "field_test_utils.hpp"
 #include "pcms/field/function_space/lagrange.hpp"
-#include "pcms/field/evaluator/uniform_grid_geometry.hpp"
+#include "pcms/backends/uniform_grid/geometry.hpp"
 #include "pcms/field/function_space/polynomial_reconstruction.hpp"
 #include <pcms/backends/point_cloud/geometry.hpp>
 #include "pcms/utility/uniform_grid.hpp"

@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include <Kokkos_Core.hpp>
-#include "pcms/field/layout/uniform_grid.hpp"
-#include "pcms/field/evaluator/uniform_grid.hpp"
+#include "pcms/backends/uniform_grid/layout.hpp"
+#include "pcms/backends/uniform_grid/evaluator.hpp"
 #include "pcms/field/uniform_grid_binary_field.hpp"
 #include "pcms/field/data/simple.hpp"
 #include "pcms/field/value_view.hpp"
@@ -12,7 +12,7 @@
 #include "pcms/transfer/copy.hpp"
 #include "pcms/transfer/interpolator.hpp"
 #include "pcms/field/function_space/lagrange.hpp"
-#include "pcms/field/evaluator/uniform_grid_geometry.hpp"
+#include "pcms/backends/uniform_grid/geometry.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "field_test_utils.hpp"
 #include <cmath>
