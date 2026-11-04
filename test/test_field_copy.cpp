@@ -4,7 +4,7 @@
 #include <Omega_h_build.hpp>
 #include <Omega_h_for.hpp>
 #include "pcms/transfer/copy.hpp"
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
+#include "pcms/backends/omega_h/geometry.hpp"
 #include "pcms/field/function_space/lagrange.hpp"
 #include "pcms/field/value_view.hpp"
 #include "pcms/utility/assert.hpp"
