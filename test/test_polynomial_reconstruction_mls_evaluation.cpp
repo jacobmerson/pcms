@@ -4,9 +4,9 @@
 
 #include "pcms/field/function_space/polynomial_reconstruction.hpp"
 #include "pcms/field/evaluator/point_cloud_geometry.hpp"
-#include "pcms/field/evaluator/mls_options.hpp"
+#include "pcms/localization/mls_options.hpp"
 #include "pcms/field/value_view.hpp"
-#include "pcms/field/coordinate_view.hpp"
+#include "pcms/utility/coordinate_view.hpp"
 #include "pcms/field/out_of_bounds_policy.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/memory_spaces.hpp"
@@ -17,8 +17,8 @@
 #include <cmath>
 #include <stdexcept>
 #include <vector>
-#include "pcms/field/coordinate_systems/cartesian.hpp"
-#include "pcms/field/coordinate_systems/cylindrical.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/cylindrical.hpp"
 
 using pcms::CoordinateSystem;
 using pcms::CoordinateView;

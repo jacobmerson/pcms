@@ -9,12 +9,12 @@
 #include <pybind11/stl.h>
 
 #include "pcms/field/coordinate_map.hpp"
-#include "pcms/field/coordinate_system.hpp"
-#include "pcms/field/coordinate_systems/cartesian.hpp"
-#include "pcms/field/coordinate_view.hpp"
+#include "pcms/utility/coordinate_system.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_view.hpp"
 #include "pcms/geometry/bound_source.hpp"
 #include "pcms/field/differential_operator.hpp"
-#include "pcms/field/evaluator/mls_options.hpp"
+#include "pcms/localization/mls_options.hpp"
 #include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/evaluator/uniform_grid_geometry.hpp"
 #include "pcms/field/field.hpp"
