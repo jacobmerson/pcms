@@ -6,7 +6,7 @@
 #include "pcms/field/value_view.hpp"
 #include "pcms/discretization/discretization.hpp"
 #include "pcms/field/function_space/lagrange.hpp"
-#include "pcms/field/layout/omega_h_entity.hpp"
+#include "pcms/backends/omega_h/entity_layout.hpp"
 #include "pcms/backends/point_cloud/layout.hpp"
 #include "field_test_utils.hpp"
 

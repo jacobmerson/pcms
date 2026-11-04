@@ -5,7 +5,7 @@
 
 #include "distributed_test_utils.hpp"
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
+#include "pcms/backends/omega_h/geometry.hpp"
 #include "pcms/field/function_space/lagrange.hpp"
 #include "pcms/field/out_of_bounds_policy.hpp"
 #include "pcms/utility/arrays.hpp"
