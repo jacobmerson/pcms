@@ -15,6 +15,7 @@
 
 #include <memory>
 #include <utility>
+#include <Omega_h_vector.hpp>
 
 namespace pcms
 {
