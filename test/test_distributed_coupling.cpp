@@ -9,7 +9,7 @@
 #include "pcms/coupler/overlap_mask.hpp"
 #include "pcms/field/data/simple.hpp"
 #include "distributed_test_utils.hpp"
-#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
 #include "pcms/field/function_space/lagrange.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/types.hpp"

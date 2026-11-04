@@ -5,7 +5,7 @@
 #include <Omega_h_build.hpp>
 #include <Omega_h_library.hpp>
 #include <pcms/field/bound_source.hpp>
-#include <pcms/field/coordinate_systems/cylindrical.hpp>
+#include <pcms/utility/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/function_space/lagrange.hpp>
 #include "field_test_utils.hpp"
 #include <vector>
