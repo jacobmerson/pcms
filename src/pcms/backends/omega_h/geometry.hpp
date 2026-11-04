@@ -1,5 +1,5 @@
-#ifndef PCMS_FIELD_EVALUATOR_OMEGA_H_GEOMETRY_HPP
-#define PCMS_FIELD_EVALUATOR_OMEGA_H_GEOMETRY_HPP
+#ifndef PCMS_BACKENDS_OMEGA_H_GEOMETRY_HPP
+#define PCMS_BACKENDS_OMEGA_H_GEOMETRY_HPP
 
 #include "pcms/backends/omega_h/discretization.hpp"
 #include "pcms/backends/omega_h/omega_h.hpp"
@@ -291,4 +291,4 @@ localization::GridPointSearchVariant MakeGridSearch(
 
 } // namespace pcms::backend::omega_h
 
-#endif // PCMS_FIELD_EVALUATOR_OMEGA_H_GEOMETRY_HPP
+#endif // PCMS_BACKENDS_OMEGA_H_GEOMETRY_HPP
