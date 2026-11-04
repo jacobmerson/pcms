@@ -5,6 +5,7 @@ set(
         queue_visited.hpp
         adj_search.hpp
         mls_support_helpers.hpp
+        mls_options.hpp
 )
 
 set(
