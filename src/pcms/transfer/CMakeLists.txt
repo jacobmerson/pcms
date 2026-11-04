@@ -89,4 +89,4 @@ install(
 install(
     EXPORT pcms_transfer-targets
     NAMESPACE pcms::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pcms)
+    DESTINATION ${PCMS_INSTALL_CMAKEDIR})
