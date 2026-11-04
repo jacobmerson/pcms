@@ -11,7 +11,7 @@
 #include <memory>
 #include <utility>
 
-#include "pcms/field/layout/mesh_fields.hpp"
+#include "pcms/backends/omega_h_meshfields/layout.hpp"
 #include "pcms/utility/types.hpp"
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/arrays.hpp"
