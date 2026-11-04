@@ -264,8 +264,11 @@ fio_field& FusionIOSource::DomainProbe() const
   for (const auto& [name, type] : quantities_) {
     candidates.push_back(type);
   }
+  // The equilibrium part is the cheapest to evaluate, and for M3D-C1 it is
+  // on the mesh already loaded rather than a time slice's.
   fio_option_list options;
   source_->get_field_options(&options);
+  options.set_option(FIO_PART, FIO_EQUILIBRIUM_ONLY);
   for (const field_type type : candidates) {
     const auto provided = std::views::values(quantities_);
     if (std::ranges::find(provided, type) == provided.end()) {
