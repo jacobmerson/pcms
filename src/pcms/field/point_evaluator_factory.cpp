@@ -1,5 +1,5 @@
 #include "pcms/field/point_evaluator_factory.hpp"
-#include "pcms/field/function_space.h"
+#include "pcms/field/function_space.hpp"
 #include <string>
 
 namespace pcms

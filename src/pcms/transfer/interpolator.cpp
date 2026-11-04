@@ -1,4 +1,4 @@
-#include "pcms/transfer/interpolator.h"
+#include "pcms/transfer/interpolator.hpp"
 
 namespace pcms
 {
