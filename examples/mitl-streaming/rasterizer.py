@@ -77,13 +77,15 @@ class GridRasterizer:
         self._ops = {}
         self.mask = self.mask.reshape(grid.shape)
 
-        # Hat-function integrals: the P1 lumped-mass diagonal. A frame's
-        # integral is sum(weights * frame) over the target mesh.
-        area = np.asarray(self._tgt_mesh.ask_sizes())
-        w = np.zeros(len(tgt_points))
+        # Hat-function integrals over the domain only: the P1 lumped-mass
+        # diagonal. A frame's integral is sum(weights * frame). The point
+        # mode's target mesh also covers the step, so its own element sizes
+        # would count the hats of nodes on the step beyond the domain.
+        domain_tris = tris[grid.inside(nodes[tris].mean(axis=1))]
+        w = np.zeros(len(nodes))
         for k in range(3):
-            np.add.at(w, tgt_tris[:, k], area / 3.0)
-        self.weights = self._scatter(w)
+            np.add.at(w, domain_tris[:, k], 0.5 * grid.dx * grid.dy / 3.0)
+        self.weights = w.reshape(grid.shape)
 
     def _op(self, centering, mass_type):
         key = (centering, mass_type if self.mode == "conservative" else None)

@@ -173,7 +173,7 @@ class Renderer:
         ax.set_xlabel("streamed step")
         ax.set_ylabel("electron count error (%)")
         ax.set_title("ingested electrons vs exact source", fontsize=12)
-        ax.legend(fontsize=9, loc="upper right")
+        ax.legend(fontsize=9, loc="lower right")
 
     def rgb(self, i, dpi):
         fig = self.figure(i)

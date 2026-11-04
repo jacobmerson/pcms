@@ -31,8 +31,9 @@ class RasterizerTest(unittest.TestCase):
 
     def test_weights_integrate_domain_area(self):
         area = 50.0 * 8.25 - 35.0 * 3.3
-        self.assertAlmostEqual(float(self.cons.weights.sum()), area,
-                               places=10)
+        for rast in (self.cons, self.point):
+            self.assertAlmostEqual(float(rast.weights.sum()), area,
+                                   places=10)
 
     def test_conservative_density_is_exact_and_positive(self):
         fields = self.source.fields(30)
