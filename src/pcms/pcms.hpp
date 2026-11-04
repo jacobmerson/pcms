@@ -40,6 +40,7 @@
 #include "pcms/field/field_factory.hpp"
 #include "pcms/field/field_layout.hpp"
 #include "pcms/field/function_space.hpp"
+#include "pcms/field/function_spaces.hpp"
 #include "pcms/field/gradient_source.hpp"
 #include "pcms/field/out_of_bounds_policy.hpp"
 #include "pcms/field/point_evaluator.hpp"
