@@ -19,6 +19,7 @@ set(PCMS_FIELD_HEADERS
         transformed_source.hpp
         data/simple.hpp
         function_space/polynomial_reconstruction.hpp
+        function_spaces.hpp
 )
 set(PCMS_FIELD_SOURCES
         field_layout.cpp
@@ -30,6 +31,7 @@ set(PCMS_FIELD_SOURCES
         gradient_source.cpp
         gid_permutation.cpp
         function_space/polynomial_reconstruction.cpp
+        function_spaces.cpp
         layout/empty.cpp
 )
 
