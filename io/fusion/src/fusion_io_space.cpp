@@ -4,6 +4,7 @@
 #include "pcms/utility/arrays.h"
 #include "pcms/utility/assert.h"
 #include "pcms/utility/profile.h"
+#include <algorithm>
 #include <numbers>
 #include <ranges>
 #include <string_view>
@@ -53,16 +54,20 @@ private:
 // hints let Fusion-IO start each point's search where it last found it; they
 // belong to the source, so every field and every evaluator created from this
 // bound source shares them.
+//
+// With OutOfBoundsMode::FILL the points outside the source's domain are found
+// here by evaluating the source's domain probe at every point; the fields of
+// a source share its domain, so they hold for every quantity.
 class FusionIOBoundSource final : public BoundSource
 {
 public:
   FusionIOBoundSource(const FusionIOSource& source,
                       const EvaluationRequest& request)
-    : BoundSource(request)
+    : BoundSource(request), policy(request.policy)
   {
-    if (request.policy.mode != OutOfBoundsMode::ERROR) {
-      throw pcms_error("FusionIOFunctionSpace: only OutOfBoundsMode::ERROR is "
-                       "supported");
+    if (policy.mode == OutOfBoundsMode::NEAREST_BOUNDARY) {
+      throw pcms_error("FusionIOFunctionSpace: OutOfBoundsMode::"
+                       "NEAREST_BOUNDARY is not supported");
     }
     // Copy to a LayoutRight host view so each point's coordinates are
     // contiguous.
@@ -78,6 +83,9 @@ public:
     // to try first, so zero is a valid starting guess.
     hint_size = source.Get().sizeof_search_hint();
     hints.assign(hint_size * points.extent(0), 0);
+    if (policy.mode == OutOfBoundsMode::FILL) {
+      FindFilledPoints(source.DomainProbe());
+    }
   }
 
   [[nodiscard]] fio_hint Hint(size_t i) const
@@ -85,9 +93,37 @@ public:
     return hint_size > 0 ? &hints[i * hint_size] : nullptr;
   }
 
+  OutOfBoundsPolicy policy;
   Kokkos::View<Real**, Kokkos::LayoutRight, HostMemorySpace> points;
   size_t hint_size = 0;
   mutable std::vector<char> hints;
+  /// Whether each point is outside the domain (FILL only).
+  std::vector<char> outside;
+  Kokkos::View<const LO*, DeviceMemorySpace> filled_points;
+
+private:
+  void FindFilledPoints(fio_field& probe)
+  {
+    outside.assign(points.extent(0), 0);
+    std::vector<Real> values(static_cast<size_t>(probe.dimension()));
+    std::vector<LO> filled;
+    for (size_t i = 0; i < points.extent(0); ++i) {
+      const int status = probe.eval(&points(i, 0), values.data(), Hint(i));
+      if (status == FIO_OUT_OF_BOUNDS) {
+        outside[i] = 1;
+        filled.push_back(static_cast<LO>(i));
+      } else if (status != FIO_SUCCESS) {
+        throw pcms_error("FusionIOFunctionSpace: locating query point " +
+                         std::to_string(i) + " failed (Fusion-IO error " +
+                         std::to_string(status) + ")");
+      }
+    }
+    Kokkos::View<LO*, DeviceMemorySpace> device("fusion_io_filled_points",
+                                                filled.size());
+    Kokkos::deep_copy(device, Kokkos::View<const LO*, HostMemorySpace>(
+                                filled.data(), filled.size()));
+    filled_points = device;
+  }
 };
 
 // Evaluates a quantity, or with derivative_order 1 its gradient, which
@@ -142,6 +178,10 @@ public:
       "fusion_io_values", out.extent(0), out.extent(1));
     for (size_t i = 0; i < points.extent(0); ++i) {
       Real* row = &host_out(i, 0);
+      if (!bound_->outside.empty() && bound_->outside[i]) {
+        std::fill_n(row, num_components, bound_->policy.fill_value);
+        continue;
+      }
       const int status =
         derivative_order_ == 0
           ? data->field->eval(&points(i, 0), row, bound_->Hint(i))
@@ -151,8 +191,11 @@ public:
                          "derivatives of this quantity for this format");
       }
       if (status == FIO_OUT_OF_BOUNDS) {
-        throw pcms_error("FusionIOFunctionSpace: query point " +
-                         std::to_string(i) + " is outside the source's domain");
+        throw pcms_error(
+          "FusionIOFunctionSpace: query point " + std::to_string(i) +
+          (bound_->policy.mode == OutOfBoundsMode::FILL
+             ? " is outside this quantity's domain but inside the source's"
+             : " is outside the source's domain"));
       }
       if (status != FIO_SUCCESS) {
         throw pcms_error("FusionIOFunctionSpace: evaluation failed at query "
@@ -174,7 +217,7 @@ public:
 
   Kokkos::View<const LO*, DeviceMemorySpace> FilledPoints() const override
   {
-    return {};
+    return bound_->filled_points;
   }
 
 private:
@@ -219,6 +262,35 @@ FusionIOFieldPtr FusionIOSource::GetField(field_type type,
                      "\" (Fusion-IO error " + std::to_string(status) + ")");
   }
   return owned;
+}
+
+fio_field& FusionIOSource::DomainProbe() const
+{
+  if (probe_ != nullptr) {
+    return *probe_;
+  }
+  // Sources list quantities their file may lack, so try the ones every MHD
+  // source has first (the poloidal flux is a cheap scalar), then the rest.
+  std::vector<field_type> candidates = {FIO_POLOIDAL_FLUX, FIO_MAGNETIC_FIELD};
+  for (const auto& [name, type] : quantities_) {
+    candidates.push_back(type);
+  }
+  fio_option_list options;
+  source_->get_field_options(&options);
+  for (const field_type type : candidates) {
+    const auto provided = std::views::values(quantities_);
+    if (std::ranges::find(provided, type) == provided.end()) {
+      continue;
+    }
+    fio_field* field = nullptr;
+    if (source_->get_field(type, &field, &options) == FIO_SUCCESS) {
+      probe_.reset(field);
+      return *probe_;
+    }
+    delete field;
+  }
+  throw pcms_error("FusionIOSource: none of the source's quantities can be "
+                   "read to locate points");
 }
 
 std::shared_ptr<FusionIOSource> OpenFusionIOSource(Format format,
