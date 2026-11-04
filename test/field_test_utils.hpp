@@ -184,7 +184,7 @@ inline std::shared_ptr<const FunctionSpace> MakeP1Space(
 {
   return MakeP1Space(CreateOmegaHGeometry(
     mesh, csys::Cartesian::Deferred(),
-    OmegaHGeometryOptions{.global_id_name = global_id_name}));
+    backend::omega_h::OmegaHGeometryOptions{.global_id_name = global_id_name}));
 }
 
 inline std::shared_ptr<const FunctionSpace> MakeP0Space(Omega_h::Mesh& mesh)
@@ -693,7 +693,7 @@ std::vector<HostRecord> FoundRecordsOfDim(const OmegaHMeshBinding& binding)
 inline std::vector<HostRecord> FoundRecords(const BoundSource& bound)
 {
   const auto& binding = dynamic_cast<const OmegaHMeshBinding&>(bound);
-  return GetMesh(*bound.GetGeometry()).dim() == 2
+  return backend::omega_h::GetMesh(*bound.GetGeometry()).dim() == 2
            ? FoundRecordsOfDim<2>(binding)
            : FoundRecordsOfDim<3>(binding);
 }
