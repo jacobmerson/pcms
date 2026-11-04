@@ -21,8 +21,11 @@ def mesh(world):
 
 @pytest.fixture
 def space(mesh):
-    return pcms.LagrangeFunctionSpace.from_mesh(
-        mesh, 1, 1, backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
+    return pcms.create_lagrange_space(
+        pcms.backend.omega_h.create_discretization(mesh),
+        1,
+        1,
+        implementation=pcms.LagrangeImplementation.OmegaH)
 
 
 def _linear_function(space):
@@ -62,8 +65,11 @@ def test_points_outside_raise_in_error_mode(space):
 
 
 def test_bound_source_belongs_to_its_source(mesh, space):
-    other = pcms.LagrangeFunctionSpace.from_mesh(
-        mesh, 1, 1, backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
+    other = pcms.create_lagrange_space(
+        pcms.backend.omega_h.create_discretization(mesh),
+        1,
+        1,
+        implementation=pcms.LagrangeImplementation.OmegaH)
     bound = space.bind(pcms.CoordinateView([[0.5, 0.5]]))
     with pytest.raises(RuntimeError, match="bound by another factory"):
         other.create_point_evaluator(bound)
@@ -78,8 +84,11 @@ def test_derivatives_need_a_source_that_has_them(space):
 
 
 def test_interpolator_reuses_a_bound_source(mesh, space, field):
-    target = pcms.LagrangeFunctionSpace.from_mesh(
-        mesh, 1, 1, backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
+    target = pcms.create_lagrange_space(
+        pcms.backend.omega_h.create_discretization(mesh),
+        1,
+        1,
+        implementation=pcms.LagrangeImplementation.OmegaH)
     bound = space.bind(target)
     out = target.create_function()
     pcms.Interpolator(space, target, bound).apply(field, out)
@@ -90,9 +99,11 @@ def test_interpolator_reuses_a_bound_source(mesh, space, field):
 
 def _meshfields_space(mesh, num_components=1):
     try:
-        return pcms.LagrangeFunctionSpace.from_mesh(
-            mesh, 1, num_components,
-            backend=pcms.LagrangeFunctionSpace.Backend.MeshFields)
+        return pcms.create_lagrange_space(
+            pcms.backend.omega_h.create_discretization(mesh),
+            1,
+            num_components,
+            implementation=pcms.LagrangeImplementation.MeshFields)
     except RuntimeError:
         pytest.skip("pcms was built without MeshFields")
 
