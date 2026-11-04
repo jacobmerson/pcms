@@ -279,7 +279,7 @@ void bind_create_field_module(py::module& m)
       auto library =
         py::cast(mesh->library(), py::return_value_policy::reference)
           .cast<std::shared_ptr<Omega_h::Library>>();
-      OmegaHGeometryOptions options;
+      backend::omega_h::OmegaHGeometryOptions options;
       options.search.divisions = divisions;
       options.global_id_name = std::move(global_id_name);
       if (owned_mask) {
