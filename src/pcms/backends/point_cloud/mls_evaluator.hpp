@@ -6,7 +6,7 @@
 #include "pcms/field/field_data.hpp"
 #include "pcms/localization/mls_options.hpp"
 #include "pcms/field/evaluator/mls_interpolation.hpp"
-#include "pcms/localization/adj_search.hpp"
+#include "pcms/backends/omega_h/adj_search.hpp"
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/memory_spaces.hpp"
 #include "pcms/utility/omega_h_array_utils.hpp"
