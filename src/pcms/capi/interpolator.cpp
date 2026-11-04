@@ -7,7 +7,7 @@
 #include <pcms/backends/point_cloud/geometry.hpp>
 #include <pcms/field/function_space/polynomial_reconstruction.hpp>
 #include <pcms/field/point_evaluator.hpp>
-#include <pcms/field/layout/omega_h_entity.hpp>
+#include <pcms/backends/omega_h/entity_layout.hpp>
 #include <pcms/utility/arrays.hpp>
 #include <pcms/utility/entity_types.hpp>
 #include <pcms/utility/mesh_geometry.hpp>

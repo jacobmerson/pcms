@@ -1,6 +1,6 @@
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
+#include "pcms/backends/omega_h/geometry.hpp"
 #include "pcms/utility/coordinate_system.hpp"
-#include "pcms/localization/adj_search.hpp"
+#include "pcms/backends/omega_h/adj_search.hpp"
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/omega_h_array_utils.hpp"
 #include "pcms/utility/profile.hpp"

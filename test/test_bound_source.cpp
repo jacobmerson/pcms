@@ -11,7 +11,7 @@
 #include <pcms/backends/uniform_grid/geometry.hpp>
 #include <pcms/field/function_space/lagrange.hpp>
 #include <pcms/field/function_space/polynomial_reconstruction.hpp>
-#include <pcms/field/layout/omega_h_entity.hpp>
+#include <pcms/backends/omega_h/entity_layout.hpp>
 #include "field_test_utils.hpp"
 #include <memory>
 #include <type_traits>
