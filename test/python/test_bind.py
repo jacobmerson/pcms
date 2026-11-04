@@ -24,7 +24,7 @@ def mesh(world):
 
 @pytest.fixture
 def geometry(mesh):
-    return pcms.create_omega_h_geometry(mesh)
+    return pcms.backend.omega_h.create_geometry(mesh)
 
 
 @pytest.fixture
@@ -67,7 +67,7 @@ def test_points_outside_raise_in_error_mode(space):
 
 def test_bound_source_belongs_to_its_geometry(mesh, space):
     other = pcms.create_lagrange_space(
-        pcms.create_omega_h_geometry(mesh), 1, 1,
+        pcms.backend.omega_h.create_geometry(mesh), 1, 1,
         backend=pcms.LagrangeBackend.OmegaH)
     bound = space.get_geometry().bind(pcms.CoordinateView([[0.5, 0.5]]))
     with pytest.raises(RuntimeError, match="another geometry"):
@@ -75,7 +75,7 @@ def test_bound_source_belongs_to_its_geometry(mesh, space):
 
 
 def test_spaces_on_one_geometry_share_a_bind(mesh):
-    geometry = pcms.create_omega_h_geometry(mesh)
+    geometry = pcms.backend.omega_h.create_geometry(mesh)
     backend = pcms.LagrangeBackend.OmegaH
     scalars = pcms.create_lagrange_space(
         geometry, 1, 1, backend=backend)
@@ -126,7 +126,7 @@ def test_interpolator_reuses_a_bound_source(geometry, space, field):
 def test_get_geometry_does_not_keep_the_space_alive(world):
     mesh = omega_h.build_box(
         world, omega_h.Family.SIMPLEX, 1.0, 1.0, 0.0, 4, 4, 0, False)
-    geometry = pcms.create_omega_h_geometry(mesh)
+    geometry = pcms.backend.omega_h.create_geometry(mesh)
     space = pcms.create_lagrange_space(
         geometry, 1, 1, backend=pcms.LagrangeBackend.OmegaH)
     assert space.get_geometry() == geometry
@@ -143,7 +143,7 @@ def test_get_geometry_does_not_keep_the_space_alive(world):
 
     # a geometry obtained from a space keeps the mesh alive by itself
     space = pcms.create_lagrange_space(
-        pcms.create_omega_h_geometry(mesh), 1, 1,
+        pcms.backend.omega_h.create_geometry(mesh), 1, 1,
         backend=pcms.LagrangeBackend.OmegaH)
     geometry = space.get_geometry()
     space_ref = weakref.ref(space)
