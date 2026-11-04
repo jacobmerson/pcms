@@ -1,5 +1,4 @@
-#ifndef PCMS_FIELD_FUNCTION_SPACE_NIMROD_HPP
-#define PCMS_FIELD_FUNCTION_SPACE_NIMROD_HPP
+#pragma once
 
 #include "pcms/field/function_space.h"
 #include "pcms/field/layout/empty.h"
@@ -7,8 +6,11 @@
 #include <string>
 #include <vector>
 
-namespace pcms
+namespace fio::detail
 {
+
+// Private implementation built on PCMS's public types.
+using namespace pcms;
 
 /// A NIMROD dump opened for evaluation. Opaque: NIMROD is a private
 /// dependency.
@@ -86,6 +88,4 @@ private:
   std::shared_ptr<const EmptyFieldLayout> layout_;
 };
 
-} // namespace pcms
-
-#endif // PCMS_FIELD_FUNCTION_SPACE_NIMROD_HPP
+} // namespace fio::detail

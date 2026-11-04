@@ -2,7 +2,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <Kokkos_Core.hpp>
-#include <fusion_io/nimrod.hpp>
+#include "nimrod_space.hpp"
 #include "nimeval.hpp"
 #include "test_utils.hpp"
 #include <unistd.h>
@@ -17,9 +17,9 @@
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
+using fio::detail::NimrodOptions;
 using pcms::DeviceMemorySpace;
 using pcms::HostMemorySpace;
-using pcms::NimrodOptions;
 using pcms::Real;
 
 namespace
@@ -117,16 +117,17 @@ const std::vector<Real> Points = {10.6, -0.4, 0.3, 9.5,  -2.0, -0.5,
 TEST_CASE("NIMROD values match direct nimeval evaluation")
 {
   const CaseCopy copy("direct");
-  auto source = pcms::OpenNimrodSource(copy.DumpPath(), "bvn", copy.Dir());
-  auto scalars = pcms::NimrodFunctionSpace::Create(source, 1);
-  auto vectors = pcms::NimrodFunctionSpace::Create(source, 3);
+  auto source =
+    fio::detail::OpenNimrodSource(copy.DumpPath(), "bvn", copy.Dir());
+  auto scalars = fio::detail::NimrodFunctionSpace::Create(source, 1);
+  auto vectors = fio::detail::NimrodFunctionSpace::Create(source, 3);
 
   struct Case
   {
     const char* quantity;
     NimrodOptions::Part part;
     int eq;
-    std::shared_ptr<pcms::NimrodFunctionSpace> space;
+    std::shared_ptr<fio::detail::NimrodFunctionSpace> space;
   };
   for (const auto& [quantity, part, eq, space] :
        {Case{"b", NimrodOptions::Part::Total, 2, vectors},
@@ -159,8 +160,8 @@ TEST_CASE("NIMROD values match direct nimeval evaluation")
 TEST_CASE("NIMROD parts select equilibrium and perturbation")
 {
   const CaseCopy copy("parts");
-  auto source = pcms::OpenNimrodSource(copy.DumpPath(), "b", copy.Dir());
-  auto space = pcms::NimrodFunctionSpace::Create(source, 3);
+  auto source = fio::detail::OpenNimrodSource(copy.DumpPath(), "b", copy.Dir());
+  auto space = fio::detail::NimrodFunctionSpace::Create(source, 3);
   // Two points in the same poloidal plane position, half a toroidal turn
   // apart.
   const std::vector<Real> points = {
@@ -193,9 +194,10 @@ TEST_CASE("NIMROD parts select equilibrium and perturbation")
 TEST_CASE("NIMROD gradients match direct nimeval evaluation")
 {
   const CaseCopy copy("gradient");
-  auto source = pcms::OpenNimrodSource(copy.DumpPath(), "bn", copy.Dir());
-  auto scalars = pcms::NimrodFunctionSpace::Create(source, 1);
-  auto vectors = pcms::NimrodFunctionSpace::Create(source, 3);
+  auto source =
+    fio::detail::OpenNimrodSource(copy.DumpPath(), "bn", copy.Dir());
+  auto scalars = fio::detail::NimrodFunctionSpace::Create(source, 1);
+  auto vectors = fio::detail::NimrodFunctionSpace::Create(source, 3);
   // The cylrwtm case has no scalar with a physical gradient (its density is
   // uniform, its pressure and temperatures zero), so this checks only that
   // NIMROD's (d/dR, d/dZ, (1/R) d/dphi) is reordered to (R, theta, Z) with
@@ -238,11 +240,12 @@ TEST_CASE("NIMROD gradients match direct nimeval evaluation")
 TEST_CASE("NIMROD evaluation errors")
 {
   const CaseCopy copy("errors");
-  auto source = pcms::OpenNimrodSource(copy.DumpPath(), "bn", copy.Dir());
-  auto scalars = pcms::NimrodFunctionSpace::Create(source, 1);
-  auto vectors = pcms::NimrodFunctionSpace::Create(source, 3);
+  auto source =
+    fio::detail::OpenNimrodSource(copy.DumpPath(), "bn", copy.Dir());
+  auto scalars = fio::detail::NimrodFunctionSpace::Create(source, 1);
+  auto vectors = fio::detail::NimrodFunctionSpace::Create(source, 3);
   auto n = scalars->CreateFunction("n", "n");
-  REQUIRE(pcms::AvailableQuantities(*source) ==
+  REQUIRE(fio::detail::AvailableQuantities(*source) ==
           std::vector<std::string>{"b", "n"});
 
   REQUIRE_THROWS_WITH(EvaluateAt(*scalars, n, {20.0, 0.0, 0.0}),
@@ -268,21 +271,25 @@ TEST_CASE("NIMROD evaluation errors")
                       ContainsSubstring("but must be [2][1]"));
 
   // nimeval holds one dump per process.
-  REQUIRE_THROWS_WITH(pcms::OpenNimrodSource(copy.DumpPath(), "bn", copy.Dir()),
-                      ContainsSubstring("another NIMROD source is open"));
+  REQUIRE_THROWS_WITH(
+    fio::detail::OpenNimrodSource(copy.DumpPath(), "bn", copy.Dir()),
+    ContainsSubstring("another NIMROD source is open"));
 }
 
 TEST_CASE("NIMROD sources are checked before opening")
 {
   const CaseCopy copy("open");
-  REQUIRE_THROWS_WITH(pcms::OpenNimrodSource(copy.DumpPath(), "be", copy.Dir()),
-                      ContainsSubstring("unsupported field id 'e'"));
-  REQUIRE_THROWS_WITH(pcms::OpenNimrodSource(copy.DumpPath(), "", copy.Dir()),
-                      ContainsSubstring("no field ids"));
-  REQUIRE_THROWS_WITH(pcms::OpenNimrodSource("missing.h5", "b", copy.Dir()),
-                      ContainsSubstring("cannot find dump"));
   REQUIRE_THROWS_WITH(
-    pcms::OpenNimrodSource(copy.DumpPath(), "b", copy.Dir() / "missing"),
+    fio::detail::OpenNimrodSource(copy.DumpPath(), "be", copy.Dir()),
+    ContainsSubstring("unsupported field id 'e'"));
+  REQUIRE_THROWS_WITH(
+    fio::detail::OpenNimrodSource(copy.DumpPath(), "", copy.Dir()),
+    ContainsSubstring("no field ids"));
+  REQUIRE_THROWS_WITH(
+    fio::detail::OpenNimrodSource("missing.h5", "b", copy.Dir()),
+    ContainsSubstring("cannot find dump"));
+  REQUIRE_THROWS_WITH(
+    fio::detail::OpenNimrodSource(copy.DumpPath(), "b", copy.Dir() / "missing"),
     ContainsSubstring("cannot read"));
 
   // A slab case.
@@ -291,6 +298,7 @@ TEST_CASE("NIMROD sources are checked before opening")
   std::string input = text.str();
   input.replace(input.find("geom='tor'"), 10, "geom='lin'");
   std::ofstream(copy.Dir() / "nimrod.in") << input;
-  REQUIRE_THROWS_WITH(pcms::OpenNimrodSource(copy.DumpPath(), "b", copy.Dir()),
-                      ContainsSubstring("only toroidal cases"));
+  REQUIRE_THROWS_WITH(
+    fio::detail::OpenNimrodSource(copy.DumpPath(), "b", copy.Dir()),
+    ContainsSubstring("only toroidal cases"));
 }
