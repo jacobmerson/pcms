@@ -36,6 +36,7 @@ if (PCMS_ENABLE_OMEGA_H)
             function_space/lagrange.cpp
             function_space/spline.cpp
             evaluator/mls_interpolation.cpp
+            geometry_factories.cpp
     )
     list(APPEND PCMS_FIELD_HEADERS
             function_space/lagrange.hpp
