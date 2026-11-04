@@ -21,8 +21,8 @@ TEST_CASE("omega_h_field2 out of bounds FILL mode")
   auto world = lib.world();
   auto mesh =
     Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 10, 10, 0, false);
-  auto geometry =
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto geometry = pcms::backend::omega_h::CreateGeometry(
+    mesh, pcms::csys::Cartesian::Deferred());
   auto factory = pcms::CreateLagrangeSpace(geometry, 1, 1);
   auto field = factory->CreateFunction<Real>();
   pcms::test::SetField(field, OMEGA_H_LAMBDA(Real x, Real y) { return x + y; });

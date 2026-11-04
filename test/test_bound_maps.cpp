@@ -44,7 +44,8 @@ std::shared_ptr<FunctionSpace> BuildCylindricalSource(Omega_h::Library& lib,
   mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 2.0, 1.6, 1.1, 8, 8,
                             6, false);
   return CreateLagrangeSpace(
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::CylindricalRThetaZ::Create()),
+    pcms::backend::omega_h::CreateGeometry(
+      mesh, pcms::csys::CylindricalRThetaZ::Create()),
     1, num_components, LagrangeOptions{.backend = LagrangeBackend::OmegaH});
 }
 
@@ -56,8 +57,9 @@ std::shared_ptr<FunctionSpace> BuildCartesianTarget(Omega_h::Library& lib,
   mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, x_extent, 1.0, 1.0, 4,
                             4, 4, false);
   return CreateLagrangeSpace(
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Create(3)), 1,
-    num_components, LagrangeOptions{.backend = LagrangeBackend::OmegaH});
+    pcms::backend::omega_h::CreateGeometry(mesh,
+                                           pcms::csys::Cartesian::Create(3)),
+    1, num_components, LagrangeOptions{.backend = LagrangeBackend::OmegaH});
 }
 
 ValueBasis CylindricalVector()

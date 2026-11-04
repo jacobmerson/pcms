@@ -182,14 +182,15 @@ inline std::shared_ptr<FunctionSpace> MakeP0Space(
 inline std::shared_ptr<FunctionSpace> MakeP1Space(
   Omega_h::Mesh& mesh, const std::string& global_id_name = "global")
 {
-  return MakeP1Space(CreateOmegaHGeometry(
+  return MakeP1Space(backend::omega_h::CreateGeometry(
     mesh, csys::Cartesian::Deferred(),
-    OmegaHGeometryOptions{.global_id_name = global_id_name}));
+    backend::omega_h::OmegaHGeometryOptions{.global_id_name = global_id_name}));
 }
 
 inline std::shared_ptr<FunctionSpace> MakeP0Space(Omega_h::Mesh& mesh)
 {
-  return MakeP0Space(CreateOmegaHGeometry(mesh, csys::Cartesian::Deferred()));
+  return MakeP0Space(
+    backend::omega_h::CreateGeometry(mesh, csys::Cartesian::Deferred()));
 }
 
 inline bool AreArraysEqualUnordered(

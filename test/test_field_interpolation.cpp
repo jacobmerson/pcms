@@ -26,8 +26,8 @@ TEST_CASE("interpolate linear 2d omega_h_field")
   auto world = lib.world();
   auto mesh =
     Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 100, 100, 0, false);
-  auto geometry =
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto geometry = pcms::backend::omega_h::CreateGeometry(
+    mesh, pcms::csys::Cartesian::Deferred());
   auto factory = pcms::CreateLagrangeSpace(geometry, 1, 1);
   auto field = factory->CreateFunction<Real>();
   auto interpolated = factory->CreateFunction<Real>();
@@ -55,8 +55,8 @@ TEST_CASE("interpolate quadratic 2d meshfields_field")
   auto world = lib.world();
   auto mesh =
     Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 100, 100, 0, false);
-  auto geometry =
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto geometry = pcms::backend::omega_h::CreateGeometry(
+    mesh, pcms::csys::Cartesian::Deferred());
   auto factory2 = pcms::CreateLagrangeSpace(
     geometry, 2, 1,
     pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::MeshFields});
@@ -91,8 +91,9 @@ TEST_CASE("interpolate quadratic 2d omega_h_field throws")
 
   REQUIRE_THROWS_AS(
     pcms::CreateLagrangeSpace(
-      pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred()), 2, 1,
-      pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH}),
+      pcms::backend::omega_h::CreateGeometry(mesh,
+                                             pcms::csys::Cartesian::Deferred()),
+      2, 1, pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH}),
     pcms::pcms_error);
 }
 
@@ -106,8 +107,8 @@ TEST_CASE("Interpolator: construct once, apply twice with different data")
   auto world = lib.world();
   auto mesh =
     Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 100, 100, 0, false);
-  auto geometry =
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto geometry = pcms::backend::omega_h::CreateGeometry(
+    mesh, pcms::csys::Cartesian::Deferred());
   auto factory = pcms::CreateLagrangeSpace(geometry, 1, 1);
 
   auto source = factory->CreateFunction<Real>();
