@@ -5,7 +5,7 @@
 #include <pcms/utility/coordinate_systems/cartesian.hpp>
 #include <pcms/utility/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/function_space/lagrange.hpp>
-#include <pcms/field/evaluator/uniform_grid_geometry.hpp>
+#include <pcms/backends/uniform_grid/geometry.hpp>
 #include <pcms/field/function_space/spline.hpp>
 #include <pcms/field/gradient_source.hpp>
 #include <pcms/transfer/interpolator.hpp>
