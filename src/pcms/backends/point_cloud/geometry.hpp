@@ -29,7 +29,8 @@ namespace pcms
 /// MLS supports of each query point. Bind finds the supports with
 /// Neighbourhood, using the options the geometry was created with. For the
 /// vertices of a mesh, construction builds the mesh's OmegaHGeometry, whose
-/// search starts the adjacency search of each point.
+/// search starts the adjacency search of each point. Create it with
+/// CreatePointCloudGeometry (pcms/geometry/geometry.hpp).
 /// @throws pcms_error on construction if the sites' coordinate system does not
 ///         have the identity metric
 class PointCloudGeometry final : public Geometry
@@ -146,54 +147,6 @@ private:
   // adjacency search from the element its search finds for each point
   std::shared_ptr<const OmegaHGeometry> vertex_geometry_;
 };
-
-/// A point-cloud geometry whose sites are `coords` (copied to the device).
-/// @param coords the sites
-/// @param options the support search of the geometry
-/// @throws pcms_error if the coordinate system does not have the identity
-///         metric (MLS distances are Euclidean)
-inline std::shared_ptr<Geometry> CreatePointCloudGeometry(
-  CoordinateView<HostMemorySpace> coords, NeighbourhoodOptions options = {})
-{
-  const auto values = coords.GetValues();
-  const int dim = static_cast<int>(values.extent(1));
-  Kokkos::View<const Real**, Kokkos::HostSpace> host_view(
-    values.data_handle(), values.extent(0), values.extent(1));
-  auto device_view = Kokkos::View<Real**>("device_view", host_view.extent(0),
-                                          host_view.extent(1));
-  DeepCopyMismatchLayouts(device_view, host_view);
-  auto layout = std::make_shared<PointCloudLayout>(
-    dim, device_view, coords.GetCoordinateSystem());
-  return std::make_shared<PointCloudGeometry>(std::move(layout), nullptr, -1,
-                                              std::move(options));
-}
-
-/// A point-cloud geometry whose sites are the DOF holders of `sites` (e.g. the
-/// entities of one dimension of a mesh, through OmegaHEntityLayout, which the
-/// adjacency search then serves).
-/// @param sites the layout of the sites
-/// @param options the support search of the geometry
-/// @throws pcms_error if `sites` is null or its coordinate system does not
-///         have the identity metric
-inline std::shared_ptr<Geometry> CreatePointCloudGeometry(
-  std::shared_ptr<const FieldLayout> sites, NeighbourhoodOptions options = {})
-{
-  if (sites == nullptr) {
-    throw pcms_error("CreatePointCloudGeometry: the sites must not be null");
-  }
-  Omega_h::Mesh* mesh = nullptr;
-  int site_entity_dim = -1;
-  if (dynamic_cast<const OmegaHEntityLayout*>(sites.get()) != nullptr) {
-    const auto discretization =
-      std::dynamic_pointer_cast<const OmegaHDiscretization>(
-        sites->GetDiscretization());
-    PCMS_ALWAYS_ASSERT(discretization != nullptr);
-    mesh = &discretization->GetMesh();
-    site_entity_dim = sites->GetDOFHolderEntityDim();
-  }
-  return std::make_shared<PointCloudGeometry>(
-    std::move(sites), mesh, site_entity_dim, std::move(options));
-}
 
 } // namespace pcms
 
