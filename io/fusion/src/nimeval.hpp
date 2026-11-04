@@ -1,5 +1,4 @@
-#ifndef PCMS_FIELD_FUNCTION_SPACE_NIMEVAL_HPP
-#define PCMS_FIELD_FUNCTION_SPACE_NIMEVAL_HPP
+#pragma once
 
 // Private (not installed): NIMROD's C-callable evaluator, for the NIMROD
 // function space and its tests.
@@ -20,5 +19,3 @@ void c_eval_field_dm(const double* rzp, const char* fname, double* fval,
                      const int* nqty, double* xyguess, int* ifail,
                      const int* dmode, const int* eq);
 }
-
-#endif // PCMS_FIELD_FUNCTION_SPACE_NIMEVAL_HPP

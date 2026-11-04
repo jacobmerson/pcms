@@ -1,4 +1,4 @@
-#include "fusion_io/nimrod.hpp"
+#include "nimrod_space.hpp"
 #include "nimeval.hpp"
 #include "pcms/field/coordinate_systems/cylindrical.hpp"
 #include "pcms/utility/arrays.h"
@@ -16,8 +16,11 @@
 #include <regex>
 #include <sstream>
 
-namespace pcms
+namespace fio::detail
 {
+
+// Private implementation built on PCMS's public types.
+using namespace pcms;
 
 /// The dump nimeval has initialized and the quantities it can evaluate.
 /// nimeval stops the whole process on bad input, so everything passed to it is
@@ -427,4 +430,4 @@ FieldVariant NimrodFunctionSpace::CreateFieldImpl(FieldDataVariant data) const
     layout_, std::get<std::unique_ptr<FieldData<Real>>>(std::move(data)));
 }
 
-} // namespace pcms
+} // namespace fio::detail

@@ -1,4 +1,4 @@
-#include "fusion_io/fusion_io.hpp"
+#include "fusion_io_space.hpp"
 #include "fusion_io_source.hpp"
 #include "pcms/field/coordinate_systems/cylindrical.hpp"
 #include "pcms/utility/arrays.h"
@@ -6,8 +6,11 @@
 #include "pcms/utility/profile.h"
 #include <ranges>
 
-namespace pcms
+namespace fio::detail
 {
+
+// Private implementation built on PCMS's public types.
+using namespace pcms;
 
 namespace
 {
@@ -334,4 +337,4 @@ FieldVariant FusionIOFunctionSpace::CreateFieldImpl(FieldDataVariant data) const
     layout_, std::get<std::unique_ptr<FieldData<Real>>>(std::move(data)));
 }
 
-} // namespace pcms
+} // namespace fio::detail

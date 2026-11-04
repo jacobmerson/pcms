@@ -23,7 +23,7 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-add_library(fusion_io src/fusion_io.cpp)
+add_library(fusion_io src/fusion_io_space.cpp)
 add_library(fusion_io::fusion_io ALIAS fusion_io)
 target_compile_features(fusion_io PUBLIC cxx_std_20)
 target_include_directories(
@@ -33,15 +33,17 @@ target_include_directories(
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(fusion_io PUBLIC pcms::core
                       PRIVATE fusionio::fusionio_fusionio)
-set(FUSION_IO_HEADERS include/fusion_io/fusion_io.hpp)
+set(FUSION_IO_HEADERS)
 if(FUSION_IO_ENABLE_NIMROD)
-  target_sources(fusion_io PRIVATE src/nimrod.cpp)
+  target_sources(fusion_io PRIVATE src/nimrod_space.cpp)
   target_link_libraries(fusion_io PRIVATE ${NIMROD_NIMEVAL_LIBRARY})
-  list(APPEND FUSION_IO_HEADERS include/fusion_io/nimrod.hpp)
 endif()
 
 install(TARGETS fusion_io EXPORT fusion_io-targets)
-install(FILES ${FUSION_IO_HEADERS} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fusion_io)
+if(FUSION_IO_HEADERS)
+  install(FILES ${FUSION_IO_HEADERS}
+          DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fusion_io)
+endif()
 install(EXPORT fusion_io-targets NAMESPACE fusion_io::
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fusion_io)
 configure_package_config_file(
