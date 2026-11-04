@@ -20,8 +20,8 @@ set(PCMS_FIELD_HEADERS
         transformed_point_evaluator.hpp
         data/simple.hpp
         function_space/polynomial_reconstruction.hpp
-        layout/point_cloud.hpp
-        data/point_cloud.hpp
+        ../backends/point_cloud/layout.hpp
+        ../backends/point_cloud/field_data.hpp
 )
 set(PCMS_FIELD_SOURCES
         field_layout.cpp
@@ -31,8 +31,8 @@ set(PCMS_FIELD_SOURCES
         gid_permutation.cpp
         function_space/polynomial_reconstruction.cpp
         layout/empty.cpp
-        layout/point_cloud.cpp
-        data/point_cloud.cpp
+        ../backends/point_cloud/layout.cpp
+        ../backends/point_cloud/field_data.cpp
 )
 
 if (PCMS_ENABLE_OMEGA_H)
@@ -53,7 +53,7 @@ if (PCMS_ENABLE_OMEGA_H)
             evaluator/omega_h_geometry.hpp
             evaluator/omega_h_lagrange.hpp
             evaluator/uniform_grid_geometry.hpp
-            evaluator/point_cloud_geometry.hpp
+            ../backends/point_cloud/geometry.hpp
             data/omega_h.hpp
             layout/uniform_grid.hpp
             uniform_grid_binary_field.hpp
@@ -66,8 +66,8 @@ if (PCMS_ENABLE_OMEGA_H)
             evaluator/pcms_interpolator_aliases.hpp
             evaluator/pcms_interpolator_view_utils.hpp
             evaluator/pcms_interpolator_logger.hpp
-            evaluator/mls_point_cloud.hpp
-            evaluator/point_cloud.hpp
+            ../backends/point_cloud/mls_evaluator.hpp
+            ../backends/point_cloud/evaluator.hpp
     )
 endif ()
 
