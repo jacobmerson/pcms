@@ -4,7 +4,7 @@
 #include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/field/point_evaluator.hpp"
 #include "pcms/field/field_data.hpp"
-#include "pcms/field/evaluator/mls_options.hpp"
+#include "pcms/localization/mls_options.hpp"
 #include "pcms/field/evaluator/mls_point_cloud.hpp"
 #include "pcms/geometry/geometry.hpp"
 

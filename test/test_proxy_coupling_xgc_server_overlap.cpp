@@ -13,7 +13,7 @@
 #include "pcms/field/value_view.hpp"
 #include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/function_space/lagrange.hpp"
-#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
 
 using pcms::ConstructRCFromOmegaHMesh;
 using pcms::GO;
