@@ -105,7 +105,7 @@ class TestMLSOnMeshEntities:
         mesh = omega_h.build_box(
             world, omega_h.Family.SIMPLEX, 1.0, 1.0, 0.0, 4, 4, 0, False)
         face_dim = 2
-        geometry = pcms.create_point_cloud_geometry(mesh, face_dim)
+        geometry = pcms.backend.omega_h.create_point_cloud_geometry(mesh, face_dim)
         opts = pcms.MLSOptions()
         opts.degree = 1
         opts.basis = pcms.RadialBasisFunction.NO_OP
@@ -118,7 +118,7 @@ class TestMLSOnMeshEntities:
             (1.0 + 2.0 * centroids[:, 0] - 3.0 * centroids[:, 1]).reshape(-1, 1))
 
         vertex_space = pcms.create_lagrange_space(
-            pcms.create_omega_h_geometry(mesh), 1, 1)
+            pcms.backend.omega_h.create_geometry(mesh), 1, 1)
         vertices = np.array(
             vertex_space.get_layout().get_dof_holder_coordinates().get_values())
         evaluator = space.create_point_evaluator(
@@ -134,4 +134,4 @@ class TestMLSOnMeshEntities:
         mesh = omega_h.build_box(
             world, omega_h.Family.SIMPLEX, 1.0, 1.0, 0.0, 2, 2, 0, False)
         with pytest.raises(ValueError):
-            pcms.create_point_cloud_geometry(mesh, 3)
+            pcms.backend.omega_h.create_point_cloud_geometry(mesh, 3)
