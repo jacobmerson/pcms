@@ -3,18 +3,38 @@ find_package(MPI REQUIRED COMPONENTS CXX)
 
 # Fusion-IO's example data (fusion-io/examples/data: m3dc1/, geqdsk/).
 set(FUSION_IO_TEST_DATA_DIR "" CACHE PATH "Fusion-IO example data directory")
+# The NIMROD case is not distributed with any test data; point this at a local
+# copy of the cylrwtm case (nimrod.in and dump_gs.00000.h5).
+set(FUSION_IO_TEST_NIMROD_DIR "" CACHE PATH "NIMROD case for the NIMROD tests")
 
+set(FUSION_IO_TEST_SOURCES)
 if(FUSION_IO_TEST_DATA_DIR)
-  add_executable(fusion_io_tests test_main.cpp test_fusion_io.cpp)
-  target_compile_definitions(
-    fusion_io_tests
-    PRIVATE PCMS_TEST_FUSIONIO_DIR="${FUSION_IO_TEST_DATA_DIR}")
+  list(APPEND FUSION_IO_TEST_SOURCES test_fusion_io.cpp)
+  set_source_files_properties(
+    test_fusion_io.cpp
+    PROPERTIES COMPILE_DEFINITIONS
+               "PCMS_TEST_FUSIONIO_DIR=\"${FUSION_IO_TEST_DATA_DIR}\"")
+else()
+  message(STATUS "FUSION_IO_TEST_DATA_DIR not set; Fusion-IO tests disabled")
+endif()
+if(FUSION_IO_ENABLE_NIMROD AND FUSION_IO_TEST_NIMROD_DIR)
+  list(APPEND FUSION_IO_TEST_SOURCES test_nimrod.cpp)
+  set_source_files_properties(
+    test_nimrod.cpp
+    PROPERTIES COMPILE_DEFINITIONS
+               "PCMS_TEST_NIMROD_DIR=\"${FUSION_IO_TEST_NIMROD_DIR}\"")
+endif()
+
+if(FUSION_IO_TEST_SOURCES)
+  add_executable(fusion_io_tests test_main.cpp ${FUSION_IO_TEST_SOURCES})
   target_include_directories(fusion_io_tests
                              PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
   target_link_libraries(
     fusion_io_tests PRIVATE fusion_io pcms::transfer fusionio::fusionio_fusionio
                             Catch2::Catch2 MPI::MPI_CXX)
+  if(FUSION_IO_ENABLE_NIMROD)
+    # the NIMROD tests compare with nimeval directly
+    target_link_libraries(fusion_io_tests PRIVATE ${NIMROD_NIMEVAL_LIBRARY})
+  endif()
   add_test(NAME fusion_io_tests COMMAND fusion_io_tests)
-else()
-  message(STATUS "FUSION_IO_TEST_DATA_DIR not set; Fusion-IO tests disabled")
 endif()
