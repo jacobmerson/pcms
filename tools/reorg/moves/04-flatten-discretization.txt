@@ -1,0 +1,2 @@
+# Phase 4.1: flatten discretization/discretization/ (only the empty
+# discretization is left after the backends moved out)
