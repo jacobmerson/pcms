@@ -24,7 +24,7 @@
 #include "pcms/field/function_space/lagrange.hpp"
 #include "pcms/field/function_space/spline.hpp"
 #include "pcms/field/function_space/polynomial_reconstruction.hpp"
-#include "pcms/field/evaluator/point_cloud_geometry.hpp"
+#include "pcms/backends/point_cloud/geometry.hpp"
 #include "pcms/field/layout/omega_h_entity.hpp"
 #include "pcms/field/gradient_source.hpp"
 #include "pcms/field/point_evaluator_factory.hpp"
