@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <numbers>
 #include <optional>
 #include <ranges>
 #include <regex>
@@ -430,4 +431,102 @@ FieldVariant NimrodFunctionSpace::CreateFieldImpl(FieldDataVariant data) const
     layout_, std::get<std::unique_ptr<FieldData<Real>>>(std::move(data)));
 }
 
+namespace
+{
+
+/// A NIMROD dump as a fio::Source.
+class NimrodFileSource final : public Source
+{
+public:
+  explicit NimrodFileSource(std::shared_ptr<NimrodSource> source)
+    : source_(std::move(source))
+  {
+  }
+
+  [[nodiscard]] std::vector<QuantityInfo> Quantities() const override
+  {
+    std::vector<QuantityInfo> quantities;
+    for (const auto& [quantity, name] : Names) {
+      const auto found = source_->Quantities().find(name);
+      if (found != source_->Quantities().end()) {
+        quantities.push_back({quantity, found->second.components});
+      }
+    }
+    return quantities;
+  }
+
+  [[nodiscard]] std::vector<Real> Times() const override { return {}; }
+
+  [[nodiscard]] Real Period() const override { return 2 * std::numbers::pi; }
+
+  [[nodiscard]] std::optional<Real> EvaluateSeries(Series /*series*/,
+                                                   Real /*time*/) const override
+  {
+    return std::nullopt;
+  }
+
+  [[nodiscard]] Function<Real> CreateFunction(
+    Quantity quantity, const Options& options) const override
+  {
+    if (options.timeslice || options.linear_scale || options.phase) {
+      throw pcms_error("fio: NIMROD sources support only the part option");
+    }
+    if (options.species && quantity != Quantity::Temperature) {
+      throw pcms_error("fio: NIMROD sources support the species option only "
+                       "for temperature");
+    }
+    const std::string name = NimrodName(quantity, options.species);
+    const auto found = source_->Quantities().find(name);
+    if (found == source_->Quantities().end()) {
+      throw pcms_error("fio: this NIMROD source does not provide " +
+                       std::string(fio::Name(quantity)) + " (NIMROD's \"" +
+                       name + "\"); open it with that field id");
+    }
+    return NimrodFunctionSpace::Create(source_, found->second.components)
+      ->CreateFunction(std::string(fio::Name(quantity)), name,
+                       {.part = options.part.value_or(Part::Total)});
+  }
+
+private:
+  // NIMROD's names for the quantities it shares with Fusion-IO. Its field id
+  // 't' provides both temperatures; "ti" stands for them here.
+  static constexpr std::pair<Quantity, const char*> Names[] = {
+    {Quantity::MagneticField, "b"},  {Quantity::FluidVelocity, "v"},
+    {Quantity::CurrentDensity, "j"}, {Quantity::Density, "n"},
+    {Quantity::TotalPressure, "p"},  {Quantity::Temperature, "ti"},
+  };
+
+  static std::string NimrodName(Quantity quantity,
+                                std::optional<Species> species)
+  {
+    if (quantity == Quantity::Temperature) {
+      return species == Species::Electron ? "te" : "ti";
+    }
+    for (const auto& [known, name] : Names) {
+      if (known == quantity) {
+        return name;
+      }
+    }
+    throw pcms_error("fio: NIMROD sources do not provide " +
+                     std::string(fio::Name(quantity)));
+  }
+
+  std::shared_ptr<NimrodSource> source_;
+};
+
+} // namespace
+
 } // namespace fio::detail
+
+namespace fio
+{
+
+std::shared_ptr<Source> OpenNimrod(const std::string& dump,
+                                   const std::string& fields,
+                                   const std::string& case_dir)
+{
+  return std::make_shared<detail::NimrodFileSource>(
+    detail::OpenNimrodSource(dump, fields, case_dir));
+}
+
+} // namespace fio

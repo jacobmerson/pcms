@@ -9,9 +9,9 @@ set(FUSION_IO_TEST_NIMROD_DIR "" CACHE PATH "NIMROD case for the NIMROD tests")
 
 set(FUSION_IO_TEST_SOURCES)
 if(FUSION_IO_TEST_DATA_DIR)
-  list(APPEND FUSION_IO_TEST_SOURCES test_fusion_io.cpp)
+  list(APPEND FUSION_IO_TEST_SOURCES test_fusion_io.cpp test_source.cpp)
   set_source_files_properties(
-    test_fusion_io.cpp
+    test_fusion_io.cpp test_source.cpp
     PROPERTIES COMPILE_DEFINITIONS
                "PCMS_TEST_FUSIONIO_DIR=\"${FUSION_IO_TEST_DATA_DIR}\"")
 else()
