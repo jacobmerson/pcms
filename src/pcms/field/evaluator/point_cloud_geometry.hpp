@@ -1,7 +1,7 @@
 #ifndef PCMS_FIELD_EVALUATOR_POINT_CLOUD_GEOMETRY_HPP
 #define PCMS_FIELD_EVALUATOR_POINT_CLOUD_GEOMETRY_HPP
 
-#include "pcms/field/coordinate_system.hpp"
+#include "pcms/utility/coordinate_system.hpp"
 #include "pcms/field/evaluator/mls_point_cloud.hpp"
 #include "pcms/field/field_layout.hpp"
 #include "pcms/field/layout/point_cloud.hpp"
