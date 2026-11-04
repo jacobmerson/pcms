@@ -6,6 +6,3 @@ src/pcms/field/coordinate_system.cpp            src/pcms/utility/coordinate_syst
 src/pcms/field/coordinate_systems               src/pcms/utility/coordinate_systems
 # Support-search options are used by localization.
 src/pcms/field/evaluator/mls_options.hpp        src/pcms/localization/mls_options.hpp
-# Adapters from field layouts to localization move up into field.
-src/pcms/localization/localization_path_selection.hpp  src/pcms/field/localization_path_selection.hpp
-src/pcms/localization/point_cloud_localization.hpp     src/pcms/field/point_cloud_localization.hpp
