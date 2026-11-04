@@ -1,7 +1,7 @@
 #ifndef PCMS_TRANSFER_OMEGA_H_FORM_INTEGRATOR_UTILS_HPP
 #define PCMS_TRANSFER_OMEGA_H_FORM_INTEGRATOR_UTILS_HPP
 
-#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
 #include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/function_space.hpp"
 #include "pcms/field/layout/omega_h_lagrange.hpp"

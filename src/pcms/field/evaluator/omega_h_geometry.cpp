@@ -1,5 +1,5 @@
 #include "pcms/field/evaluator/omega_h_geometry.hpp"
-#include "pcms/field/coordinate_system.hpp"
+#include "pcms/utility/coordinate_system.hpp"
 #include "pcms/localization/adj_search.hpp"
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/omega_h_array_utils.hpp"
