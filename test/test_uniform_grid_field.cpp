@@ -16,8 +16,9 @@
 #include "field_test_utils.hpp"
 #include <cmath>
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
+#include "pcms/backends/omega_h/omega_h.hpp"
 
-using pcms::CreateUniformGridFromMesh;
+using pcms::backend::omega_h::CreateUniformGridFromMesh;
 
 TEST_CASE("UniformGridDiscretization SameEntities: identical grids")
 {
@@ -480,7 +481,8 @@ TEST_CASE("Binary field integration with grid methods")
 
   SECTION("Query field value at specific grid vertex")
   {
-    auto grid = CreateUniformGridFromMesh<2>(mesh, std::array{8, 8});
+    auto grid = pcms::backend::omega_h::CreateUniformGridFromMesh<2>(
+      mesh, std::array{8, 8});
     auto [layout, field] =
       pcms::CreateUniformGridBinaryField<2>(mesh, std::array{8, 8});
     auto field_data =
@@ -501,7 +503,8 @@ TEST_CASE("Binary field integration with grid methods")
 
   SECTION("Count vertices by region")
   {
-    auto grid = CreateUniformGridFromMesh<2>(mesh, std::array{10, 10});
+    auto grid = pcms::backend::omega_h::CreateUniformGridFromMesh<2>(
+      mesh, std::array{10, 10});
     auto [layout, field] =
       pcms::CreateUniformGridBinaryField<2>(mesh, std::array{10, 10});
     auto field_data =
@@ -615,7 +618,8 @@ TEST_CASE("UniformGrid workflow")
 
   auto mesh =
     Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1.0, 1.0, 0.0, 4, 4, 0, false);
-  auto grid = pcms::CreateUniformGridFromMesh<2>(mesh, {4, 4});
+  auto grid =
+    pcms::backend::omega_h::CreateUniformGridFromMesh<2>(mesh, {4, 4});
 
   auto omega_h_factory = pcms::LagrangeFunctionSpace::FromMesh(
     mesh, 1, 1, pcms::csys::Cartesian::Deferred());
