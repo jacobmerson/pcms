@@ -6,8 +6,8 @@
 #include <Omega_h_build.hpp>
 #include <Omega_h_library.hpp>
 #include <pcms/geometry/bound_source.hpp>
-#include <pcms/field/coordinate_systems/cartesian.hpp>
-#include <pcms/field/coordinate_systems/cylindrical.hpp>
+#include <pcms/utility/coordinate_systems/cartesian.hpp>
+#include <pcms/utility/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/evaluator/omega_h_geometry.hpp>
 #include <pcms/field/evaluator/point_cloud_geometry.hpp>
 #include <pcms/field/evaluator/uniform_grid_geometry.hpp>
