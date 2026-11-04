@@ -2,8 +2,8 @@
 #define PCMS_GEOMETRY_GEOMETRY_HPP
 
 #include "pcms/discretization/discretization.hpp"
-#include "pcms/field/coordinate_system.hpp"
-#include "pcms/field/coordinate_view.hpp"
+#include "pcms/utility/coordinate_system.hpp"
+#include "pcms/utility/coordinate_view.hpp"
 #include "pcms/field/out_of_bounds_policy.hpp"
 #include "pcms/geometry/bound_source.hpp"
 #include "pcms/geometry/supports.hpp"

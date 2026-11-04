@@ -7,7 +7,7 @@
 #include "pcms/field/evaluator/uniform_grid_geometry.hpp"
 
 #include <string>
-#include "pcms/field/coordinate_systems/cylindrical.hpp"
+#include "pcms/utility/coordinate_systems/cylindrical.hpp"
 
 namespace pcms
 {
