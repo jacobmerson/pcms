@@ -4,13 +4,23 @@
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/omega_h_array_utils.hpp"
 #include "pcms/utility/profile.hpp"
+#include "pcms/utility/types.hpp"
 #include "pcms/utility/uniform_grid.hpp"
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <variant>
 
 namespace pcms
 {
+// pcms and Omega_h exchange data without conversion
+static_assert(std::is_same_v<Real, Omega_h::Real>,
+              "pcms and Omega_h real types must match");
+static_assert(std::is_same_v<LO, Omega_h::LO>,
+              "pcms and Omega_h LO types must match");
+static_assert(std::is_same_v<GO, Omega_h::GO>,
+              "pcms and Omega_h GO types must match");
+
 
 OmegaHMeshBinding::OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
                                      const BindRequest& request,
