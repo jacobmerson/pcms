@@ -120,3 +120,44 @@ TEST_CASE("fio reports quantities a source does not provide")
   REQUIRE_THROWS_WITH(source->CreateFunction(Quantity::Viscosity),
                       ContainsSubstring("viscosity"));
 }
+
+TEST_CASE("fio functions fill points outside the domain on request")
+{
+  const auto source = fio::Open(fio::Format::M3DC1, M3DC1File);
+  const auto b = source->CreateFunction(Quantity::MagneticField);
+  const auto& space = b.GetSpace();
+  // The middle point is far outside the domain.
+  const std::vector<Real> points = {1.6, 0.1, 0.2, 50.0, 0.0,
+                                    0.0, 2.0, 2.5, -0.4};
+  const auto coords = pcms::test::CreateDeviceCoordinateView(
+    points, space.GetCoordinateSystem(), 3);
+  constexpr Real Fill = -7.0;
+
+  SECTION("fill")
+  {
+    const auto evaluator = space.CreatePointEvaluator<Real>(
+      space.Bind(coords.coordinate_view, {pcms::OutOfBoundsMode::FILL, Fill}));
+    const auto filled = Kokkos::create_mirror_view_and_copy(
+      pcms::HostMemorySpace(), evaluator->FilledPoints());
+    REQUIRE(filled.extent(0) == 1);
+    REQUIRE(filled(0) == 1);
+
+    Kokkos::View<Real**, pcms::DeviceMemorySpace> out("out", 3, 3);
+    evaluator->Evaluate(b, pcms::test::TagLike<Real>(b, out));
+    const auto values =
+      Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(), out);
+    const auto expected = EvaluateAt(b, {1.6, 0.1, 0.2, 2.0, 2.5, -0.4});
+    for (size_t c = 0; c < 3; ++c) {
+      REQUIRE(values(0, c) == expected(0, c));
+      REQUIRE(values(1, c) == Fill);
+      REQUIRE(values(2, c) == expected(1, c));
+    }
+  }
+
+  SECTION("nearest boundary is not supported")
+  {
+    REQUIRE_THROWS_WITH(space.Bind(coords.coordinate_view,
+                                   {pcms::OutOfBoundsMode::NEAREST_BOUNDARY}),
+                        ContainsSubstring("NEAREST_BOUNDARY"));
+  }
+}
