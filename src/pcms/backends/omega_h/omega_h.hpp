@@ -4,12 +4,16 @@
 // Public entry points of the Omega_h backend: build PCMS objects from an
 // Omega_h mesh. This header (and only backend headers) may use Omega_h types.
 
+#include "pcms/field/field.hpp"
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/utility/coordinate_system.hpp"
+#include "pcms/utility/types.hpp"
+#include "pcms/utility/uniform_grid.hpp"
 
 #include <Omega_h_array.hpp>
 #include <Omega_h_mesh.hpp>
 
+#include <array>
 #include <memory>
 #include <string>
 
@@ -59,6 +63,14 @@ std::shared_ptr<Geometry> CreatePointCloudGeometry(
   Omega_h::Mesh& mesh, int entity_dim,
   std::shared_ptr<const CoordinateSystem> system,
   NeighbourhoodOptions options = {});
+
+/// 0/1 field on the vertices of a 2D uniform grid marking the vertices that
+/// lie inside mesh. The grid is given, or covers the mesh's bounding box with
+/// the given number of cells per axis.
+Field<Real> CreateUniformGridBinaryField(Omega_h::Mesh& mesh,
+                                         const UniformGrid<2>& grid);
+Field<Real> CreateUniformGridBinaryField(Omega_h::Mesh& mesh,
+                                         std::array<LO, 2> divisions);
 
 } // namespace pcms::backend::omega_h
 
