@@ -9,10 +9,10 @@
 #include <pcms/field/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/evaluator/point_cloud_geometry.hpp>
 #include <pcms/field/evaluator/uniform_grid_geometry.hpp>
-#include <pcms/field/function_space/lagrange.h>
+#include <pcms/field/function_space/lagrange.hpp>
 #include <pcms/field/function_space/polynomial_reconstruction.hpp>
-#include <pcms/field/layout/omega_h_entity.h>
-#include "field_test_utils.h"
+#include <pcms/field/layout/omega_h_entity.hpp>
+#include "field_test_utils.hpp"
 #include <memory>
 #include <type_traits>
 #include <vector>

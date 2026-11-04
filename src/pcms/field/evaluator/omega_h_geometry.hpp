@@ -3,9 +3,9 @@
 
 #include "pcms/discretization/discretization/omega_h.hpp"
 #include "pcms/geometry/geometry.hpp"
-#include "pcms/localization/point_search.h"
-#include "pcms/utility/memory_spaces.h"
-#include "pcms/utility/types.h"
+#include "pcms/localization/point_search.hpp"
+#include "pcms/utility/memory_spaces.hpp"
+#include "pcms/utility/types.hpp"
 #include <Kokkos_Core.hpp>
 #include <Omega_h_mesh.hpp>
 #include <Omega_h_shape.hpp>
