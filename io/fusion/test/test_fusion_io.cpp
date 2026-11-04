@@ -7,7 +7,7 @@
 #include <pcms/field/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/gradient_source.hpp>
 #include <pcms/field/transformed_source.hpp>
-#include <fusion_io/fusion_io.hpp>
+#include "fusion_io_space.hpp"
 #include "fusion_io_source.hpp"
 #include <pcms/field/function_space/lagrange.h>
 #include <pcms/transfer/interpolator.h>
@@ -23,9 +23,9 @@
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
+using fio::detail::FusionIOFormat;
+using fio::detail::FusionIOOptions;
 using pcms::DeviceMemorySpace;
-using pcms::FusionIOFormat;
-using pcms::FusionIOOptions;
 using pcms::HostMemorySpace;
 using pcms::Real;
 using pcms::ValueBasis;
@@ -89,8 +89,9 @@ Real EvaluateSeries(fio_source& source, int type)
 
 TEST_CASE("Fusion-IO geqdsk poloidal flux matches the grid values")
 {
-  auto source = pcms::OpenFusionIOSource(FusionIOFormat::GEQDSK, GeqdskFile);
-  auto space = pcms::FusionIOFunctionSpace::Create(source, 1);
+  auto source =
+    fio::detail::OpenFusionIOSource(FusionIOFormat::GEQDSK, GeqdskFile);
+  auto space = fio::detail::FusionIOFunctionSpace::Create(source, 1);
   auto psi = space->CreateFunction("psi", "poloidal flux");
 
   // Fusion-IO's interpolant reproduces the grid values (read here by PCMS's
@@ -115,9 +116,10 @@ TEST_CASE("Fusion-IO geqdsk poloidal flux matches the grid values")
 
 TEST_CASE("Fusion-IO M3D-C1 fields")
 {
-  auto source = pcms::OpenFusionIOSource(FusionIOFormat::M3DC1, M3DC1File);
-  auto scalars = pcms::FusionIOFunctionSpace::Create(source, 1);
-  auto vectors = pcms::FusionIOFunctionSpace::Create(source, 3);
+  auto source =
+    fio::detail::OpenFusionIOSource(FusionIOFormat::M3DC1, M3DC1File);
+  auto scalars = fio::detail::FusionIOFunctionSpace::Create(source, 1);
+  auto vectors = fio::detail::FusionIOFunctionSpace::Create(source, 3);
   auto psi = scalars->CreateFunction("psi", "poloidal flux");
   auto a = vectors->CreateFunction("A", "vector potential");
   REQUIRE(pcms::SameValueBasis(
@@ -272,11 +274,12 @@ public:
 
 TEST_CASE("Fusion-IO evaluation errors")
 {
-  auto source = pcms::OpenFusionIOSource(FusionIOFormat::GEQDSK, GeqdskFile);
-  auto scalars = pcms::FusionIOFunctionSpace::Create(source, 1);
-  auto vectors = pcms::FusionIOFunctionSpace::Create(source, 3);
+  auto source =
+    fio::detail::OpenFusionIOSource(FusionIOFormat::GEQDSK, GeqdskFile);
+  auto scalars = fio::detail::FusionIOFunctionSpace::Create(source, 1);
+  auto vectors = fio::detail::FusionIOFunctionSpace::Create(source, 3);
   auto psi = scalars->CreateFunction("psi", "poloidal flux");
-  const auto quantities = pcms::AvailableQuantities(*source);
+  const auto quantities = fio::detail::AvailableQuantities(*source);
   REQUIRE(std::find(quantities.begin(), quantities.end(), "magnetic field") !=
           quantities.end());
 
@@ -293,11 +296,11 @@ TEST_CASE("Fusion-IO evaluation errors")
   REQUIRE_THROWS_WITH(psi.GetDOFHolderData(),
                       ContainsSubstring("no DOFAccess"));
   REQUIRE_THROWS_WITH(
-    pcms::OpenFusionIOSource(FusionIOFormat::GEQDSK, "missing"),
+    fio::detail::OpenFusionIOSource(FusionIOFormat::GEQDSK, "missing"),
     ContainsSubstring("could not open"));
-  REQUIRE_THROWS_WITH(
-    pcms::FusionIOSource(pcms::FusionIOSourcePtr(new CartesianSource)),
-    ContainsSubstring("cylindrical geometry"));
+  REQUIRE_THROWS_WITH(fio::detail::FusionIOSource(
+                        fio::detail::FusionIOSourcePtr(new CartesianSource)),
+                      ContainsSubstring("cylindrical geometry"));
 
   // Fusion-IO writes one row per query point.
   const auto coords = pcms::test::CreateDeviceCoordinateView(
@@ -309,8 +312,8 @@ TEST_CASE("Fusion-IO evaluation errors")
     evaluator->Evaluate(psi, pcms::test::TagLike(psi, short_out)),
     ContainsSubstring("but must be [2][1]"));
 
-  auto other = pcms::FusionIOFunctionSpace::Create(
-    pcms::OpenFusionIOSource(FusionIOFormat::GEQDSK, GeqdskFile), 1);
+  auto other = fio::detail::FusionIOFunctionSpace::Create(
+    fio::detail::OpenFusionIOSource(FusionIOFormat::GEQDSK, GeqdskFile), 1);
   REQUIRE_THROWS_WITH(EvaluateAt(*other, psi, {1.8, 0.0, 0.1}),
                       ContainsSubstring("field is not a quantity"));
 }
@@ -319,9 +322,10 @@ TEST_CASE("Fusion-IO gradients")
 {
   SECTION("M3D-C1: the equilibrium field is the curl of the flux")
   {
-    auto source = pcms::OpenFusionIOSource(FusionIOFormat::M3DC1, M3DC1File);
-    auto scalars = pcms::FusionIOFunctionSpace::Create(source, 1);
-    auto vectors = pcms::FusionIOFunctionSpace::Create(source, 3);
+    auto source =
+      fio::detail::OpenFusionIOSource(FusionIOFormat::M3DC1, M3DC1File);
+    auto scalars = fio::detail::FusionIOFunctionSpace::Create(source, 1);
+    auto vectors = fio::detail::FusionIOFunctionSpace::Create(source, 3);
     const FusionIOOptions equilibrium{.part =
                                         FusionIOOptions::Part::Equilibrium};
     auto psi = scalars->CreateFunction("psi", "poloidal flux", equilibrium);
@@ -352,8 +356,9 @@ TEST_CASE("Fusion-IO gradients")
 
   SECTION("geqdsk: the gradient matches finite differences of the flux")
   {
-    auto source = pcms::OpenFusionIOSource(FusionIOFormat::GEQDSK, GeqdskFile);
-    auto space = pcms::FusionIOFunctionSpace::Create(source, 1);
+    auto source =
+      fio::detail::OpenFusionIOSource(FusionIOFormat::GEQDSK, GeqdskFile);
+    auto space = fio::detail::FusionIOFunctionSpace::Create(source, 1);
     auto psi = space->CreateFunction("psi", "poloidal flux");
     // Inside a grid cell: Fusion-IO's bicubic interpolant of the geqdsk grid
     // is not differentiable across grid lines, where the finite difference
@@ -373,10 +378,11 @@ TEST_CASE("Fusion-IO gradients")
 
   SECTION("M3D-C1: the flux gradient interpolates onto a grid")
   {
-    auto source = pcms::OpenFusionIOSource(FusionIOFormat::M3DC1, M3DC1File);
-    std::shared_ptr<const pcms::FusionIOFunctionSpace> scalars =
-      pcms::FusionIOFunctionSpace::Create(source, 1);
-    auto vectors = pcms::FusionIOFunctionSpace::Create(source, 3);
+    auto source =
+      fio::detail::OpenFusionIOSource(FusionIOFormat::M3DC1, M3DC1File);
+    std::shared_ptr<const fio::detail::FusionIOFunctionSpace> scalars =
+      fio::detail::FusionIOFunctionSpace::Create(source, 1);
+    auto vectors = fio::detail::FusionIOFunctionSpace::Create(source, 3);
     const FusionIOOptions equilibrium{.part =
                                         FusionIOOptions::Part::Equilibrium};
     auto psi = scalars->CreateFunction("psi", "poloidal flux", equilibrium);
@@ -424,11 +430,12 @@ TEST_CASE("Fusion-IO gradients")
 
   SECTION("gradients are re-expressed in Cartesian components")
   {
-    auto source = pcms::OpenFusionIOSource(FusionIOFormat::M3DC1, M3DC1File);
+    auto source =
+      fio::detail::OpenFusionIOSource(FusionIOFormat::M3DC1, M3DC1File);
     std::shared_ptr<const pcms::FunctionSpace> space =
-      pcms::FusionIOFunctionSpace::Create(source, 1);
+      fio::detail::FusionIOFunctionSpace::Create(source, 1);
     auto psi =
-      std::static_pointer_cast<const pcms::FusionIOFunctionSpace>(space)
+      std::static_pointer_cast<const fio::detail::FusionIOFunctionSpace>(space)
         ->CreateFunction("psi", "poloidal flux");
     const Real r = 1.7, phi = 2.2, z = 0.3;
     const auto cyl = EvaluateGradientAt(*space, psi, {r, phi, z});
