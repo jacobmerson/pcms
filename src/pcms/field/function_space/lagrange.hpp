@@ -10,7 +10,7 @@
 #include "pcms/field/value_view.hpp"
 #include "pcms/field/point_evaluator.hpp"
 #include "pcms/field/out_of_bounds_policy.hpp"
-#include "pcms/field/coordinate_system.hpp"
+#include "pcms/utility/coordinate_system.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/types.hpp"
 #include "pcms/utility/memory_spaces.hpp"
