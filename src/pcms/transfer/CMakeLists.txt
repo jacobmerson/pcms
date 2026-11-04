@@ -4,12 +4,14 @@ set(PCMS_FIELD_TRANSFER_HEADERS
     copy.hpp
     transfer_operator.hpp
     mass_matrix_type.hpp
+    projection.hpp
 )
 
 
 set(PCMS_FIELD_TRANSFER_SOURCES
     mesh_intersection.cpp
-    interpolator.cpp)
+    interpolator.cpp
+    projection.cpp)
 
 
 if(PCMS_ENABLE_MESHFIELDS)
