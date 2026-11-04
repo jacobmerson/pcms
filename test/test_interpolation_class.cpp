@@ -4,8 +4,8 @@
 #include <Omega_h_build.hpp>
 #include <Omega_h_library.hpp>
 #include <pcms/utility/coordinate_systems/cartesian.hpp>
-#include <pcms/field/evaluator/mls_point_cloud.hpp>
-#include <pcms/field/evaluator/point_cloud_geometry.hpp>
+#include <pcms/backends/point_cloud/mls_evaluator.hpp>
+#include <pcms/backends/point_cloud/geometry.hpp>
 #include <pcms/field/function_space/polynomial_reconstruction.hpp>
 #include <pcms/field/layout/omega_h_entity.hpp>
 #include <pcms/utility/entity_types.hpp>
