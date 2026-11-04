@@ -49,6 +49,7 @@
 #include "pcms/transfer/copy.hpp"
 #include "pcms/transfer/interpolator.hpp"
 #include "pcms/transfer/mass_matrix_type.hpp"
+#include "pcms/transfer/projection.hpp"
 #include "pcms/transfer/transfer_operator.hpp"
 
 // coupler
