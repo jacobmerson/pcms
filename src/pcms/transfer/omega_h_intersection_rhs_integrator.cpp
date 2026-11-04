@@ -1,7 +1,7 @@
 #include "pcms/transfer/omega_h_intersection_rhs_integrator.hpp"
 #include "pcms/field/element_dispatch.hpp"
 #include "pcms/backends/omega_h/lagrange_evaluator.hpp"
-#include "pcms/field/function_space/lagrange.hpp"
+#include "pcms/field/function_spaces.hpp"
 #include "pcms/transfer/omega_h_form_integrator_utils.hpp"
 #include "pcms/transfer/petsc_utils.hpp"
 #include "pcms/utility/assert.hpp"
