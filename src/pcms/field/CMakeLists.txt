@@ -97,13 +97,13 @@ endif ()
 
 if(PCMS_ENABLE_XGC)
     list(APPEND PCMS_FIELD_HEADERS
-            data/xgc.hpp
-            function_space/xgc.hpp
-            layout/xgc.hpp
-            layout/xgc_reverse_classification.hpp)
+            ../backends/xgc/field_data.hpp
+            ../backends/xgc/field_factory.hpp
+            ../backends/xgc/layout.hpp
+            ../backends/xgc/reverse_classification.hpp)
     list(APPEND PCMS_FIELD_SOURCES
-            layout/xgc.cpp
-            layout/xgc_reverse_classification.cpp)
+            ../backends/xgc/layout.cpp
+            ../backends/xgc/reverse_classification.cpp)
 endif()
 
 add_library(pcms_field ${PCMS_FIELD_SOURCES})

@@ -2,7 +2,7 @@
 #define PCMS_XGC_FIELD_LAYOUT_H
 
 #include "pcms/field/field_layout.hpp"
-#include "pcms/field/layout/xgc_reverse_classification.hpp"
+#include "pcms/backends/xgc/reverse_classification.hpp"
 
 namespace pcms
 {
