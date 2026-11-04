@@ -19,11 +19,12 @@ set(PCMS_FIELD_HEADERS
         gradient_source.hpp
         transformed_point_evaluator.hpp
         data/simple.hpp
-        function_space/polynomial_reconstruction.hpp
+        function_spaces.hpp
 )
 set(PCMS_FIELD_SOURCES
         field_layout.cpp
         function_space.cpp
+        function_spaces.cpp
         gradient_source.cpp
         query_points.cpp
         gid_permutation.cpp
@@ -39,8 +40,6 @@ if (PCMS_ENABLE_OMEGA_H)
             geometry_factories.cpp
     )
     list(APPEND PCMS_FIELD_HEADERS
-            function_space/lagrange.hpp
-            function_space/spline.hpp
             eqdsk_field.hpp
             evaluator/mls_interpolation.hpp
             evaluator/mls_interpolation_impl.hpp

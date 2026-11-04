@@ -12,7 +12,7 @@
 #include "pcms/coupler/overlap_mask.hpp"
 #include "pcms/field/value_view.hpp"
 #include "pcms/backends/omega_h/geometry.hpp"
-#include "pcms/field/function_space/lagrange.hpp"
+#include "pcms/field/function_spaces.hpp"
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
 
 using pcms::ConstructRCFromOmegaHMesh;
