@@ -23,6 +23,9 @@ Rewrites, preserving the arguments:
   pcms.create_point_cloud_geometry(mesh, entity_dim[, ...])
                                               -> pcms.backend.omega_h.create_point_cloud_geometry(...)
   pcms.create_uniform_grid_binary_field(...)  -> pcms.backend.omega_h.create_uniform_grid_binary_field(...)
+  pcms.create_uniform_grid_from_mesh(...)     -> pcms.backend.omega_h.create_uniform_grid_from_mesh(...)
+  pcms.map_entity_field_to_vertices_X(...)    -> pcms.backend.omega_h.map_entity_field_to_vertices_X(...)
+  pcms.compute_entity_centroids[_few](...)    -> pcms.backend.omega_h.compute_entity_centroids(...)
   <expr>.mesh()                               -> pcms.backend.omega_h.get_mesh(<expr>.get_geometry())
 
 The keyword mesh_coordinate_system= becomes system= (the coordinate system is
@@ -203,9 +206,13 @@ def simple(name):
 
 
 # top-level names that moved to pcms.backend.omega_h
-MOVED_TO_OMEGA_H = ("create_uniform_grid_binary_field",)
+MOVED_TO_OMEGA_H = ("create_uniform_grid_binary_field",
+                    "create_uniform_grid_from_mesh",
+                    "map_entity_field_to_vertices_average",
+                    "map_entity_field_to_vertices_mls",
+                    "compute_entity_centroids")
 # removed aliases: (old, new)
-ALIASES = ()
+ALIASES = (("compute_entity_centroids_few", "compute_entity_centroids"),)
 # renamed (and moved) names: (old, new)
 RENAMED = (("create_omega_h_geometry", "backend.omega_h.create_geometry"),)
 
