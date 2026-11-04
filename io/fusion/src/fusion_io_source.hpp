@@ -45,9 +45,14 @@ public:
     return quantities_;
   }
 
+  /// A field of the source (a scalar if it has one) whose evaluation tells
+  /// whether a point is inside the source's domain. Read on first use.
+  [[nodiscard]] fio_field& DomainProbe() const;
+
 private:
   FusionIOSourcePtr source_;
   std::map<std::string, field_type> quantities_;
+  mutable FusionIOFieldPtr probe_;
 };
 
 } // namespace fio::detail
