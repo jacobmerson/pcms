@@ -21,4 +21,9 @@
 #cmakedefine PCMS_PROJECTION_KSP_RTOL @PCMS_PROJECTION_KSP_RTOL@
 #cmakedefine PCMS_PROJECTION_KSP_ATOL @PCMS_PROJECTION_KSP_ATOL@
 
+// deprecated spelling of PCMS_ENABLE_FORTRAN, kept for one release
+#ifdef PCMS_ENABLE_FORTRAN
+#define PCMS_ENABLE_Fortran
+#endif
+
 #endif // PCMS_CONFIGURATION_HPP
