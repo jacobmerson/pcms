@@ -4,7 +4,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <Kokkos_Core.hpp>
 #include <Omega_h_library.hpp>
-#include <pcms/discretization/discretization/empty.hpp>
+#include <pcms/discretization/empty.hpp>
 #include <pcms/field/coordinate_map.hpp>
 #include <pcms/utility/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/function_space.hpp>
