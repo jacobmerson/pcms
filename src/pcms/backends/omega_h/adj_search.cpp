@@ -1,5 +1,5 @@
-#include "pcms/localization/adj_search.hpp"
-#include "pcms/localization/queue_visited.hpp"
+#include "pcms/backends/omega_h/adj_search.hpp"
+#include "pcms/backends/omega_h/queue_visited.hpp"
 #include <Omega_h_array_ops.hpp>
 
 namespace pcms
