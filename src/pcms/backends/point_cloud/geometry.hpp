@@ -2,9 +2,9 @@
 #define PCMS_FIELD_EVALUATOR_POINT_CLOUD_GEOMETRY_HPP
 
 #include "pcms/utility/coordinate_system.hpp"
-#include "pcms/field/evaluator/mls_point_cloud.hpp"
+#include "pcms/backends/point_cloud/mls_evaluator.hpp"
 #include "pcms/field/field_layout.hpp"
-#include "pcms/field/layout/point_cloud.hpp"
+#include "pcms/backends/point_cloud/layout.hpp"
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/localization/mls_support_helpers.hpp"
 #include "pcms/utility/arrays.hpp"

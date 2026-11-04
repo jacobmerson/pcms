@@ -2,11 +2,11 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "pcms/field/function_space/polynomial_reconstruction.hpp"
-#include <pcms/field/evaluator/point_cloud_geometry.hpp>
+#include <pcms/backends/point_cloud/geometry.hpp>
 #include "pcms/field/value_view.hpp"
 #include "pcms/field/function_space/lagrange.hpp"
 #include "pcms/field/layout/omega_h_entity.hpp"
-#include "pcms/field/layout/point_cloud.hpp"
+#include "pcms/backends/point_cloud/layout.hpp"
 #include "field_test_utils.hpp"
 
 #include <Omega_h_build.hpp>
