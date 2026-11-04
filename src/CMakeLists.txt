@@ -46,7 +46,7 @@ install(
 
 configure_package_config_file(
   "${CMAKE_SOURCE_DIR}/config.cmake.in" "${CMAKE_BINARY_DIR}/pcms-config.cmake"
-  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pcms
+  INSTALL_DESTINATION ${PCMS_INSTALL_CMAKEDIR}
 )
 write_basic_package_version_file(
   "${PROJECT_BINARY_DIR}/pcms-config-version.cmake"
@@ -56,11 +56,11 @@ write_basic_package_version_file(
 install(
   FILES "${PROJECT_BINARY_DIR}/pcms-config.cmake"
   "${PROJECT_BINARY_DIR}/pcms-config-version.cmake"
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pcms
+  DESTINATION ${PCMS_INSTALL_CMAKEDIR}
 )
 
 install(FILES "${CMAKE_SOURCE_DIR}/cmake/FindPETSc.cmake"
-          DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pcms)
+          DESTINATION ${PCMS_INSTALL_CMAKEDIR})
 
 
 # pcms::pcms links every PCMS library that was built; downstream codes
@@ -106,7 +106,7 @@ install(TARGETS pcms_core EXPORT pcms_core-targets)
 install(
   EXPORT pcms_core-targets
   NAMESPACE pcms::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pcms)
+  DESTINATION ${PCMS_INSTALL_CMAKEDIR})
 
 install(
   TARGETS pcms_pcms
@@ -127,5 +127,5 @@ install(
 install(
   EXPORT pcms-targets
   NAMESPACE pcms::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pcms
+  DESTINATION ${PCMS_INSTALL_CMAKEDIR}
 )
