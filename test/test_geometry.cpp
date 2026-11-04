@@ -9,14 +9,14 @@
 #include <pcms/utility/coordinate_systems/cartesian.hpp>
 #include <pcms/utility/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/evaluator/omega_h_geometry.hpp>
-#include <pcms/field/evaluator/point_cloud_geometry.hpp>
+#include <pcms/backends/point_cloud/geometry.hpp>
 #include <pcms/field/evaluator/uniform_grid_geometry.hpp>
 #include <pcms/field/function_space/lagrange.hpp>
 #include <pcms/field/function_space/polynomial_reconstruction.hpp>
 #include <pcms/field/layout/omega_h_entity.hpp>
 #include <pcms/field/layout/omega_h_lagrange.hpp>
 #include <pcms/field/layout/empty.hpp>
-#include <pcms/field/layout/point_cloud.hpp>
+#include <pcms/backends/point_cloud/layout.hpp>
 #include <pcms/geometry/geometry.hpp>
 #include <pcms/localization/adj_search.hpp>
 #include <pcms/localization/mls_support_helpers.hpp>
