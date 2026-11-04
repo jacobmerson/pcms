@@ -1,7 +1,7 @@
 #ifndef PCMS_FIELD_EVALUATOR_OMEGA_H_GEOMETRY_HPP
 #define PCMS_FIELD_EVALUATOR_OMEGA_H_GEOMETRY_HPP
 
-#include "pcms/discretization/discretization/omega_h.hpp"
+#include "pcms/backends/omega_h/discretization.hpp"
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/localization/point_search.hpp"
 #include "pcms/utility/memory_spaces.hpp"

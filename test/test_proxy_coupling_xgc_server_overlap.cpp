@@ -3,7 +3,7 @@
 #include <pcms/utility/types.hpp>
 #include <Omega_h_file.hpp>
 #include <Omega_h_for.hpp>
-#include <pcms/field/data/omega_h.hpp>
+#include <pcms/backends/omega_h/field_data.hpp>
 
 #include "test_support.hpp"
 #include "pcms/backends/xgc/field_factory.hpp"
@@ -11,7 +11,7 @@
 #include "pcms/coupler/coupler.hpp"
 #include "pcms/coupler/overlap_mask.hpp"
 #include "pcms/field/value_view.hpp"
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
+#include "pcms/backends/omega_h/geometry.hpp"
 #include "pcms/field/function_space/lagrange.hpp"
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
 
