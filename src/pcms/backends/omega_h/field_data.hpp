@@ -3,7 +3,7 @@
 
 #include "pcms/field/field_data.hpp"
 #include "pcms/field/field_layout.hpp"
-#include "pcms/discretization/discretization/omega_h.hpp"
+#include "pcms/backends/omega_h/discretization.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/memory_spaces.hpp"
 #include "pcms/utility/omega_h_array_utils.hpp"

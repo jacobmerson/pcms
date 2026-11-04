@@ -1,31 +1,20 @@
-#ifndef PCMS_ADAPTER_OMEGA_H_LAGRANGE_LAYOUT_H
-#define PCMS_ADAPTER_OMEGA_H_LAGRANGE_LAYOUT_H
+#ifndef PCMS_FIELD_LAYOUT_OMEGA_H_ENTITY_H
+#define PCMS_FIELD_LAYOUT_OMEGA_H_ENTITY_H
 
 #include <Omega_h_mesh.hpp>
-#include "pcms/utility/arrays.hpp"
-#include "pcms/discretization/discretization/omega_h.hpp"
+
+#include "pcms/backends/omega_h/discretization.hpp"
 #include "pcms/field/field_layout.hpp"
-#include "pcms/field/field.hpp"
 
 namespace pcms
 {
 
-// Layout for native Omega_h Lagrange fields.
-//   order 0: one DOF holder per element (centroid coordinates)
-//   order 1: one DOF holder per vertex (barycentric interpolation)
-// Throws std::invalid_argument for any other order.
-class OmegaHLagrangeLayout : public FieldLayout
+class OmegaHEntityLayout : public FieldLayout
 {
 public:
-  OmegaHLagrangeLayout(
-    Omega_h::Mesh& mesh, int order, int num_components,
-    std::shared_ptr<const CoordinateSystem> coordinate_system,
-    std::string global_id_name = "global");
-  OmegaHLagrangeLayout(
-    Omega_h::Mesh& mesh, int order, int num_components,
-    std::shared_ptr<const CoordinateSystem> coordinate_system,
-    Omega_h::Read<Omega_h::I8> owned_mask,
-    std::string global_id_name = "global");
+  OmegaHEntityLayout(Omega_h::Mesh& mesh, int entity_dim, int num_components,
+                     std::shared_ptr<const CoordinateSystem> coordinate_system,
+                     std::string global_id_name = "global");
 
   std::shared_ptr<const Discretization> GetDiscretization()
     const noexcept override;
@@ -40,14 +29,12 @@ public:
 
   Rank1View<const bool, HostMemorySpace> GetOwnedHost() const override;
   GlobalIDView<HostMemorySpace> GetGidsHost() const override;
-  GlobalIDView<DeviceMemorySpace> GetGids() const;
   CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const override;
   EntOffsetsArray GetEntOffsets() const override;
   Kokkos::View<const LO*, HostMemorySpace> GetOwnedIndicesHost() const override;
   Kokkos::View<const LO*, DeviceMemorySpace> GetOwnedIndices() const override;
 
   [[nodiscard]] bool IsDistributed() const override;
-
   int GetDimension() const override;
   int GetDOFHolderEntityDim() const override;
 
@@ -56,22 +43,19 @@ public:
   Rank1View<const LO, HostMemorySpace> GetDOFHolderClassificationIdsHost()
     const override;
 
-  int GetOrder() const;
-  Omega_h::Mesh& GetMesh() const;
-
 private:
-  Omega_h::Mesh& mesh_;
-  int order_;
+  int dimension_;
+  int entity_dim_;
   int num_components_;
-  std::string global_id_name_;
+  GO num_global_dof_holder_;
 
   Omega_h::Write<Omega_h::GO> gids_;
-  Kokkos::View<Real**, DeviceMemorySpace> coords_2d_;
-  Omega_h::Read<Real> coords_; // device coordinates
-  Kokkos::View<bool*, DeviceMemorySpace> owned_;
-  Kokkos::View<bool*, HostMemorySpace> owned_host_;
+  Omega_h::Read<Real> coords_; // device coordinates (1D flattened)
+  Kokkos::View<Real**, DeviceMemorySpace> coords_2d_; // device coordinates (2D)
   Omega_h::Read<Omega_h::ClassId> class_ids_;
   Omega_h::Read<Omega_h::I8> class_dims_;
+  Kokkos::View<bool*, DeviceMemorySpace> owned_;
+  Kokkos::View<bool*, HostMemorySpace> owned_host_;
   LO num_owned_ = 0;
   Kokkos::View<GO*, HostMemorySpace> owned_gids_host_;
   Kokkos::View<Real**, DeviceMemorySpace> owned_coords_2d_;
@@ -84,11 +68,12 @@ private:
   // Entity offsets over the DOF holders with ghosts.
   EntOffsetsArray EntOffsetsWithGhosts() const;
   void BuildOwnedViews();
-  // Requires the owned views and the classification arrays.
+  // Requires the owned views and the classification arrays with ghosts.
   void BuildOwnedClassification();
 
   std::shared_ptr<const Discretization> discretization_;
 };
 
 } // namespace pcms
-#endif // PCMS_ADAPTER_OMEGA_H_LAGRANGE_LAYOUT_H
+
+#endif // PCMS_FIELD_LAYOUT_OMEGA_H_ENTITY_H
