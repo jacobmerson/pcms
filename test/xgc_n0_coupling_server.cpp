@@ -219,8 +219,8 @@ void omegah_coupler(MPI_Comm comm, Omega_h::Mesh& mesh,
     });
   auto geometry = pcms::CreateOmegaHGeometry(
     mesh, pcms::csys::Cartesian::Deferred(),
-    pcms::OmegaHGeometryOptions{.global_id_name = numbering,
-                                .owned_mask = is_overlap});
+    pcms::backend::omega_h::OmegaHGeometryOptions{.global_id_name = numbering,
+                                                  .owned_mask = is_overlap});
   auto function_space = pcms::CreateLagrangeSpace(
     geometry, 1, 1,
     pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH,
