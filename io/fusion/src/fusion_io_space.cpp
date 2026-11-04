@@ -4,7 +4,9 @@
 #include "pcms/utility/arrays.h"
 #include "pcms/utility/assert.h"
 #include "pcms/utility/profile.h"
+#include <numbers>
 #include <ranges>
+#include <string_view>
 
 namespace fio::detail
 {
@@ -223,16 +225,16 @@ FusionIOFieldPtr FusionIOSource::GetField(field_type type,
   return owned;
 }
 
-std::shared_ptr<FusionIOSource> OpenFusionIOSource(FusionIOFormat format,
+std::shared_ptr<FusionIOSource> OpenFusionIOSource(Format format,
                                                    const std::string& filename)
 {
   int type = 0;
   switch (format) {
-    case FusionIOFormat::M3DC1: type = FIO_M3DC1_SOURCE; break;
-    case FusionIOFormat::GEQDSK: type = FIO_GEQDSK_SOURCE; break;
-    case FusionIOFormat::GATO: type = FIO_GATO_SOURCE; break;
-    case FusionIOFormat::MARS: type = FIO_MARS_SOURCE; break;
-    case FusionIOFormat::GPEC: type = FIO_GPEC_SOURCE; break;
+    case Format::M3DC1: type = FIO_M3DC1_SOURCE; break;
+    case Format::GEQDSK: type = FIO_GEQDSK_SOURCE; break;
+    case Format::GATO: type = FIO_GATO_SOURCE; break;
+    case Format::MARS: type = FIO_MARS_SOURCE; break;
+    case Format::GPEC: type = FIO_GPEC_SOURCE; break;
   }
   fio_source* opened = nullptr;
   const int status = fio_open_source(&opened, type, filename.c_str());
@@ -271,8 +273,7 @@ FusionIOFunctionSpace::FusionIOFunctionSpace(
 }
 
 Function<Real> FusionIOFunctionSpace::CreateFunction(
-  std::string name, const std::string& quantity,
-  const FusionIOOptions& options) const
+  std::string name, const std::string& quantity, const Options& options) const
 {
   const auto& quantities = source_->Quantities();
   const auto found = quantities.find(quantity);
@@ -337,4 +338,158 @@ FieldVariant FusionIOFunctionSpace::CreateFieldImpl(FieldDataVariant data) const
     layout_, std::get<std::unique_ptr<FieldData<Real>>>(std::move(data)));
 }
 
+namespace
+{
+
+struct QuantityEntry
+{
+  Quantity quantity;
+  field_type type;
+  std::string_view name;
+};
+
+// Fusion-IO 1.x's field types and names (fio_get_field_name).
+constexpr QuantityEntry QuantityTable[] = {
+  {Quantity::Alpha, FIO_ALPHA, "alpha"},
+  {Quantity::ScalarPotential, FIO_SCALAR_POTENTIAL, "scalar potential"},
+  {Quantity::TotalPressure, FIO_TOTAL_PRESSURE, "total pressure"},
+  {Quantity::PoloidalFlux, FIO_POLOIDAL_FLUX, "poloidal flux"},
+  {Quantity::PoloidalFluxNorm, FIO_POLOIDAL_FLUX_NORM,
+   "normalized poloidal flux"},
+  {Quantity::TotalRadiation, FIO_TOTAL_RADIATION, "total radiation"},
+  {Quantity::Resistivity, FIO_RESISTIVITY, "resistivity"},
+  {Quantity::Viscosity, FIO_VISCOSITY, "viscosity"},
+  {Quantity::ThermalDiffusivity, FIO_THERMAL_DIFFUSIVITY,
+   "thermal diffusivity"},
+  {Quantity::BootstrapCurrent, FIO_JBS, "JpdotB"},
+  {Quantity::BootstrapCurrentDnDpsi, FIO_JBS_dndpsi, "JpdotB_dndpsi"},
+  {Quantity::BootstrapCurrentDteDpsi, FIO_JBS_dtedpsi, "JpdotB_dtedpsi"},
+  {Quantity::BootstrapCurrentDtiDpsi, FIO_JBS_dtidpsi, "JpdotB_dtidpsi"},
+  {Quantity::BootstrapCurrentL31, FIO_JBS_L31, "JpdotB_L31"},
+  {Quantity::BootstrapCurrentL32, FIO_JBS_L32, "JpdotB_L32"},
+  {Quantity::BootstrapCurrentL34, FIO_JBS_L34, "JpdotB_L34"},
+  {Quantity::BootstrapCurrentAlpha, FIO_JBS_alpha, "JpdotB_alpha"},
+  {Quantity::Pressure, FIO_PRESSURE, "pressure"},
+  {Quantity::Density, FIO_DENSITY, "density"},
+  {Quantity::Temperature, FIO_TEMPERATURE, "temperature"},
+  {Quantity::ElectricField, FIO_ELECTRIC_FIELD, "electric field"},
+  {Quantity::VectorPotential, FIO_VECTOR_POTENTIAL, "vector potential"},
+  {Quantity::MagneticField, FIO_MAGNETIC_FIELD, "magnetic field"},
+  {Quantity::CurrentDensity, FIO_CURRENT_DENSITY, "current density"},
+  {Quantity::FluidVelocity, FIO_FLUID_VELOCITY, "fluid velocity"},
+  {Quantity::Velocity, FIO_VELOCITY, "velocity"},
+};
+
+const QuantityEntry& EntryOf(Quantity quantity)
+{
+  for (const auto& entry : QuantityTable) {
+    if (entry.quantity == quantity) {
+      return entry;
+    }
+  }
+  throw pcms_error("fio: unknown quantity");
+}
+
+// Fusion-IO's vector field types start at FIO_ELECTRIC_FIELD (1001).
+int NumComponents(field_type type)
+{
+  return type >= FIO_ELECTRIC_FIELD ? 3 : 1;
+}
+
+/// A Fusion-IO 1.x source as a fio::Source.
+class FusionIOFileSource final : public Source
+{
+public:
+  explicit FusionIOFileSource(std::shared_ptr<FusionIOSource> source)
+    : source_(std::move(source))
+  {
+  }
+
+  [[nodiscard]] std::vector<QuantityInfo> Quantities() const override
+  {
+    std::vector<QuantityInfo> quantities;
+    for (const auto& entry : QuantityTable) {
+      if (source_->Quantities().contains(std::string(entry.name))) {
+        quantities.push_back({entry.quantity, NumComponents(entry.type)});
+      }
+    }
+    return quantities;
+  }
+
+  [[nodiscard]] std::vector<Real> Times() const override
+  {
+    fio_source& source = source_->Get();
+    int num_timeslices = 0;
+    if (source.get_int_parameter(FIO_NUM_TIMESLICES, &num_timeslices) !=
+        FIO_SUCCESS) {
+      return {};
+    }
+    std::vector<Real> times(num_timeslices);
+    for (int i = 0; i < num_timeslices; ++i) {
+      if (source.get_slice_time(i, &times[i]) != FIO_SUCCESS) {
+        throw pcms_error("fio: could not read the time of time slice " +
+                         std::to_string(i));
+      }
+    }
+    return times;
+  }
+
+  [[nodiscard]] Real Period() const override
+  {
+    Real period = 2 * std::numbers::pi;
+    source_->Get().get_real_parameter(FIO_PERIOD, &period);
+    return period;
+  }
+
+  [[nodiscard]] std::optional<Real> EvaluateSeries(Series series,
+                                                   Real time) const override
+  {
+    const series_type types[] = {FIO_MAGAXIS_PSI, FIO_LCFS_PSI, FIO_MAGAXIS_R,
+                                 FIO_MAGAXIS_Z};
+    fio_series* opened = nullptr;
+    if (source_->Get().get_series(types[static_cast<int>(series)], &opened) !=
+          FIO_SUCCESS ||
+        opened == nullptr) {
+      return std::nullopt;
+    }
+    const std::unique_ptr<fio_series> owned(opened);
+    Real value = 0;
+    if (owned->eval(time, &value) != FIO_SUCCESS) {
+      throw pcms_error("fio: could not evaluate a time series at t = " +
+                       std::to_string(time));
+    }
+    return value;
+  }
+
+  [[nodiscard]] Function<Real> CreateFunction(
+    Quantity quantity, const Options& options) const override
+  {
+    const auto& entry = EntryOf(quantity);
+    const std::string name(entry.name);
+    return FusionIOFunctionSpace::Create(source_, NumComponents(entry.type))
+      ->CreateFunction(name, name, options);
+  }
+
+private:
+  std::shared_ptr<FusionIOSource> source_;
+};
+
+} // namespace
+
 } // namespace fio::detail
+
+namespace fio
+{
+
+std::string_view Name(Quantity quantity)
+{
+  return detail::EntryOf(quantity).name;
+}
+
+std::shared_ptr<Source> Open(Format format, const std::string& path)
+{
+  return std::make_shared<detail::FusionIOFileSource>(
+    detail::OpenFusionIOSource(format, path));
+}
+
+} // namespace fio

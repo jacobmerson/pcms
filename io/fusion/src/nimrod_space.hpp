@@ -1,5 +1,6 @@
 #pragma once
 
+#include "fusion_io/fusion_io.hpp"
 #include "pcms/field/function_space.h"
 #include "pcms/field/layout/empty.h"
 #include <memory>
@@ -18,13 +19,6 @@ class NimrodSource;
 
 struct NimrodOptions
 {
-  enum class Part
-  {
-    Total,
-    Perturbed,
-    Equilibrium
-  };
-
   Part part = Part::Total;
 };
 
