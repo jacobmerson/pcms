@@ -37,7 +37,6 @@ if (PCMS_ENABLE_OMEGA_H)
             function_space/spline.cpp
             layout/omega_h_entity.cpp
             layout/omega_h_lagrange.cpp
-            ../backends/uniform_grid/layout.cpp
             evaluator/mls_interpolation.cpp
             evaluator/omega_h_geometry.cpp
     )
@@ -48,13 +47,8 @@ if (PCMS_ENABLE_OMEGA_H)
             layout/omega_h_lagrange.hpp
             evaluator/omega_h_geometry.hpp
             evaluator/omega_h_lagrange.hpp
-            ../backends/uniform_grid/geometry.hpp
             data/omega_h.hpp
-            ../backends/uniform_grid/layout.hpp
             uniform_grid_binary_field.hpp
-            ../backends/uniform_grid/evaluator.hpp
-            ../backends/uniform_grid/spline_interpolator.hpp
-            ../backends/uniform_grid/spline_evaluator.hpp
             eqdsk_field.hpp
             evaluator/mls_interpolation.hpp
             evaluator/mls_interpolation_impl.hpp
