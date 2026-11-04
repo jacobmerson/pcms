@@ -634,7 +634,8 @@ void bind_create_field_module(py::module& m)
   m.def(
     "create_uniform_grid_from_mesh",
     [](Omega_h::Mesh& mesh, const std::array<LO, 2>& divisions) {
-      return CreateUniformGridFromMesh<2>(mesh, divisions);
+      return pcms::backend::omega_h::CreateUniformGridFromMesh<2>(mesh,
+                                                                  divisions);
     },
     py::arg("mesh"), py::arg("divisions"),
     "Create a 2D uniform grid from an Omega_h mesh");
@@ -642,7 +643,8 @@ void bind_create_field_module(py::module& m)
   m.def(
     "create_uniform_grid_from_mesh",
     [](Omega_h::Mesh& mesh, const std::array<LO, 3>& divisions) {
-      return CreateUniformGridFromMesh<3>(mesh, divisions);
+      return pcms::backend::omega_h::CreateUniformGridFromMesh<3>(mesh,
+                                                                  divisions);
     },
     py::arg("mesh"), py::arg("divisions"),
     "Create a 3D uniform grid from an Omega_h mesh");
