@@ -1,8 +1,8 @@
 #ifndef PCMS_UNIFORM_GRID_EVALUATOR_FACTORY_H
 #define PCMS_UNIFORM_GRID_EVALUATOR_FACTORY_H
 
-#include "pcms/field/evaluator/uniform_grid_geometry.hpp"
-#include "pcms/field/layout/uniform_grid.hpp"
+#include "pcms/backends/uniform_grid/geometry.hpp"
+#include "pcms/backends/uniform_grid/layout.hpp"
 #include "pcms/utility/types.hpp"
 #include <Kokkos_Core.hpp>
 #include "pcms/field/point_evaluator_factory.hpp"
@@ -11,8 +11,8 @@
 #include "pcms/field/field_data.hpp"
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/profile.hpp"
-#include "pcms/transfer/linear_interpolant.hpp"
-#include "pcms/transfer/multidimarray.hpp"
+#include "pcms/backends/uniform_grid/linear_interpolant.hpp"
+#include "pcms/backends/uniform_grid/multidimarray.hpp"
 
 #include <memory>
 #include <utility>
