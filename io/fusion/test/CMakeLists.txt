@@ -38,3 +38,12 @@ if(FUSION_IO_TEST_SOURCES)
   endif()
   add_test(NAME fusion_io_tests COMMAND fusion_io_tests)
 endif()
+
+if(TARGET fio_trace AND FUSION_IO_TEST_DATA_DIR)
+  # A few transits of two field lines in the M3D-C1 equilibrium.
+  add_test(
+    NAME fio_trace_smoke
+    COMMAND fio_trace -m3dc1 ${FUSION_IO_TEST_DATA_DIR}/m3dc1/C1.h5 -dR 0.05
+            -p 2 -t 2 -s 20 -pout 0 -qout 0
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+endif()
