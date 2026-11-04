@@ -8,6 +8,7 @@
 #include "pcms/field/function_space.hpp"
 #include "pcms/field/point_evaluator.hpp"
 #include "pcms/transfer/interpolator.hpp"
+#include "pcms/transfer/projection.hpp"
 #include "pcms/field/out_of_bounds_policy.hpp"
 #include "pcms/pythonapi/numpy_array_transform.hpp"
 #include "pcms/pythonapi/py_value_types.hpp"
@@ -172,6 +173,48 @@ void bind_transfer_field_module(py::module& m)
          "mass-matrix factorization are cached; call apply() repeatedly. "
          "to_source maps the target's coordinate system to the source's, or "
          "None if they are the same.");
+
+  m.def(
+    "create_conservative_projection",
+    [](const Immutable<FunctionSpace>& source_space,
+       const Immutable<FunctionSpace>& target_space,
+       MassMatrixType mass_matrix_type) {
+      return CreateConservativeProjection(
+        *source_space.ptr, *target_space.ptr,
+        ConservativeProjectionOptions{.mass_matrix_type = mass_matrix_type});
+    },
+    py::arg("source_space"), py::arg("target_space"),
+    py::arg("mass_matrix_type") = MassMatrixType::Consistent,
+    py::keep_alive<0, 1>(), py::keep_alive<0, 2>(),
+    "Create a mesh-intersection conservative projection between order-1 "
+    "Lagrange spaces on Omega_h meshes. Mesh intersection, quadrature setup, "
+    "and mass-matrix factorization happen here and are cached; call apply() "
+    "repeatedly.");
+
+  m.def(
+    "create_control_variate_projection",
+    [](const Immutable<PointEvaluatorFactory>& source,
+       const Immutable<FunctionSpace>& target_space, int samples_per_element,
+       std::uint64_t seed, MassMatrixType mass_matrix_type,
+       const std::optional<Immutable<CoordinateMap>>& to_source) {
+      return CreateControlVariateProjection(
+        *source.ptr, *target_space.ptr,
+        ControlVariateProjectionOptions{
+          .samples_per_element = samples_per_element,
+          .seed = seed,
+          .mass_matrix_type = mass_matrix_type,
+          .to_source = to_source ? to_source->ptr : nullptr});
+    },
+    py::arg("source"), py::arg("target_space"), py::arg("samples_per_element"),
+    py::arg("seed") = std::uint64_t(8675309),
+    py::arg("mass_matrix_type") = MassMatrixType::Consistent,
+    py::arg("to_source") = py::none(), py::keep_alive<0, 1>(),
+    py::keep_alive<0, 2>(),
+    "Create a Monte Carlo (control-variate) conservative projection onto an "
+    "order-1 Omega_h Lagrange space. Sample-point generation, the "
+    "control-variate interpolator, and the mass-matrix factorization are "
+    "cached; call apply() repeatedly. to_source maps the target's coordinate "
+    "system to the source's, or None if they are the same.");
 #endif
 }
 
