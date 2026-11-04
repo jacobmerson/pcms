@@ -4,13 +4,13 @@
 #include <Kokkos_Core.hpp>
 #include <Omega_h_build.hpp>
 #include <Omega_h_library.hpp>
-#include <pcms/configuration.h>
+#include <pcms/configuration.hpp>
 #include <pcms/field/coordinate_systems/cartesian.hpp>
-#include <pcms/field/function_space/lagrange.h>
-#include <pcms/field/function_space/spline.h>
+#include <pcms/field/function_space/lagrange.hpp>
+#include <pcms/field/function_space/spline.hpp>
 #include <pcms/field/gradient_source.hpp>
-#include <pcms/transfer/interpolator.h>
-#include "field_test_utils.h"
+#include <pcms/transfer/interpolator.hpp>
+#include "field_test_utils.hpp"
 #include <vector>
 
 using Catch::Matchers::ContainsSubstring;

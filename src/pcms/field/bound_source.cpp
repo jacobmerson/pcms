@@ -1,5 +1,5 @@
 #include "pcms/field/bound_source.hpp"
-#include "pcms/utility/arrays.h"
+#include "pcms/utility/arrays.hpp"
 #include <string>
 
 namespace pcms
