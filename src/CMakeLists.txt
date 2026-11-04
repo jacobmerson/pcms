@@ -31,7 +31,9 @@ add_subdirectory(pcms/discretization)
 add_subdirectory(pcms/geometry)
 add_subdirectory(pcms/localization)
 add_subdirectory(pcms/field)
-add_subdirectory(pcms/coupler)
+if(PCMS_ENABLE_COUPLER)
+  add_subdirectory(pcms/coupler)
+endif()
 
 # Top-level and generated headers. They are found through pcms::utility's
 # include directories (source and binary src/ directories).
@@ -65,7 +67,10 @@ add_library(pcms_pcms INTERFACE)
 add_library(pcms::pcms ALIAS pcms_pcms)
 target_link_libraries(
   pcms_pcms INTERFACE pcms::utility pcms::discretization pcms::localization
-                      pcms::field pcms::coupler)
+                      pcms::field)
+if(TARGET pcms::coupler)
+  target_link_libraries(pcms_pcms INTERFACE pcms::coupler)
+endif()
 if(PCMS_ENABLE_TRANSIENT)
   target_link_libraries(pcms_pcms INTERFACE pcms::transient)
 endif()
