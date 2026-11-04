@@ -3,7 +3,7 @@
 
 #include <Omega_h_mesh.hpp>
 
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
+#include "pcms/backends/omega_h/geometry.hpp"
 #include "pcms/field/field_layout.hpp"
 
 namespace pcms
