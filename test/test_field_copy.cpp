@@ -21,8 +21,8 @@ void test_copy(Omega_h::CommPtr world, int dim, int order, int num_components)
 
   auto mesh =
     Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, nx, ny, nz, false);
-  auto geometry =
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto geometry = pcms::backend::omega_h::CreateGeometry(
+    mesh, pcms::csys::Cartesian::Deferred());
   auto factory = pcms::CreateLagrangeSpace(
     geometry, order, num_components,
     pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
@@ -64,7 +64,8 @@ TEST_CASE("copy omega_h_field2 data")
                                  100, 0, false);
   REQUIRE_THROWS_AS(
     pcms::CreateLagrangeSpace(
-      pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred()), 2, 1,
-      pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH}),
+      pcms::backend::omega_h::CreateGeometry(mesh,
+                                             pcms::csys::Cartesian::Deferred()),
+      2, 1, pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH}),
     pcms::pcms_error);
 }

@@ -48,12 +48,13 @@ inline OmegaHScalarSpace ResolveOmegaHScalarSpace(const FunctionSpace& space,
   }
   auto geometry =
     std::dynamic_pointer_cast<const OmegaHGeometry>(space.GetGeometry());
-  if (geometry == nullptr || &GetMesh(*geometry) != &layout->GetMesh()) {
+  if (geometry == nullptr ||
+      &backend::omega_h::GetMesh(*geometry) != &layout->GetMesh()) {
     throw pcms_error(prefix +
                      "space must be on the Omega_h geometry of its layout's "
                      "mesh");
   }
-  const Omega_h::Mesh& mesh = GetMesh(*geometry);
+  const Omega_h::Mesh& mesh = backend::omega_h::GetMesh(*geometry);
   if (mesh.dim() != 2 && mesh.dim() != 3) {
     throw pcms_error(prefix + "mesh must be 2D or 3D");
   }
