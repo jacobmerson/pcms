@@ -16,7 +16,7 @@
 #include <array>
 #include <memory>
 #include <utility>
-#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
 
 namespace pcms
 {
