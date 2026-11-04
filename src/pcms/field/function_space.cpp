@@ -7,8 +7,8 @@
 #include "pcms/backends/omega_h_meshfields/field_data.hpp"
 #endif
 #ifdef PCMS_ENABLE_OMEGA_H
-#include "pcms/field/layout/omega_h_lagrange.hpp"
-#include "pcms/field/data/omega_h.hpp"
+#include "pcms/backends/omega_h/lagrange_layout.hpp"
+#include "pcms/backends/omega_h/field_data.hpp"
 #endif
 
 namespace pcms
