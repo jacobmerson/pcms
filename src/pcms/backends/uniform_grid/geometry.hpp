@@ -1,7 +1,7 @@
 #ifndef PCMS_FIELD_EVALUATOR_UNIFORM_GRID_GEOMETRY_HPP
 #define PCMS_FIELD_EVALUATOR_UNIFORM_GRID_GEOMETRY_HPP
 
-#include "pcms/discretization/discretization/uniform_grid.hpp"
+#include "pcms/backends/uniform_grid/discretization.hpp"
 #include "pcms/utility/coordinate_system.hpp"
 #include "pcms/field/out_of_bounds_policy.hpp"
 #include "pcms/geometry/geometry.hpp"

@@ -16,7 +16,7 @@
 #include "pcms/field/differential_operator.hpp"
 #include "pcms/localization/mls_options.hpp"
 #include "pcms/field/evaluator/omega_h_geometry.hpp"
-#include "pcms/field/evaluator/uniform_grid_geometry.hpp"
+#include "pcms/backends/uniform_grid/geometry.hpp"
 #include "pcms/field/field.hpp"
 #include "pcms/field/field_data.hpp"
 #include "pcms/field/field_layout.hpp"

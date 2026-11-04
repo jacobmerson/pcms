@@ -8,7 +8,7 @@
 #include <pcms/utility/coordinate_systems/cartesian.hpp>
 #include <pcms/utility/coordinate_systems/cylindrical.hpp>
 #include <pcms/backends/point_cloud/geometry.hpp>
-#include <pcms/field/evaluator/uniform_grid_geometry.hpp>
+#include <pcms/backends/uniform_grid/geometry.hpp>
 #include <pcms/field/function_space/lagrange.hpp>
 #include <pcms/field/function_space/polynomial_reconstruction.hpp>
 #include <pcms/field/layout/omega_h_entity.hpp>
