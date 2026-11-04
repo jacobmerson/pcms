@@ -1,4 +1,4 @@
-#include "fusion_io/fusion_io.hpp"
+#include "fusion_io_space.hpp"
 #include "fusion_io_source.hpp"
 #include "pcms/field/coordinate_systems/cylindrical.hpp"
 #include "pcms/utility/arrays.h"
@@ -6,8 +6,11 @@
 #include "pcms/utility/profile.h"
 #include <ranges>
 
-namespace pcms
+namespace fio::detail
 {
+
+// Private implementation built on PCMS's public types.
+using namespace pcms;
 
 namespace
 {
@@ -350,11 +353,12 @@ PointEvaluatorVariant FusionIOFunctionSpace::CreatePointEvaluatorImpl(
     throw pcms_error("FusionIOFunctionSpace: derivatives of vector quantities "
                      "are not supported yet");
   }
-  detail::BoundSourceAs<FusionIOBoundSource>(*bound, "FusionIOFunctionSpace");
+  pcms::detail::BoundSourceAs<FusionIOBoundSource>(*bound,
+                                                   "FusionIOFunctionSpace");
   return std::unique_ptr<PointEvaluator<Real>>(
     std::make_unique<FusionIOEvaluator>(
       source_, std::static_pointer_cast<const FusionIOBoundSource>(bound),
       derivative_order));
 }
 
-} // namespace pcms
+} // namespace fio::detail
