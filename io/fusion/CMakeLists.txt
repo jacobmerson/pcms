@@ -33,17 +33,17 @@ target_include_directories(
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(fusion_io PUBLIC pcms::core
                       PRIVATE fusionio::fusionio_fusionio)
-set(FUSION_IO_HEADERS)
+set(FUSION_IO_HEADERS include/fusion_io/fusion_io.hpp)
 if(FUSION_IO_ENABLE_NIMROD)
   target_sources(fusion_io PRIVATE src/nimrod_space.cpp)
   target_link_libraries(fusion_io PRIVATE ${NIMROD_NIMEVAL_LIBRARY})
+else()
+  target_sources(fusion_io PRIVATE src/nimrod_unavailable.cpp)
 endif()
 
 install(TARGETS fusion_io EXPORT fusion_io-targets)
-if(FUSION_IO_HEADERS)
-  install(FILES ${FUSION_IO_HEADERS}
-          DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fusion_io)
-endif()
+install(FILES ${FUSION_IO_HEADERS}
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fusion_io)
 install(EXPORT fusion_io-targets NAMESPACE fusion_io::
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fusion_io)
 configure_package_config_file(

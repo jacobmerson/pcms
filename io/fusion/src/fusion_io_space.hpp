@@ -1,5 +1,6 @@
 #pragma once
 
+#include "fusion_io/fusion_io.hpp"
 #include "pcms/field/function_space.h"
 #include "pcms/field/layout/empty.h"
 #include <memory>
@@ -16,44 +17,10 @@ using namespace pcms;
 /// An open Fusion-IO file. Opaque: Fusion-IO is a private dependency.
 class FusionIOSource;
 
-enum class FusionIOFormat
-{
-  M3DC1,
-  GEQDSK,
-  GATO,
-  MARS,
-  GPEC
-};
-
-/// Fusion-IO's field options. Unset members keep the source's default.
-struct FusionIOOptions
-{
-  enum class Part
-  {
-    Total,
-    Perturbed,
-    Equilibrium
-  };
-  enum class Species
-  {
-    MainIon,
-    Electron
-  };
-
-  /// -1 selects the equilibrium.
-  std::optional<int> timeslice;
-  std::optional<Part> part;
-  /// For species-dependent quantities such as density and temperature.
-  std::optional<Species> species;
-  std::optional<Real> linear_scale;
-  /// In degrees.
-  std::optional<Real> phase;
-};
-
 /// Opens a Fusion-IO file, e.g. an M3D-C1 C1.h5 or a geqdsk file. Only
 /// sources with cylindrical geometry are supported. The spaces and fields
 /// created from it share and keep it open.
-std::shared_ptr<FusionIOSource> OpenFusionIOSource(FusionIOFormat format,
+std::shared_ptr<FusionIOSource> OpenFusionIOSource(Format format,
                                                    const std::string& filename);
 
 /// Fusion-IO's names for the quantities `source` provides, e.g.
@@ -90,7 +57,7 @@ public:
   /// space's.
   /// @param quantity Fusion-IO's name for it (see AvailableQuantities)
   Function<Real> CreateFunction(std::string name, const std::string& quantity,
-                                const FusionIOOptions& options = {}) const;
+                                const Options& options = {}) const;
 
 protected:
   FieldVariant CreateFieldImpl(Type storage_type,

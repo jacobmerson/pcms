@@ -7,6 +7,7 @@
 #include <pcms/field/coordinate_system.hpp>
 #include <pcms/field/coordinate_view.hpp>
 #include <pcms/field/field.h>
+#include <pcms/field/function_space.h>
 #include <pcms/field/value_view.hpp>
 #include <pcms/utility/arrays.h>
 #include <pcms/utility/memory_spaces.h>
@@ -67,6 +68,21 @@ inline ValueView<T, DeviceMemorySpace> TagLike(
 {
   return ValueView<T, DeviceMemorySpace>(field.GetData().GetValueBasis(),
                                          MakeRank2View(values));
+}
+
+/// Values of `function` at `points` ((R, phi, Z) row-major), on the host.
+inline Kokkos::View<Real**, HostMemorySpace> EvaluateAt(
+  const Function<Real>& function, const std::vector<Real>& points)
+{
+  const auto& space = function.GetSpace();
+  const auto coords =
+    CreateDeviceCoordinateView(points, space.GetCoordinateSystem(), 3);
+  const auto evaluator =
+    space.CreatePointEvaluator<Real>(space.Bind(coords.coordinate_view));
+  Kokkos::View<Real**, DeviceMemorySpace> out(
+    "out", points.size() / 3, function.GetLayout().GetNumComponents());
+  evaluator->Evaluate(function, TagLike<Real>(function, out));
+  return Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
 }
 
 } // namespace pcms::test
