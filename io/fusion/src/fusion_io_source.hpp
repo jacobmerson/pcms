@@ -1,5 +1,4 @@
-#ifndef PCMS_FIELD_FUNCTION_SPACE_FUSION_IO_SOURCE_HPP
-#define PCMS_FIELD_FUNCTION_SPACE_FUSION_IO_SOURCE_HPP
+#pragma once
 
 // Private (not installed): the definition of the opaque FusionIOSource, for
 // the Fusion-IO function space and its tests.
@@ -9,8 +8,11 @@
 #include <memory>
 #include <string>
 
-namespace pcms
+namespace fio::detail
 {
+
+// Private implementation built on PCMS's public types.
+using namespace pcms;
 
 /// Closes a Fusion-IO source. Unlike deleting it, fio_close_source also closes
 /// the file, which some sources (M3D-C1) do not do in their destructor.
@@ -48,6 +50,4 @@ private:
   std::map<std::string, field_type> quantities_;
 };
 
-} // namespace pcms
-
-#endif // PCMS_FIELD_FUNCTION_SPACE_FUSION_IO_SOURCE_HPP
+} // namespace fio::detail
