@@ -10,6 +10,16 @@ endif()
 # Fusion-IO 1.x evaluates the fields until PCMS evaluates them natively.
 find_package(fusionio CONFIG REQUIRED)
 
+option(FUSION_IO_ENABLE_NIMROD "Evaluate NIMROD dumps with NIMROD's nimeval" OFF)
+if(FUSION_IO_ENABLE_NIMROD)
+  # NIMROD's C-callable evaluator (nimcore/eval_field.F90), the library nimpy
+  # wraps. It carries its own RPATH to its dependencies.
+  find_library(NIMROD_NIMEVAL_LIBRARY nimeval HINTS ${NIMROD_DIR}
+                                                     ENV NIMROD_DIR
+               PATH_SUFFIXES lib REQUIRED)
+  message(STATUS "Found NIMROD nimeval: ${NIMROD_NIMEVAL_LIBRARY}")
+endif()
+
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
@@ -23,9 +33,15 @@ target_include_directories(
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(fusion_io PUBLIC pcms::core
                       PRIVATE fusionio::fusionio_fusionio)
+set(FUSION_IO_HEADERS include/fusion_io/fusion_io.hpp)
+if(FUSION_IO_ENABLE_NIMROD)
+  target_sources(fusion_io PRIVATE src/nimrod.cpp)
+  target_link_libraries(fusion_io PRIVATE ${NIMROD_NIMEVAL_LIBRARY})
+  list(APPEND FUSION_IO_HEADERS include/fusion_io/nimrod.hpp)
+endif()
 
 install(TARGETS fusion_io EXPORT fusion_io-targets)
-install(DIRECTORY include/fusion_io TYPE INCLUDE)
+install(FILES ${FUSION_IO_HEADERS} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fusion_io)
 install(EXPORT fusion_io-targets NAMESPACE fusion_io::
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fusion_io)
 configure_package_config_file(
