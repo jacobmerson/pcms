@@ -195,7 +195,8 @@ TEST_CASE("A rebind gives what a new bind of the points gives")
   auto vertices = std::make_shared<pcms::OmegaHEntityLayout>(mesh, pcms::Vertex,
                                                              1, cartesian);
   const std::vector<std::shared_ptr<FunctionSpace>> spaces{
-    pcms::test::MakeP1Space(pcms::CreateOmegaHGeometry(mesh, cartesian)),
+    pcms::test::MakeP1Space(
+      pcms::backend::omega_h::CreateGeometry(mesh, cartesian)),
     pcms::CreateLagrangeSpace(pcms::CreateUniformGridGeometry(grid, cartesian),
                               1, 1),
     pcms::CreatePolynomialReconstructionSpace(

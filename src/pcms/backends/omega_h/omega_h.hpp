@@ -1,0 +1,65 @@
+#ifndef PCMS_BACKENDS_OMEGA_H_OMEGA_H_HPP
+#define PCMS_BACKENDS_OMEGA_H_OMEGA_H_HPP
+
+// Public entry points of the Omega_h backend: build PCMS objects from an
+// Omega_h mesh. This header (and only backend headers) may use Omega_h types.
+
+#include "pcms/geometry/geometry.hpp"
+#include "pcms/utility/coordinate_system.hpp"
+
+#include <Omega_h_array.hpp>
+#include <Omega_h_mesh.hpp>
+
+#include <memory>
+#include <string>
+
+namespace pcms::backend::omega_h
+{
+
+/// Options of an Omega_h geometry.
+struct OmegaHGeometryOptions
+{
+  /// divisions and tolerance of the containing-element search
+  SearchOptions search;
+  /// the tag holding global entity ids
+  std::string global_id_name = "global";
+  /// per-vertex ownership override; empty means the mesh's ownership, see
+  /// OmegaHDiscretization
+  Omega_h::Read<Omega_h::I8> owned_mask;
+};
+
+/// The geometry of an Omega_h simplex mesh (2D or 3D, classified). Builds the
+/// mesh's containing-element search: create one per mesh and share it. The
+/// geometry owns the mesh's discretization; spaces are created on it with
+/// CreateLagrangeSpace and the other space factories.
+/// @param mesh the mesh; must outlive the geometry and everything created
+///        from it
+/// @param system the mesh's coordinate system, or null for Cartesian
+/// @param options search, global id tag and ownership
+std::shared_ptr<Geometry> CreateGeometry(
+  Omega_h::Mesh& mesh, std::shared_ptr<const CoordinateSystem> system,
+  OmegaHGeometryOptions options = {});
+
+/// The mesh of an Omega_h geometry.
+/// @throws pcms_error if `geometry` is not an Omega_h geometry
+Omega_h::Mesh& GetMesh(const Geometry& geometry);
+
+/// A point-cloud geometry whose sites are the entities of dimension
+/// `entity_dim` of an Omega_h mesh (e.g. the element centroids, with the
+/// mesh's dimension); the support search of its neighbourhoods is the mesh's
+/// adjacency search. For CreatePolynomialReconstructionSpace.
+/// @param mesh the mesh; must outlive the geometry and everything created
+///        from it
+/// @param entity_dim dimension of the entities that are the sites
+/// @param system the coordinate system of the sites, or null for Cartesian
+/// @param options the support search of the geometry
+/// @throws pcms_error if the coordinate system does not have the identity
+///         metric (MLS distances are Euclidean)
+std::shared_ptr<Geometry> CreatePointCloudGeometry(
+  Omega_h::Mesh& mesh, int entity_dim,
+  std::shared_ptr<const CoordinateSystem> system,
+  NeighbourhoodOptions options = {});
+
+} // namespace pcms::backend::omega_h
+
+#endif // PCMS_BACKENDS_OMEGA_H_OMEGA_H_HPP

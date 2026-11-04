@@ -2,6 +2,7 @@
 #define PCMS_FIELD_EVALUATOR_OMEGA_H_GEOMETRY_HPP
 
 #include "pcms/backends/omega_h/discretization.hpp"
+#include "pcms/backends/omega_h/omega_h.hpp"
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/localization/point_search.hpp"
 #include "pcms/utility/memory_spaces.hpp"
@@ -221,30 +222,19 @@ private:
   Kokkos::View<Real**, DeviceMemorySpace> bary_;
 };
 
-/// @brief Options of an Omega_h geometry.
-struct OmegaHGeometryOptions
-{
-  /// divisions and tolerance of the containing-element search
-  SearchOptions search;
-  /// the tag holding global entity ids
-  std::string global_id_name = "global";
-  /// per-vertex ownership override; empty means the mesh's ownership, see
-  /// OmegaHDiscretization
-  Omega_h::Read<Omega_h::I8> owned_mask;
-};
-
 /// Geometry of a 2D or 3D Omega_h simplex mesh (with classification) with
 /// straight-sided elements. Construction builds the containing-element search
 /// over the mesh, which costs about as much as a bind: create one geometry per
-/// mesh and share it. Create it with CreateOmegaHGeometry.
+/// mesh and share it. Create it with backend::omega_h::CreateGeometry
+/// (pcms/backends/omega_h/omega_h.hpp).
 class OmegaHGeometry final : public Geometry
 {
 public:
-  /// Own it by std::shared_ptr, as CreateOmegaHGeometry does: Bind uses
-  /// shared_from_this().
+  /// Own it by std::shared_ptr, as backend::omega_h::CreateGeometry does: Bind
+  /// uses shared_from_this().
   OmegaHGeometry(Omega_h::Mesh& mesh,
                  std::shared_ptr<const CoordinateSystem> system,
-                 OmegaHGeometryOptions options = {});
+                 backend::omega_h::OmegaHGeometryOptions options = {});
 
   [[nodiscard]] std::shared_ptr<const Discretization> GetDiscretization()
     const noexcept override
@@ -289,19 +279,6 @@ private:
   mutable std::once_flag differential_once_;
   mutable DifferentialView differential_;
 };
-
-/// The geometry of an Omega_h simplex mesh (2D or 3D, classified). Builds the
-/// mesh's containing-element search: create one per mesh and share it.
-/// @param mesh the mesh; must outlive the geometry
-/// @param system the mesh's coordinate system, or null for Cartesian
-/// @param options search, global id tag and ownership
-std::shared_ptr<Geometry> CreateOmegaHGeometry(
-  Omega_h::Mesh& mesh, std::shared_ptr<const CoordinateSystem> system,
-  OmegaHGeometryOptions options = {});
-
-/// The mesh of an Omega_h geometry.
-/// @throws pcms_error if `geometry` is not an Omega_h geometry
-Omega_h::Mesh& GetMesh(const Geometry& geometry);
 
 /// The grid search over a mesh, with options.divisions divisions per axis when
 /// nonzero and DivisionsPerAxisForMesh otherwise.

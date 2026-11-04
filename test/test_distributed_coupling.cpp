@@ -442,8 +442,8 @@ int main(int argc, char** argv)
                                               /*symmetric=*/false);
       mesh.set_parting(OMEGA_H_GHOSTED, 1, false);
 
-      auto geometry =
-        pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+      auto geometry = pcms::backend::omega_h::CreateGeometry(
+        mesh, pcms::csys::Cartesian::Deferred());
       auto space = pcms::CreateLagrangeSpace(
         geometry, /*order=*/1, /*num_components=*/1,
         pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});

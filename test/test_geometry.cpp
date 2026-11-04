@@ -43,9 +43,9 @@ namespace
 std::shared_ptr<pcms::Geometry> MakeGeometry(Omega_h::Mesh& mesh,
                                              pcms::SearchOptions options = {})
 {
-  return pcms::CreateOmegaHGeometry(
+  return pcms::backend::omega_h::CreateGeometry(
     mesh, pcms::csys::Cartesian::Create(2),
-    pcms::OmegaHGeometryOptions{.search = options});
+    pcms::backend::omega_h::OmegaHGeometryOptions{.search = options});
 }
 
 /// The element the grid search of `mesh` finds for each point, lifted from the
@@ -277,8 +277,8 @@ TEST_CASE("Differential gives the element measure")
   SECTION("tetrahedra")
   {
     auto mesh = pcms::test::BuildUnitCube(lib, 2);
-    auto geometry =
-      pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Create(3));
+    auto geometry = pcms::backend::omega_h::CreateGeometry(
+      mesh, pcms::csys::Cartesian::Create(3));
     const auto differential =
       geometry->Differential(*pcms::test::Bind(*geometry, {0.5, 0.5, 0.5}));
     const auto det = Kokkos::create_mirror_view_and_copy(
@@ -537,9 +537,10 @@ TEST_CASE("DOFHolderOwners gives the entity of each DOF holder")
   Omega_h::Write<Omega_h::I8> mask(mesh.nverts(), 1);
   Kokkos::deep_copy(Kokkos::View<Omega_h::I8*>(mask.data(), 1), 0);
   const auto ghosted = CreateLagrangeSpace(
-    pcms::CreateOmegaHGeometry(
+    pcms::backend::omega_h::CreateGeometry(
       mesh, pcms::csys::Cartesian::Create(2),
-      pcms::OmegaHGeometryOptions{.owned_mask = Omega_h::Read(mask)}),
+      pcms::backend::omega_h::OmegaHGeometryOptions{.owned_mask =
+                                                      Omega_h::Read(mask)}),
     1, 1, LagrangeOptions{.backend = LagrangeBackend::OmegaH});
   REQUIRE(ghosted->GetLayout()->HasGhosts());
   REQUIRE(
