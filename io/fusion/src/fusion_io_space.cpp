@@ -1,12 +1,9 @@
 #include "fusion_io_space.hpp"
 #include "fusion_io_source.hpp"
-#include "pcms/field/coordinate_systems/cylindrical.hpp"
-#include "pcms/utility/arrays.h"
-#include "pcms/utility/assert.h"
+#include "host_evaluation.hpp"
 #include "pcms/utility/profile.h"
 #include <algorithm>
 #include <numbers>
-#include <ranges>
 #include <string_view>
 
 namespace fio::detail
@@ -18,37 +15,64 @@ using namespace pcms;
 namespace
 {
 
-// Names one quantity of a source. PCMS holds none of its values, so it
-// provides no DOFAccess.
-class FusionIOFieldData final : public FieldData<Real>
+struct QuantityEntry
 {
-public:
-  FusionIOFieldData(std::shared_ptr<FusionIOSource> source,
-                    FusionIOFieldPtr field, ValueBasis basis)
-    : source(std::move(source)),
-      field(std::move(field)),
-      basis_(std::move(basis))
-  {
-  }
+  Quantity quantity;
+  field_type type;
+  std::string_view name;
+};
 
-  [[nodiscard]]
-  FieldValueType GetValueType() const override
-  {
-    return ValueTypeOfRank(basis_.Rank());
-  }
+// Fusion-IO 1.x's field types and names (fio_get_field_name), in Quantity
+// order.
+constexpr QuantityEntry QuantityTable[] = {
+  {Quantity::Alpha, FIO_ALPHA, "alpha"},
+  {Quantity::ScalarPotential, FIO_SCALAR_POTENTIAL, "scalar potential"},
+  {Quantity::TotalPressure, FIO_TOTAL_PRESSURE, "total pressure"},
+  {Quantity::PoloidalFlux, FIO_POLOIDAL_FLUX, "poloidal flux"},
+  {Quantity::PoloidalFluxNorm, FIO_POLOIDAL_FLUX_NORM,
+   "normalized poloidal flux"},
+  {Quantity::TotalRadiation, FIO_TOTAL_RADIATION, "total radiation"},
+  {Quantity::Resistivity, FIO_RESISTIVITY, "resistivity"},
+  {Quantity::Viscosity, FIO_VISCOSITY, "viscosity"},
+  {Quantity::ThermalDiffusivity, FIO_THERMAL_DIFFUSIVITY,
+   "thermal diffusivity"},
+  {Quantity::BootstrapCurrent, FIO_JBS, "JpdotB"},
+  {Quantity::BootstrapCurrentDnDpsi, FIO_JBS_dndpsi, "JpdotB_dndpsi"},
+  {Quantity::BootstrapCurrentDteDpsi, FIO_JBS_dtedpsi, "JpdotB_dtedpsi"},
+  {Quantity::BootstrapCurrentDtiDpsi, FIO_JBS_dtidpsi, "JpdotB_dtidpsi"},
+  {Quantity::BootstrapCurrentL31, FIO_JBS_L31, "JpdotB_L31"},
+  {Quantity::BootstrapCurrentL32, FIO_JBS_L32, "JpdotB_L32"},
+  {Quantity::BootstrapCurrentL34, FIO_JBS_L34, "JpdotB_L34"},
+  {Quantity::BootstrapCurrentAlpha, FIO_JBS_alpha, "JpdotB_alpha"},
+  {Quantity::Pressure, FIO_PRESSURE, "pressure"},
+  {Quantity::Density, FIO_DENSITY, "density"},
+  {Quantity::Temperature, FIO_TEMPERATURE, "temperature"},
+  {Quantity::ElectricField, FIO_ELECTRIC_FIELD, "electric field"},
+  {Quantity::VectorPotential, FIO_VECTOR_POTENTIAL, "vector potential"},
+  {Quantity::MagneticField, FIO_MAGNETIC_FIELD, "magnetic field"},
+  {Quantity::CurrentDensity, FIO_CURRENT_DENSITY, "current density"},
+  {Quantity::FluidVelocity, FIO_FLUID_VELOCITY, "fluid velocity"},
+  {Quantity::Velocity, FIO_VELOCITY, "velocity"},
+};
 
-  [[nodiscard]]
-  const ValueBasis& GetValueBasis() const override
-  {
-    return basis_;
+const QuantityEntry& EntryOf(Quantity quantity)
+{
+  for (const auto& entry : QuantityTable) {
+    if (entry.quantity == quantity) {
+      return entry;
+    }
   }
+  throw pcms_error("fio: unknown quantity");
+}
 
+// A quantity of a source, read with its options.
+struct FusionIOQuantity
+{
   std::shared_ptr<FusionIOSource> source;
   FusionIOFieldPtr field;
-
-private:
-  ValueBasis basis_;
 };
+
+using FusionIOFieldData = ExternalFieldData<FusionIOQuantity>;
 
 // The query points in Fusion-IO's layout and the per-point search hints. The
 // hints let Fusion-IO start each point's search where it last found it; every
@@ -59,23 +83,17 @@ private:
 // here by evaluating the source's domain probe at every point; the fields of
 // a source share its domain, so they hold for every quantity. Otherwise every
 // point counts as found, and evaluating outside the domain throws.
-class FusionIOBoundSource final : public BoundSource
+class FusionIOBoundSource final : public HostBoundSource
 {
 public:
-  FusionIOBoundSource(const FusionIOSource& source,
-                      const BindRequest& request)
-    : BoundSource(request),
-      points("fusion_io_points", NumPoints(), PointValues().extent(1))
+  FusionIOBoundSource(const FusionIOSource& source, const BindRequest& request)
+    : HostBoundSource(request),
+      hint_size(source.Get().sizeof_search_hint()),
+      hints(source.SearchHints(points.extent(0)))
   {
-    // A LayoutRight host copy, so each point's coordinates are contiguous.
-    DeepCopyMismatchLayouts(points, PointValues());
-    hint_size = source.Get().sizeof_search_hint();
-    hints = source.SearchHints(points.extent(0));
     if (request.policy.mode == OutOfBoundsMode::FILL) {
       FindPointsInDomain(source.DomainProbe());
     }
-    found = Kokkos::create_mirror_view_and_copy(HostMemorySpace(),
-                                                FoundPoints());
   }
 
   [[nodiscard]] fio_hint Hint(size_t i) const
@@ -83,32 +101,29 @@ public:
     return hint_size > 0 ? &(*hints)[i * hint_size] : nullptr;
   }
 
-  Kokkos::View<Real**, Kokkos::LayoutRight, HostMemorySpace> points;
-  size_t hint_size = 0;
+  size_t hint_size;
   std::shared_ptr<std::vector<char>> hints;
-  /// FoundPoints() on the host
-  Kokkos::View<const LO*, HostMemorySpace> found;
 
 private:
   void FindPointsInDomain(fio_field& probe)
   {
-    Kokkos::View<bool*, HostMemorySpace> inside("fusion_io_inside",
-                                                points.extent(0));
+    std::vector<char> inside(points.extent(0), 1);
     std::vector<Real> values(static_cast<size_t>(probe.dimension()));
     for (size_t i = 0; i < points.extent(0); ++i) {
       const int status = probe.eval(&points(i, 0), values.data(), Hint(i));
-      if (status != FIO_SUCCESS && status != FIO_OUT_OF_BOUNDS) {
+      if (status == FIO_OUT_OF_BOUNDS) {
+        inside[i] = 0;
+      } else if (status != FIO_SUCCESS) {
         throw pcms_error("FusionIOFunctionSpace: locating query point " +
                          std::to_string(i) + " failed (Fusion-IO error " +
                          std::to_string(status) + ")");
       }
-      inside(i) = status == FIO_SUCCESS;
     }
-    SetFound(Kokkos::create_mirror_view_and_copy(DeviceMemorySpace(), inside));
+    SetFound(inside);
   }
 };
 
-// Evaluates a quantity, or with derivative_order 1 its gradient, which
+// Evaluates a quantity, or with derivative order 1 its gradient, which
 // Fusion-IO provides for scalar quantities of some formats.
 // Fusion-IO evaluation is not thread safe, don't call Evaluate concurrently
 class FusionIOEvaluator final : public PointEvaluator<Real>
@@ -129,21 +144,21 @@ protected:
   {
     PCMS_FUNCTION_TIMER;
     const auto* data = dynamic_cast<const FusionIOFieldData*>(&field.GetData());
-    if (data == nullptr || data->source != source_) {
+    if (data == nullptr || data->quantity.source != source_) {
       throw pcms_error(
         "FusionIOFunctionSpace: field is not a quantity of this source");
     }
     const auto out = values.GetValues();
     const auto& points = bound_->points;
+    const auto host_out = HostRowsLike(out);
+    fio_field& quantity = *data->quantity.field;
     const bool gradient = DerivativeOrder() == 1;
-    Kokkos::View<Real**, Kokkos::LayoutRight, HostMemorySpace> host_out(
-      "fusion_io_values", out.extent(0), out.extent(1));
     for (size_t k = 0; k < bound_->found.extent(0); ++k) {
       const auto i = static_cast<size_t>(bound_->found(k));
       Real* row = &host_out(i, 0);
       const int status =
-        gradient ? data->field->eval_deriv(&points(i, 0), row, bound_->Hint(i))
-                 : data->field->eval(&points(i, 0), row, bound_->Hint(i));
+        gradient ? quantity.eval_deriv(&points(i, 0), row, bound_->Hint(i))
+                 : quantity.eval(&points(i, 0), row, bound_->Hint(i));
       if (status == FIO_UNSUPPORTED && gradient) {
         throw pcms_error("FusionIOFunctionSpace: Fusion-IO does not provide "
                          "derivatives of this quantity for this format");
@@ -167,10 +182,7 @@ protected:
         row[1] /= points(i, 0);
       }
     }
-    Kokkos::View<Real**, DeviceMemorySpace> device_out(
-      "fusion_io_values", out.extent(0), out.extent(1));
-    DeepCopyMismatchLayouts(device_out, host_out);
-    CopyDeviceRank2ViewToRank2View(out, MakeConstRank2View(device_out));
+    CopyToOutput(host_out, out);
   }
 
 private:
@@ -202,10 +214,8 @@ protected:
     std::shared_ptr<const FusionIOBoundSource> bound,
     int derivative_order) const override
   {
-    if (derivative_order == 1 && num_components_ != 1) {
-      throw pcms_error("FusionIOFunctionSpace: derivatives of vector "
-                       "quantities are not supported yet");
-    }
+    CheckGradientComponents("FusionIOFunctionSpace", derivative_order,
+                            num_components_);
     return std::make_unique<FusionIOEvaluator>(source_, std::move(bound),
                                                derivative_order);
   }
@@ -216,6 +226,17 @@ private:
 };
 
 } // namespace
+
+field_type FieldTypeOf(Quantity quantity)
+{
+  return EntryOf(quantity).type;
+}
+
+int NumComponents(Quantity quantity)
+{
+  // Fusion-IO's vector field types start at FIO_ELECTRIC_FIELD (1001).
+  return FieldTypeOf(quantity) >= FIO_ELECTRIC_FIELD ? 3 : 1;
+}
 
 FusionIOSource::FusionIOSource(FusionIOSourcePtr source)
   : source_(std::move(source))
@@ -230,25 +251,29 @@ FusionIOSource::FusionIOSource(FusionIOSourcePtr source)
   }
   fio_source::fio_field_list fields;
   source_->get_available_fields(&fields);
-  for (const field_type type : fields) {
-    std::string name;
-    if (fio_get_field_name(type, &name) == FIO_SUCCESS) {
-      quantities_.emplace(std::move(name), type);
+  for (const auto& entry : QuantityTable) {
+    if (std::ranges::find(fields, entry.type) != fields.end()) {
+      quantities_.push_back(entry.quantity);
     }
   }
 }
 
-FusionIOFieldPtr FusionIOSource::GetField(field_type type,
+bool FusionIOSource::Provides(Quantity quantity) const
+{
+  return std::ranges::find(quantities_, quantity) != quantities_.end();
+}
+
+FusionIOFieldPtr FusionIOSource::GetField(Quantity quantity,
                                           const fio_option_list& options) const
 {
   fio_field* field = nullptr;
-  const int status = source_->get_field(type, &field, &options);
+  const int status =
+    source_->get_field(FieldTypeOf(quantity), &field, &options);
   FusionIOFieldPtr owned(field);
   if (status != FIO_SUCCESS) {
-    std::string name;
-    fio_get_field_name(type, &name);
-    throw pcms_error("FusionIOSource: could not read \"" + name +
-                     "\" (Fusion-IO error " + std::to_string(status) + ")");
+    throw pcms_error("FusionIOSource: could not read \"" +
+                     std::string(Name(quantity)) + "\" (Fusion-IO error " +
+                     std::to_string(status) + ")");
   }
   return owned;
 }
@@ -260,22 +285,21 @@ fio_field& FusionIOSource::DomainProbe() const
   }
   // Sources list quantities their file may lack, so try the ones every MHD
   // source has first (the poloidal flux is a cheap scalar), then the rest.
-  std::vector<field_type> candidates = {FIO_POLOIDAL_FLUX, FIO_MAGNETIC_FIELD};
-  for (const auto& [name, type] : quantities_) {
-    candidates.push_back(type);
-  }
+  std::vector<Quantity> candidates = {Quantity::PoloidalFlux,
+                                      Quantity::MagneticField};
+  candidates.insert(candidates.end(), quantities_.begin(), quantities_.end());
   // The equilibrium part is the cheapest to evaluate, and for M3D-C1 it is
   // on the mesh already loaded rather than a time slice's.
   fio_option_list options;
   source_->get_field_options(&options);
   options.set_option(FIO_PART, FIO_EQUILIBRIUM_ONLY);
-  for (const field_type type : candidates) {
-    const auto provided = std::views::values(quantities_);
-    if (std::ranges::find(provided, type) == provided.end()) {
+  for (const Quantity quantity : candidates) {
+    if (!Provides(quantity)) {
       continue;
     }
     fio_field* field = nullptr;
-    if (source_->get_field(type, &field, &options) == FIO_SUCCESS) {
+    if (source_->get_field(FieldTypeOf(quantity), &field, &options) ==
+        FIO_SUCCESS) {
       probe_.reset(field);
       return *probe_;
     }
@@ -320,12 +344,6 @@ std::shared_ptr<FusionIOSource> OpenFusionIOSource(Format format,
   return std::make_shared<FusionIOSource>(FusionIOSourcePtr(opened));
 }
 
-std::vector<std::string> AvailableQuantities(const FusionIOSource& source)
-{
-  const auto names = std::views::keys(source.Quantities());
-  return {names.begin(), names.end()};
-}
-
 std::shared_ptr<FusionIOFunctionSpace> FusionIOFunctionSpace::Create(
   std::shared_ptr<FusionIOSource> source, int num_components)
 {
@@ -347,22 +365,19 @@ FusionIOFunctionSpace::FusionIOFunctionSpace(
 }
 
 Function<Real> FusionIOFunctionSpace::CreateFunction(
-  std::string name, const std::string& quantity, const Options& options) const
+  std::string name, Quantity quantity, const Options& options) const
 {
-  const auto& quantities = source_->Quantities();
-  const auto found = quantities.find(quantity);
-  if (found == quantities.end()) {
-    std::string available;
-    for (const auto& known : AvailableQuantities(*source_)) {
-      available += (available.empty() ? "" : ", ") + known;
+  if (!source_->Provides(quantity)) {
+    std::vector<std::string> available;
+    for (const Quantity known : source_->Quantities()) {
+      available.emplace_back(Name(known));
     }
-    throw pcms_error(
-      "FusionIOFunctionSpace: \"" + quantity +
-      "\" is not a quantity of this source; it has: " + available);
+    ThrowUnknownQuantity("FusionIOFunctionSpace", Name(quantity), available);
   }
-  fio_source& source = source_->Get();
+  CheckComponents("FusionIOFunctionSpace", Name(quantity),
+                  NumComponents(quantity), layout_->GetNumComponents());
   fio_option_list fio_options;
-  source.get_field_options(&fio_options);
+  source_->Get().get_field_options(&fio_options);
   if (options.timeslice) {
     fio_options.set_option(FIO_TIMESLICE, *options.timeslice);
   }
@@ -381,22 +396,11 @@ Function<Real> FusionIOFunctionSpace::CreateFunction(
   if (options.phase) {
     fio_options.set_option(FIO_PHASE, *options.phase);
   }
-  auto field = source_->GetField(found->second, fio_options);
-  const int dimension = field->dimension();
-  if (dimension != layout_->GetNumComponents()) {
-    throw pcms_error("FusionIOFunctionSpace: \"" + quantity + "\" has " +
-                     std::to_string(dimension) +
-                     " components but the space holds " +
-                     std::to_string(layout_->GetNumComponents()));
-  }
-  // Fusion-IO quantities are scalars or (R, phi, Z) vectors.
-  ValueBasis basis = dimension == 3
-                       ? ValueBasis{csys::CylindricalRThetaZ::Create(),
-                                    ComponentScaling::Physical, values::Vector}
-                       : ValueBasis{};
   return FunctionSpace::CreateFunction<Real>(
-    std::move(name), std::make_unique<FusionIOFieldData>(
-                       source_, std::move(field), std::move(basis)));
+    std::move(name),
+    std::make_unique<FusionIOFieldData>(
+      FusionIOQuantity{source_, source_->GetField(quantity, fio_options)},
+      QuantityBasis(NumComponents(quantity) == 3)));
 }
 
 FieldVariant FusionIOFunctionSpace::CreateFieldImpl(Type /*storage_type*/,
@@ -415,61 +419,6 @@ FieldVariant FusionIOFunctionSpace::CreateFieldImpl(FieldDataVariant data) const
 namespace
 {
 
-struct QuantityEntry
-{
-  Quantity quantity;
-  field_type type;
-  std::string_view name;
-};
-
-// Fusion-IO 1.x's field types and names (fio_get_field_name).
-constexpr QuantityEntry QuantityTable[] = {
-  {Quantity::Alpha, FIO_ALPHA, "alpha"},
-  {Quantity::ScalarPotential, FIO_SCALAR_POTENTIAL, "scalar potential"},
-  {Quantity::TotalPressure, FIO_TOTAL_PRESSURE, "total pressure"},
-  {Quantity::PoloidalFlux, FIO_POLOIDAL_FLUX, "poloidal flux"},
-  {Quantity::PoloidalFluxNorm, FIO_POLOIDAL_FLUX_NORM,
-   "normalized poloidal flux"},
-  {Quantity::TotalRadiation, FIO_TOTAL_RADIATION, "total radiation"},
-  {Quantity::Resistivity, FIO_RESISTIVITY, "resistivity"},
-  {Quantity::Viscosity, FIO_VISCOSITY, "viscosity"},
-  {Quantity::ThermalDiffusivity, FIO_THERMAL_DIFFUSIVITY,
-   "thermal diffusivity"},
-  {Quantity::BootstrapCurrent, FIO_JBS, "JpdotB"},
-  {Quantity::BootstrapCurrentDnDpsi, FIO_JBS_dndpsi, "JpdotB_dndpsi"},
-  {Quantity::BootstrapCurrentDteDpsi, FIO_JBS_dtedpsi, "JpdotB_dtedpsi"},
-  {Quantity::BootstrapCurrentDtiDpsi, FIO_JBS_dtidpsi, "JpdotB_dtidpsi"},
-  {Quantity::BootstrapCurrentL31, FIO_JBS_L31, "JpdotB_L31"},
-  {Quantity::BootstrapCurrentL32, FIO_JBS_L32, "JpdotB_L32"},
-  {Quantity::BootstrapCurrentL34, FIO_JBS_L34, "JpdotB_L34"},
-  {Quantity::BootstrapCurrentAlpha, FIO_JBS_alpha, "JpdotB_alpha"},
-  {Quantity::Pressure, FIO_PRESSURE, "pressure"},
-  {Quantity::Density, FIO_DENSITY, "density"},
-  {Quantity::Temperature, FIO_TEMPERATURE, "temperature"},
-  {Quantity::ElectricField, FIO_ELECTRIC_FIELD, "electric field"},
-  {Quantity::VectorPotential, FIO_VECTOR_POTENTIAL, "vector potential"},
-  {Quantity::MagneticField, FIO_MAGNETIC_FIELD, "magnetic field"},
-  {Quantity::CurrentDensity, FIO_CURRENT_DENSITY, "current density"},
-  {Quantity::FluidVelocity, FIO_FLUID_VELOCITY, "fluid velocity"},
-  {Quantity::Velocity, FIO_VELOCITY, "velocity"},
-};
-
-const QuantityEntry& EntryOf(Quantity quantity)
-{
-  for (const auto& entry : QuantityTable) {
-    if (entry.quantity == quantity) {
-      return entry;
-    }
-  }
-  throw pcms_error("fio: unknown quantity");
-}
-
-// Fusion-IO's vector field types start at FIO_ELECTRIC_FIELD (1001).
-int NumComponents(field_type type)
-{
-  return type >= FIO_ELECTRIC_FIELD ? 3 : 1;
-}
-
 /// A Fusion-IO 1.x source as a fio::Source.
 class FusionIOFileSource final : public Source
 {
@@ -482,10 +431,8 @@ public:
   [[nodiscard]] std::vector<QuantityInfo> Quantities() const override
   {
     std::vector<QuantityInfo> quantities;
-    for (const auto& entry : QuantityTable) {
-      if (source_->Quantities().contains(std::string(entry.name))) {
-        quantities.push_back({entry.quantity, NumComponents(entry.type)});
-      }
+    for (const Quantity quantity : source_->Quantities()) {
+      quantities.push_back({quantity, NumComponents(quantity)});
     }
     return quantities;
   }
@@ -538,10 +485,8 @@ public:
   [[nodiscard]] Function<Real> CreateFunction(
     Quantity quantity, const Options& options) const override
   {
-    const auto& entry = EntryOf(quantity);
-    const std::string name(entry.name);
-    return FusionIOFunctionSpace::Create(source_, NumComponents(entry.type))
-      ->CreateFunction(name, name, options);
+    return FusionIOFunctionSpace::Create(source_, NumComponents(quantity))
+      ->CreateFunction(std::string(Name(quantity)), quantity, options);
   }
 
 private:
