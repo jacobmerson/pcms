@@ -27,7 +27,7 @@ using namespace pcms;
 class NimrodSource
 {
 public:
-  struct Quantity
+  struct QuantityShape
   {
     int components;
     /// Whether it is an (R, Z, phi) vector rather than scalars.
@@ -43,18 +43,29 @@ public:
   NimrodSource& operator=(const NimrodSource&) = delete;
 
   /// The quantities that can be evaluated, by NIMROD's name.
-  [[nodiscard]] const std::map<std::string, Quantity>& Quantities()
+  [[nodiscard]] const std::map<std::string, QuantityShape>& Quantities()
     const noexcept
   {
     return quantities_;
   }
 
 private:
-  std::map<std::string, Quantity> quantities_;
+  std::map<std::string, QuantityShape> quantities_;
 };
 
 namespace
 {
+
+// nimeval's selector for the part of a field to evaluate.
+int NimevalPart(Part part)
+{
+  switch (part) {
+    case Part::Total: return 2;
+    case Part::Perturbed: return 0;
+    case Part::Equilibrium: return 1;
+  }
+  throw pcms_error("NimrodFunctionSpace: unknown part");
+}
 
 // Whether a source is open: nimeval holds one dump per process.
 bool& SourceOpen()
@@ -243,13 +254,13 @@ NimrodSource::NimrodSource(const std::string& dump, const std::string& fields,
 {
   namespace fs = std::filesystem;
   if (fields.empty()) {
-    throw pcms_error("OpenNimrodSource: no field ids given");
+    throw pcms_error("fio::OpenNimrod: no field ids given");
   }
   const fs::path dir =
     case_dir.empty() ? fs::current_path() : fs::path(case_dir);
   std::ifstream input(dir / "nimrod.in");
   if (!input) {
-    throw pcms_error("OpenNimrodSource: cannot read " +
+    throw pcms_error("fio::OpenNimrod: cannot read " +
                      (dir / "nimrod.in").string());
   }
   std::stringstream buffer;
@@ -261,7 +272,7 @@ NimrodSource::NimrodSource(const std::string& dump, const std::string& fields,
   // Points are passed to NIMROD as (R, Z, phi), which only holds for
   // toroidal cases.
   if (NamelistValue(text, "geom") != "tor") {
-    throw pcms_error("OpenNimrodSource: only toroidal cases (geom='tor') are "
+    throw pcms_error("fio::OpenNimrod: only toroidal cases (geom='tor') are "
                      "supported");
   }
   const int nisp = std::stoi(NamelistValue(text, "nisp").value_or("0"));
@@ -272,7 +283,7 @@ NimrodSource::NimrodSource(const std::string& dump, const std::string& fields,
   {
     const char* name;
     char id;
-    Quantity quantity;
+    QuantityShape shape;
   } supported[] = {{"b", 'b', {3, true}},   {"v", 'v', {3, true}},
                    {"j", 'j', {3, true}},   {"n", 'n', {nisp + 1, false}},
                    {"p", 'p', {1, false}},  {"ti", 't', {1, false}},
@@ -281,27 +292,27 @@ NimrodSource::NimrodSource(const std::string& dump, const std::string& fields,
     bool known = false;
     for (const auto& entry : supported) {
       if (entry.id == id) {
-        quantities_.emplace(entry.name, entry.quantity);
+        quantities_.emplace(entry.name, entry.shape);
         known = true;
       }
     }
     if (!known) {
-      throw pcms_error(std::string("OpenNimrodSource: unsupported field id '") +
+      throw pcms_error(std::string("fio::OpenNimrod: unsupported field id '") +
                        id + "'; supported ids are bvjnptd");
     }
   }
   const fs::path dump_path = fs::absolute(dump);
   if (!fs::is_regular_file(dump_path)) {
-    throw pcms_error("OpenNimrodSource: cannot find dump '" + dump + "'");
+    throw pcms_error("fio::OpenNimrod: cannot find dump '" + dump + "'");
   }
   if (access(dir.c_str(), W_OK) != 0) {
-    throw pcms_error("OpenNimrodSource: NIMROD writes scratch files to the "
+    throw pcms_error("fio::OpenNimrod: NIMROD writes scratch files to the "
                      "case directory, but " +
                      dir.string() + " is not writable");
   }
 
   if (SourceOpen()) {
-    throw pcms_error("OpenNimrodSource: another NIMROD source is open; NIMROD "
+    throw pcms_error("fio::OpenNimrod: another NIMROD source is open; NIMROD "
                      "can evaluate one dump per process");
   }
   {
@@ -362,11 +373,10 @@ Function<Real> NimrodFunctionSpace::CreateFunction(
   const auto [components, vector] = found->second;
   CheckComponents("NimrodFunctionSpace", quantity, components,
                   layout_->GetNumComponents());
-  const int eqs[] = {2, 0, 1};
   return FunctionSpace::CreateFunction<Real>(
     std::move(name),
     std::make_unique<NimrodFieldData>(
-      NimrodQuantity{source_, quantity, eqs[static_cast<int>(options.part)]},
+      NimrodQuantity{source_, quantity, NimevalPart(options.part)},
       QuantityBasis(vector)));
 }
 

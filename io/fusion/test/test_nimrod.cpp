@@ -19,6 +19,8 @@ using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
 using fio::detail::NimrodOptions;
+using fio::test::EvaluateAt;
+using fio::test::EvaluateGradientAt;
 using pcms::DeviceMemorySpace;
 using pcms::HostMemorySpace;
 using pcms::Real;
@@ -29,8 +31,8 @@ namespace
 namespace fs = std::filesystem;
 
 // A NIMROD case directory (nimrod.in and dump) that is not distributed with
-// the test data; set PCMS_TEST_NIMROD_DIR to a copy of the cylrwtm case.
-const fs::path CaseDir = PCMS_TEST_NIMROD_DIR;
+// the test data; set FUSION_IO_TEST_NIMROD_DIR to a copy of the cylrwtm case.
+const fs::path CaseDir = FUSION_IO_TEST_NIMROD_DIR;
 const std::string Dump = "dump_gs.00000.h5";
 
 // A writable copy of the case, which NIMROD needs for its scratch files.
@@ -61,37 +63,6 @@ public:
 private:
   fs::path dir_;
 };
-
-// Values of `field` at `points`, (R, theta, Z) row-major, copied to the host.
-auto EvaluateAt(const pcms::FunctionSpace& space,
-                const pcms::Field<Real>& field, const std::vector<Real>& points)
-{
-  const auto coords = pcms::test::CreateDeviceCoordinateView(
-    points, space.GetCoordinateSystem(), 3);
-  const auto evaluator =
-    space.CreatePointEvaluator<Real>(space.Bind(coords.coordinate_view));
-  Kokkos::View<Real**, DeviceMemorySpace> out(
-    "out", points.size() / 3, field.GetLayout().GetNumComponents());
-  evaluator->Evaluate(field, pcms::test::TagLike(field, out));
-  return Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
-}
-
-// Gradient of the scalar `field` at `points`, (dR, (1/R) dtheta, dZ) per row.
-auto EvaluateGradientAt(const pcms::FunctionSpace& space,
-                        const pcms::Field<Real>& field,
-                        const std::vector<Real>& points)
-{
-  const auto coords = pcms::test::CreateDeviceCoordinateView(
-    points, space.GetCoordinateSystem(), 3);
-  const auto evaluator =
-    space.CreatePointEvaluator<Real>(space.Bind(coords.coordinate_view), 1);
-  Kokkos::View<Real**, DeviceMemorySpace> out("out", points.size() / 3, 3);
-  evaluator->Evaluate(field,
-                      pcms::ValueView<Real, DeviceMemorySpace>(
-                        evaluator->OutputBasis(field.GetData().GetValueBasis()),
-                        pcms::MakeRank2View(out)));
-  return Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
-}
 
 // nimeval's own value of `quantity` at its (R, Z, phi) point `rzp`.
 std::vector<double> EvaluateDirectly(const std::string& quantity,
@@ -151,8 +122,8 @@ TEST_CASE("NIMROD values match direct nimeval evaluation")
         CAPTURE(i, c);
         // The absolute floor covers components near zero.
         REQUIRE_THAT(values(i, c),
-                     WithinRel(expected[c], pcms::test::ExactTol) ||
-                       WithinAbs(expected[c], pcms::test::ExactTol));
+                     WithinRel(expected[c], fio::test::ExactTol) ||
+                       WithinAbs(expected[c], fio::test::ExactTol));
       }
     }
   }
@@ -181,11 +152,11 @@ TEST_CASE("NIMROD parts select equilibrium and perturbation")
     // The equilibrium is axisymmetric and the case's n = 1 perturbation
     // changes sign over half a turn.
     REQUIRE_THAT(equilibrium(1, c),
-                 WithinAbs(equilibrium(0, c), pcms::test::EvalTol));
+                 WithinAbs(equilibrium(0, c), fio::test::EvalTol));
     REQUIRE_THAT(perturbed(1, c),
-                 WithinAbs(-perturbed(0, c), pcms::test::EvalTol));
+                 WithinAbs(-perturbed(0, c), fio::test::EvalTol));
     REQUIRE_THAT(total(0, c), WithinAbs(equilibrium(0, c) + perturbed(0, c),
-                                        pcms::test::EvalTol));
+                                        fio::test::EvalTol));
   }
   REQUIRE(perturbed(0, 0) != 0.0);
 }
@@ -221,12 +192,12 @@ TEST_CASE("NIMROD gradients match direct nimeval evaluation")
     const double expected[3] = {raw[1], -raw[3], raw[2]};
     for (int c = 0; c < 3; ++c) {
       CAPTURE(i, c);
-      REQUIRE_THAT(grad(0, c), WithinRel(expected[c], pcms::test::ExactTol) ||
-                                 WithinAbs(expected[c], pcms::test::ExactTol));
+      REQUIRE_THAT(grad(0, c), WithinRel(expected[c], fio::test::ExactTol) ||
+                                 WithinAbs(expected[c], fio::test::ExactTol));
     }
   }
 
-  const auto coords = pcms::test::CreateDeviceCoordinateView(
+  const auto coords = fio::test::CreateDeviceCoordinateView(
     points, vectors->GetCoordinateSystem(), 3);
   REQUIRE_THROWS_WITH(vectors->CreatePointEvaluator<Real>(
                         vectors->Bind(coords.coordinate_view), 1),
@@ -261,12 +232,12 @@ TEST_CASE("NIMROD evaluation errors")
   REQUIRE_THROWS_WITH(n.GetDOFHolderData(), ContainsSubstring("no DOFAccess"));
 
   // NIMROD writes one row per query point.
-  const auto coords = pcms::test::CreateDeviceCoordinateView(
+  const auto coords = fio::test::CreateDeviceCoordinateView(
     {10.6, 0.0, 0.3, 10.2, 0.0, 0.1}, scalars->GetCoordinateSystem(), 3);
   const auto evaluator =
     scalars->CreatePointEvaluator<Real>(scalars->Bind(coords.coordinate_view));
   Kokkos::View<Real**, DeviceMemorySpace> short_out("short_out", 1, 1);
-  REQUIRE_THROWS_WITH(evaluator->Evaluate(n, pcms::test::TagLike(n, short_out)),
+  REQUIRE_THROWS_WITH(evaluator->Evaluate(n, fio::test::TagLike(n, short_out)),
                       ContainsSubstring("but must be [2][1]"));
 
   // nimeval holds one dump per process.
@@ -328,8 +299,8 @@ TEST_CASE("fio::OpenNimrod gives Fusion-IO's quantities")
       dynamic_cast<const fio::detail::NimrodFunctionSpace&>(b.GetSpace());
     const auto expected =
       space.CreateFunction("b", "b", {.part = fio::Part::Equilibrium});
-    const auto actual_values = pcms::test::EvaluateAt(b, Points);
-    const auto expected_values = pcms::test::EvaluateAt(expected, Points);
+    const auto actual_values = fio::test::EvaluateAt(b, Points);
+    const auto expected_values = fio::test::EvaluateAt(expected, Points);
     for (size_t i = 0; i < Points.size() / 3; ++i) {
       for (size_t c = 0; c < 3; ++c) {
         REQUIRE(actual_values(i, c) == expected_values(i, c));
