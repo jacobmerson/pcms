@@ -4,9 +4,7 @@
 #include "pcms/field/function_space.h"
 #include "pcms/field/layout/empty.h"
 #include <memory>
-#include <optional>
 #include <string>
-#include <vector>
 
 namespace fio::detail
 {
@@ -22,10 +20,6 @@ class FusionIOSource;
 /// created from it share and keep it open.
 std::shared_ptr<FusionIOSource> OpenFusionIOSource(Format format,
                                                    const std::string& filename);
-
-/// Fusion-IO's names for the quantities `source` provides, e.g.
-/// "poloidal flux" or "magnetic field".
-std::vector<std::string> AvailableQuantities(const FusionIOSource& source);
 
 /// Fields of a Fusion-IO source, evaluated by Fusion-IO at the query points.
 /// Points are (R, phi, Z), which is CylindricalRThetaZ, and vector values are
@@ -53,10 +47,9 @@ public:
     return layout_;
   }
 
-  /// Function for a Fusion-IO quantity, whose component count must be the
-  /// space's.
-  /// @param quantity Fusion-IO's name for it (see AvailableQuantities)
-  Function<Real> CreateFunction(std::string name, const std::string& quantity,
+  /// Function for a quantity of the source, whose component count must be
+  /// the space's.
+  Function<Real> CreateFunction(std::string name, Quantity quantity,
                                 const Options& options = {}) const;
 
 protected:
