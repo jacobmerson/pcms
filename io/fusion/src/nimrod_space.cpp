@@ -1,8 +1,6 @@
 #include "nimrod_space.hpp"
+#include "host_evaluation.hpp"
 #include "nimeval.hpp"
-#include "pcms/field/coordinate_systems/cylindrical.hpp"
-#include "pcms/utility/arrays.h"
-#include "pcms/utility/assert.h"
 #include "pcms/utility/profile.h"
 #include <unistd.h>
 #include <algorithm>
@@ -99,66 +97,37 @@ std::optional<std::string> NamelistValue(const std::string& text,
   return match[2].str();
 }
 
-// Names one quantity of a source. PCMS holds none of its values, so it
-// provides no DOFAccess.
-class NimrodFieldData final : public FieldData<Real>
+// A quantity of a source: NIMROD's name for it and the part to evaluate.
+struct NimrodQuantity
 {
-public:
-  NimrodFieldData(std::shared_ptr<NimrodSource> source, std::string quantity,
-                  int eq, ValueBasis basis)
-    : source(std::move(source)),
-      quantity(std::move(quantity)),
-      eq(eq),
-      basis_(std::move(basis))
-  {
-  }
-
-  [[nodiscard]]
-  FieldValueType GetValueType() const override
-  {
-    return ValueTypeOfRank(basis_.Rank());
-  }
-
-  [[nodiscard]]
-  const ValueBasis& GetValueBasis() const override
-  {
-    return basis_;
-  }
-
   std::shared_ptr<NimrodSource> source;
-  std::string quantity;
+  std::string name;
   // nimeval's equilibrium/perturbation selector
   int eq;
-
-private:
-  ValueBasis basis_;
 };
+
+using NimrodFieldData = ExternalFieldData<NimrodQuantity>;
 
 // The query points and each point's search guess, shared by every evaluator
 // created from this bound source.
-class NimrodBoundSource final : public BoundSource
+class NimrodBoundSource final : public HostBoundSource
 {
 public:
   explicit NimrodBoundSource(const BindRequest& request)
-    : BoundSource(request),
-      points("nimrod_points", NumPoints(), PointValues().extent(1)),
-      guesses(points.extent(0), {-1.0, -1.0})
+    : HostBoundSource(request), guesses(points.extent(0), {-1.0, -1.0})
   {
     if (request.policy.mode != OutOfBoundsMode::ERROR) {
       throw pcms_error("NimrodFunctionSpace: only OutOfBoundsMode::ERROR is "
                        "supported");
     }
-    // A LayoutRight host copy, so each point's coordinates are contiguous.
-    DeepCopyMismatchLayouts(points, PointValues());
   }
 
-  Kokkos::View<Real**, Kokkos::LayoutRight, HostMemorySpace> points;
   // Each point's logical coordinates from its last search, which NIMROD
   // starts the next search from; (-1, -1) searches from scratch.
   mutable std::vector<std::array<double, 2>> guesses;
 };
 
-// Evaluates a quantity, or with derivative_order 1 the gradient of a scalar
+// Evaluates a quantity, or with derivative order 1 the gradient of a scalar
 // quantity. NIMROD evaluation is not thread safe, don't call Evaluate
 // concurrently.
 class NimrodEvaluator final : public PointEvaluator<Real>
@@ -179,7 +148,7 @@ protected:
   {
     PCMS_FUNCTION_TIMER;
     const auto* data = dynamic_cast<const NimrodFieldData*>(&field.GetData());
-    if (data == nullptr || data->source != source_) {
+    if (data == nullptr || data->quantity.source != source_) {
       throw pcms_error(
         "NimrodFunctionSpace: field is not a quantity of this source");
     }
@@ -187,13 +156,13 @@ protected:
     const auto& points = bound_->points;
     auto& guesses = bound_->guesses;
     const int num_components = field.GetLayout().GetNumComponents();
+    const auto& quantity = data->quantity;
     const bool vector = data->GetValueType() == FieldValueType::Vector;
     const int dmode = DerivativeOrder();
     // NIMROD writes the value and, for dmode 1, (d/dR, d/dZ, (1/R) d/dphi)
     // after it.
     std::array<double, 4> scalar_and_gradient{};
-    Kokkos::View<Real**, Kokkos::LayoutRight, HostMemorySpace> host_out(
-      "nimrod_values", out.extent(0), out.extent(1));
+    const auto host_out = HostRowsLike(out);
     for (size_t i = 0; i < points.extent(0); ++i) {
       // (R, theta, Z) -> NIMROD's (R, Z, phi) with phi = -theta
       const std::array<double, 3> rzp{points(i, 0), points(i, 2),
@@ -205,8 +174,8 @@ protected:
       }
       int ifail = 0;
       double* fval = dmode == 0 ? &host_out(i, 0) : scalar_and_gradient.data();
-      c_eval_field_dm(rzp.data(), data->quantity.c_str(), fval, &num_components,
-                      guess.data(), &ifail, &dmode, &data->eq);
+      c_eval_field_dm(rzp.data(), quantity.name.c_str(), fval, &num_components,
+                      guess.data(), &ifail, &dmode, &quantity.eq);
       if (ifail != 0) {
         guess = {-1.0, -1.0};
         throw pcms_error("NimrodFunctionSpace: query point " +
@@ -224,10 +193,7 @@ protected:
         host_out(i, 2) = v_z;
       }
     }
-    Kokkos::View<Real**, DeviceMemorySpace> device_out(
-      "nimrod_values", out.extent(0), out.extent(1));
-    DeepCopyMismatchLayouts(device_out, host_out);
-    CopyDeviceRank2ViewToRank2View(out, MakeConstRank2View(device_out));
+    CopyToOutput(host_out, out);
   }
 
 private:
@@ -259,10 +225,8 @@ protected:
     std::shared_ptr<const NimrodBoundSource> bound,
     int derivative_order) const override
   {
-    if (derivative_order == 1 && num_components_ != 1) {
-      throw pcms_error("NimrodFunctionSpace: derivatives of vector and "
-                       "multi-component quantities are not supported yet");
-    }
+    CheckGradientComponents("NimrodFunctionSpace", derivative_order,
+                            num_components_);
     return std::make_unique<NimrodEvaluator>(source_, std::move(bound),
                                              derivative_order);
   }
@@ -392,30 +356,18 @@ Function<Real> NimrodFunctionSpace::CreateFunction(
   const auto& quantities = source_->Quantities();
   const auto found = quantities.find(quantity);
   if (found == quantities.end()) {
-    std::string available;
-    for (const auto& known : AvailableQuantities(*source_)) {
-      available += (available.empty() ? "" : ", ") + known;
-    }
-    throw pcms_error(
-      "NimrodFunctionSpace: \"" + quantity +
-      "\" is not a quantity of this source; it has: " + available);
+    ThrowUnknownQuantity("NimrodFunctionSpace", quantity,
+                         AvailableQuantities(*source_));
   }
   const auto [components, vector] = found->second;
-  if (components != layout_->GetNumComponents()) {
-    throw pcms_error("NimrodFunctionSpace: \"" + quantity + "\" has " +
-                     std::to_string(components) +
-                     " components but the space holds " +
-                     std::to_string(layout_->GetNumComponents()));
-  }
+  CheckComponents("NimrodFunctionSpace", quantity, components,
+                  layout_->GetNumComponents());
   const int eqs[] = {2, 0, 1};
-  ValueBasis basis = vector
-                       ? ValueBasis{csys::CylindricalRThetaZ::Create(),
-                                    ComponentScaling::Physical, values::Vector}
-                       : ValueBasis{};
   return FunctionSpace::CreateFunction<Real>(
-    std::move(name), std::make_unique<NimrodFieldData>(
-                       source_, quantity, eqs[static_cast<int>(options.part)],
-                       std::move(basis)));
+    std::move(name),
+    std::make_unique<NimrodFieldData>(
+      NimrodQuantity{source_, quantity, eqs[static_cast<int>(options.part)]},
+      QuantityBasis(vector)));
 }
 
 FieldVariant NimrodFunctionSpace::CreateFieldImpl(Type /*storage_type*/,
