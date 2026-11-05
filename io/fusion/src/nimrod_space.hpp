@@ -1,4 +1,5 @@
-#pragma once
+#ifndef FUSION_IO_SRC_NIMROD_SPACE_HPP
+#define FUSION_IO_SRC_NIMROD_SPACE_HPP
 
 #include "fusion_io/fusion_io.hpp"
 #include "pcms/field/function_space.h"
@@ -9,9 +10,6 @@
 
 namespace fio::detail
 {
-
-// Private implementation built on PCMS's public types.
-using namespace pcms;
 
 /// A NIMROD dump opened for evaluation. Opaque: NIMROD is a private
 /// dependency.
@@ -53,13 +51,13 @@ std::vector<std::string> AvailableQuantities(const NimrodSource& source);
 /// Evaluators of derivative order 1 give the gradient of single-component
 /// scalar quantities as physical cylindrical components
 /// (d/dR, (1/R) d/dtheta, d/dZ).
-class NimrodFunctionSpace final : public FunctionSpace
+class NimrodFunctionSpace final : public pcms::FunctionSpace
 {
 public:
   static std::shared_ptr<NimrodFunctionSpace> Create(
     std::shared_ptr<NimrodSource> source, int num_components);
 
-  std::shared_ptr<const FieldLayout> GetLayout() const noexcept override
+  std::shared_ptr<const pcms::FieldLayout> GetLayout() const noexcept override
   {
     return layout_;
   }
@@ -67,24 +65,28 @@ public:
   /// Function for a NIMROD quantity, whose component count must be the
   /// space's.
   /// @param quantity NIMROD's name for it (see AvailableQuantities)
-  Function<Real> CreateFunction(std::string name, const std::string& quantity,
-                                const NimrodOptions& options = {}) const;
+  pcms::Function<Real> CreateFunction(std::string name,
+                                      const std::string& quantity,
+                                      const NimrodOptions& options = {}) const;
 
 protected:
-  FieldVariant CreateFieldImpl(Type storage_type,
-                               ValueBasis basis) const override;
-  FieldVariant CreateFieldImpl(FieldDataVariant data) const override;
-  std::shared_ptr<BoundSource> BindImpl(
-    const EvaluationRequest& request) const override;
-  PointEvaluatorVariant CreatePointEvaluatorImpl(
-    Type value_type, std::shared_ptr<const BoundSource> bound,
+  pcms::FieldVariant CreateFieldImpl(pcms::Type storage_type,
+                                     pcms::ValueBasis basis) const override;
+  pcms::FieldVariant CreateFieldImpl(
+    pcms::FieldDataVariant data) const override;
+  std::shared_ptr<pcms::BoundSource> BindImpl(
+    const pcms::EvaluationRequest& request) const override;
+  pcms::PointEvaluatorVariant CreatePointEvaluatorImpl(
+    pcms::Type value_type, std::shared_ptr<const pcms::BoundSource> bound,
     int derivative_order) const override;
 
 private:
   NimrodFunctionSpace(std::shared_ptr<NimrodSource> source, int num_components);
 
   std::shared_ptr<NimrodSource> source_;
-  std::shared_ptr<const EmptyFieldLayout> layout_;
+  std::shared_ptr<const pcms::EmptyFieldLayout> layout_;
 };
 
 } // namespace fio::detail
+
+#endif // FUSION_IO_SRC_NIMROD_SPACE_HPP

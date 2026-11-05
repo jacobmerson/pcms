@@ -23,6 +23,8 @@
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
+using fio::test::EvaluateAt;
+using fio::test::EvaluateGradientAt;
 using pcms::DeviceMemorySpace;
 using pcms::HostMemorySpace;
 using pcms::Real;
@@ -33,44 +35,13 @@ namespace
 
 // The Fusion-IO example data (fusion-io/examples/data) in the test data.
 const std::string GeqdskFile =
-  std::string(PCMS_TEST_FUSIONIO_DIR) + "/geqdsk/g158115.04701";
+  std::string(FUSION_IO_TEST_DATA_DIR) + "/geqdsk/g158115.04701";
 const std::string M3DC1File =
-  std::string(PCMS_TEST_FUSIONIO_DIR) + "/m3dc1/C1.h5";
+  std::string(FUSION_IO_TEST_DATA_DIR) + "/m3dc1/C1.h5";
 
 // Fusion-IO's poloidal flux field is the total flux 2 pi R A_phi; geqdsk
 // files and Fusion-IO's flux series are per radian.
 constexpr Real TwoPi = 2.0 * std::numbers::pi;
-
-// Values of `field` at `points`, (R, phi, Z) row-major, copied to the host.
-auto EvaluateAt(const pcms::FunctionSpace& space,
-                const pcms::Field<Real>& field, const std::vector<Real>& points)
-{
-  const auto coords = pcms::test::CreateDeviceCoordinateView(
-    points, space.GetCoordinateSystem(), 3);
-  const auto evaluator =
-    space.CreatePointEvaluator<Real>(space.Bind(coords.coordinate_view));
-  Kokkos::View<Real**, DeviceMemorySpace> out(
-    "out", points.size() / 3, field.GetLayout().GetNumComponents());
-  evaluator->Evaluate(field, pcms::test::TagLike(field, out));
-  return Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
-}
-
-// Gradient of the scalar `field` at `points`, (dR, (1/R) dphi, dZ) per row.
-auto EvaluateGradientAt(const pcms::FunctionSpace& space,
-                        const pcms::Field<Real>& field,
-                        const std::vector<Real>& points)
-{
-  const auto coords = pcms::test::CreateDeviceCoordinateView(
-    points, space.GetCoordinateSystem(), 3);
-  const auto evaluator =
-    space.CreatePointEvaluator<Real>(space.Bind(coords.coordinate_view), 1);
-  Kokkos::View<Real**, DeviceMemorySpace> out("out", points.size() / 3, 3);
-  evaluator->Evaluate(field,
-                      pcms::ValueView<Real, DeviceMemorySpace>(
-                        evaluator->OutputBasis(field.GetData().GetValueBasis()),
-                        pcms::MakeRank2View(out)));
-  return Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
-}
 
 Real EvaluateSeries(fio_source& source, int type)
 {
@@ -108,7 +79,7 @@ TEST_CASE("Fusion-IO geqdsk poloidal flux matches the grid values")
   const auto result = EvaluateAt(*space, psi, points);
   for (size_t i = 0; i < expected.size(); ++i) {
     CAPTURE(i, points[3 * i], points[3 * i + 2]);
-    REQUIRE_THAT(result(i, 0), WithinRel(expected[i], pcms::test::EvalTol));
+    REQUIRE_THAT(result(i, 0), WithinRel(expected[i], fio::test::EvalTol));
   }
 }
 
@@ -147,7 +118,7 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
     for (size_t i = 0; i < psi_values.extent(0); ++i) {
       CAPTURE(i);
       REQUIRE_THAT(TwoPi * points[3 * i] * a_values(i, 1),
-                   WithinRel(psi_values(i, 0), pcms::test::EvalTol));
+                   WithinRel(psi_values(i, 0), fio::test::EvalTol));
     }
   }
 
@@ -177,7 +148,7 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
     const auto total = EvaluateAt(*scalars, psi, points);
     const auto equilibrium = EvaluateAt(*scalars, psi_eq, points);
     REQUIRE_THAT(equilibrium(1, 0),
-                 WithinRel(equilibrium(0, 0), pcms::test::ExactTol));
+                 WithinRel(equilibrium(0, 0), fio::test::ExactTol));
     // The perturbation in the total varies with phi.
     REQUIRE_FALSE(total(1, 0) == total(0, 0));
   }
@@ -185,7 +156,7 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
   SECTION("evaluators created from one bound source share its search")
   {
     const std::vector<Real> points = {1.6, 0.1, 0.2, 2.0, 2.5, -0.4};
-    const auto coords = pcms::test::CreateDeviceCoordinateView(
+    const auto coords = fio::test::CreateDeviceCoordinateView(
       points, scalars->GetCoordinateSystem(), 3);
     const auto bound = scalars->Bind(coords.coordinate_view);
     auto psi_eq = scalars->CreateFunction("psi_eq", fio::Quantity::PoloidalFlux,
@@ -193,14 +164,14 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
     for (const auto* f : {&psi, &psi_eq}) {
       const auto evaluator = scalars->CreatePointEvaluator<Real>(bound);
       Kokkos::View<Real**, DeviceMemorySpace> out("out", 2, 1);
-      evaluator->Evaluate(*f, pcms::test::TagLike(*f, out));
+      evaluator->Evaluate(*f, fio::test::TagLike(*f, out));
       const auto shared =
         Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
       const auto separate = EvaluateAt(*scalars, *f, points);
       for (size_t i = 0; i < 2; ++i) {
         CAPTURE(f->GetName(), i);
         REQUIRE_THAT(shared(i, 0),
-                     WithinRel(separate(i, 0), pcms::test::ExactTol));
+                     WithinRel(separate(i, 0), fio::test::ExactTol));
       }
     }
     REQUIRE_THROWS_WITH(vectors->CreatePointEvaluator<Real>(bound),
@@ -230,8 +201,8 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
           CAPTURE(i, c);
           // The absolute floor covers components near zero.
           REQUIRE_THAT(values(i, c),
-                       WithinRel(expected[c], pcms::test::ExactTol) ||
-                         WithinAbs(expected[c], pcms::test::ExactTol));
+                       WithinRel(expected[c], fio::test::ExactTol) ||
+                         WithinAbs(expected[c], fio::test::ExactTol));
         }
       }
     }
@@ -298,13 +269,13 @@ TEST_CASE("Fusion-IO evaluation errors")
                       ContainsSubstring("cylindrical geometry"));
 
   // Fusion-IO writes one row per query point.
-  const auto coords = pcms::test::CreateDeviceCoordinateView(
+  const auto coords = fio::test::CreateDeviceCoordinateView(
     {1.8, 0.0, 0.1, 2.0, 0.0, 0.1}, scalars->GetCoordinateSystem(), 3);
   const auto evaluator =
     scalars->CreatePointEvaluator<Real>(scalars->Bind(coords.coordinate_view));
   Kokkos::View<Real**, DeviceMemorySpace> short_out("short_out", 1, 1);
   REQUIRE_THROWS_WITH(
-    evaluator->Evaluate(psi, pcms::test::TagLike(psi, short_out)),
+    evaluator->Evaluate(psi, fio::test::TagLike(psi, short_out)),
     ContainsSubstring("but expected [2][1]"));
 
   auto other = fio::detail::FusionIOFunctionSpace::Create(
@@ -336,14 +307,14 @@ TEST_CASE("Fusion-IO gradients")
       const Real r = points[3 * i];
       CAPTURE(i);
       REQUIRE_THAT(-grad(i, 2) / (TwoPi * r),
-                   WithinRel(b_values(i, 0), pcms::test::EvalTol));
+                   WithinRel(b_values(i, 0), fio::test::EvalTol));
       REQUIRE_THAT(grad(i, 0) / (TwoPi * r),
-                   WithinRel(b_values(i, 2), pcms::test::EvalTol));
-      REQUIRE_THAT(grad(i, 1), WithinAbs(0.0, pcms::test::ExactTol));
+                   WithinRel(b_values(i, 2), fio::test::EvalTol));
+      REQUIRE_THAT(grad(i, 1), WithinAbs(0.0, fio::test::ExactTol));
     }
     REQUIRE_THROWS_WITH(
       vectors->CreatePointEvaluator<Real>(
-        vectors->Bind(pcms::test::CreateDeviceCoordinateView(
+        vectors->Bind(fio::test::CreateDeviceCoordinateView(
                         points, vectors->GetCoordinateSystem(), 3)
                         .coordinate_view),
         1),
@@ -369,7 +340,7 @@ TEST_CASE("Fusion-IO gradients")
                  WithinRel((values(0, 0) - values(1, 0)) / (2.0 * h), 1e-6));
     REQUIRE_THAT(grad(0, 2),
                  WithinRel((values(2, 0) - values(3, 0)) / (2.0 * h), 1e-6));
-    REQUIRE_THAT(grad(0, 1), WithinAbs(0.0, pcms::test::ExactTol));
+    REQUIRE_THAT(grad(0, 1), WithinAbs(0.0, fio::test::ExactTol));
   }
 
   SECTION("M3D-C1: the flux gradient interpolates onto a grid")
@@ -409,7 +380,7 @@ TEST_CASE("Fusion-IO gradients")
     pcms::Interpolator<Real>(*vectors, *vector_space).Apply(b, b_t);
 
     // Axisymmetric: B_R = -dpsi/dZ / (2 pi R), B_Z = dpsi/dR / (2 pi R).
-    const auto coords = pcms::test::CopyCoordinatesToHost(
+    const auto coords = fio::test::CopyCoordinatesToHost(
       value_space->GetLayout()->GetDOFHolderCoordinates().GetValues());
     const auto grad = grad_psi_t.GetDOFHolderDataHost().GetValues();
     const auto field = b_t.GetDOFHolderDataHost().GetValues();
@@ -418,10 +389,10 @@ TEST_CASE("Fusion-IO gradients")
       const Real r = coords(i, 0);
       CAPTURE(i, r, coords(i, 1), coords(i, 2));
       REQUIRE_THAT(-grad(i, 2) / (TwoPi * r),
-                   WithinRel(field(i, 0), pcms::test::EvalTol));
+                   WithinRel(field(i, 0), fio::test::EvalTol));
       REQUIRE_THAT(grad(i, 0) / (TwoPi * r),
-                   WithinRel(field(i, 2), pcms::test::EvalTol));
-      REQUIRE_THAT(grad(i, 1), WithinAbs(0.0, pcms::test::ExactTol));
+                   WithinRel(field(i, 2), fio::test::EvalTol));
+      REQUIRE_THAT(grad(i, 1), WithinAbs(0.0, fio::test::ExactTol));
     }
   }
 
@@ -448,7 +419,7 @@ TEST_CASE("Fusion-IO gradients")
       pcms::Gradient(
         std::make_shared<pcms::TransformedSource>(space, to_cylindrical))};
     for (const auto& cartesian : sources) {
-      const auto coords = pcms::test::CreateDeviceCoordinateView(
+      const auto coords = fio::test::CreateDeviceCoordinateView(
         {r * std::cos(phi), r * std::sin(phi), z},
         pcms::csys::Cartesian::Create(3), 3);
       const auto evaluator = cartesian->CreatePointEvaluator<Real>(
@@ -465,9 +436,8 @@ TEST_CASE("Fusion-IO gradients")
         Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
       for (int c = 0; c < 3; ++c) {
         CAPTURE(c);
-        REQUIRE_THAT(host(0, c),
-                     WithinRel(expected[c], pcms::test::EvalTol) ||
-                       WithinAbs(expected[c], pcms::test::ExactTol));
+        REQUIRE_THAT(host(0, c), WithinRel(expected[c], fio::test::EvalTol) ||
+                                   WithinAbs(expected[c], fio::test::ExactTol));
       }
     }
   }
