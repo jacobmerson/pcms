@@ -71,7 +71,8 @@ TEST_CASE("fio::Open functions match the Fusion-IO function space")
 
   const auto space = fio::detail::FusionIOFunctionSpace::Create(
     fio::detail::OpenFusionIOSource(fio::Format::M3DC1, M3DC1File), 3);
-  const auto expected = space->CreateFunction("b", "magnetic field", options);
+  const auto expected =
+    space->CreateFunction("b", Quantity::MagneticField, options);
 
   const auto actual_values = EvaluateAt(b, M3DC1Points);
   const auto expected_values = EvaluateAt(expected, M3DC1Points);
