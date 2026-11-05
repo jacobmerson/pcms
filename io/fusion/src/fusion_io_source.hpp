@@ -1,4 +1,5 @@
-#pragma once
+#ifndef FUSION_IO_SRC_FUSION_IO_SOURCE_HPP
+#define FUSION_IO_SRC_FUSION_IO_SOURCE_HPP
 
 // Private (not installed): the definition of the opaque FusionIOSource, for
 // the Fusion-IO function space and its tests.
@@ -10,9 +11,6 @@
 
 namespace fio::detail
 {
-
-// Private implementation built on PCMS's public types.
-using namespace pcms;
 
 /// Closes a Fusion-IO source. Unlike deleting it, fio_close_source also closes
 /// the file, which some sources (M3D-C1) do not do in their destructor.
@@ -72,3 +70,5 @@ private:
 };
 
 } // namespace fio::detail
+
+#endif // FUSION_IO_SRC_FUSION_IO_SOURCE_HPP
