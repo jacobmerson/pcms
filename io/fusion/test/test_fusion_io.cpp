@@ -90,7 +90,7 @@ TEST_CASE("Fusion-IO geqdsk poloidal flux matches the grid values")
   auto source =
     fio::detail::OpenFusionIOSource(fio::Format::GEQDSK, GeqdskFile);
   auto space = fio::detail::FusionIOFunctionSpace::Create(source, 1);
-  auto psi = space->CreateFunction("psi", "poloidal flux");
+  auto psi = space->CreateFunction("psi", fio::Quantity::PoloidalFlux);
 
   // Fusion-IO's interpolant reproduces the grid values (read here by PCMS's
   // own reader) at the grid nodes, and phi must not matter.
@@ -117,8 +117,8 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
   auto source = fio::detail::OpenFusionIOSource(fio::Format::M3DC1, M3DC1File);
   auto scalars = fio::detail::FusionIOFunctionSpace::Create(source, 1);
   auto vectors = fio::detail::FusionIOFunctionSpace::Create(source, 3);
-  auto psi = scalars->CreateFunction("psi", "poloidal flux");
-  auto a = vectors->CreateFunction("A", "vector potential");
+  auto psi = scalars->CreateFunction("psi", fio::Quantity::PoloidalFlux);
+  auto a = vectors->CreateFunction("A", fio::Quantity::VectorPotential);
   REQUIRE(pcms::SameValueBasis(
     a.GetData().GetValueBasis(),
     ValueBasis{pcms::csys::CylindricalRThetaZ::Create(),
@@ -156,8 +156,10 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
     // The axisymmetric part has no phi derivative, so this holds exactly for
     // a right-handed system and with the opposite sign otherwise.
     const fio::Options equilibrium{.part = fio::Part::Equilibrium};
-    auto a_eq = vectors->CreateFunction("A", "vector potential", equilibrium);
-    auto b_eq = vectors->CreateFunction("B", "magnetic field", equilibrium);
+    auto a_eq =
+      vectors->CreateFunction("A", fio::Quantity::VectorPotential, equilibrium);
+    auto b_eq =
+      vectors->CreateFunction("B", fio::Quantity::MagneticField, equilibrium);
     const Real r = 2.0, z = 0.3, dz = 1e-4;
     const auto a_values =
       EvaluateAt(*vectors, a_eq, {r, 0.0, z + dz, r, 0.0, z - dz});
@@ -169,7 +171,7 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
 
   SECTION("options reach Fusion-IO: the equilibrium part is axisymmetric")
   {
-    auto psi_eq = scalars->CreateFunction("psi_eq", "poloidal flux",
+    auto psi_eq = scalars->CreateFunction("psi_eq", fio::Quantity::PoloidalFlux,
                                           {.part = fio::Part::Equilibrium});
     const std::vector<Real> points = {1.6, 0.1, 0.2, 1.6, 2.5, 0.2};
     const auto total = EvaluateAt(*scalars, psi, points);
@@ -186,7 +188,7 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
     const auto coords = pcms::test::CreateDeviceCoordinateView(
       points, scalars->GetCoordinateSystem(), 3);
     const auto bound = scalars->Bind(coords.coordinate_view);
-    auto psi_eq = scalars->CreateFunction("psi_eq", "poloidal flux",
+    auto psi_eq = scalars->CreateFunction("psi_eq", fio::Quantity::PoloidalFlux,
                                           {.part = fio::Part::Equilibrium});
     for (const auto* f : {&psi, &psi_eq}) {
       const auto evaluator = scalars->CreatePointEvaluator<Real>(bound);
@@ -215,13 +217,12 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
     const std::vector<Real> points = {1.3, 0.0, 0.4, 1.6, 0.7, -0.6,
                                       2.0, 2.5, 0.1, 2.2, 4.0, -0.3};
     for (const auto& [quantity, space] :
-         {std::pair{"poloidal flux", scalars},
-          std::pair{"magnetic field", vectors}}) {
-      CAPTURE(quantity);
+         {std::pair{fio::Quantity::PoloidalFlux, scalars},
+          std::pair{fio::Quantity::MagneticField, vectors}}) {
+      CAPTURE(fio::Name(quantity));
       const auto values = EvaluateAt(
         *space, space->CreateFunction("f", quantity, options), points);
-      const auto field =
-        source->GetField(source->Quantities().at(quantity), fio_options);
+      const auto field = source->GetField(quantity, fio_options);
       for (size_t i = 0; i < values.extent(0); ++i) {
         Real expected[3];
         REQUIRE(field->eval(&points[3 * i], expected) == FIO_SUCCESS);
@@ -273,21 +274,20 @@ TEST_CASE("Fusion-IO evaluation errors")
     fio::detail::OpenFusionIOSource(fio::Format::GEQDSK, GeqdskFile);
   auto scalars = fio::detail::FusionIOFunctionSpace::Create(source, 1);
   auto vectors = fio::detail::FusionIOFunctionSpace::Create(source, 3);
-  auto psi = scalars->CreateFunction("psi", "poloidal flux");
-  const auto quantities = fio::detail::AvailableQuantities(*source);
-  REQUIRE(std::find(quantities.begin(), quantities.end(), "magnetic field") !=
-          quantities.end());
+  auto psi = scalars->CreateFunction("psi", fio::Quantity::PoloidalFlux);
+  REQUIRE(source->Provides(fio::Quantity::MagneticField));
 
   REQUIRE_THROWS_WITH(EvaluateAt(*scalars, psi, {50.0, 0.0, 0.0}),
                       ContainsSubstring("outside the source's domain"));
-  REQUIRE_THROWS_WITH(scalars->CreateFunction("B", "magnetic field"),
-                      ContainsSubstring("the space holds 1"));
-  REQUIRE_THROWS_WITH(vectors->CreateFunction("psi", "poloidal flux"),
-                      ContainsSubstring("the space holds 3"));
   REQUIRE_THROWS_WITH(
-    scalars->CreateFunction("psi", "poloidal fluxx"),
-    ContainsSubstring("\"poloidal fluxx\" is not a quantity") &&
-      ContainsSubstring("poloidal flux,"));
+    scalars->CreateFunction("B", fio::Quantity::MagneticField),
+    ContainsSubstring("the space holds 1"));
+  REQUIRE_THROWS_WITH(
+    vectors->CreateFunction("psi", fio::Quantity::PoloidalFlux),
+    ContainsSubstring("the space holds 3"));
+  REQUIRE_THROWS_WITH(scalars->CreateFunction("eta", fio::Quantity::Viscosity),
+                      ContainsSubstring("\"viscosity\" is not a quantity") &&
+                        ContainsSubstring("poloidal flux"));
   REQUIRE_THROWS_WITH(psi.GetDOFHolderData(),
                       ContainsSubstring("no DOFAccess"));
   REQUIRE_THROWS_WITH(
@@ -322,8 +322,10 @@ TEST_CASE("Fusion-IO gradients")
     auto scalars = fio::detail::FusionIOFunctionSpace::Create(source, 1);
     auto vectors = fio::detail::FusionIOFunctionSpace::Create(source, 3);
     const fio::Options equilibrium{.part = fio::Part::Equilibrium};
-    auto psi = scalars->CreateFunction("psi", "poloidal flux", equilibrium);
-    auto b = vectors->CreateFunction("B", "magnetic field", equilibrium);
+    auto psi =
+      scalars->CreateFunction("psi", fio::Quantity::PoloidalFlux, equilibrium);
+    auto b =
+      vectors->CreateFunction("B", fio::Quantity::MagneticField, equilibrium);
     // Axisymmetric, so B_R = -dpsi/dZ / (2 pi R) and B_Z = dpsi/dR / (2 pi R)
     // for the total flux psi, and the toroidal derivative vanishes.
     const std::vector<Real> points = {1.6,  0.1, 0.2, 2.0, 2.5,
@@ -345,7 +347,7 @@ TEST_CASE("Fusion-IO gradients")
                         points, vectors->GetCoordinateSystem(), 3)
                         .coordinate_view),
         1),
-      ContainsSubstring("vector quantities are not supported"));
+      ContainsSubstring("more than one component are not supported"));
   }
 
   SECTION("geqdsk: the gradient matches finite differences of the flux")
@@ -353,7 +355,7 @@ TEST_CASE("Fusion-IO gradients")
     auto source =
       fio::detail::OpenFusionIOSource(fio::Format::GEQDSK, GeqdskFile);
     auto space = fio::detail::FusionIOFunctionSpace::Create(source, 1);
-    auto psi = space->CreateFunction("psi", "poloidal flux");
+    auto psi = space->CreateFunction("psi", fio::Quantity::PoloidalFlux);
     // Inside a grid cell: Fusion-IO's bicubic interpolant of the geqdsk grid
     // is not differentiable across grid lines, where the finite difference
     // would straddle two cells.
@@ -378,8 +380,10 @@ TEST_CASE("Fusion-IO gradients")
       fio::detail::FusionIOFunctionSpace::Create(source, 1);
     auto vectors = fio::detail::FusionIOFunctionSpace::Create(source, 3);
     const fio::Options equilibrium{.part = fio::Part::Equilibrium};
-    auto psi = scalars->CreateFunction("psi", "poloidal flux", equilibrium);
-    auto b = vectors->CreateFunction("B", "magnetic field", equilibrium);
+    auto psi =
+      scalars->CreateFunction("psi", fio::Quantity::PoloidalFlux, equilibrium);
+    auto b =
+      vectors->CreateFunction("B", fio::Quantity::MagneticField, equilibrium);
 
     // A grid in (R, theta, Z) inside the M3D-C1 domain.
     pcms::UniformGrid<3> grid;
@@ -429,7 +433,7 @@ TEST_CASE("Fusion-IO gradients")
       fio::detail::FusionIOFunctionSpace::Create(source, 1);
     auto psi =
       std::static_pointer_cast<const fio::detail::FusionIOFunctionSpace>(space)
-        ->CreateFunction("psi", "poloidal flux");
+        ->CreateFunction("psi", fio::Quantity::PoloidalFlux);
     const Real r = 1.7, phi = 2.2, z = 0.3;
     const auto cyl = EvaluateGradientAt(*space, psi, {r, phi, z});
     const Real expected[3] = {

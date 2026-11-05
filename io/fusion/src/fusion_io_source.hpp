@@ -3,10 +3,9 @@
 // Private (not installed): the definition of the opaque FusionIOSource, for
 // the Fusion-IO function space and its tests.
 
+#include "fusion_io/fusion_io.hpp"
 #include <fusion_io.h>
-#include <map>
 #include <memory>
-#include <string>
 #include <vector>
 
 namespace fio::detail
@@ -25,7 +24,13 @@ struct FusionIOClose
 using FusionIOSourcePtr = std::unique_ptr<fio_source, FusionIOClose>;
 using FusionIOFieldPtr = std::unique_ptr<fio_field>;
 
-/// An open Fusion-IO source and Fusion-IO's names for its quantities.
+/// Fusion-IO's field type for a quantity.
+[[nodiscard]] field_type FieldTypeOf(Quantity quantity);
+
+/// 3 for vector quantities, 1 for scalars.
+[[nodiscard]] int NumComponents(Quantity quantity);
+
+/// An open Fusion-IO source and the quantities it provides.
 class FusionIOSource
 {
 public:
@@ -35,16 +40,17 @@ public:
   /// Fusion-IO's interface is not const-correct, so this is shallow const.
   [[nodiscard]] fio_source& Get() const noexcept { return *source_; }
 
-  /// Reads a field of the source; throws if Fusion-IO cannot.
-  [[nodiscard]] FusionIOFieldPtr GetField(field_type type,
+  /// Reads a quantity of the source; throws if Fusion-IO cannot.
+  [[nodiscard]] FusionIOFieldPtr GetField(Quantity quantity,
                                           const fio_option_list& options) const;
 
-  /// Fusion-IO's field type for each quantity name the source provides.
-  [[nodiscard]] const std::map<std::string, field_type>& Quantities()
-    const noexcept
+  /// The quantities the source lists, in Quantity order.
+  [[nodiscard]] const std::vector<Quantity>& Quantities() const noexcept
   {
     return quantities_;
   }
+
+  [[nodiscard]] bool Provides(Quantity quantity) const;
 
   /// A field of the source (a scalar if it has one) whose evaluation tells
   /// whether a point is inside the source's domain. Read on first use.
@@ -60,7 +66,7 @@ public:
 
 private:
   FusionIOSourcePtr source_;
-  std::map<std::string, field_type> quantities_;
+  std::vector<Quantity> quantities_;
   mutable FusionIOFieldPtr probe_;
   mutable std::shared_ptr<std::vector<char>> hints_;
 };
