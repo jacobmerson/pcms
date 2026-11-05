@@ -1,4 +1,5 @@
-#pragma once
+#ifndef FUSION_IO_SRC_NIMEVAL_HPP
+#define FUSION_IO_SRC_NIMEVAL_HPP
 
 // Private (not installed): NIMROD's C-callable evaluator, for the NIMROD
 // function space and its tests.
@@ -19,3 +20,5 @@ void c_eval_field_dm(const double* rzp, const char* fname, double* fval,
                      const int* nqty, double* xyguess, int* ifail,
                      const int* dmode, const int* eq);
 }
+
+#endif // FUSION_IO_SRC_NIMEVAL_HPP

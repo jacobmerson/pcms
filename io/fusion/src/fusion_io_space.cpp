@@ -55,6 +55,36 @@ constexpr QuantityEntry QuantityTable[] = {
   {Quantity::Velocity, FIO_VELOCITY, "velocity"},
 };
 
+int FusionIOPart(Part part)
+{
+  switch (part) {
+    case Part::Total: return FIO_TOTAL;
+    case Part::Perturbed: return FIO_PERTURBED_ONLY;
+    case Part::Equilibrium: return FIO_EQUILIBRIUM_ONLY;
+  }
+  throw pcms_error("fio: unknown part");
+}
+
+int FusionIOSpecies(Species species)
+{
+  switch (species) {
+    case Species::MainIon: return FIO_MAIN_ION;
+    case Species::Electron: return FIO_ELECTRON;
+  }
+  throw pcms_error("fio: unknown species");
+}
+
+series_type FusionIOSeries(Series series)
+{
+  switch (series) {
+    case Series::MagneticAxisPsi: return FIO_MAGAXIS_PSI;
+    case Series::LcfsPsi: return FIO_LCFS_PSI;
+    case Series::MagneticAxisR: return FIO_MAGAXIS_R;
+    case Series::MagneticAxisZ: return FIO_MAGAXIS_Z;
+  }
+  throw pcms_error("fio: unknown series");
+}
+
 const QuantityEntry& EntryOf(Quantity quantity)
 {
   for (const auto& entry : QuantityTable) {
@@ -246,8 +276,8 @@ FusionIOSource::FusionIOSource(FusionIOSourcePtr source)
   int geometry = -1;
   if (source_->get_int_parameter(FIO_GEOMETRY, &geometry) != FIO_SUCCESS ||
       geometry != FIO_CYLINDRICAL) {
-    throw pcms_error("FusionIOSource: only sources with cylindrical geometry "
-                     "are supported");
+    throw pcms_error("fio::Open: only sources with cylindrical geometry are "
+                     "supported");
   }
   fio_source::fio_field_list fields;
   source_->get_available_fields(&fields);
@@ -271,9 +301,8 @@ FusionIOFieldPtr FusionIOSource::GetField(Quantity quantity,
     source_->get_field(FieldTypeOf(quantity), &field, &options);
   FusionIOFieldPtr owned(field);
   if (status != FIO_SUCCESS) {
-    throw pcms_error("FusionIOSource: could not read \"" +
-                     std::string(Name(quantity)) + "\" (Fusion-IO error " +
-                     std::to_string(status) + ")");
+    throw pcms_error("fio: could not read \"" + std::string(Name(quantity)) +
+                     "\" (Fusion-IO error " + std::to_string(status) + ")");
   }
   return owned;
 }
@@ -305,8 +334,8 @@ fio_field& FusionIOSource::DomainProbe() const
     }
     delete field;
   }
-  throw pcms_error("FusionIOSource: none of the source's quantities can be "
-                   "read to locate points");
+  throw pcms_error("fio: none of the source's quantities can be read to "
+                   "locate points");
 }
 
 std::shared_ptr<std::vector<char>> FusionIOSource::SearchHints(
@@ -338,7 +367,7 @@ std::shared_ptr<FusionIOSource> OpenFusionIOSource(Format format,
   const int status = fio_open_source(&opened, type, filename.c_str());
   // On failure fio_open_source has already deleted the source.
   if (status != FIO_SUCCESS) {
-    throw pcms_error("OpenFusionIOSource: could not open '" + filename +
+    throw pcms_error("fio::Open: could not open '" + filename +
                      "' (Fusion-IO error " + std::to_string(status) + ")");
   }
   return std::make_shared<FusionIOSource>(FusionIOSourcePtr(opened));
@@ -382,13 +411,10 @@ Function<Real> FusionIOFunctionSpace::CreateFunction(
     fio_options.set_option(FIO_TIMESLICE, *options.timeslice);
   }
   if (options.part) {
-    const int parts[] = {FIO_TOTAL, FIO_PERTURBED_ONLY, FIO_EQUILIBRIUM_ONLY};
-    fio_options.set_option(FIO_PART, parts[static_cast<int>(*options.part)]);
+    fio_options.set_option(FIO_PART, FusionIOPart(*options.part));
   }
   if (options.species) {
-    const int species[] = {FIO_MAIN_ION, FIO_ELECTRON};
-    fio_options.set_option(FIO_SPECIES,
-                           species[static_cast<int>(*options.species)]);
+    fio_options.set_option(FIO_SPECIES, FusionIOSpecies(*options.species));
   }
   if (options.linear_scale) {
     fio_options.set_option(FIO_LINEAR_SCALE, *options.linear_scale);
@@ -465,10 +491,8 @@ public:
   [[nodiscard]] std::optional<Real> EvaluateSeries(Series series,
                                                    Real time) const override
   {
-    const series_type types[] = {FIO_MAGAXIS_PSI, FIO_LCFS_PSI, FIO_MAGAXIS_R,
-                                 FIO_MAGAXIS_Z};
     fio_series* opened = nullptr;
-    if (source_->Get().get_series(types[static_cast<int>(series)], &opened) !=
+    if (source_->Get().get_series(FusionIOSeries(series), &opened) !=
           FIO_SUCCESS ||
         opened == nullptr) {
       return std::nullopt;
