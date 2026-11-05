@@ -14,15 +14,15 @@ using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
 using fio::Quantity;
 using fio::Real;
-using pcms::test::EvaluateAt;
+using fio::test::EvaluateAt;
 
 namespace
 {
 
 const std::string GeqdskFile =
-  std::string(PCMS_TEST_FUSIONIO_DIR) + "/geqdsk/g158115.04701";
+  std::string(FUSION_IO_TEST_DATA_DIR) + "/geqdsk/g158115.04701";
 const std::string M3DC1File =
-  std::string(PCMS_TEST_FUSIONIO_DIR) + "/m3dc1/C1.h5";
+  std::string(FUSION_IO_TEST_DATA_DIR) + "/m3dc1/C1.h5";
 
 // Points inside the example M3D-C1 domain, (R, phi, Z) row-major.
 const std::vector<Real> M3DC1Points = {1.6, 0.1, 0.2, 2.0, 2.5, -0.4};
@@ -130,7 +130,7 @@ TEST_CASE("fio functions fill points outside the domain on request")
   // The middle point is far outside the domain.
   const std::vector<Real> points = {1.6, 0.1, 0.2, 50.0, 0.0,
                                     0.0, 2.0, 2.5, -0.4};
-  const auto coords = pcms::test::CreateDeviceCoordinateView(
+  const auto coords = fio::test::CreateDeviceCoordinateView(
     points, space.GetCoordinateSystem(), 3);
   constexpr Real Fill = -7.0;
 
@@ -144,7 +144,7 @@ TEST_CASE("fio functions fill points outside the domain on request")
     REQUIRE(filled(0) == 1);
 
     Kokkos::View<Real**, pcms::DeviceMemorySpace> out("out", 3, 3);
-    evaluator->Evaluate(b, pcms::test::TagLike<Real>(b, out));
+    evaluator->Evaluate(b, fio::test::TagLike<Real>(b, out));
     const auto values =
       Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(), out);
     const auto expected = EvaluateAt(b, {1.6, 0.1, 0.2, 2.0, 2.5, -0.4});

@@ -13,7 +13,7 @@ if(FUSION_IO_TEST_DATA_DIR)
   set_source_files_properties(
     test_fusion_io.cpp test_source.cpp
     PROPERTIES COMPILE_DEFINITIONS
-               "PCMS_TEST_FUSIONIO_DIR=\"${FUSION_IO_TEST_DATA_DIR}\"")
+               "FUSION_IO_TEST_DATA_DIR=\"${FUSION_IO_TEST_DATA_DIR}\"")
 else()
   message(STATUS "FUSION_IO_TEST_DATA_DIR not set; Fusion-IO tests disabled")
 endif()
@@ -22,7 +22,7 @@ if(FUSION_IO_ENABLE_NIMROD AND FUSION_IO_TEST_NIMROD_DIR)
   set_source_files_properties(
     test_nimrod.cpp
     PROPERTIES COMPILE_DEFINITIONS
-               "PCMS_TEST_NIMROD_DIR=\"${FUSION_IO_TEST_NIMROD_DIR}\"")
+               "FUSION_IO_TEST_NIMROD_DIR=\"${FUSION_IO_TEST_NIMROD_DIR}\"")
 endif()
 
 if(FUSION_IO_TEST_SOURCES)

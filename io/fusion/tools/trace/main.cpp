@@ -124,7 +124,8 @@ public:
     std::vector<std::array<Real, 5>> punctures;
   };
 
-  /// Integrates `lines` from phi0; returns false for lines that were lost.
+  /// Integrates `lines` from phi0; lines that leave the domain become
+  /// inactive.
   void Integrate(std::vector<Line>& lines, Real phi0)
   {
     const Real pd = p_.reverse ? -period_ : period_;
@@ -259,25 +260,29 @@ private:
     return b;
   }
 
-  // trace_integrator::step_rk4, for every active line. A line lost in any
-  // stage keeps its position from before the step.
+  // trace_integrator::step_rk4, for every active line. Lost lines are
+  // skipped; a line lost in any stage keeps its position from before the
+  // step.
   void StepRK4(std::vector<Line>& lines, Real phi, Real dphi)
   {
     const size_t n = lines.size();
-    std::vector<Real> zero(n, 0), k1R(n), k1Z(n), k2R(n), k2Z(n), k3R(n),
-      k3Z(n), k4R(n), k4Z(n), half(n);
-    auto b = Field(lines, phi, zero, zero);
+    std::vector<Real> k1R(n), k1Z(n), k2R(n), k2Z(n), k3R(n), k3Z(n), k4R(n),
+      k4Z(n), dR(n, 0), dZ(n, 0);
+    auto b = Field(lines, phi, dR, dZ);
     for (size_t l = 0; l < n; ++l) {
+      if (!lines[l].active) {
+        continue;
+      }
       k1R[l] = lines[l].R * dphi * b[l][0] / b[l][1];
       k1Z[l] = lines[l].R * dphi * b[l][2] / b[l][1];
-    }
-    std::vector<Real> dR(n), dZ(n);
-    for (size_t l = 0; l < n; ++l) {
       dR[l] = k1R[l] / 2.;
       dZ[l] = k1Z[l] / 2.;
     }
     b = Field(lines, phi + dphi / 2., dR, dZ);
     for (size_t l = 0; l < n; ++l) {
+      if (!lines[l].active) {
+        continue;
+      }
       const Real RR = lines[l].R + k1R[l] / 2.;
       k2R[l] = RR * dphi * b[l][0] / b[l][1];
       k2Z[l] = RR * dphi * b[l][2] / b[l][1];
@@ -286,6 +291,9 @@ private:
     }
     b = Field(lines, phi + dphi / 2., dR, dZ);
     for (size_t l = 0; l < n; ++l) {
+      if (!lines[l].active) {
+        continue;
+      }
       const Real RR = lines[l].R + k2R[l] / 2.;
       k3R[l] = RR * dphi * b[l][0] / b[l][1];
       k3Z[l] = RR * dphi * b[l][2] / b[l][1];
@@ -597,6 +605,8 @@ int Run(int argc, char* argv[], int rank, int size)
     const Real transits = lines[j].toroidal_transits;
     local[3 * j] =
       std::sqrt((R - R_axis) * (R - R_axis) + (Z - Z_axis) * (Z - Z_axis));
+    // trace's transit-weighted mean, kept as q * transits / transits so it
+    // matches trace bit for bit (and is NaN without a full transit).
     local[3 * j + 1] = lines[j].q * transits / transits;
     local[3 * j + 2] = lines[j].q;
   }
