@@ -17,6 +17,15 @@
 #include <utility>
 #include <vector>
 
+namespace pcms
+{
+using localization::GridPointSearch2D;
+using localization::GridPointSearch3D;
+using localization::triangle_intersects_bbox;
+using localization::UniformGridPointSearch;
+using utility::get_entity_centroids;
+} // namespace pcms
+
 using pcms::AABBox;
 using pcms::Uniform2DGrid;
 
@@ -33,17 +42,19 @@ auto LiftOnHost(Omega_h::Mesh& mesh, Kokkos::View<Result*> results)
   const auto host =
     Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, results);
   const auto n = host.extent(0);
-  const auto up = pcms::detail::UpAdjacencies<Dim>(mesh);
-  const auto verts_of = pcms::detail::VerticesOfEntities<Dim>(mesh);
+  const auto up = pcms::backend::omega_h::detail::UpAdjacencies<Dim>(mesh);
+  const auto verts_of =
+    pcms::backend::omega_h::detail::VerticesOfEntities<Dim>(mesh);
   Kokkos::View<Omega_h::LO*, Kokkos::HostSpace> elems("elems", n);
   Kokkos::View<pcms::Real**, Kokkos::HostSpace> bary("bary", n, Dim + 1);
   for (size_t i = 0; i < n; ++i) {
-    const auto elem = pcms::detail::ElementOfResult<Dim>(up, host(i));
+    const auto elem =
+      pcms::backend::omega_h::detail::ElementOfResult<Dim>(up, host(i));
     elems(i) = elem;
     Omega_h::LO vertices[Dim + 1];
     pcms::Real weights[Dim + 1];
-    const int nv = pcms::detail::EntityVertexWeights<Dim>(verts_of, host(i),
-                                                          vertices, weights);
+    const int nv = pcms::backend::omega_h::detail::EntityVertexWeights<Dim>(
+      verts_of, host(i), vertices, weights);
     for (int k = 0; k <= Dim; ++k) {
       bary(i, k) = 0.0;
     }
@@ -242,8 +253,9 @@ TEST_CASE("construct intersection map")
     grid_h(0) = Uniform2DGrid{
       .edge_length{1, 1}, .bot_left = {0, 0}, .divisions = {10, 10}};
     Kokkos::deep_copy(grid_d, grid_h);
-    auto intersection_map = pcms::detail::construct_intersection_map_2d(
-      mesh, grid_d, grid_h(0).GetNumCells());
+    auto intersection_map =
+      pcms::localization::detail::construct_intersection_map_2d(
+        mesh, grid_d, grid_h(0).GetNumCells());
     // assert(cudaSuccess == cudaDeviceSynchronize());
     REQUIRE(intersection_map.numRows() == 100);
     REQUIRE(num_candidates_within_range(intersection_map, 2, 16));
@@ -256,8 +268,9 @@ TEST_CASE("construct intersection map")
       .edge_length{1, 1}, .bot_left = {0, 0}, .divisions = {60, 60}};
     Kokkos::deep_copy(grid_d, grid_h);
     // require number of candidates is >=1 and <=6
-    auto intersection_map = pcms::detail::construct_intersection_map_2d(
-      mesh, grid_d, grid_h(0).GetNumCells());
+    auto intersection_map =
+      pcms::localization::detail::construct_intersection_map_2d(
+        mesh, grid_d, grid_h(0).GetNumCells());
 
     REQUIRE(intersection_map.numRows() == 3600);
     REQUIRE(num_candidates_within_range(intersection_map, 1, 6));
@@ -315,9 +328,10 @@ TEST_CASE("candidate map matches brute-force reference")
       Kokkos::deep_copy(grid_d, grid_h);
       const auto ncells = grid_h(0).GetNumCells();
       require_maps_identical(
-        pcms::detail::construct_intersection_map_2d(mesh, grid_d, ncells),
-        pcms::detail::construct_intersection_map_reference_2d(mesh, grid_d,
-                                                              ncells));
+        pcms::localization::detail::construct_intersection_map_2d(mesh, grid_d,
+                                                                  ncells),
+        pcms::localization::detail::construct_intersection_map_reference_2d(
+          mesh, grid_d, ncells));
     }
   }
   SECTION("3D")
@@ -335,9 +349,10 @@ TEST_CASE("candidate map matches brute-force reference")
       Kokkos::deep_copy(grid_d, grid_h);
       const auto ncells = grid_h(0).GetNumCells();
       require_maps_identical(
-        pcms::detail::construct_intersection_map_3d(mesh, grid_d, ncells),
-        pcms::detail::construct_intersection_map_reference_3d(mesh, grid_d,
-                                                              ncells));
+        pcms::localization::detail::construct_intersection_map_3d(mesh, grid_d,
+                                                                  ncells),
+        pcms::localization::detail::construct_intersection_map_reference_3d(
+          mesh, grid_d, ncells));
     }
   }
 }
