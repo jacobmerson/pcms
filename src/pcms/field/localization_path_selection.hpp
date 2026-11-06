@@ -6,7 +6,7 @@
 
 #include <optional>
 
-namespace pcms::detail
+namespace pcms::field::detail
 {
 
 enum class LocalizationPath
@@ -92,6 +92,6 @@ inline LocalizationPath SelectLocalizationPath(
   return LocalizationPath::PointCloudSupports;
 }
 
-} // namespace pcms::detail
+} // namespace pcms::field::detail
 
 #endif // PCMS_LOCALIZATION_PATH_SELECTION_H

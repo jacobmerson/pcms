@@ -13,6 +13,11 @@
 
 namespace pcms
 {
+using backend::omega_h::OmegaHLagrangeLayout;
+} // namespace pcms
+
+namespace pcms::transfer
+{
 
 namespace
 {
@@ -225,4 +230,4 @@ std::unique_ptr<BilinearFormIntegrator> BuildOmegaHMassIntegrator(
   return std::make_unique<OmegaHMassIntegrator>(target_space, mass_type);
 }
 
-} // namespace pcms
+} // namespace pcms::transfer

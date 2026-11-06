@@ -15,6 +15,11 @@
 #include <type_traits>
 #include <vector>
 
+namespace pcms
+{
+using field::LagrangeFunctionSpace;
+} // namespace pcms
+
 using pcms::LO;
 using pcms::Real;
 

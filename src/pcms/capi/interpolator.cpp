@@ -10,6 +10,14 @@
 #include <pcms/utility/mesh_geometry.hpp>
 #include <pcms/utility/print.hpp>
 
+namespace pcms
+{
+using transfer::InterpolationBase;
+using transfer::MLSMeshInterpolation;
+using transfer::MLSPointCloudInterpolation;
+using utility::get_entity_centroids;
+} // namespace pcms
+
 //[[nodiscard]]
 PcmsInterpolatorHandle pcms_create_interpolator(PcmsOmegaHMeshHandle oh_mesh,
                                                 double radius)

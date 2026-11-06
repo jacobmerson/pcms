@@ -11,7 +11,7 @@
 #include <Omega_h_array.hpp>
 #include <Omega_h_array_ops.hpp>
 
-namespace pcms
+namespace pcms::backend::point_cloud
 {
 
 // MLSPointEvaluator is a concrete PointEvaluator<Real> that evaluates a
@@ -28,7 +28,8 @@ class MLSPointEvaluator : public PointEvaluator<Real, LayoutPolicy>
 {
 public:
   MLSPointEvaluator(Omega_h::Reals source_coords, Omega_h::Reals target_coords,
-                    SupportResults supports, int dim, MLSOptions options)
+                    localization::SupportResults supports, int dim,
+                    MLSOptions options)
     : source_coords_(std::move(source_coords)),
       target_coords_(std::move(target_coords)),
       supports_(std::move(supports)),
@@ -73,7 +74,7 @@ public:
       KOKKOS_LAMBDA(int i) { src_w[i] = device_data(i, 0); });
     Omega_h::Reals source_values(src_w);
 
-    auto result = mls_interpolation(
+    auto result = field::mls_interpolation(
       source_values, source_coords_, target_coords_, supports_, dim_,
       static_cast<Omega_h::LO>(options_.degree), options_.basis,
       options_.lambda, options_.tol, options_.decay_factor);
@@ -88,11 +89,11 @@ public:
 private:
   Omega_h::Reals source_coords_;
   Omega_h::Reals target_coords_;
-  SupportResults supports_;
+  localization::SupportResults supports_;
   int dim_;
   MLSOptions options_;
 };
 
-} // namespace pcms
+} // namespace pcms::backend::point_cloud
 
 #endif // PCMS_FIELD_EVALUATOR_MLS_POINT_CLOUD_H

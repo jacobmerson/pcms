@@ -9,6 +9,11 @@
 
 namespace pcms
 {
+using backend::omega_h::OmegaHLagrangeLayout;
+} // namespace pcms
+
+namespace pcms::transfer
+{
 
 namespace
 {
@@ -255,4 +260,4 @@ void OmegaHMonteCarloRHSIntegrator::Assemble(
   CHKERRABORT(PETSC_COMM_SELF, ierr);
 }
 
-} // namespace pcms
+} // namespace pcms::transfer

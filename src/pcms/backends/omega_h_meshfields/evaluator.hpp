@@ -11,7 +11,7 @@
 #include "pcms/utility/arrays.hpp"
 #include <memory>
 
-namespace pcms
+namespace pcms::backend::omega_h_meshfields
 {
 
 // MeshFieldsPointEvaluator<T> implements PointEvaluator<T> for
@@ -114,7 +114,7 @@ private:
 // MeshFields-backed simplex meshes. It owns the spatial search structure and
 // the MeshFieldBackend (which holds the internal shape field).
 template <typename T>
-class MeshFieldsEvaluatorFactory : public FieldEvaluatorFactory<T>
+class MeshFieldsEvaluatorFactory : public field::FieldEvaluatorFactory<T>
 {
 public:
   explicit MeshFieldsEvaluatorFactory(
@@ -196,9 +196,9 @@ public:
 private:
   std::shared_ptr<const MeshFieldsAdapterLayout> layout_;
   Omega_h::Mesh& mesh_;
-  mutable GridPointSearch2D search_;
+  mutable localization::GridPointSearch2D search_;
 };
 
-} // namespace pcms
+} // namespace pcms::backend::omega_h_meshfields
 
 #endif // PCMS_ADAPTER_MESHFIELDS_MESH_FIELDS_EVALUATOR_FACTORY_H

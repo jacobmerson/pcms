@@ -9,6 +9,12 @@
 
 namespace pcms
 {
+using backend::uniform_grid::UniformGridFieldLayout;
+using backend::uniform_grid::UniformGridSplineEvaluatorFactory2D;
+} // namespace pcms
+
+namespace pcms::field
+{
 
 SplineFunctionSpace::SplineFunctionSpace(
   Key, std::shared_ptr<const FieldLayout> layout,
@@ -98,4 +104,4 @@ PointEvaluatorVariant SplineFunctionSpace::CreatePointEvaluatorImpl(
                                                   derivative_order);
 }
 
-} // namespace pcms
+} // namespace pcms::field

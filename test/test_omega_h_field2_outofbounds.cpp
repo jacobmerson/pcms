@@ -12,6 +12,12 @@
 #include <vector>
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
 
+namespace pcms
+{
+using field::LagrangeFunctionSpace;
+using field::SplineFunctionSpace;
+} // namespace pcms
+
 using pcms::Real;
 
 TEST_CASE("omega_h_field2 out of bounds FILL mode")

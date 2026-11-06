@@ -9,6 +9,16 @@
 #include <algorithm>
 #include <vector>
 
+namespace pcms
+{
+using localization::GridPointSearch2D;
+using localization::GridPointSearch3D;
+using localization::GridPointSearchVariant;
+using transfer::IntersectionResults;
+using transfer::intersectTargets;
+using transfer::simplices_have_degenerate_overlap;
+} // namespace pcms
+
 namespace
 {
 /// Assert the two intersection maps are identical: same per-target counts and

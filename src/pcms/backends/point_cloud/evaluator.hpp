@@ -18,15 +18,16 @@
 #include <memory>
 #include <string>
 
-namespace pcms
+namespace pcms::backend::point_cloud
 {
 
-class PointCloudEvaluatorFactory : public FieldEvaluatorFactory<Real>
+class PointCloudEvaluatorFactory : public field::FieldEvaluatorFactory<Real>
 {
 public:
-  PointCloudEvaluatorFactory(std::shared_ptr<const FieldLayout> layout,
-                             std::shared_ptr<LocalizationFactory> localization,
-                             MLSOptions options = {})
+  PointCloudEvaluatorFactory(
+    std::shared_ptr<const FieldLayout> layout,
+    std::shared_ptr<localization::LocalizationFactory> localization,
+    MLSOptions options = {})
     : layout_(std::move(layout)),
       localization_(std::move(localization)),
       options_(options)
@@ -63,20 +64,22 @@ public:
     const auto src_view = layout_->GetDOFHolderCoordinates().GetValues();
     const int dim = layout_->GetDimension();
     Omega_h::Reals source_coords =
-      flatten_to_omega_h_reals(src_view, "src_coords");
+      utility::flatten_to_omega_h_reals(src_view, "src_coords");
 
     // Extract target coordinates for the MLS solve.
     const auto tgt_view = coords.GetValues();
     PCMS_ALWAYS_ASSERT(static_cast<int>(tgt_view.extent(1)) == dim);
     Omega_h::Reals target_coords_oh =
-      flatten_to_omega_h_reals(tgt_view, "tgt_coords");
+      utility::flatten_to_omega_h_reals(tgt_view, "tgt_coords");
 
-    SupportResults supports;
+    localization::SupportResults supports;
     auto path =
-      detail::SelectLocalizationPath(*layout_, request.GetQueryLayout());
-    if (path == detail::LocalizationPath::CentroidToVertexAdjacencySearch) {
+      field::detail::SelectLocalizationPath(*layout_, request.GetQueryLayout());
+    if (path ==
+        field::detail::LocalizationPath::CentroidToVertexAdjacencySearch) {
       auto* adjacency =
-        dynamic_cast<const AdjacencyLocalizationFactory*>(localization_.get());
+        dynamic_cast<const localization::AdjacencyLocalizationFactory*>(
+          localization_.get());
       PCMS_ALWAYS_ASSERT(adjacency != nullptr);
       supports = adjacency->BuildSameMeshCentroidToVertex();
     } else {
@@ -111,14 +114,14 @@ private:
   {
     Omega_h::Reals source_coords;
     Omega_h::Reals target_coords;
-    SupportResults supports;
+    localization::SupportResults supports;
   };
 
   std::shared_ptr<const FieldLayout> layout_;
-  std::shared_ptr<LocalizationFactory> localization_;
+  std::shared_ptr<localization::LocalizationFactory> localization_;
   MLSOptions options_;
 };
 
-} // namespace pcms
+} // namespace pcms::backend::point_cloud
 
 #endif // PCMS_POINT_CLOUD_EVALUATOR_FACTORY_H

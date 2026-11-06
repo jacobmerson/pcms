@@ -15,6 +15,13 @@
 #include <vector>
 #include <iostream>
 
+namespace pcms
+{
+using transfer::MLSMeshInterpolation;
+using transfer::MLSPointCloudInterpolation;
+using utility::get_entity_centroids;
+} // namespace pcms
+
 void translate_mesh(Omega_h::Mesh* mesh, Omega_h::Vector<2> translation_vector)
 {
   auto coords = mesh->coords();

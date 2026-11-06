@@ -20,6 +20,12 @@
 #include <vector>
 #include <fstream>
 
+namespace pcms
+{
+using transfer::MLSPointCloudInterpolation;
+using utility::get_entity_centroids;
+} // namespace pcms
+
 std::vector<double> read_xgc_mesh_nodes(std::string filename);
 void read_data(Omega_h::HostWrite<Omega_h::Real> density,
                Omega_h::HostWrite<Omega_h::Real> temperature,

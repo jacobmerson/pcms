@@ -14,7 +14,7 @@
 #include <memory>
 #include <Omega_h_vector.hpp>
 
-namespace pcms
+namespace pcms::backend::uniform_grid
 {
 
 namespace detail
@@ -37,7 +37,7 @@ struct InitCoordsFunctor
 // Evaluates the bicubic spline through a field's grid values, or with
 // derivative_order 1 its gradient (df/dx, df/dy).
 template <typename LayoutPolicy =
-            detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
+            pcms::detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
 class UniformGridSplinePointEvaluator2D
   : public PointEvaluator<Real, LayoutPolicy>
 {
@@ -232,7 +232,8 @@ private:
   Kokkos::View<Real*, DeviceMemorySpace> y_coords_;
 };
 
-class UniformGridSplineEvaluatorFactory2D : public FieldEvaluatorFactory<Real>
+class UniformGridSplineEvaluatorFactory2D
+  : public field::FieldEvaluatorFactory<Real>
 {
 public:
   explicit UniformGridSplineEvaluatorFactory2D(
@@ -321,7 +322,7 @@ public:
       cell_indices_device, coordinates_d, policy.mode, is_out_of_bounds_device,
       num_out_of_bounds);
     return std::make_shared<
-      detail::HintBoundSource<UniformGridFieldLocalizationHint<2>>>(
+      pcms::detail::HintBoundSource<UniformGridFieldLocalizationHint<2>>>(
       request, std::move(hint));
   }
 
@@ -335,8 +336,8 @@ public:
         std::to_string(derivative_order) + " is not supported");
     }
     const auto& hint =
-      detail::BoundSourceAs<
-        detail::HintBoundSource<UniformGridFieldLocalizationHint<2>>>(
+      pcms::detail::BoundSourceAs<
+        pcms::detail::HintBoundSource<UniformGridFieldLocalizationHint<2>>>(
         *bound, "UniformGridSplineEvaluatorFactory2D")
         .GetHint();
     return std::make_unique<UniformGridSplinePointEvaluator2D<>>(
@@ -354,6 +355,6 @@ private:
   UniformGrid<2> grid_;
 };
 
-} // namespace pcms
+} // namespace pcms::backend::uniform_grid
 
 #endif // PCMS_UNIFORM_GRID_SPLINE_EVALUATOR_FACTORY_H

@@ -13,6 +13,11 @@
 #include <thread>
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
 
+namespace pcms
+{
+using field::LagrangeFunctionSpace;
+} // namespace pcms
+
 using pcms::GO;
 using pcms::make_array_view;
 

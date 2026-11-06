@@ -5,6 +5,18 @@
 
 namespace pcms
 {
+using backend::omega_h::Queue;
+using backend::omega_h::Track;
+using localization::GridPointSearch2D;
+using localization::GridPointSearch3D;
+using localization::GridPointSearchVariant;
+using localization::PointLocalizationSearch;
+using utility::ConvertCoordsTo2D;
+using utility::get_entity_centroids;
+} // namespace pcms
+
+namespace pcms::transfer
+{
 namespace
 {
 // Construct the source-mesh containing-element search appropriate to the
@@ -265,4 +277,4 @@ IntersectionResults intersectTargets(
                                  RequireSearchDimension<2>(source_search),
                                  use_prefilter);
 }
-} // namespace pcms
+} // namespace pcms::transfer

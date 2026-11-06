@@ -8,6 +8,11 @@
 
 namespace pcms
 {
+using backend::omega_h::OmegaHLagrangeLayout;
+} // namespace pcms
+
+namespace pcms::transfer
+{
 
 OmegaHControlVariateProjection::OmegaHControlVariateProjection(
   const PointEvaluatorFactory& source, const FunctionSpace& target_space,
@@ -108,4 +113,4 @@ void OmegaHControlVariateProjection::Apply(const Field<Real>& source,
   target.Synchronize();
 }
 
-} // namespace pcms
+} // namespace pcms::transfer

@@ -16,7 +16,7 @@
 #include <memory>
 #include <Omega_h_vector.hpp>
 
-namespace pcms
+namespace pcms::backend::uniform_grid
 {
 
 // ---------------------------------------------------------------------------
@@ -92,7 +92,7 @@ Kokkos::View<const LO*, DeviceMemorySpace> FilledPointIndices(
 //   - values has extents [num_query_points][num_components].
 template <unsigned Dim = 2,
           typename LayoutPolicy =
-            detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
+            pcms::detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
 class UniformGridPointEvaluator : public PointEvaluator<Real, LayoutPolicy>
 {
 public:
@@ -253,7 +253,7 @@ private:
 // Localization logic is taken directly from
 // UniformGridField::GetLocalizationHint.
 template <unsigned Dim = 2>
-class UniformGridEvaluatorFactory : public FieldEvaluatorFactory<Real>
+class UniformGridEvaluatorFactory : public field::FieldEvaluatorFactory<Real>
 {
 public:
   explicit UniformGridEvaluatorFactory(
@@ -335,7 +335,7 @@ public:
       is_out_of_bounds_device, num_out_of_bounds);
 
     return std::make_shared<
-      detail::HintBoundSource<UniformGridFieldLocalizationHint<Dim>>>(
+      pcms::detail::HintBoundSource<UniformGridFieldLocalizationHint<Dim>>>(
       request, std::move(hint));
   }
 
@@ -348,8 +348,8 @@ public:
         "UniformGridEvaluatorFactory: derivatives are not supported");
     }
     const auto& hint =
-      detail::BoundSourceAs<
-        detail::HintBoundSource<UniformGridFieldLocalizationHint<Dim>>>(
+      pcms::detail::BoundSourceAs<
+        pcms::detail::HintBoundSource<UniformGridFieldLocalizationHint<Dim>>>(
         *bound, "UniformGridEvaluatorFactory")
         .GetHint();
     return std::make_unique<UniformGridPointEvaluator<Dim>>(
@@ -368,6 +368,6 @@ private:
 
 using UniformGridEvaluatorFactory2D = UniformGridEvaluatorFactory<2>;
 
-} // namespace pcms
+} // namespace pcms::backend::uniform_grid
 
 #endif // PCMS_UNIFORM_GRID_EVALUATOR_FACTORY_H

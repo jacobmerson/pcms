@@ -13,6 +13,12 @@
 #include <pcms/transfer/interpolator.hpp>
 #include "field_test_utils.hpp"
 
+namespace pcms
+{
+using field::EmptyFieldLayout;
+using field::LagrangeFunctionSpace;
+} // namespace pcms
+
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
 using pcms::DeviceMemorySpace;
