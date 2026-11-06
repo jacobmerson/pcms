@@ -18,6 +18,12 @@
 #include <cmath>
 #include <memory>
 
+namespace pcms
+{
+using backend::omega_h::OmegaHEntityLayout;
+using utility::get_entity_centroids;
+} // namespace pcms
+
 namespace
 {
 

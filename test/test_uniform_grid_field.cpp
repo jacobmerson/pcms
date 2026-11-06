@@ -19,6 +19,12 @@
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
 #include "pcms/backends/omega_h/omega_h.hpp"
 
+namespace pcms
+{
+using backend::omega_h::CreateUniformGridBinaryField;
+using backend::uniform_grid::UniformGridFieldLayout;
+} // namespace pcms
+
 using pcms::backend::omega_h::CreateUniformGridFromMesh;
 
 TEST_CASE("UniformGridDiscretization SameEntities: identical grids")

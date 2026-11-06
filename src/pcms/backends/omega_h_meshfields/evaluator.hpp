@@ -12,7 +12,7 @@
 #include <memory>
 #include <tuple>
 
-namespace pcms
+namespace pcms::backend::omega_h_meshfields
 {
 
 namespace detail
@@ -77,7 +77,7 @@ GroupFoundPointsByElement(Kokkos::View<const LO*, DeviceMemorySpace> found,
 ///        MeshFields backend.
 template <typename T,
           typename LayoutPolicy =
-            detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
+            pcms::detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
 class MeshFieldsPointEvaluator : public PointEvaluator<T, LayoutPolicy>
 {
 public:
@@ -88,7 +88,7 @@ public:
   /// @param binding elements and barycentric coordinates of the query points
   MeshFieldsPointEvaluator(
     std::shared_ptr<const MeshFieldsAdapterLayout> layout,
-    std::shared_ptr<const OmegaHMeshBinding> binding)
+    std::shared_ptr<const omega_h::OmegaHMeshBinding> binding)
     : PointEvaluator<T, LayoutPolicy>(binding, DifferentialOperator::Value,
                                       layout),
       layout_(std::move(layout))
@@ -144,15 +144,16 @@ private:
 /// @tparam T field value type
 template <typename T>
 class MeshFieldsEvaluatorFactory
-  : public TypedPointEvaluatorFactory<T, OmegaHMeshBinding>
+  : public TypedPointEvaluatorFactory<T, omega_h::OmegaHMeshBinding>
 {
 public:
   /// @param geometry geometry of the layout's mesh
   /// @param layout MeshFields layout of the evaluated fields
   MeshFieldsEvaluatorFactory(
-    std::shared_ptr<const OmegaHGeometry> geometry,
+    std::shared_ptr<const omega_h::OmegaHGeometry> geometry,
     std::shared_ptr<const MeshFieldsAdapterLayout> layout)
-    : TypedPointEvaluatorFactory<T, OmegaHMeshBinding>(std::move(geometry)),
+    : TypedPointEvaluatorFactory<T, omega_h::OmegaHMeshBinding>(
+        std::move(geometry)),
       layout_(std::move(layout))
   {
     if (layout_->GetMesh().dim() == 3) {
@@ -162,7 +163,7 @@ public:
 
 protected:
   std::unique_ptr<PointEvaluator<T>> CreateEvaluator(
-    std::shared_ptr<const OmegaHMeshBinding> bound,
+    std::shared_ptr<const omega_h::OmegaHMeshBinding> bound,
     DifferentialOperator /*op*/) const override
   {
     return std::make_unique<MeshFieldsPointEvaluator<T>>(layout_,
@@ -173,6 +174,6 @@ private:
   std::shared_ptr<const MeshFieldsAdapterLayout> layout_;
 };
 
-} // namespace pcms
+} // namespace pcms::backend::omega_h_meshfields
 
 #endif // PCMS_ADAPTER_MESHFIELDS_MESH_FIELDS_EVALUATOR_FACTORY_H

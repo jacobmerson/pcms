@@ -12,6 +12,15 @@
 #include <utility>
 #include <vector>
 
+namespace pcms
+{
+using localization::GridPointSearch2D;
+using localization::GridPointSearch3D;
+using localization::triangle_intersects_bbox;
+using localization::UniformGridPointSearch;
+using utility::get_entity_centroids;
+} // namespace pcms
+
 using pcms::AABBox;
 using pcms::Uniform2DGrid;
 
@@ -23,7 +32,7 @@ namespace
 template <int Dim, typename Result>
 auto LiftOnHost(Omega_h::Mesh& mesh, Kokkos::View<Result*> results)
 {
-  auto lifted = pcms::detail::LiftResults<Dim>(
+  auto lifted = pcms::backend::omega_h::detail::LiftResults<Dim>(
     mesh, Kokkos::View<const Result*, pcms::DeviceMemorySpace>(results));
   return std::make_pair(
     Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, lifted.first),
@@ -214,8 +223,9 @@ TEST_CASE("construct intersection map")
     grid_h(0) = Uniform2DGrid{
       .edge_length{1, 1}, .bot_left = {0, 0}, .divisions = {10, 10}};
     Kokkos::deep_copy(grid_d, grid_h);
-    auto intersection_map = pcms::detail::construct_intersection_map_2d(
-      mesh, grid_d, grid_h(0).GetNumCells());
+    auto intersection_map =
+      pcms::localization::detail::construct_intersection_map_2d(
+        mesh, grid_d, grid_h(0).GetNumCells());
     // assert(cudaSuccess == cudaDeviceSynchronize());
     REQUIRE(intersection_map.numRows() == 100);
     REQUIRE(num_candidates_within_range(intersection_map, 2, 16));
@@ -228,8 +238,9 @@ TEST_CASE("construct intersection map")
       .edge_length{1, 1}, .bot_left = {0, 0}, .divisions = {60, 60}};
     Kokkos::deep_copy(grid_d, grid_h);
     // require number of candidates is >=1 and <=6
-    auto intersection_map = pcms::detail::construct_intersection_map_2d(
-      mesh, grid_d, grid_h(0).GetNumCells());
+    auto intersection_map =
+      pcms::localization::detail::construct_intersection_map_2d(
+        mesh, grid_d, grid_h(0).GetNumCells());
 
     REQUIRE(intersection_map.numRows() == 3600);
     REQUIRE(num_candidates_within_range(intersection_map, 1, 6));
@@ -287,9 +298,10 @@ TEST_CASE("candidate map matches brute-force reference")
       Kokkos::deep_copy(grid_d, grid_h);
       const auto ncells = grid_h(0).GetNumCells();
       require_maps_identical(
-        pcms::detail::construct_intersection_map_2d(mesh, grid_d, ncells),
-        pcms::detail::construct_intersection_map_reference_2d(mesh, grid_d,
-                                                              ncells));
+        pcms::localization::detail::construct_intersection_map_2d(mesh, grid_d,
+                                                                  ncells),
+        pcms::localization::detail::construct_intersection_map_reference_2d(
+          mesh, grid_d, ncells));
     }
   }
   SECTION("3D")
@@ -307,9 +319,10 @@ TEST_CASE("candidate map matches brute-force reference")
       Kokkos::deep_copy(grid_d, grid_h);
       const auto ncells = grid_h(0).GetNumCells();
       require_maps_identical(
-        pcms::detail::construct_intersection_map_3d(mesh, grid_d, ncells),
-        pcms::detail::construct_intersection_map_reference_3d(mesh, grid_d,
-                                                              ncells));
+        pcms::localization::detail::construct_intersection_map_3d(mesh, grid_d,
+                                                                  ncells),
+        pcms::localization::detail::construct_intersection_map_reference_3d(
+          mesh, grid_d, ncells));
     }
   }
 }

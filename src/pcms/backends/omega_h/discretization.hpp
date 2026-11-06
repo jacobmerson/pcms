@@ -10,7 +10,7 @@
 #include <memory>
 #include <string>
 
-namespace pcms
+namespace pcms::backend::omega_h
 {
 
 class OmegaHDiscretization : public Discretization
@@ -85,6 +85,6 @@ std::shared_ptr<const OmegaHDiscretization> CheckDiscretizationOf(
 
 } // namespace detail
 
-} // namespace pcms
+} // namespace pcms::backend::omega_h
 
 #endif // PCMS_DISCRETIZATION_DISCRETIZATION_OMEGA_H_H

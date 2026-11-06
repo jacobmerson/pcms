@@ -15,7 +15,7 @@
 #include <string>
 #include <utility>
 
-namespace pcms
+namespace pcms::backend::omega_h
 {
 
 namespace detail
@@ -79,7 +79,7 @@ KOKKOS_INLINE_FUNCTION Kokkos::pair<LO, Omega_h::Vector<Dim + 1>> LiftToElement(
   const Omega_h::Few<Omega_h::Adj, Dim>& entities2elems,
   const Omega_h::Few<Omega_h::Adj, Dim>& entities2verts,
   const Omega_h::LOs& elem_verts,
-  const typename PointLocalizationSearch<Dim>::Result& result)
+  const typename localization::PointLocalizationSearch<Dim>::Result& result)
 {
   const int entity_dim = static_cast<int>(result.dimensionality);
   const LO entity = result.EntityId();
@@ -131,11 +131,13 @@ KOKKOS_INLINE_FUNCTION Kokkos::pair<LO, Omega_h::Vector<Dim + 1>> LiftToElement(
 template <int Dim>
 std::pair<Kokkos::View<LO*, DeviceMemorySpace>,
           Kokkos::View<Real**, DeviceMemorySpace>>
-LiftResults(Omega_h::Mesh& mesh,
-            Kokkos::View<const typename PointLocalizationSearch<Dim>::Result*,
-                         DeviceMemorySpace>
-              results,
-            bool with_bary = true)
+LiftResults(
+  Omega_h::Mesh& mesh,
+  Kokkos::View<
+    const typename localization::PointLocalizationSearch<Dim>::Result*,
+    DeviceMemorySpace>
+    results,
+  bool with_bary = true)
 {
   const auto n = static_cast<LO>(results.extent(0));
   Kokkos::View<LO*, DeviceMemorySpace> elem_ids(
@@ -172,8 +174,9 @@ LiftResults(Omega_h::Mesh& mesh,
 template <int Dim>
 Kokkos::View<LO*, DeviceMemorySpace> LiftElements(
   Omega_h::Mesh& mesh,
-  Kokkos::View<const typename PointLocalizationSearch<Dim>::Result*,
-               DeviceMemorySpace>
+  Kokkos::View<
+    const typename localization::PointLocalizationSearch<Dim>::Result*,
+    DeviceMemorySpace>
     results)
 {
   return LiftResults<Dim>(mesh, results, /*with_bary=*/false).first;
@@ -223,7 +226,8 @@ public:
   /// a rebind searches with them again.
   OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
                     const BindRequest& request,
-                    const GridPointSearchVariant& search, Omega_h::Mesh& mesh);
+                    const localization::GridPointSearchVariant& search,
+                    Omega_h::Mesh& mesh);
 
   [[nodiscard]] Kokkos::View<const LO*, DeviceMemorySpace> ElementIds()
     const noexcept
@@ -258,7 +262,7 @@ private:
   /// lifts their results to elements (detail::LiftResults).
   void Locate(Kokkos::View<const LO*, DeviceMemorySpace> owners);
 
-  const GridPointSearchVariant& search_;
+  const localization::GridPointSearchVariant& search_;
   Omega_h::Mesh& mesh_;
   Kokkos::View<LO*, DeviceMemorySpace> elem_ids_;
   Kokkos::View<Real**, DeviceMemorySpace> bary_;
@@ -276,7 +280,7 @@ public:
   /// uses shared_from_this().
   OmegaHGeometry(Omega_h::Mesh& mesh,
                  std::shared_ptr<const CoordinateSystem> system,
-                 backend::omega_h::OmegaHGeometryOptions options = {});
+                 OmegaHGeometryOptions options = {});
 
   [[nodiscard]] std::shared_ptr<const Discretization> GetDiscretization()
     const noexcept override
@@ -324,7 +328,7 @@ private:
   Omega_h::Mesh& mesh_;
   std::shared_ptr<const OmegaHDiscretization> discretization_;
   std::shared_ptr<const CoordinateSystem> system_;
-  GridPointSearchVariant search_;
+  localization::GridPointSearchVariant search_;
   // Differential is computed once, lazily; the geometry is const and shared,
   // hence the once_flag. This is the one mutable member and it is a cache.
   mutable std::once_flag differential_once_;
@@ -334,9 +338,9 @@ private:
 /// The grid search over a mesh, with options.divisions divisions per axis when
 /// nonzero and DivisionsPerAxisForMesh otherwise.
 /// @throws std::invalid_argument unless the mesh is 2D or 3D
-GridPointSearchVariant MakeGridSearch(Omega_h::Mesh& mesh,
-                                      const SearchOptions& options);
+localization::GridPointSearchVariant MakeGridSearch(
+  Omega_h::Mesh& mesh, const SearchOptions& options);
 
-} // namespace pcms
+} // namespace pcms::backend::omega_h
 
 #endif // PCMS_FIELD_EVALUATOR_OMEGA_H_GEOMETRY_HPP

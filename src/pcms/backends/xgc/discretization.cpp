@@ -1,17 +1,17 @@
 #include "pcms/backends/xgc/discretization.hpp"
 
-namespace pcms
+namespace pcms::backend::xgc
 {
 
 struct ClassifyVertsFunctor
 {
-  pcms::detail::DimID geom;
+  detail::DimID geom;
   Kokkos::View<LO*, DeviceMemorySpace> verts;
   Kokkos::View<ClassificationDimension*, DeviceMemorySpace> class_dims_;
   Kokkos::View<ClassificationId*, DeviceMemorySpace> class_ids_;
 
   ClassifyVertsFunctor(
-    pcms::detail::DimID geom, Kokkos::View<LO*, DeviceMemorySpace> verts,
+    detail::DimID geom, Kokkos::View<LO*, DeviceMemorySpace> verts,
     Kokkos::View<ClassificationDimension*, DeviceMemorySpace> class_dims,
     Kokkos::View<ClassificationId*, DeviceMemorySpace> class_ids)
     : geom(geom), verts(verts), class_dims_(class_dims), class_ids_(class_ids)
@@ -92,4 +92,4 @@ XGCDiscretization::GetEntityClassificationIds(int entity_dim) const
            : Rank1View<const ClassificationId, DeviceMemorySpace>(nullptr, 0);
 }
 
-} // namespace pcms
+} // namespace pcms::backend::xgc

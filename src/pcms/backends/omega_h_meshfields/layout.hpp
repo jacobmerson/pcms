@@ -10,7 +10,7 @@
 
 #include <array>
 
-namespace pcms
+namespace pcms::backend::omega_h_meshfields
 {
 class MeshFieldsAdapterLayout : public FieldLayout
 {
@@ -23,7 +23,7 @@ public:
   MeshFieldsAdapterLayout(
     Omega_h::Mesh& mesh, std::array<int, 4> nodes_per_dim, int num_components,
     std::shared_ptr<const CoordinateSystem> coordinate_system,
-    std::shared_ptr<const OmegaHDiscretization> discretization);
+    std::shared_ptr<const omega_h::OmegaHDiscretization> discretization);
 
   std::shared_ptr<const Discretization> GetDiscretization() const noexcept;
 
@@ -92,5 +92,5 @@ private:
   std::shared_ptr<const Discretization> discretization_;
 };
 
-} // namespace pcms
+} // namespace pcms::backend::omega_h_meshfields
 #endif // PCMS_ADAPTER_MESHFIELDS_MESH_FIELDS_ADAPTER_LAYOUT_H

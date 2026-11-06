@@ -14,7 +14,7 @@
 #include <memory>
 #include <string>
 
-namespace pcms
+namespace pcms::backend::omega_h
 {
 
 namespace detail
@@ -67,7 +67,7 @@ class OmegaHFieldData
 {
 public:
   // Value type of the Omega_h tag.
-  using tag_value_type = OmegaHValue_t<T>;
+  using tag_value_type = utility::OmegaHValue_t<T>;
 
   OmegaHFieldData(std::shared_ptr<const FieldLayout> layout, ValueBasis basis)
     : layout_(std::move(layout)),
@@ -77,7 +77,7 @@ public:
                    static_cast<size_t>(layout_->GetNumComponents()))
   {
     const auto* oh = dynamic_cast<const OmegaHDiscretization*>(
-      detail::DOFHolderDiscretization(*layout_).get());
+      pcms::detail::DOFHolderDiscretization(*layout_).get());
     if (oh == nullptr) {
       throw pcms_error("OmegaHFieldData: layout is not on an Omega_h mesh");
     }
@@ -152,6 +152,6 @@ private:
   std::string tag_name_;
 };
 
-} // namespace pcms
+} // namespace pcms::backend::omega_h
 
 #endif // PCMS_OMEGA_H_FIELD_DATA_H
