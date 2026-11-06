@@ -8,6 +8,17 @@
 
 namespace pcms
 {
+using backend::omega_h::searchNeighbors;
+using field::mls_interpolation;
+using localization::adapt_radii;
+using localization::minmax;
+using localization::within_number_of_support_range;
+using utility::distance_squared;
+using utility::get_entity_centroids;
+} // namespace pcms
+
+namespace pcms::transfer
+{
 
 MLSMeshInterpolation::MLSMeshInterpolation(Omega_h::Mesh& source_mesh,
                                            double radius,
@@ -467,4 +478,4 @@ size_t MLSMeshInterpolation::getTargetSize() const
     return target_mesh_.nverts();
   }
 }
-} // namespace pcms
+} // namespace pcms::transfer

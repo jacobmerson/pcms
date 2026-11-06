@@ -11,6 +11,11 @@
 #include <vector>
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
 
+namespace pcms
+{
+using field::LagrangeFunctionSpace;
+} // namespace pcms
+
 using pcms::Real;
 
 // Non-linear test function used to exercise quadratic interpolation.
@@ -49,9 +54,9 @@ TEST_CASE("evaluate quadratic 2d meshfields_field")
   auto lib = Omega_h::Library{};
   auto mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1, 1, 0, 100,
                                  100, 0, false);
-  auto factory = pcms::LagrangeFunctionSpace::FromMesh(
+  auto factory = pcms::field::LagrangeFunctionSpace::FromMesh(
     mesh, 2, 1, pcms::csys::Cartesian::Deferred(), "global",
-    pcms::LagrangeFunctionSpace::Backend::MeshFields);
+    pcms::field::LagrangeFunctionSpace::Backend::MeshFields);
 
   // Quadratic DOF holders span vertices and edge midpoints; the layout's DOF
   // coordinates cover both, so SetField samples sin_f at every holder.
@@ -116,9 +121,9 @@ static void CheckMeshFieldsDofHolderCoordsAgainstManual(Omega_h::Library& lib,
   else if (order == 2)
     nodes_per_dim = {1, 1, 0, 0};
 
-  auto factory = pcms::LagrangeFunctionSpace::FromMesh(
+  auto factory = pcms::field::LagrangeFunctionSpace::FromMesh(
     mesh, order, 1, pcms::csys::Cartesian::Deferred(), "global",
-    pcms::LagrangeFunctionSpace::Backend::MeshFields);
+    pcms::field::LagrangeFunctionSpace::Backend::MeshFields);
   auto layout = factory->GetLayout();
 
   // Sanity-check the block layout: vertices then edges.

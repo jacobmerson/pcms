@@ -21,7 +21,7 @@
 #include <string>
 #include <utility>
 
-namespace pcms
+namespace pcms::field
 {
 
 class LagrangeFunctionSpace : public FunctionSpace
@@ -92,6 +92,6 @@ private:
   std::function<FieldDataVariant(Type, ValueBasis)> create_field_data_fn_;
 };
 
-} // namespace pcms
+} // namespace pcms::field
 
 #endif // PCMS_LAGRANGE_FIELD_FACTORY_H

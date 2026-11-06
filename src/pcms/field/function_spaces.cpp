@@ -15,6 +15,12 @@
 
 namespace pcms
 {
+using field::EmptyFieldLayout;
+using field::PolynomialReconstructionFunctionSpace;
+} // namespace pcms
+
+namespace pcms
+{
 namespace
 {
 [[noreturn]] void Unsupported(const char* factory, const Discretization& d)
@@ -40,24 +46,25 @@ std::shared_ptr<FunctionSpace> CreateLagrangeSpace(
   RequireDiscretization("CreateLagrangeSpace", discretization);
 #ifdef PCMS_ENABLE_OMEGA_H
   if (const auto* oh =
-        dynamic_cast<const OmegaHDiscretization*>(discretization.get())) {
+        dynamic_cast<const backend::omega_h::OmegaHDiscretization*>(
+          discretization.get())) {
     // only the Omega_h implementation supports an owned mask, so it is the
     // default for a discretization that has one
     auto impl = oh->GetOwnedMask().has_value()
-                  ? LagrangeFunctionSpace::Backend::OmegaH
-                  : LagrangeFunctionSpace::DefaultBackend;
+                  ? field::LagrangeFunctionSpace::Backend::OmegaH
+                  : field::LagrangeFunctionSpace::DefaultBackend;
     if (options.implementation == LagrangeImplementation::MeshFields) {
-      impl = LagrangeFunctionSpace::Backend::MeshFields;
+      impl = field::LagrangeFunctionSpace::Backend::MeshFields;
     } else if (options.implementation == LagrangeImplementation::OmegaH) {
-      impl = LagrangeFunctionSpace::Backend::OmegaH;
+      impl = field::LagrangeFunctionSpace::Backend::OmegaH;
     }
     if (oh->GetOwnedMask().has_value()) {
-      return LagrangeFunctionSpace::FromMesh(
+      return field::LagrangeFunctionSpace::FromMesh(
         oh->GetMesh(), order, num_components, std::move(coordinate_system),
         *oh->GetOwnedMask(), oh->GetGlobalIdName(), impl,
         std::move(options.layout_name));
     }
-    return LagrangeFunctionSpace::FromMesh(
+    return field::LagrangeFunctionSpace::FromMesh(
       oh->GetMesh(), order, num_components, std::move(coordinate_system),
       oh->GetGlobalIdName(), impl, std::move(options.layout_name));
   }
@@ -65,15 +72,17 @@ std::shared_ptr<FunctionSpace> CreateLagrangeSpace(
     throw pcms_error("CreateLagrangeSpace: LagrangeOptions::implementation "
                      "only applies to Omega_h discretizations");
   }
-  if (const auto* ug = dynamic_cast<const UniformGridDiscretization<2>*>(
+  if (const auto* ug = dynamic_cast<
+        const backend::uniform_grid::UniformGridDiscretization<2>*>(
         discretization.get())) {
-    return LagrangeFunctionSpace::FromUniformGrid(
+    return field::LagrangeFunctionSpace::FromUniformGrid(
       ug->GetGrid(), num_components, std::move(coordinate_system), order,
       std::move(options.layout_name));
   }
-  if (const auto* ug = dynamic_cast<const UniformGridDiscretization<3>*>(
+  if (const auto* ug = dynamic_cast<
+        const backend::uniform_grid::UniformGridDiscretization<3>*>(
         discretization.get())) {
-    return LagrangeFunctionSpace::FromUniformGrid(
+    return field::LagrangeFunctionSpace::FromUniformGrid(
       ug->GetGrid(), num_components, std::move(coordinate_system), order,
       std::move(options.layout_name));
   }
@@ -92,10 +101,11 @@ std::shared_ptr<FunctionSpace> CreateSplineSpace(
 {
   RequireDiscretization("CreateSplineSpace", discretization);
 #ifdef PCMS_ENABLE_OMEGA_H
-  if (const auto* ug = dynamic_cast<const UniformGridDiscretization<2>*>(
+  if (const auto* ug = dynamic_cast<
+        const backend::uniform_grid::UniformGridDiscretization<2>*>(
         discretization.get())) {
-    return SplineFunctionSpace::FromUniformGrid(ug->GetGrid(),
-                                                std::move(coordinate_system));
+    return field::SplineFunctionSpace::FromUniformGrid(
+      ug->GetGrid(), std::move(coordinate_system));
   }
 #else
   (void)coordinate_system;
@@ -117,8 +127,9 @@ std::shared_ptr<FunctionSpace> CreatePolynomialReconstructionSpace(
   RequireDiscretization("CreatePolynomialReconstructionSpace", discretization);
 #ifdef PCMS_ENABLE_OMEGA_H
   if (const auto* oh =
-        dynamic_cast<const OmegaHDiscretization*>(discretization.get())) {
-    return PolynomialReconstructionFunctionSpace::FromMesh(
+        dynamic_cast<const backend::omega_h::OmegaHDiscretization*>(
+          discretization.get())) {
+    return field::PolynomialReconstructionFunctionSpace::FromMesh(
       oh->GetMesh(), source_entity_dim, std::move(coordinate_system), options);
   }
 #else

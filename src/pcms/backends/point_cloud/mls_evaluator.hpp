@@ -12,7 +12,7 @@
 #include <Omega_h_array.hpp>
 #include <Omega_h_array_ops.hpp>
 
-namespace pcms
+namespace pcms::backend::point_cloud
 {
 
 /// @brief MLS bound source: the supports of the query points and the
@@ -24,11 +24,11 @@ public:
   /// @param source_coords flattened coordinates of the source points
   /// @param supports MLS supports of the query points
   MLSBinding(const BindRequest& request, Omega_h::Reals source_coords,
-             SupportResults supports)
+             localization::SupportResults supports)
     : BoundSource(request),
       source_coords_(std::move(source_coords)),
       target_coords_(
-        flatten_to_omega_h_reals(PointValues(), "mls_target_coords")),
+        utility::flatten_to_omega_h_reals(PointValues(), "mls_target_coords")),
       supports_(std::move(supports))
   {
   }
@@ -46,7 +46,7 @@ public:
   }
 
   /// @return MLS supports of the query points
-  [[nodiscard]] const SupportResults& Supports() const noexcept
+  [[nodiscard]] const localization::SupportResults& Supports() const noexcept
   {
     return supports_;
   }
@@ -54,7 +54,7 @@ public:
 private:
   Omega_h::Reals source_coords_;
   Omega_h::Reals target_coords_;
-  SupportResults supports_;
+  localization::SupportResults supports_;
 };
 
 /// @brief Evaluates a scalar point-cloud field at the bound points by MLS.
@@ -99,7 +99,7 @@ public:
       KOKKOS_LAMBDA(int i) { src_w[i] = device_data(i, 0); });
     Omega_h::Reals source_values(src_w);
 
-    auto result = mls_interpolation(
+    auto result = field::mls_interpolation(
       source_values, binding_->SourceCoordinates(),
       binding_->TargetCoordinates(), binding_->Supports(), dim_,
       static_cast<Omega_h::LO>(options_.degree), options_.basis,
@@ -118,6 +118,6 @@ private:
   MLSOptions options_;
 };
 
-} // namespace pcms
+} // namespace pcms::backend::point_cloud
 
 #endif // PCMS_FIELD_EVALUATOR_MLS_POINT_CLOUD_H

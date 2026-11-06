@@ -17,6 +17,11 @@
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
 #include "pcms/utility/coordinate_systems/cylindrical.hpp"
 
+namespace pcms
+{
+using field::PolynomialReconstructionFunctionSpace;
+} // namespace pcms
+
 using pcms::CoordinateSystem;
 using pcms::CoordinateView;
 using pcms::DeviceMemorySpace;

@@ -16,7 +16,7 @@
 #include <memory>
 #include <string>
 
-namespace pcms
+namespace pcms::backend::point_cloud
 {
 
 /// @brief Point evaluation of point-cloud fields by moving least squares.
@@ -29,9 +29,10 @@ public:
   /// @param layout point-cloud layout of the evaluated fields
   /// @param localization search for the MLS supports of query points
   /// @param options MLS options
-  PointCloudEvaluatorFactory(std::shared_ptr<const FieldLayout> layout,
-                             std::shared_ptr<LocalizationFactory> localization,
-                             MLSOptions options = {})
+  PointCloudEvaluatorFactory(
+    std::shared_ptr<const FieldLayout> layout,
+    std::shared_ptr<localization::LocalizationFactory> localization,
+    MLSOptions options = {})
     : TypedPointEvaluatorFactory<Real, Bound>(layout->GetCoordinateSystem()),
       layout_(std::move(layout)),
       localization_(std::move(localization)),
@@ -57,14 +58,16 @@ protected:
     // Extract source coordinates for the MLS solve.
     const auto src_view = layout_->GetDOFHolderCoordinates().GetValues();
     Omega_h::Reals source_coords =
-      flatten_to_omega_h_reals(src_view, "src_coords");
+      utility::flatten_to_omega_h_reals(src_view, "src_coords");
 
-    SupportResults supports;
-    auto path =
-      detail::SelectLocalizationPath(*layout_, request.query_layout.get());
-    if (path == detail::LocalizationPath::CentroidToVertexAdjacencySearch) {
+    localization::SupportResults supports;
+    auto path = field::detail::SelectLocalizationPath(
+      *layout_, request.query_layout.get());
+    if (path ==
+        field::detail::LocalizationPath::CentroidToVertexAdjacencySearch) {
       auto* adjacency =
-        dynamic_cast<const AdjacencyLocalizationFactory*>(localization_.get());
+        dynamic_cast<const localization::AdjacencyLocalizationFactory*>(
+          localization_.get());
       PCMS_ALWAYS_ASSERT(adjacency != nullptr);
       supports = adjacency->BuildSameMeshCentroidToVertex();
     } else {
@@ -84,10 +87,10 @@ protected:
 
 private:
   std::shared_ptr<const FieldLayout> layout_;
-  std::shared_ptr<LocalizationFactory> localization_;
+  std::shared_ptr<localization::LocalizationFactory> localization_;
   MLSOptions options_;
 };
 
-} // namespace pcms
+} // namespace pcms::backend::point_cloud
 
 #endif // PCMS_POINT_CLOUD_EVALUATOR_FACTORY_H

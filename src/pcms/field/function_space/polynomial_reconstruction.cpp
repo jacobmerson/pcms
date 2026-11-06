@@ -16,6 +16,15 @@
 
 namespace pcms
 {
+using backend::omega_h::OmegaHEntityLayout;
+using backend::point_cloud::PointCloudEvaluatorFactory;
+using backend::point_cloud::PointCloudLayout;
+using backend::point_cloud::PointCloudLocalizationFactory;
+using localization::AdjacencyLocalizationFactory;
+} // namespace pcms
+
+namespace pcms::field
+{
 
 PolynomialReconstructionFunctionSpace::PolynomialReconstructionFunctionSpace(
   Key, std::shared_ptr<const FieldLayout> layout,
@@ -112,7 +121,7 @@ FieldVariant PolynomialReconstructionFunctionSpace::CreateFieldImpl(
       "SimpleFieldData<double>");
   }
   if (fd->GetDOFAccess()->GetValues().size() !=
-      detail::ExpectedFlatFieldDataSize(*layout_)) {
+      pcms::detail::ExpectedFlatFieldDataSize(*layout_)) {
     throw pcms_error(
       "PolynomialReconstructionFunctionSpace::CreateField: field data size "
       "does not match layout");
@@ -120,4 +129,4 @@ FieldVariant PolynomialReconstructionFunctionSpace::CreateFieldImpl(
   return WrapField<double>(layout_, std::move(fd));
 }
 
-} // namespace pcms
+} // namespace pcms::field

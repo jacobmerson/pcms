@@ -7,6 +7,13 @@
 #include <pcms/utility/mesh_geometry.hpp>
 #include "pcms/pythonapi/numpy_array_transform.hpp"
 
+namespace pcms
+{
+using field::mls_interpolation;
+using localization::SupportResults;
+using utility::get_entity_centroids;
+} // namespace pcms
+
 namespace py = pybind11;
 
 namespace pcms

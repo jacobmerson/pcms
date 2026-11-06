@@ -4,6 +4,12 @@
 
 namespace pcms
 {
+using backend::uniform_grid::UniformGridDiscretization;
+using discretization::EmptyDiscretization;
+} // namespace pcms
+
+namespace pcms
+{
 
 std::shared_ptr<const Discretization> CreateUniformGridDiscretization(
   const UniformGrid<2>& grid)

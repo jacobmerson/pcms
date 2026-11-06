@@ -12,7 +12,7 @@
 #include <Kokkos_Core.hpp>
 #include <memory>
 
-namespace pcms
+namespace pcms::backend::omega_h_meshfields
 {
 
 namespace
@@ -137,7 +137,7 @@ public:
       Kokkos::View<T*, DeviceMemorySpace> flat("ghost_sync_flat", len);
       mesh_field_->GetData(Rank1View<T, DeviceMemorySpace>(flat.data(), len),
                            nodes_per_dim[dim], nc, dim);
-      SynchronizeOmegaHBlock<T>(mesh, dim, width, flat);
+      utility::SynchronizeOmegaHBlock<T>(mesh, dim, width, flat);
       mesh_field_->SetData(
         Rank1View<const T, DeviceMemorySpace>(flat.data(), len),
         nodes_per_dim[dim], nc, dim);
@@ -217,6 +217,6 @@ private:
   Kokkos::View<T**, DeviceMemorySpace> owned_data_;
 };
 
-} // namespace pcms
+} // namespace pcms::backend::omega_h_meshfields
 
 #endif // PCMS_ADAPTER_MESHFIELDS_MESH_FIELDS_FIELD_DATA_H

@@ -20,7 +20,7 @@
 #include <utility>
 #include <variant>
 
-namespace pcms
+namespace pcms::backend::omega_h
 {
 
 namespace detail
@@ -72,15 +72,16 @@ BarycentricInElements(Omega_h::Mesh& mesh,
   return {elem_ids, bary};
 }
 
-inline std::variant<GridPointSearch2D, GridPointSearch3D> MakeSearch(
-  Omega_h::Mesh& mesh)
+inline std::variant<localization::GridPointSearch2D,
+                    localization::GridPointSearch3D>
+MakeSearch(Omega_h::Mesh& mesh)
 {
   if (mesh.dim() == 2) {
     const auto n = DivisionsPerAxisForMesh<2>(mesh.nelems());
-    return GridPointSearch2D(mesh, n, n);
+    return localization::GridPointSearch2D(mesh, n, n);
   } else if (mesh.dim() == 3) {
     const auto n = DivisionsPerAxisForMesh<3>(mesh.nelems());
-    return GridPointSearch3D(mesh, n, n, n);
+    return localization::GridPointSearch3D(mesh, n, n, n);
   }
   throw std::invalid_argument(
     "OmegaHLagrangeEvaluatorFactory: only 2D and 3D meshes are supported");
@@ -97,14 +98,15 @@ public:
   /// @param search containing-element search over `mesh`
   /// @param mesh simplex mesh of the evaluated fields
   OmegaHLagrangeBinding(const BindRequest& request,
-                        const GridPointSearchVariant& search,
+                        const localization::GridPointSearchVariant& search,
                         Omega_h::Mesh& mesh)
     : BoundSource(request)
   {
     std::visit(
       [&](const auto& s) {
         constexpr int Dim = std::decay_t<decltype(s)>::DIM;
-        auto [found, owning_ids] = FindOwningElements(s, PointValues());
+        auto [found, owning_ids] =
+          localization::FindOwningElements(s, PointValues());
         SetFound(found);
         std::tie(elem_ids_, bary_) = detail::BarycentricInElements<Dim>(
           mesh, PointValues(), FoundPoints(), owning_ids);
@@ -164,7 +166,7 @@ struct OmegaHLagrangeTagValues
 // only after the field's last write was followed by Synchronize.
 template <typename T,
           typename LayoutPolicy =
-            detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
+            pcms::detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
 class OmegaHLagrangePointEvaluator : public PointEvaluator<T, LayoutPolicy>
 {
 public:
@@ -267,7 +269,8 @@ public:
   /// operators which must locate points on the same mesh, such as the
   /// conservative transfer's intersection search, reuse it rather than build
   /// and hold a second copy of the candidate map.
-  [[nodiscard]] const GridPointSearchVariant& GetSearch() const noexcept
+  [[nodiscard]] const localization::GridPointSearchVariant& GetSearch()
+    const noexcept
   {
     return search_;
   }
@@ -289,9 +292,9 @@ protected:
 
 private:
   std::shared_ptr<const OmegaHLagrangeLayout> layout_;
-  GridPointSearchVariant search_;
+  localization::GridPointSearchVariant search_;
 };
 
-} // namespace pcms
+} // namespace pcms::backend::omega_h
 
 #endif // PCMS_OMEGA_H_LAGRANGE_EVALUATOR_FACTORY_H

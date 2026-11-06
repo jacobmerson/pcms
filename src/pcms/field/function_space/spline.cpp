@@ -9,6 +9,12 @@
 
 namespace pcms
 {
+using backend::uniform_grid::UniformGridFieldLayout;
+using backend::uniform_grid::UniformGridSplineEvaluatorFactory2D;
+} // namespace pcms
+
+namespace pcms::field
+{
 
 SplineFunctionSpace::SplineFunctionSpace(
   Key, std::shared_ptr<const FieldLayout> layout,
@@ -70,4 +76,4 @@ FieldVariant SplineFunctionSpace::CreateFieldImpl(FieldDataVariant data) const
   return WrapField<double>(layout_, std::move(fd));
 }
 
-} // namespace pcms
+} // namespace pcms::field

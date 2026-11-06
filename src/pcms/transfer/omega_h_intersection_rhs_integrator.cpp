@@ -13,6 +13,13 @@
 
 namespace pcms
 {
+using backend::omega_h::OmegaHLagrangeEvaluatorFactory;
+using backend::omega_h::OmegaHLagrangeLayout;
+using localization::GridPointSearchVariant;
+} // namespace pcms
+
+namespace pcms::transfer
+{
 
 namespace
 {
@@ -39,7 +46,7 @@ const GridPointSearchVariant* SourceSearchFromSpace(const FunctionSpace& space)
 {
   const auto* factory =
     dynamic_cast<const OmegaHLagrangeEvaluatorFactory<Real>*>(
-      &detail::BindingSourceOf(space));
+      &pcms::detail::BindingSourceOf(space));
   return factory ? &factory->GetSearch() : nullptr;
 }
 
@@ -68,15 +75,16 @@ Data BuildData(const std::shared_ptr<const OmegaHLagrangeLayout>& source_layout,
   const int quad_order =
     std::max(1, source_layout->GetOrder() + target_layout->GetOrder());
 
-  return detail::DispatchByOrder(target_layout->GetOrder(), [&](auto order_c) {
-    constexpr int TgtOrder = decltype(order_c)::value;
-    if (dim == 3) {
-      return BuildDataImpl<3, TgtOrder>(*source_layout, *target_layout,
+  return field::detail::DispatchByOrder(
+    target_layout->GetOrder(), [&](auto order_c) {
+      constexpr int TgtOrder = decltype(order_c)::value;
+      if (dim == 3) {
+        return BuildDataImpl<3, TgtOrder>(*source_layout, *target_layout,
+                                          quad_order, source_search);
+      }
+      return BuildDataImpl<2, TgtOrder>(*source_layout, *target_layout,
                                         quad_order, source_search);
-    }
-    return BuildDataImpl<2, TgtOrder>(*source_layout, *target_layout,
-                                      quad_order, source_search);
-  });
+    });
 }
 
 template <int Dim, int TgtOrder>
@@ -319,4 +327,4 @@ std::unique_ptr<LinearFormIntegrator> BuildOmegaHConservativeRHSIntegrator(
                                                            target_space);
 }
 
-} // namespace pcms
+} // namespace pcms::transfer

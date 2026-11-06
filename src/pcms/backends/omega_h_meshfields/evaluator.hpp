@@ -11,7 +11,7 @@
 #include "pcms/utility/arrays.hpp"
 #include <memory>
 
-namespace pcms
+namespace pcms::backend::omega_h_meshfields
 {
 
 /// @brief MeshFields bound source: the found query points grouped by owning
@@ -22,12 +22,13 @@ public:
   /// @param request query points and out-of-bounds policy
   /// @param search containing-element search over `mesh`
   /// @param mesh 2D simplex mesh of the evaluated fields
-  MeshFieldsBinding(const BindRequest& request, const GridPointSearch2D& search,
+  MeshFieldsBinding(const BindRequest& request,
+                    const localization::GridPointSearch2D& search,
                     Omega_h::Mesh& mesh)
     : BoundSource(request)
   {
     const auto points = PointValues();
-    auto [found, owning_ids] = FindOwningElements(search, points);
+    auto [found, owning_ids] = localization::FindOwningElements(search, points);
     SetFound(found);
     const auto found_points = FoundPoints();
     const auto num_found = static_cast<LO>(found_points.extent(0));
@@ -177,9 +178,9 @@ protected:
 private:
   std::shared_ptr<const MeshFieldsAdapterLayout> layout_;
   Omega_h::Mesh& mesh_;
-  mutable GridPointSearch2D search_;
+  mutable localization::GridPointSearch2D search_;
 };
 
-} // namespace pcms
+} // namespace pcms::backend::omega_h_meshfields
 
 #endif // PCMS_ADAPTER_MESHFIELDS_MESH_FIELDS_EVALUATOR_FACTORY_H

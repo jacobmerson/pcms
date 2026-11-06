@@ -4,6 +4,11 @@
 
 namespace pcms
 {
+using field::BuildSortedGidPermutation;
+} // namespace pcms
+
+namespace pcms
+{
 
 void FieldLayout::BuildGlobalToLocalPermutation(
   Kokkos::View<const GO*, DeviceMemorySpace> local_gids,

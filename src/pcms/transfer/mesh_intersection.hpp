@@ -17,7 +17,7 @@
 #include <Omega_h_for.hpp>
 #include <Kokkos_MathematicalFunctions.hpp>
 
-namespace pcms
+namespace pcms::transfer
 {
 // Gather the vertex coordinates of a simplex element (triangle for Dim==2,
 // tetrahedron for Dim==3) into an r3d simplex, ready for
@@ -207,6 +207,7 @@ IntersectionResults intersectTargets(Omega_h::Mesh& source_mesh,
  */
 IntersectionResults intersectTargets(
   Omega_h::Mesh& source_mesh, Omega_h::Mesh& target_mesh,
-  const GridPointSearchVariant& source_search, bool use_prefilter = true);
-} // namespace pcms
+  const localization::GridPointSearchVariant& source_search,
+  bool use_prefilter = true);
+} // namespace pcms::transfer
 #endif // PCMS_TRANSFER_MESH_INTERSECTION_HPP

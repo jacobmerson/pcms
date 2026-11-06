@@ -3,6 +3,18 @@
 
 namespace pcms
 {
+using localization::adapt_radii;
+using localization::GridPointSearch2D;
+using localization::GridPointSearch3D;
+using localization::minmax;
+using localization::SupportResults;
+using localization::within_number_of_support_range;
+using utility::distance_squared;
+using utility::get_entity_centroids;
+} // namespace pcms
+
+namespace pcms::backend::omega_h
+{
 
 // Debug helper retained intentionally: useful for diagnosing point-localization
 // failures while developing support-search logic.
@@ -550,4 +562,4 @@ SupportResults searchNeighbors(Omega_h::Mesh& mesh,
   return SupportResults{read(supports_ptr), read(supports_idx), radii2};
 }
 
-} // namespace pcms
+} // namespace pcms::backend::omega_h

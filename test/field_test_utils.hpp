@@ -149,19 +149,20 @@ inline Omega_h::Mesh BuildReferenceTet(Omega_h::Library& lib)
                        }));
 }
 
-inline std::shared_ptr<LagrangeFunctionSpace> MakeP1Space(
+inline std::shared_ptr<field::LagrangeFunctionSpace> MakeP1Space(
   Omega_h::Mesh& mesh, const std::string& global_id_name = "global")
 {
-  return LagrangeFunctionSpace::FromMesh(
+  return field::LagrangeFunctionSpace::FromMesh(
     mesh, 1, 1, csys::Cartesian::Deferred(), global_id_name,
-    LagrangeFunctionSpace::Backend::OmegaH);
+    field::LagrangeFunctionSpace::Backend::OmegaH);
 }
 
-inline std::shared_ptr<LagrangeFunctionSpace> MakeP0Space(Omega_h::Mesh& mesh)
+inline std::shared_ptr<field::LagrangeFunctionSpace> MakeP0Space(
+  Omega_h::Mesh& mesh)
 {
-  return LagrangeFunctionSpace::FromMesh(
+  return field::LagrangeFunctionSpace::FromMesh(
     mesh, 0, 1, csys::Cartesian::Deferred(), "global",
-    LagrangeFunctionSpace::Backend::OmegaH);
+    field::LagrangeFunctionSpace::Backend::OmegaH);
 }
 
 inline bool AreArraysEqualUnordered(
@@ -176,8 +177,9 @@ inline bool AreArraysEqualUnordered(
   return freq1 == freq2;
 }
 
-inline void CheckSupportResultsEquivalent(const SupportResults& actual,
-                                          const SupportResults& expected)
+inline void CheckSupportResultsEquivalent(
+  const localization::SupportResults& actual,
+  const localization::SupportResults& expected)
 {
   auto actual_ptr = Omega_h::HostRead<Omega_h::LO>(actual.supports_ptr);
   auto actual_idx = Omega_h::HostRead<Omega_h::LO>(actual.supports_idx);
@@ -622,7 +624,7 @@ void CheckEvaluationWithFill(const Factory& factory, const Field<Real>& field,
 // Evaluates source_field at the integrator's sample points and assembles the
 // load vector.
 inline void EvaluateAndAssemble(
-  LinearFormIntegrator& integrator,
+  transfer::LinearFormIntegrator& integrator,
   const std::shared_ptr<const FunctionSpace>& source_space,
   const Field<Real>& source_field)
 {

@@ -12,6 +12,13 @@
 
 namespace pcms
 {
+using backend::omega_h::searchNeighbors;
+using utility::flatten_to_omega_h_reals;
+using utility::get_entity_centroids;
+} // namespace pcms
+
+namespace pcms::localization
+{
 
 SupportResults AdjacencyLocalizationFactory::Build(
   CoordinateView<DeviceMemorySpace> target_coords) const
@@ -66,4 +73,4 @@ SupportResults AdjacencyLocalizationFactory::BuildSameMeshCentroidToVertex()
                          options_.adapt_radius);
 }
 
-} // namespace pcms
+} // namespace pcms::localization

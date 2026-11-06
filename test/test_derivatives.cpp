@@ -13,6 +13,12 @@
 #include "field_test_utils.hpp"
 #include <vector>
 
+namespace pcms
+{
+using field::LagrangeFunctionSpace;
+using field::SplineFunctionSpace;
+} // namespace pcms
+
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
 using pcms::DeviceMemorySpace;
@@ -197,9 +203,9 @@ TEST_CASE("MeshFields gradients")
 
   SECTION("P1 reproduces the gradient of a linear field")
   {
-    auto space = pcms::LagrangeFunctionSpace::FromMesh(
+    auto space = pcms::field::LagrangeFunctionSpace::FromMesh(
       mesh, 1, 1, pcms::csys::Cartesian::Create(2), "global",
-      pcms::LagrangeFunctionSpace::Backend::MeshFields);
+      pcms::field::LagrangeFunctionSpace::Backend::MeshFields);
     auto f = space->CreateFunction<Real>("f");
     pcms::test::SetField(
       f, OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); });
@@ -213,10 +219,10 @@ TEST_CASE("MeshFields gradients")
 
   SECTION("P2 reproduces the gradient of a quadratic field")
   {
-    std::shared_ptr<const pcms::LagrangeFunctionSpace> space =
-      pcms::LagrangeFunctionSpace::FromMesh(
+    std::shared_ptr<const pcms::field::LagrangeFunctionSpace> space =
+      pcms::field::LagrangeFunctionSpace::FromMesh(
         mesh, 2, 1, pcms::csys::Cartesian::Create(2), "global",
-        pcms::LagrangeFunctionSpace::Backend::MeshFields);
+        pcms::field::LagrangeFunctionSpace::Backend::MeshFields);
     auto f = space->CreateFunction<Real>("f");
     pcms::test::SetField(
       f, OMEGA_H_LAMBDA(Real x, Real y) { return Quadratic(x, y); });
@@ -235,7 +241,7 @@ TEST_CASE("MeshFields gradients")
     grid.bot_left = {0.1, 0.15};
     grid.edge_length = {0.8, 0.7};
     grid.divisions = {4, 3};
-    auto target = pcms::LagrangeFunctionSpace::FromUniformGrid(
+    auto target = pcms::field::LagrangeFunctionSpace::FromUniformGrid(
       grid, 2, space->GetCoordinateSystem());
     auto grad_t =
       target->CreateFunction<Real>("grad f", pcms::values::Covector);
@@ -253,9 +259,9 @@ TEST_CASE("MeshFields gradients")
 
   SECTION("multi-component fields are rejected")
   {
-    auto space = pcms::LagrangeFunctionSpace::FromMesh(
+    auto space = pcms::field::LagrangeFunctionSpace::FromMesh(
       mesh, 1, 2, pcms::csys::Cartesian::Create(2), "global",
-      pcms::LagrangeFunctionSpace::Backend::MeshFields);
+      pcms::field::LagrangeFunctionSpace::Backend::MeshFields);
     auto coords =
       pcms::test::CreateDeviceCoordinateView(pts, space->GetCoordinateSystem());
     REQUIRE_THROWS_WITH(

@@ -15,7 +15,7 @@
 #include <Omega_h_mesh.hpp>
 #include <memory>
 
-namespace pcms
+namespace pcms::field
 {
 
 class PolynomialReconstructionFunctionSpace : public FunctionSpace
@@ -54,6 +54,6 @@ private:
   std::shared_ptr<const FieldLayout> layout_;
 };
 
-} // namespace pcms
+} // namespace pcms::field
 
 #endif // PCMS_POLYNOMIAL_RECONSTRUCTION_FUNCTION_SPACE_H

@@ -17,7 +17,7 @@
 #include <utility>
 #include <Omega_h_vector.hpp>
 
-namespace pcms
+namespace pcms::backend::uniform_grid
 {
 
 namespace detail
@@ -91,7 +91,7 @@ private:
 /// @tparam LayoutPolicy layout of the output view
 template <unsigned Dim = 2,
           typename LayoutPolicy =
-            detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
+            pcms::detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
 class UniformGridPointEvaluator : public PointEvaluator<Real, LayoutPolicy>
 {
 public:
@@ -265,6 +265,6 @@ private:
 
 using UniformGridEvaluatorFactory2D = UniformGridEvaluatorFactory<2>;
 
-} // namespace pcms
+} // namespace pcms::backend::uniform_grid
 
 #endif // PCMS_UNIFORM_GRID_EVALUATOR_FACTORY_H

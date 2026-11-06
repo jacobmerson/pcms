@@ -13,10 +13,18 @@
 #include "pcms/field/function_space/lagrange.hpp"
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
 
-using pcms::ConstructRCFromOmegaHMesh;
+namespace pcms
+{
+using backend::omega_h::OmegaHFieldData;
+using backend::xgc::XGCFieldData;
+using backend::xgc::XGCFieldFactory;
+using field::LagrangeFunctionSpace;
+} // namespace pcms
+
 using pcms::GO;
 using pcms::make_array_view;
-using pcms::ReverseClassificationVertex;
+using pcms::backend::xgc::ConstructRCFromOmegaHMesh;
+using pcms::backend::xgc::ReverseClassificationVertex;
 
 static constexpr bool done = true;
 namespace ts = test_support;
@@ -34,7 +42,8 @@ void xgc_coupler(MPI_Comm comm, Omega_h::Mesh& mesh, std::string_view cpn_file)
   if (mesh.has_tag(0, "simNumbering")) {
     rc = ConstructRCFromOmegaHMesh(mesh, "simNumbering");
   } else {
-    rc = ConstructRCFromOmegaHMesh<GO>(mesh, "global", pcms::IndexBase::Zero);
+    rc = ConstructRCFromOmegaHMesh<GO>(mesh, "global",
+                                       pcms::backend::xgc::IndexBase::Zero);
   }
 
   auto is_overlap =

@@ -13,6 +13,13 @@
 #include <vector>
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
 
+namespace pcms
+{
+using backend::point_cloud::PointCloudLayout;
+using field::LagrangeFunctionSpace;
+using field::PolynomialReconstructionFunctionSpace;
+} // namespace pcms
+
 using pcms::CoordinateSystem;
 using pcms::HostMemorySpace;
 using pcms::LO;

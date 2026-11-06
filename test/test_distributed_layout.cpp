@@ -23,6 +23,11 @@
 #include <string>
 #include <vector>
 
+namespace pcms
+{
+using field::LagrangeFunctionSpace;
+} // namespace pcms
+
 using pcms::GO;
 using pcms::LO;
 using pcms::Real;
@@ -250,9 +255,9 @@ int main(int argc, char** argv)
                     "Omega_h backend" + suffix);
 #ifdef PCMS_ENABLE_MESHFIELDS
         CheckLayout(mesh,
-                    *pcms::LagrangeFunctionSpace::FromMesh(
+                    *pcms::field::LagrangeFunctionSpace::FromMesh(
                       mesh, 1, nc, pcms::csys::Cartesian::Deferred(), "global",
-                      pcms::LagrangeFunctionSpace::Backend::MeshFields),
+                      pcms::field::LagrangeFunctionSpace::Backend::MeshFields),
                     "MeshFields backend" + suffix);
 #endif
       }

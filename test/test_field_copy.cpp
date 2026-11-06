@@ -10,6 +10,11 @@
 #include <Kokkos_Core.hpp>
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
 
+namespace pcms
+{
+using field::LagrangeFunctionSpace;
+} // namespace pcms
+
 using pcms::Real;
 
 void test_copy(Omega_h::CommPtr world, int dim, int order, int num_components)

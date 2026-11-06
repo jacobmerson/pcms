@@ -14,7 +14,7 @@
 #include "pcms/utility/uniform_grid.hpp"
 #include "pcms/utility/bounding_box.hpp"
 
-namespace pcms
+namespace pcms::localization
 {
 
 /**
@@ -274,5 +274,5 @@ std::pair<Kokkos::View<bool*>, Kokkos::View<LO*>> FindOwningElements(
   return {found, owning_ids};
 }
 
-} // namespace pcms
+} // namespace pcms::localization
 #endif // PCMS_COUPLING_POINT_SEARCH_H

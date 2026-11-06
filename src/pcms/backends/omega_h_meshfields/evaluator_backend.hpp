@@ -16,7 +16,7 @@
 #include "pcms/utility/arrays.hpp"
 #include "pcms/field/field.hpp"
 
-namespace pcms
+namespace pcms::backend::omega_h_meshfields
 {
 
 // ---------------------------------------------------------------------------
@@ -346,6 +346,6 @@ struct FillCoordinatesDeviceFunctor
   }
 };
 
-} // namespace pcms
+} // namespace pcms::backend::omega_h_meshfields
 
 #endif // PCMS_ADAPTER_MESHFIELDS_MESH_FIELDS_BACKEND_H

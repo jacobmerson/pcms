@@ -15,6 +15,11 @@
 #include <stdexcept>
 #include <vector>
 
+namespace pcms
+{
+using field::LagrangeFunctionSpace;
+} // namespace pcms
+
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
 using pcms::ComponentScaling;

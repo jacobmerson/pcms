@@ -5,6 +5,11 @@
 
 namespace pcms
 {
+using localization::SupportResults;
+} // namespace pcms
+
+namespace pcms::field
+{
 
 // 'a' is a shape parameter
 // the value of 'a' is higher if the data is localized
@@ -305,4 +310,4 @@ int calculate_scratch_shared_size(const SupportResults& support,
 }
 
 } // namespace detail
-} // namespace pcms
+} // namespace pcms::field

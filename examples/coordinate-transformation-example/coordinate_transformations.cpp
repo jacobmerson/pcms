@@ -22,6 +22,11 @@
 #include <memory>
 #include <vector>
 
+namespace pcms
+{
+using field::LagrangeFunctionSpace;
+} // namespace pcms
+
 using namespace pcms;
 using DeviceView = Kokkos::View<Real**, DeviceMemorySpace>;
 using HostView = Kokkos::View<Real**, HostMemorySpace>;
