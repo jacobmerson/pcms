@@ -11,6 +11,16 @@
 
 namespace pcms
 {
+using localization::GridPointSearch2D;
+using localization::GridPointSearch3D;
+using localization::GridPointSearchVariant;
+using localization::LocatePoints;
+using utility::ConvertCoordsTo2D;
+using utility::flatten_to_omega_h_reals;
+} // namespace pcms
+
+namespace pcms::backend::omega_h
+{
 
 OmegaHMeshBinding::OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
                                      const BindRequest& request,
@@ -21,8 +31,8 @@ OmegaHMeshBinding::OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
   const bool hinted = request.owners.entity_dim == mesh.dim() &&
                       request.owners.entities.extent(0) > 0;
   if (hinted) {
-    detail::CheckEntityIds(request.owners.entities, mesh.nelems(),
-                           "OmegaHMeshBinding", "element");
+    pcms::detail::CheckEntityIds(request.owners.entities, mesh.nelems(),
+                                 "OmegaHMeshBinding", "element");
   }
   Locate(hinted ? request.owners.entities
                 : Kokkos::View<const LO*, DeviceMemorySpace>());
@@ -52,8 +62,8 @@ void OmegaHMeshBinding::Locate(
       // the rows of the found points
       const auto rows = FoundPoints();
       const auto n = static_cast<LO>(rows.extent(0));
-      detail::ReserveRows(elem_ids_, "omega_h_elem_ids", n);
-      detail::ReserveRows(bary_, "omega_h_bary", n, Dim + 1);
+      pcms::detail::ReserveRows(elem_ids_, "omega_h_elem_ids", n);
+      pcms::detail::ReserveRows(bary_, "omega_h_bary", n, Dim + 1);
       const auto elem_ids = elem_ids_;
       const auto bary = bary_;
       Kokkos::parallel_for(
@@ -96,7 +106,7 @@ GridPointSearchVariant MakeGridSearch(Omega_h::Mesh& mesh,
 
 OmegaHGeometry::OmegaHGeometry(Omega_h::Mesh& mesh,
                                std::shared_ptr<const CoordinateSystem> system,
-                               backend::omega_h::OmegaHGeometryOptions options)
+                               OmegaHGeometryOptions options)
   : mesh_(mesh),
     discretization_(std::make_shared<OmegaHDiscretization>(
       mesh, std::move(options.global_id_name), std::move(options.owned_mask))),
@@ -117,8 +127,8 @@ SupportResults OmegaHGeometry::Neighbourhood(
   CoordinateView<DeviceMemorySpace> coords, const NeighbourhoodOptions& options,
   const KnownOwners& owners) const
 {
-  detail::CheckNeighbourhoodArguments(*this, coords, options,
-                                      "OmegaHGeometry::Neighbourhood");
+  pcms::detail::CheckNeighbourhoodArguments(*this, coords, options,
+                                            "OmegaHGeometry::Neighbourhood");
   const auto flat_points = flatten_to_omega_h_reals(coords.GetValues());
   const LO n = static_cast<LO>(coords.GetValues().extent(0));
   const int dim = mesh_.dim();
@@ -128,9 +138,9 @@ SupportResults OmegaHGeometry::Neighbourhood(
       (owners.entity_dim == 0 || owners.entity_dim == dim)) {
     seed_dim = owners.entity_dim;
     seeds = owners.entities;
-    detail::CheckEntityIds(seeds, mesh_.nents(seed_dim),
-                           "OmegaHGeometry::Neighbourhood",
-                           seed_dim == 0 ? "vertex" : "element");
+    pcms::detail::CheckEntityIds(seeds, mesh_.nents(seed_dim),
+                                 "OmegaHGeometry::Neighbourhood",
+                                 seed_dim == 0 ? "vertex" : "element");
   } else {
     // the element the bind's search finds for each point (for a point outside
     // the mesh, the element nearest it; -1, and so no supports, if its grid
@@ -207,4 +217,4 @@ DifferentialView OmegaHGeometry::Differential(const BoundSource& bound) const
   return differential_;
 }
 
-} // namespace pcms
+} // namespace pcms::backend::omega_h

@@ -8,6 +8,11 @@
 
 namespace pcms
 {
+using backend::omega_h::OmegaHDiscretization;
+} // namespace pcms
+
+namespace pcms::backend::omega_h_meshfields
+{
 /*
  * Field Layout
  */
@@ -218,7 +223,7 @@ MeshFieldsAdapterLayout::MeshFieldsAdapterLayout(
     ResolveCoordinateSystem(std::move(coordinate_system), mesh_.dim()));
   LO total_ents = GetNumEnts();
 
-  const auto checked = detail::CheckDiscretizationOf(
+  const auto checked = omega_h::detail::CheckDiscretizationOf(
     mesh_, std::move(discretization), "MeshFieldsAdapterLayout");
   discretization_ = checked;
   const std::string& global_id_name = checked->GetGlobalIdName();
@@ -438,4 +443,4 @@ void MeshFieldsAdapterLayout::BuildOwnedClassification()
                                owned_classification_ids_host_);
 }
 
-} // namespace pcms
+} // namespace pcms::backend::omega_h_meshfields

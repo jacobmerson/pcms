@@ -13,7 +13,7 @@
 #include <Omega_h_array.hpp>
 #include <Omega_h_array_ops.hpp>
 
-namespace pcms
+namespace pcms::backend::point_cloud
 {
 
 /// @brief MLS bound source: the supports of the query points and the
@@ -33,8 +33,8 @@ public:
              SupportResults supports, NeighbourhoodOptions options)
     : BoundSource(std::move(geometry), request),
       source_coords_(std::move(source_coords)),
-      target_coords_(
-        flatten_to_omega_h_reals(LocatedPointValues(), "mls_target_coords")),
+      target_coords_(utility::flatten_to_omega_h_reals(LocatedPointValues(),
+                                                       "mls_target_coords")),
       supports_(std::move(supports)),
       options_(options)
   {
@@ -70,8 +70,8 @@ protected:
                                geometry.GetCoordinateSystem(),
                                MakeConstRank2View(LocatedPointValues())),
                              options_);
-    target_coords_ =
-      flatten_to_omega_h_reals(LocatedPointValues(), "mls_target_coords");
+    target_coords_ = utility::flatten_to_omega_h_reals(LocatedPointValues(),
+                                                       "mls_target_coords");
     SetFoundFromSupports();
   }
 
@@ -139,7 +139,7 @@ public:
       KOKKOS_LAMBDA(int i) { src_w[i] = device_data(i, 0); });
     Omega_h::Reals source_values(src_w);
 
-    auto result = mls_interpolation(
+    auto result = field::mls_interpolation(
       source_values, binding_->SourceCoordinates(),
       binding_->TargetCoordinates(), binding_->Supports(), dim_,
       static_cast<Omega_h::LO>(options_.degree), options_.basis,
@@ -158,6 +158,6 @@ private:
   MLSOptions options_;
 };
 
-} // namespace pcms
+} // namespace pcms::backend::point_cloud
 
 #endif // PCMS_FIELD_EVALUATOR_MLS_POINT_CLOUD_H

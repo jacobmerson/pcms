@@ -14,7 +14,7 @@
 #include <memory>
 #include <string>
 
-namespace pcms
+namespace pcms::backend::omega_h
 {
 
 namespace detail
@@ -67,7 +67,7 @@ class OmegaHFieldData
 {
 public:
   // Value type of the Omega_h tag.
-  using tag_value_type = OmegaHValue_t<T>;
+  using tag_value_type = utility::OmegaHValue_t<T>;
 
   OmegaHFieldData(std::shared_ptr<const FieldLayout> layout, ValueBasis basis)
     : layout_(std::move(layout)),
@@ -119,7 +119,7 @@ public:
 
   Rank2View<const T, DeviceMemorySpace> GetValues() const override
   {
-    return MakeConstRank2View(device_data_);
+    return pcms::MakeConstRank2View(device_data_);
   }
 
   void SetValues(Rank2View<const T, DeviceMemorySpace> values) override
@@ -152,6 +152,6 @@ private:
   std::string tag_name_;
 };
 
-} // namespace pcms
+} // namespace pcms::backend::omega_h
 
 #endif // PCMS_OMEGA_H_FIELD_DATA_H

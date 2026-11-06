@@ -14,7 +14,7 @@
 #include "pcms/utility/uniform_grid.hpp"
 #include "pcms/utility/bounding_box.hpp"
 
-namespace pcms
+namespace pcms::localization
 {
 
 //
@@ -231,5 +231,5 @@ LocatePoints(const Search& search, Kokkos::View<const Real**> points)
   return {found, results};
 }
 
-} // namespace pcms
+} // namespace pcms::localization
 #endif // PCMS_COUPLING_POINT_SEARCH_H

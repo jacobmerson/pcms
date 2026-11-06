@@ -16,7 +16,7 @@
 #include <string>
 #include <utility>
 
-namespace pcms
+namespace pcms::backend::uniform_grid
 {
 
 /// Uniform-grid bound source: the cell of each query point and its position in
@@ -63,13 +63,13 @@ private:
   /// parametric_ and sets the found points.
   void Locate()
   {
-    using Result = typename UniformGridPointSearch<Dim>::Result;
+    using Result = typename localization::UniformGridPointSearch<Dim>::Result;
     const auto results = search_(LocatedPointValues());
     const auto n = static_cast<LO>(results.extent(0));
     const bool nearest = Policy().mode == OutOfBoundsMode::NEAREST_BOUNDARY;
     Kokkos::View<bool*, DeviceMemorySpace> found("uniform_grid_found", n);
-    detail::ReserveRows(cell_indices_, "uniform_grid_cell_indices", n);
-    detail::ReserveRows(parametric_, "uniform_grid_parametric", n, Dim);
+    pcms::detail::ReserveRows(cell_indices_, "uniform_grid_cell_indices", n);
+    pcms::detail::ReserveRows(parametric_, "uniform_grid_parametric", n, Dim);
     const auto cell_indices = cell_indices_;
     const auto parametric = parametric_;
     Kokkos::parallel_for(
@@ -86,7 +86,7 @@ private:
     SetFound(found);
   }
 
-  UniformGridPointSearch<Dim> search_;
+  localization::UniformGridPointSearch<Dim> search_;
   Kokkos::View<LO*, DeviceMemorySpace> cell_indices_;
   Kokkos::View<Real**, DeviceMemorySpace> parametric_;
 };
@@ -145,6 +145,6 @@ private:
   std::shared_ptr<const CoordinateSystem> system_;
 };
 
-} // namespace pcms
+} // namespace pcms::backend::uniform_grid
 
 #endif // PCMS_FIELD_EVALUATOR_UNIFORM_GRID_GEOMETRY_HPP

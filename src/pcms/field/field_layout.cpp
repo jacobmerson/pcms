@@ -5,6 +5,11 @@
 
 namespace pcms
 {
+using field::BuildSortedGidPermutation;
+} // namespace pcms
+
+namespace pcms
+{
 
 KnownOwners DOFHolderOwners(const FieldLayout& layout,
                             std::shared_ptr<const Geometry> geometry)

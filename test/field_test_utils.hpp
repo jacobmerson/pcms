@@ -662,7 +662,8 @@ inline void CheckOwnersMatchSearch(CoordinateView<DeviceMemorySpace> points,
   const auto element_ids = [](const std::shared_ptr<const BoundSource>& b) {
     return Kokkos::create_mirror_view_and_copy(
       HostMemorySpace(),
-      dynamic_cast<const OmegaHMeshBinding&>(*b).ElementIds());
+      dynamic_cast<const backend::omega_h::OmegaHMeshBinding&>(*b)
+        .ElementIds());
   };
   const auto hinted = element_ids(owners.geometry->Bind(points, owners));
   const auto searched = element_ids(owners.geometry->Bind(points));
@@ -677,7 +678,7 @@ inline void CheckOwnersMatchSearch(CoordinateView<DeviceMemorySpace> points,
 // Evaluates source_field at the integrator's points, searched on the source
 // space's geometry, and assembles the load vector.
 inline void EvaluateAndAssemble(
-  LinearFormIntegrator& integrator,
+  transfer::LinearFormIntegrator& integrator,
   const std::shared_ptr<const FunctionSpace>& source_space,
   const Field<Real>& source_field)
 {

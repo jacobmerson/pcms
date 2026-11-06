@@ -6,6 +6,12 @@
 
 namespace pcms
 {
+using utility::ConvertCoordsTo2D;
+using utility::get_entity_centroids;
+} // namespace pcms
+
+namespace pcms::backend::omega_h
+{
 namespace
 {
 // For each target element, the source element containing its centroid (the
@@ -21,7 +27,7 @@ Kokkos::View<const LO*, DeviceMemorySpace> LocateTargetCentroids(
   // Centroids outside the source mesh are legitimate: they overlap nothing.
   const auto bound = source_geometry.Bind(
     CoordinateView<DeviceMemorySpace>(source_geometry.GetCoordinateSystem(),
-                                      MakeConstRank2View(centroids)),
+                                      pcms::MakeConstRank2View(centroids)),
     OutOfBoundsPolicy{OutOfBoundsMode::FILL});
   const auto binding =
     std::dynamic_pointer_cast<const OmegaHMeshBinding>(bound);
@@ -193,7 +199,7 @@ IntersectionResults intersectTargetsImpl(const OmegaHGeometry& source,
                                          Omega_h::Mesh& target_mesh,
                                          bool use_prefilter)
 {
-  FindIntersections intersect(backend::omega_h::GetMesh(source), target_mesh);
+  FindIntersections intersect(GetMesh(source), target_mesh);
 
   auto nelems_target = target_mesh.nelems();
 
@@ -232,7 +238,7 @@ IntersectionResults intersectTargets(const OmegaHGeometry& source,
                                      Omega_h::Mesh& target_mesh,
                                      bool use_prefilter)
 {
-  if (backend::omega_h::GetMesh(source).dim() != target_mesh.dim()) {
+  if (GetMesh(source).dim() != target_mesh.dim()) {
     throw pcms_error("intersectTargets: the source geometry's mesh and the "
                      "target mesh differ in dimension");
   }
@@ -241,4 +247,4 @@ IntersectionResults intersectTargets(const OmegaHGeometry& source,
   }
   return intersectTargetsImpl<2>(source, target_mesh, use_prefilter);
 }
-} // namespace pcms
+} // namespace pcms::backend::omega_h

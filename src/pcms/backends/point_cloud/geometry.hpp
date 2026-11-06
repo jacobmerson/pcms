@@ -21,7 +21,7 @@
 #include <memory>
 #include <string>
 
-namespace pcms
+namespace pcms::backend::point_cloud
 {
 
 /// Geometry of a set of sites (the DOF holders of a layout: a point cloud or
@@ -48,7 +48,7 @@ public:
       site_entity_dim_(site_entity_dim),
       options_(std::move(options)),
       vertex_geometry_(mesh != nullptr && site_entity_dim == Vertex
-                         ? std::make_shared<OmegaHGeometry>(
+                         ? std::make_shared<omega_h::OmegaHGeometry>(
                              *mesh, site_layout_->GetCoordinateSystem())
                          : nullptr)
   {
@@ -104,8 +104,9 @@ public:
                              "PointCloudGeometry::Neighbourhood",
                              owners.entity_dim == Vertex ? "vertex"
                                                          : "element");
-      return searchNeighbors(
-        *mesh_, site_entity_dim_, flatten_to_omega_h_reals(coords.GetValues()),
+      return omega_h::searchNeighbors(
+        *mesh_, site_entity_dim_,
+        utility::flatten_to_omega_h_reals(coords.GetValues()),
         owners.entity_dim, owners.entities, options.radius * options.radius,
         options.min_supports, 3 * options.min_supports, options.adapt_radius);
     }
@@ -113,9 +114,9 @@ public:
       return vertex_geometry_->Neighbourhood(std::move(coords), options);
     }
     const auto sites = site_layout_->GetDOFHolderCoordinates().GetValues();
-    return BuildPointCloudSupports(
-      flatten_to_omega_h_reals(sites, "src_coords"),
-      flatten_to_omega_h_reals(coords.GetValues(), "tgt_coords"),
+    return localization::BuildPointCloudSupports(
+      utility::flatten_to_omega_h_reals(sites, "src_coords"),
+      utility::flatten_to_omega_h_reals(coords.GetValues(), "tgt_coords"),
       static_cast<int>(sites.extent(1)), options.radius, options.min_supports,
       options.adapt_radius);
   }
@@ -128,7 +129,7 @@ protected:
     // Extract source coordinates for the MLS solve.
     const auto src_view = site_layout_->GetDOFHolderCoordinates().GetValues();
     Omega_h::Reals source_coords =
-      flatten_to_omega_h_reals(src_view, "src_coords");
+      utility::flatten_to_omega_h_reals(src_view, "src_coords");
 
     SupportResults supports =
       Neighbourhood(request.coords, options_, request.owners);
@@ -145,9 +146,9 @@ private:
   NeighbourhoodOptions options_;
   // for mesh-vertex sites, the mesh's geometry: its Neighbourhood is the
   // adjacency search from the element its search finds for each point
-  std::shared_ptr<const OmegaHGeometry> vertex_geometry_;
+  std::shared_ptr<const omega_h::OmegaHGeometry> vertex_geometry_;
 };
 
-} // namespace pcms
+} // namespace pcms::backend::point_cloud
 
 #endif // PCMS_FIELD_EVALUATOR_POINT_CLOUD_GEOMETRY_HPP

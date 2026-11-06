@@ -3,6 +3,11 @@
 
 namespace pcms
 {
+using discretization::EmptyDiscretization;
+} // namespace pcms
+
+namespace pcms::field
+{
 
 namespace
 {
@@ -110,4 +115,4 @@ EmptyFieldLayout::GetDOFHolderClassificationIdsHost() const
   return make_const_array_view(classification_ids_host_);
 }
 
-} // namespace pcms
+} // namespace pcms::field

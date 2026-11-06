@@ -4,7 +4,7 @@
 #include <Omega_h_for.hpp>
 #include <Kokkos_StdAlgorithms.hpp>
 
-namespace pcms
+namespace pcms::backend::point_cloud
 {
 
 namespace
@@ -174,4 +174,4 @@ PointCloudLayout::GetDOFHolderClassificationIdsHost() const
   return make_const_array_view(classification_ids_host_);
 }
 
-} // namespace pcms
+} // namespace pcms::backend::point_cloud

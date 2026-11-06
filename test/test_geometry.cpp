@@ -26,6 +26,22 @@
 #include <variant>
 #include <vector>
 
+namespace pcms
+{
+using backend::omega_h::MakeGridSearch;
+using backend::omega_h::OmegaHDiscretization;
+using backend::omega_h::OmegaHEntityLayout;
+using backend::omega_h::OmegaHLagrangeLayout;
+using backend::omega_h::OmegaHMeshBinding;
+using backend::omega_h::searchNeighbors;
+using backend::point_cloud::PointCloudLayout;
+using localization::BuildPointCloudSupports;
+using localization::LocatePoints;
+using utility::ConvertCoordsTo2D;
+using utility::flatten_to_omega_h_reals;
+using utility::get_entity_centroids;
+} // namespace pcms
+
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
 using pcms::DeviceMemorySpace;
@@ -55,7 +71,7 @@ Kokkos::View<LO*> StartElements(Omega_h::Mesh& mesh,
   return std::visit(
     [&](const auto& s) {
       constexpr int Dim = std::decay_t<decltype(s)>::DIM;
-      return pcms::detail::LiftResults<Dim>(
+      return pcms::backend::omega_h::detail::LiftResults<Dim>(
                mesh,
                Kokkos::View<const typename std::decay_t<decltype(s)>::Result*,
                             pcms::DeviceMemorySpace>(
