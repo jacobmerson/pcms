@@ -16,6 +16,11 @@
 #include <type_traits>
 #include <vector>
 
+namespace pcms
+{
+using backend::omega_h::OmegaHEntityLayout;
+} // namespace pcms
+
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
 using pcms::BoundSource;
