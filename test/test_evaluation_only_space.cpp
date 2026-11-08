@@ -69,10 +69,15 @@ public:
   {
   }
 
-  void Evaluate(const pcms::Field<Real>& field,
-                pcms::ValueView<Real, DeviceMemorySpace> values) const override
+  [[nodiscard]] LO NumPoints() const override
   {
-    CheckEvaluateWriteTag("MockEvaluator", field, values);
+    return static_cast<LO>(points_.extent(0));
+  }
+
+  void EvaluateImpl(
+    const pcms::Field<Real>& field,
+    pcms::ValueView<Real, DeviceMemorySpace> values) const override
+  {
     if (dynamic_cast<const MockData*>(&field.GetData()) == nullptr) {
       throw pcms::pcms_error("MockEvaluator: not a field of this source");
     }

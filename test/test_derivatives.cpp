@@ -80,8 +80,8 @@ TEST_CASE("Spline gradients")
                  WithinAbs(3.0 * x - 3.0 * y * y, pcms::test::EvalTol));
   }
 
-  // A gradient written into a view tagged as values is rejected.
-  Kokkos::View<Real**, DeviceMemorySpace> wrong("wrong", n, 1);
+  // A gradient written into a view of its shape tagged as values is rejected.
+  Kokkos::View<Real**, DeviceMemorySpace> wrong("wrong", n, 2);
   REQUIRE_THROWS_WITH(gradient->Evaluate(f, pcms::test::TagLike(f, wrong)),
                       ContainsSubstring("does not match the basis"));
   REQUIRE_THROWS_WITH(space->CreatePointEvaluator<Real>(bound, 2),
