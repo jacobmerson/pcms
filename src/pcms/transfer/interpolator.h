@@ -94,6 +94,7 @@ public:
     evaluator_->Evaluate(source, ValueView<T, DeviceMemorySpace>(
                                    written, MakeRank2View(target_values_)));
     target.SetDOFHolderDataUnchecked(MakeConstRank2View(target_values_));
+    target.Synchronize();
   }
 
 private:

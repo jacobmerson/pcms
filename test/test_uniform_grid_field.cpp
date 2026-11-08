@@ -105,7 +105,7 @@ TEST_CASE("UniformGrid field creation")
     grid, 1, pcms::csys::Cartesian::Deferred());
 
   REQUIRE(layout->GetNumComponents() == 1);
-  REQUIRE(layout->GetNumOwnedDofHolder() == 36); // (5+1)x(5+1) = 36 vertices
+  REQUIRE(layout->GetNumDofHolder() == 36); // (5+1)x(5+1) = 36 vertices
   REQUIRE(layout->GetNumGlobalDofHolder() == 36);
   REQUIRE_FALSE(layout->IsDistributed());
 
@@ -113,7 +113,7 @@ TEST_CASE("UniformGrid field creation")
     grid, 1, pcms::csys::Cartesian::Deferred());
   auto field = field_space->CreateFunction<pcms::Real>();
   REQUIRE(field.GetDOFHolderDataHost().size() ==
-          static_cast<size_t>(layout->OwnedSize()));
+          static_cast<size_t>(layout->Size()));
 }
 
 TEST_CASE("UniformGrid order-0 field creation and evaluation")
@@ -130,7 +130,7 @@ TEST_CASE("UniformGrid order-0 field creation and evaluation")
   auto field = field_space->CreateFunction<pcms::Real>();
 
   REQUIRE(layout->GetOrder() == 0);
-  REQUIRE(layout->GetNumOwnedDofHolder() == 4);
+  REQUIRE(layout->GetNumDofHolder() == 4);
 
   auto coords_device = layout->GetDOFHolderCoordinates().GetValues();
   auto coords = pcms::test::CopyCoordinatesToHost(coords_device);
@@ -314,7 +314,7 @@ TEST_CASE("Transfer from OmegaH field to UniformGrid field")
   auto transferred_data =
     pcms::FlattenToRank1View(ug_field.GetDOFHolderDataHost().GetValues());
   auto ug_coords = ug_factory->GetLayout()->GetDOFHolderCoordinates();
-  int num_ug_nodes = ug_factory->GetLayout()->GetNumOwnedDofHolder();
+  int num_ug_nodes = ug_factory->GetLayout()->GetNumDofHolder();
 
   // set up_coords to host
   auto ug_coords_host =
