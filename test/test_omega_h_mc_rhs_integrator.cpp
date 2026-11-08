@@ -157,8 +157,7 @@ TEST_CASE("OmegaHControlVariateProjection: reduces error vs plain Monte Carlo",
     *target_space, samples_per_element, pcms::MonteCarloSampling::UniformRandom,
     seed);
   auto evaluator = source_space->CreatePointEvaluator<pcms::Real>(
-    pcms::EvaluationRequest::FromCoordinates(
-      mc_integrator.GetIntegrationPoints()));
+    source_space->Bind(mc_integrator.GetIntegrationPoints()));
   pcms::OmegaHMassIntegrator mass_integrator(*target_space);
   pcms::GalerkinProjectionSolver solver(mass_integrator, mc_integrator);
   const auto mc_projected = solver.Solve(*evaluator, source_field);
@@ -275,7 +274,7 @@ TEST_CASE(
   pcms::OmegaHMonteCarloRHSIntegrator mc(
     *target_space, nsample, pcms::MonteCarloSampling::UniformRandom, seed);
   auto ev = source_space->CreatePointEvaluator<pcms::Real>(
-    pcms::EvaluationRequest::FromCoordinates(mc.GetIntegrationPoints()));
+    source_space->Bind(mc.GetIntegrationPoints()));
   pcms::OmegaHMassIntegrator mass(*target_space);
   pcms::GalerkinProjectionSolver solver(mass, mc);
   const auto mc_x = solver.Solve(*ev, source);

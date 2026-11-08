@@ -218,8 +218,8 @@ struct OmegaHLagrangeTagValues
 
 // OmegaHLagrangePointEvaluator<T> implements PointEvaluator<T> for simplex
 // meshes backed by Omega_h. Localization results (element IDs, barycentric
-// coordinates) are computed once at construction and cached for repeated
-// Evaluate calls.
+// coordinates) are computed once by the factory's Bind and shared by every
+// evaluator created from that bound source, across repeated Evaluate calls.
 //
 // Output shape: [num_query_points][num_components].
 //
@@ -367,7 +367,7 @@ public:
     return search_;
   }
 
-  std::unique_ptr<PointEvaluator<T>> CreatePointEvaluator(
+  std::shared_ptr<BoundSource> Bind(
     const EvaluationRequest& request) const override
   {
     PCMS_FUNCTION_TIMER;
@@ -401,8 +401,24 @@ public:
       },
       search_);
 
+    return std::make_shared<detail::HintBoundSource<OmegaHLagrangeLocHint>>(
+      request, std::move(hint));
+  }
+
+  std::unique_ptr<PointEvaluator<T>> CreatePointEvaluator(
+    std::shared_ptr<const BoundSource> bound,
+    int derivative_order) const override
+  {
+    if (derivative_order != 0) {
+      throw pcms_error("OmegaHLagrangeEvaluatorFactory: derivatives are not "
+                       "supported");
+    }
+    const auto& hint =
+      detail::BoundSourceAs<detail::HintBoundSource<OmegaHLagrangeLocHint>>(
+        *bound, "OmegaHLagrangeEvaluatorFactory")
+        .GetHint();
     return std::make_unique<OmegaHLagrangePointEvaluator<T>>(
-      layout_, std::move(hint), policy.fill_value);
+      layout_, hint, bound->Policy().fill_value);
   }
 
   CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const override

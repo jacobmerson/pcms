@@ -120,9 +120,17 @@ FieldVariant PolynomialReconstructionFunctionSpace::CreateFieldImpl(
   return WrapField<double>(layout_, std::move(fd));
 }
 
+std::shared_ptr<BoundSource> PolynomialReconstructionFunctionSpace::BindImpl(
+  const EvaluationRequest& request) const
+{
+  PCMS_ALWAYS_ASSERT(evaluator_factory_ != nullptr);
+  return evaluator_factory_->Bind(request);
+}
+
 PointEvaluatorVariant
 PolynomialReconstructionFunctionSpace::CreatePointEvaluatorImpl(
-  Type value_type, const EvaluationRequest& request) const
+  Type value_type, std::shared_ptr<const BoundSource> bound,
+  int derivative_order) const
 {
   if (value_type != Type::Real) {
     throw pcms_error(
@@ -130,7 +138,8 @@ PolynomialReconstructionFunctionSpace::CreatePointEvaluatorImpl(
       "double (Real)");
   }
   PCMS_ALWAYS_ASSERT(evaluator_factory_ != nullptr);
-  return evaluator_factory_->CreatePointEvaluator(request);
+  return evaluator_factory_->CreatePointEvaluator(std::move(bound),
+                                                  derivative_order);
 }
 
 } // namespace pcms
