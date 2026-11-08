@@ -70,8 +70,20 @@ FieldVariant SplineFunctionSpace::CreateFieldImpl(FieldDataVariant data) const
   return WrapField<double>(layout_, std::move(fd));
 }
 
+std::shared_ptr<BoundSource> SplineFunctionSpace::BindImpl(
+  const EvaluationRequest& request) const
+{
+  if (!evaluator_factory_) {
+    throw pcms_error("SplineFunctionSpace::Bind: evaluator construction is not "
+                     "available for this "
+                     "backend");
+  }
+  return evaluator_factory_->Bind(request);
+}
+
 PointEvaluatorVariant SplineFunctionSpace::CreatePointEvaluatorImpl(
-  Type value_type, const EvaluationRequest& request) const
+  Type value_type, std::shared_ptr<const BoundSource> bound,
+  int derivative_order) const
 {
   if (value_type != Type::Real) {
     throw pcms_error(
@@ -82,7 +94,8 @@ PointEvaluatorVariant SplineFunctionSpace::CreatePointEvaluatorImpl(
       "SplineFunctionSpace::CreatePointEvaluatorImpl: evaluator construction "
       "is not available for this backend");
   }
-  return evaluator_factory_->CreatePointEvaluator(request);
+  return evaluator_factory_->CreatePointEvaluator(std::move(bound),
+                                                  derivative_order);
 }
 
 } // namespace pcms

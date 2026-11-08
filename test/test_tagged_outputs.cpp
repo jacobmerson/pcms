@@ -71,8 +71,8 @@ TEST_CASE("PointEvaluator::Evaluate gates on the source field's stored basis")
   const std::vector<Real> pts = {0.7, 0.3, 0.4, 1.0, 0.9, 0.9};
   auto query = pcms::test::CreateDeviceCoordinateView(
     pts, pcms::csys::CylindricalRThetaZ::Create(), 3);
-  auto evaluator = space->CreatePointEvaluator<Real>(
-    pcms::EvaluationRequest::FromCoordinates(query.coordinate_view));
+  auto evaluator =
+    space->CreatePointEvaluator<Real>(space->Bind(query.coordinate_view));
   const int n = static_cast<int>(pts.size()) / 3;
   Kokkos::View<Real**, DeviceMemorySpace> out("out", n, 3);
 

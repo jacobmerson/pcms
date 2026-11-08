@@ -14,6 +14,10 @@ namespace pcms
 
 class FunctionSpace;
 
+// The query points a source is bound to, with the out-of-bounds policy and
+// the points' provenance. PointEvaluatorFactory::Bind builds it and hands it to
+// the backend's BindImpl; callers bind with Bind(points) or Bind(space) and do
+// not build requests themselves.
 struct EvaluationRequest
 {
   // Query coordinates to evaluate at. These are always consumed at evaluator
@@ -27,12 +31,18 @@ struct EvaluationRequest
   // Construction-time policy that is baked into the created PointEvaluator.
   OutOfBoundsPolicy policy = {};
 
+  [[deprecated("bind the source with PointEvaluatorFactory::Bind(coords, "
+               "policy)")]]
   static EvaluationRequest FromCoordinates(
     CoordinateView<DeviceMemorySpace> coords, OutOfBoundsPolicy policy = {});
 
+  [[deprecated("bind the source to a space with "
+               "PointEvaluatorFactory::Bind(space, policy)")]]
   static EvaluationRequest FromLayout(std::shared_ptr<const FieldLayout> layout,
                                       OutOfBoundsPolicy policy = {});
 
+  [[deprecated("bind the source with PointEvaluatorFactory::Bind(space, "
+               "policy)")]]
   static EvaluationRequest FromFunctionSpace(
     const FunctionSpace& function_space, OutOfBoundsPolicy policy = {});
 
@@ -52,6 +62,12 @@ struct EvaluationRequest
   }
 
 private:
+  friend class PointEvaluatorFactory;
+
+  /// Request for the DOF-holder sites of `layout`, which must not be null.
+  static EvaluationRequest ForLayout(std::shared_ptr<const FieldLayout> layout,
+                                     OutOfBoundsPolicy policy);
+
   explicit EvaluationRequest(CoordinateView<DeviceMemorySpace> coords_in,
                              std::shared_ptr<const FieldLayout> query_layout_in,
                              OutOfBoundsPolicy policy_in = {}) noexcept
