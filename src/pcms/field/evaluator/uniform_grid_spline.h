@@ -86,18 +86,26 @@ public:
     return FirstDerivativeBasis(stored, layout_->GetCoordinateSystem());
   }
 
-  void Evaluate(
+  [[nodiscard]] LO NumPoints() const override
+  {
+    return static_cast<LO>(hint_.coordinates_.extent(0));
+  }
+
+  // Public because CUDA forbids extended lambdas in non-public member
+  // functions. User call Evaluate.
+  // TODO: add passkey or other mechanism to protect this
+  void EvaluateImpl(
     const Field<Real>& field,
     ValueView<Real, DeviceMemorySpace, LayoutPolicy> out) const override
   {
-    this->CheckEvaluateWriteTag("UniformGridSplinePointEvaluator2D::Evaluate",
-                                field, out);
     const auto values = out.GetValues();
-    LO num_points = static_cast<LO>(hint_.coordinates_.extent(0));
-    PCMS_ALWAYS_ASSERT(values.extent(0) == static_cast<size_t>(num_points));
+    LO num_points = NumPoints();
+    if (field.GetLayout().GetNumComponents() != 1) {
+      throw pcms_error("UniformGridSplinePointEvaluator2D: only scalar "
+                       "(num_components==1) fields are supported");
+    }
     // One column per selected spline output: f, or (df/dx, df/dy).
     const int num_outputs = derivative_order_ == 0 ? 1 : 2;
-    PCMS_ALWAYS_ASSERT(values.extent(1) == static_cast<size_t>(num_outputs));
 
     const auto dof_data = field.GetDOFHolderData().GetValues();
     LO nx = grid_.divisions[0] + 1;
