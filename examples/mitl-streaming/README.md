@@ -87,9 +87,10 @@ to every producer rank. Options go to both programs.
 ### Training on the stream
 
 `run_trainer.py` is a consumer that trains instead of only forecasting. By
-default it trains two identical next-frame CNNs (same initial weights and
-sample order) on the same stream, one on point-interpolated frames and one
-on frames from the conservative transfer. Every received frame is first
+default it trains two identical next-frame CNNs (same architecture, initial
+weights, sample order and one shared feature scaling) on the same stream, one
+on point-interpolated frames and one on frames from the conservative
+transfer, so only their data differ. Every received frame is first
 predicted by the model (scored against persistence), then added to a replay
 buffer, then trained on (`--train-steps` optimizer steps on random patches).
 `make_video.py` renders the record: per mode the ingested density, the
@@ -146,7 +147,7 @@ bundled `example_traj` frames (needs `einops` and `scikit-fem`).
   which needs a double backward of attention; on the CPU this uses the math
   attention kernel. One step takes about 20 s and 10 GB on 4-8 cores.
   Adam at lr 1e-5 already raises the loss of the pretrained model after one
-  step; use about 1e-6.
+  step, so the default is 1e-6.
 - Frames stay float64 inside the pipeline; hnode stores float32, so cast at
   the disk or model boundary.
 - Density uses a lumped mass matrix (non-negative). Consistent projection

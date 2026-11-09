@@ -191,7 +191,7 @@ class HNODEStreamTrainer:
     forward pass before the update, so they are predictions of frames the
     model has not trained on yet."""
 
-    def __init__(self, model, leads=(2, 4), lr=1e-5, max_steps=None):
+    def __init__(self, model, leads=(2, 4), lr=1e-6, max_steps=None):
         import torch
         self.model = model
         self.leads = list(leads)

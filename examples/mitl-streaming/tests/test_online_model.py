@@ -36,6 +36,47 @@ class OnlineTrainerTest(unittest.TestCase):
         self.assertTrue(np.isfinite(r["loss"]))
         self.assertIsNotNone(r["predh"])        # forecast made at step 1
 
+    def test_crop_larger_than_frame(self):
+        from online_model import OnlineTrainer
+        mask = np.ones((16, 40), dtype=bool)
+        tr = OnlineTrainer(("vx", "vy", "n_e"), 2, mask, steps_per_frame=2,
+                           crop=(64, 192))
+        for f in self.frames(4):
+            r = tr.receive(f)
+        self.assertEqual(tr.optimizer_steps, 4)
+        self.assertTrue(np.isfinite(r["loss"]))
+
+    def test_shared_featurizer_makes_models_identical(self):
+        # Same frames through two trainers sharing one featurizer: same
+        # weights, samples and scale, so identical results whatever order
+        # the trainers run in.
+        from online_model import Featurizer, OnlineTrainer
+        mask = np.ones((16, 40), dtype=bool)
+        feat = Featurizer(("vx", "vy", "n_e"), 2)
+        trainers = [OnlineTrainer(("vx", "vy", "n_e"), 2, mask,
+                                  steps_per_frame=2, crop=(8, 16), horizon=2,
+                                  featurizer=feat) for _ in range(2)]
+        for f in self.frames(6):
+            feat.observe(f, mask)
+            a, b = (tr.receive(f) for tr in trainers)
+            for key in ("err1", "errh", "loss"):
+                np.testing.assert_equal(a[key], b[key])
+
+    def test_forecast_scored_in_current_scale(self):
+        # Velocity grows 4x after the forecast is made: the stored forecast
+        # (persistence, untrained model) must be rescaled to the new scale,
+        # so it scores like persistence.
+        from online_model import OnlineTrainer
+        mask = np.ones((16, 40), dtype=bool)
+        tr = OnlineTrainer(("vx", "vy", "n_e"), 2, mask, steps_per_frame=0,
+                           horizon=2)
+        frames = self.frames(4)
+        frames[3] = frames[3].copy()
+        frames[3][0] *= 4.0
+        for f in frames:
+            r = tr.receive(f)
+        self.assertAlmostEqual(r["errh"], r["errh_persist"], places=6)
+
     def test_density_features_round_trip(self):
         from online_model import Featurizer
         f = Featurizer(("vx", "vy", "n_e"), 2)

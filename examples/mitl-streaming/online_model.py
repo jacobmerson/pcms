@@ -11,6 +11,12 @@ Features: density as log10(n_e + floor), shifted and scaled to about
 that channel (a running scale, so nothing has to be known up front). The
 network predicts the change from the newest frame and its last layer starts
 at zero, so an untrained model is persistence and any skill is learned.
+
+Models compared on different rasterizations of the same stream are made
+identical apart from their data: same architecture, initial weights (same
+seed), sample order (same seed) and one shared Featurizer that observes every
+mode's frame before any model scores, so the feature scale is the same for
+all of them and does not depend on the order of the modes.
 """
 
 import collections
@@ -43,6 +49,16 @@ class Featurizer:
                           - np.log10(DENSITY_FLOOR)) / DENSITY_DECADES
             else:
                 out[c] = frame[c] / (self.scale[c] or 1.0)
+        return out
+
+    def rescale(self, features, old_scale):
+        """Features made with an earlier scale -> the current one (density
+        does not use the running scale)."""
+        out = np.array(features, dtype=np.float32)
+        for c in range(out.shape[0]):
+            if c != self.density_channel:
+                new = self.scale[c] or 1.0
+                out[c] *= (old_scale[c] or 1.0) / new
         return out
 
     def log_density(self, features):
@@ -95,16 +111,23 @@ def masked_l1(a, b, mask):
 
 
 class OnlineTrainer:
-    """One model trained on one stream of frames (one rasterization)."""
+    """One model trained on one stream of frames (one rasterization).
+
+    featurizer: a Featurizer shared with the other trainers on the same
+    stream. The caller then observes every frame with it before calling
+    receive(). Default: a private one, observed in receive().
+    """
 
     def __init__(self, channels, density_channel, mask, steps_per_frame=20,
                  batch_size=4, lr=1e-3, unroll=2, horizon=5, seed=0,
-                 recent=8, width=16, crop=(64, 192)):
+                 recent=8, width=16, crop=(64, 192), featurizer=None):
         import torch
         self._torch = torch
         torch.manual_seed(seed)
         self.rng = np.random.default_rng(seed)
-        self.feat = Featurizer(channels, density_channel)
+        self._own_feat = featurizer is None
+        self.feat = (Featurizer(channels, density_channel)
+                     if featurizer is None else featurizer)
         self.mask = mask
         self._mask_t = torch.as_tensor(mask, dtype=torch.float32)
         self.net = make_net(len(channels), width)
@@ -118,7 +141,8 @@ class OnlineTrainer:
         self.raw = []                 # received frames, in order
         self.optimizer_steps = 0
         self.losses = []              # every optimizer step
-        self._forecasts = {}          # target index -> (features, lead)
+        self._forecasts = {}          # target index -> (features, scale,
+                                      # lead)
 
     # Model.
     def _step(self, prev, cur, mask=None):
@@ -148,7 +172,8 @@ class OnlineTrainer:
         """Score, store and train on one received frame; returns a dict of
         per-step results (errors are in feature units, masked L1)."""
         t = len(self.raw)
-        self.feat.observe(frame, self.mask)
+        if self._own_feat:
+            self.feat.observe(frame, self.mask)
         self.raw.append(frame)
         result = {"index": t, "err1": np.nan, "err1_persist": np.nan,
                   "errh": np.nan, "errh_persist": np.nan, "pred1": None,
@@ -162,7 +187,10 @@ class OnlineTrainer:
             result["err1"] = masked_l1(pred, truth, self.mask)
             result["err1_persist"] = masked_l1(prev[-1], truth, self.mask)
         if t in self._forecasts:
-            pred, lead = self._forecasts.pop(t)
+            pred, scale, lead = self._forecasts.pop(t)
+            # Made with the scale of its time; score it with today's, like
+            # the truth.
+            pred = self.feat.rescale(pred, scale)
             result["predh"] = pred
             result["errh"] = masked_l1(pred, truth, self.mask)
             result["errh_persist"] = masked_l1(
@@ -177,7 +205,8 @@ class OnlineTrainer:
             # Forecast made now (after training on t), scored on arrival.
             feats = [self.feat(self.raw[t - 1]), truth]
             self._forecasts[t + self.horizon] = (
-                self._predict(feats, self.horizon)[-1], self.horizon)
+                self._predict(feats, self.horizon)[-1],
+                self.feat.scale.copy(), self.horizon)
         return result
 
     def _train_step(self):
@@ -199,8 +228,8 @@ class OnlineTrainer:
         if self.crop:
             # Random patches: the network is convolutional, so it trains on
             # patches several times faster and is applied to whole frames.
-            h, w = self.crop
             H, W = self.mask.shape
+            h, w = min(self.crop[0], H), min(self.crop[1], W)
             y0 = self.rng.integers(0, H - h + 1, len(ks))
             x0 = self.rng.integers(0, W - w + 1, len(ks))
             seq = np.stack([q[..., y:y + h, x:x + w]

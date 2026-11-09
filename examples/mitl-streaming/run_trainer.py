@@ -6,9 +6,10 @@ next-frame models online, one per rasterization mode, on the same stream.
     python run_trainer.py --model hnode --hnode-dir /path/to/hnode \
         --modes point --record hnode.npz
 
-By default two identical models (same initial weights and sample order) are
-trained side by side: one on point-interpolated frames, one on frames from
-the conservative transfer. make_video.py renders the record. --model hnode instead fine-tunes the
+By default two identical models (same architecture, initial weights, sample
+order and feature scaling; only their data differ) are trained side by side:
+one on point-interpolated frames, one on frames from the conservative
+transfer. make_video.py renders the record. --model hnode instead fine-tunes the
 pretrained hnode checkpoint (needs the synthetic source's 6 channels on the
 default grid; one optimizer step per arrival). Runs on one
 rank; start run_producer.py alongside (run_pcms_demo.sh with
@@ -22,7 +23,7 @@ import time
 import numpy as np
 
 import runtime
-from online_model import OnlineRecord, OnlineTrainer
+from online_model import Featurizer, OnlineRecord, OnlineTrainer
 from rasterizer import GridRasterizer, frame_channels, make_frame
 from run_producer import add_transport_args, transport_params
 from sources import add_source_args, default_grid, make_source
@@ -47,7 +48,7 @@ def parse_args():
                    help="optimizer steps per received frame")
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--lr", type=float, default=None,
-                   help="learning rate (default: 1e-3 cnn, 1e-5 hnode)")
+                   help="learning rate (default: 1e-3 cnn, 1e-6 hnode)")
     p.add_argument("--horizon", type=int, default=5,
                    help="lead of the multi-step forecast scored on arrival")
     p.add_argument("--seed", type=int, default=0)
@@ -68,6 +69,12 @@ def run(args):
     if world.size() != 1:
         raise SystemExit("the trainer runs on one rank")
     source = make_source(args, world)
+    if args.model == "hnode":
+        channels = frame_channels(source.field_centering)
+        if len(channels) != 6:
+            raise SystemExit(
+                f"--model hnode needs the 6 channels Ex, Ey, Bz, vx, vy, n_e; "
+                f"--source {args.source} provides {', '.join(channels)}")
     grid = default_grid(args.source, args.nx, args.ny)
     rasts = {m: GridRasterizer(source.mesh, grid, world, m)
              for m in args.modes}
@@ -78,6 +85,7 @@ def run(args):
     if args.model == "hnode":
         return run_hnode(args, rasts[args.modes[0]], source, transport)
     trainers = {}
+    feat = None               # one Featurizer shared by every mode
     record = OnlineRecord()
     meta = {"step": [], "time": [], "source_count": [], "ingest_time": []}
     print(f"trainer: mesh {source.mesh.nelems()} triangles; grid "
@@ -91,18 +99,27 @@ def run(args):
         meta["source_count"].append(
             next(iter(rasts.values())).source_integral(message.fields["n_e"]))
         line = [f"step {message.step:3d}"]
-        ingest = 0.0
+        frames = {}
+        t0 = time.perf_counter()
         for mode, rast in rasts.items():
-            t0 = time.perf_counter()
-            frame = make_frame(rast, message.fields, source.field_centering)
-            ingest += time.perf_counter() - t0
-            channels = frame_channels(message.fields)
+            frames[mode] = make_frame(rast, message.fields,
+                                      source.field_centering)
+        ingest = time.perf_counter() - t0
+        channels = frame_channels(message.fields)
+        if feat is None:
+            feat = Featurizer(channels, channels.index("n_e"))
+        # Every mode's frame updates the shared scale before any model
+        # scores, so all models see the same scaling whatever the mode order.
+        for mode, frame in frames.items():
+            feat.observe(frame, rasts[mode].mask)
+        for mode, rast in rasts.items():
+            frame = frames[mode]
             if mode not in trainers:
                 trainers[mode] = OnlineTrainer(
                     channels, channels.index("n_e"), rast.mask,
                     steps_per_frame=args.train_steps,
                     batch_size=args.batch_size, lr=args.lr or 1e-3,
-                    horizon=args.horizon, seed=args.seed)
+                    horizon=args.horizon, seed=args.seed, featurizer=feat)
             result = trainers[mode].receive(frame)
             record.add(mode, trainers[mode], result)
             record.rows[f"{mode}_count"].append(
@@ -141,7 +158,7 @@ def run_hnode(args, rast, source, transport):
     from hnode_model import HNODEModel, HNODEStreamTrainer
     from rasterizer import DENSITY_CHANNEL
     model = HNODEModel(args.hnode_dir)
-    lr = args.lr or 1e-5
+    lr = args.lr or 1e-6
     trainer = HNODEStreamTrainer(model, lr=lr, max_steps=args.hnode_steps)
     rows = {k: [] for k in ("step", "time", "loss", "train_time", "truth",
                             "pred", "persist")}
