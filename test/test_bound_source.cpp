@@ -135,3 +135,46 @@ TEST_CASE("Sources without derivatives reject a derivative order")
   REQUIRE_THROWS_WITH(space->CreatePointEvaluator<Real>(bound, 1),
                       ContainsSubstring("derivative"));
 }
+
+TEST_CASE("Binding splits found and missing points and applies the policy")
+{
+  auto lib = Omega_h::Library{};
+  auto mesh = BuildSquare(lib);
+  auto space = pcms::test::MakeP1Space(mesh);
+  auto field = space->CreateFunction<Real>("f");
+  pcms::test::SetField(
+    field,
+    OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); });
+  // the second point is outside the unit square
+  const std::vector<Real> pts = {0.5, 0.5, 2.0, 2.0, 0.25, 0.75};
+  auto coords =
+    pcms::test::CreateDeviceCoordinateView(pts, space->GetCoordinateSystem());
+
+  REQUIRE_THROWS_WITH(space->Bind(coords.coordinate_view),
+                      ContainsSubstring("outside the source's domain"));
+  REQUIRE_THROWS_WITH(
+    space->Bind(coords.coordinate_view,
+                OutOfBoundsPolicy{OutOfBoundsMode::NEAREST_BOUNDARY}),
+    ContainsSubstring("NEAREST_BOUNDARY"));
+
+  auto bound = space->Bind(coords.coordinate_view,
+                           OutOfBoundsPolicy{OutOfBoundsMode::FILL, -1.0});
+  const auto found = Kokkos::create_mirror_view_and_copy(HostMemorySpace(),
+                                                         bound->FoundPoints());
+  const auto missing = Kokkos::create_mirror_view_and_copy(
+    HostMemorySpace(), bound->MissingPoints());
+  REQUIRE(found.extent(0) == 2);
+  REQUIRE(found(0) == 0);
+  REQUIRE(found(1) == 2);
+  REQUIRE(missing.extent(0) == 1);
+  REQUIRE(missing(0) == 1);
+
+  auto evaluator = space->CreatePointEvaluator<Real>(bound);
+  REQUIRE(evaluator->FilledPoints().extent(0) == 1);
+  const auto values = EvaluateHost(*evaluator, field, 3);
+  REQUIRE_THAT(values[0],
+               WithinAbs(pcms::test::linear_f(0.5, 0.5), pcms::test::EvalTol));
+  REQUIRE(values[1] == -1.0);
+  REQUIRE_THAT(values[2], WithinAbs(pcms::test::linear_f(0.25, 0.75),
+                                    pcms::test::EvalTol));
+}

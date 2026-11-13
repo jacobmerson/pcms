@@ -5,27 +5,6 @@
 namespace pcms
 {
 
-namespace detail
-{
-
-void FillRows(Rank2View<Real, DeviceMemorySpace> values,
-              const Kokkos::View<const LO*, DeviceMemorySpace>& rows,
-              Real fill_value)
-{
-  const auto num_cols = static_cast<int>(values.extent(1));
-  Kokkos::parallel_for(
-    "transformed_source_fill_rows",
-    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(
-      0, static_cast<LO>(rows.extent(0))),
-    KOKKOS_LAMBDA(const LO k) {
-      for (int c = 0; c < num_cols; ++c) {
-        values(rows(k), c) = fill_value;
-      }
-    });
-}
-
-} // namespace detail
-
 namespace
 {
 
@@ -37,6 +16,7 @@ public:
                          std::shared_ptr<const BoundSource> inner)
     : BoundSource(request), map_(std::move(map)), inner_(std::move(inner))
   {
+    SetFound(*inner_);
   }
 
   [[nodiscard]] const std::shared_ptr<const BoundCoordinateMap>& Map()
@@ -93,14 +73,14 @@ std::shared_ptr<BoundSource> TransformedSource::BindImpl(
 
 template <typename T>
 std::unique_ptr<PointEvaluator<T>> TransformedSource::Create(
-  const BoundSource& bound, int derivative_order) const
+  std::shared_ptr<const BoundSource> bound, int derivative_order) const
 {
-  const auto& transformed =
-    detail::BoundSourceAs<TransformedBoundSource>(bound, "TransformedSource");
+  // CreatePointEvaluator accepts only bound sources this source created
+  const auto& transformed = static_cast<const TransformedBoundSource&>(*bound);
   auto inner =
     source_->CreatePointEvaluator<T>(transformed.Inner(), derivative_order);
   return std::make_unique<TransformedPointEvaluator<T>>(
-    transformed.Map(), std::move(inner), bound.Policy());
+    std::move(bound), transformed.Map(), std::move(inner));
 }
 
 PointEvaluatorVariant TransformedSource::CreatePointEvaluatorImpl(
@@ -108,7 +88,7 @@ PointEvaluatorVariant TransformedSource::CreatePointEvaluatorImpl(
   int derivative_order) const
 {
   return apply_to_type(value_type, [&](auto type) -> PointEvaluatorVariant {
-    return Create<typename decltype(type)::type>(*bound, derivative_order);
+    return Create<typename decltype(type)::type>(bound, derivative_order);
   });
 }
 

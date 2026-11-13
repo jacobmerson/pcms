@@ -34,6 +34,7 @@ set(PCMS_FIELD_SOURCES
         transformed_source.cpp
         point_evaluator_factory.cpp
         function_space.cpp
+        bound_source.cpp
         gradient_source.cpp
         gid_permutation.cpp
         function_space/polynomial_reconstruction.cpp

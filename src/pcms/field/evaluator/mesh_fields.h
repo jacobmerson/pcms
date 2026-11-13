@@ -14,6 +14,70 @@
 namespace pcms
 {
 
+/// @brief MeshFields bound source: the found query points grouped by owning
+///        element, with their coordinates in that element.
+class MeshFieldsBinding final : public BoundSource
+{
+public:
+  /// @param request query points and out-of-bounds policy
+  /// @param search containing-element search over `mesh`
+  /// @param mesh 2D simplex mesh of the evaluated fields
+  MeshFieldsBinding(const EvaluationRequest& request,
+                    const GridPointSearch2D& search, Omega_h::Mesh& mesh)
+    : BoundSource(request)
+  {
+    const auto points = PointValues();
+    auto [found, owning_ids] = FindOwningElements(search, points);
+    SetFound(found);
+    const auto found_points = FoundPoints();
+    const auto num_found = static_cast<LO>(found_points.extent(0));
+    const LO nelems = mesh.nelems();
+    using Range = Kokkos::RangePolicy<DeviceMemorySpace::execution_space>;
+
+    Kokkos::View<LO*> elem_counts("elem_counts", nelems);
+    Kokkos::parallel_for(
+      "CountPerElement", Range(0, num_found),
+      CountPerElementFunctor(found_points, owning_ids, elem_counts));
+    offsets_ = Kokkos::View<LO*>("offsets", nelems + 1);
+    LO total = 0;
+    Kokkos::parallel_scan("ComputeOffsets", Range(0, nelems),
+                          ComputeOffsetsDeviceFunctor(offsets_, elem_counts),
+                          total);
+    Kokkos::parallel_for("SetFinalOffset", Range(0, 1),
+                         SetFinalOffsetFunctor(offsets_, nelems, total));
+
+    local_coords_ = Kokkos::View<Real**>("local_coords", num_found, mesh.dim());
+    indices_ = Kokkos::View<LO*>("indices", num_found);
+    Kokkos::parallel_for("FillLocalCoordinates", Range(0, num_found),
+                         FillCoordinatesDeviceFunctor(
+                           found_points, owning_ids, elem_counts, offsets_,
+                           local_coords_, indices_, mesh.ask_elem_verts(),
+                           mesh.coords(), points, mesh.dim()));
+  }
+
+  /// @return offsets into LocalCoordinates() of each element's points
+  ///         (number of elements + 1 entries)
+  [[nodiscard]] Kokkos::View<LO*> Offsets() const noexcept { return offsets_; }
+
+  /// @return coordinates of the found points in their owning elements, grouped
+  ///         by element
+  [[nodiscard]] Kokkos::View<Real**> LocalCoordinates() const noexcept
+  {
+    return local_coords_;
+  }
+
+  /// @return query point of each row of LocalCoordinates()
+  [[nodiscard]] Kokkos::View<const LO*> Indices() const noexcept
+  {
+    return indices_;
+  }
+
+private:
+  Kokkos::View<LO*> offsets_;
+  Kokkos::View<Real**> local_coords_;
+  Kokkos::View<LO*> indices_;
+};
+
 // MeshFieldsPointEvaluator<T> implements PointEvaluator<T> for
 // MeshFields-backed simplex meshes. Each Evaluate call loads DOF data from the
 // FieldData argument into the MeshFieldBackend's shape_field_ via SetData, then
@@ -24,27 +88,15 @@ template <typename T,
 class MeshFieldsPointEvaluator : public PointEvaluator<T, LayoutPolicy>
 {
 public:
+  /// @param layout MeshFields layout of the evaluated fields
+  /// @param binding found query points grouped by element
   MeshFieldsPointEvaluator(
     std::shared_ptr<const MeshFieldsAdapterLayout> layout,
-    MeshFieldsAdapter2LocalizationHint hint, Real fill_value)
-    : layout_(std::move(layout)),
-      hint_(std::move(hint)),
-      fill_value_(fill_value)
+    std::shared_ptr<const MeshFieldsBinding> binding)
+    : PointEvaluator<T, LayoutPolicy>(binding),
+      layout_(std::move(layout)),
+      binding_(std::move(binding))
   {
-  }
-
-  [[nodiscard]] LO NumPoints() const override
-  {
-    return static_cast<LO>(hint_.coordinates_.extent(0) + hint_.num_missing_);
-  }
-
-  [[nodiscard]] Kokkos::View<const LO*, DeviceMemorySpace> FilledPoints()
-    const override
-  {
-    if (hint_.mode_ != OutOfBoundsMode::FILL) {
-      return {};
-    }
-    return hint_.missing_indices_d_;
   }
 
   // Public because CUDA forbids extended lambdas in non-public member
@@ -64,43 +116,31 @@ public:
     }
 
     auto eval_results = mesh_field_data->GetMeshFieldBackend()->evaluate(
-      hint_.coordinates_d_, hint_.offsets_d_);
+      binding_->LocalCoordinates(), binding_->Offsets());
 
     int ncomp = layout_->GetNumComponents();
     int num_eval = static_cast<int>(eval_results.extent(0));
+    const auto indices = binding_->Indices();
     Kokkos::parallel_for(
       "CopyEvalResultsToValues",
       Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {num_eval, ncomp}),
-      KOKKOS_CLASS_LAMBDA(LO i, int c) {
-        values(hint_.indices_d_(i), c) = eval_results(i, c);
+      KOKKOS_LAMBDA(LO i, int c) {
+        values(indices(i), c) = eval_results(i, c);
       });
-
-    if (hint_.num_missing_ > 0 && hint_.mode_ == OutOfBoundsMode::FILL) {
-      T fill_val = static_cast<T>(fill_value_);
-      int num_missing = static_cast<int>(hint_.num_missing_);
-      Kokkos::parallel_for(
-        "FillMissingValues",
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {num_missing, ncomp}),
-        KOKKOS_CLASS_LAMBDA(LO i, int c) {
-          values(hint_.missing_indices_d_(i), c) = fill_val;
-        });
-    }
   }
 
 private:
   std::shared_ptr<const MeshFieldsAdapterLayout> layout_;
-  MeshFieldsAdapter2LocalizationHint hint_;
-  Real fill_value_;
+  std::shared_ptr<const MeshFieldsBinding> binding_;
 };
 
 /// @brief Point evaluation of MeshFields fields on a 2D simplex mesh.
 /// @tparam T field value type
 template <typename T>
 class MeshFieldsEvaluatorFactory
-  : public TypedPointEvaluatorFactory<
-      T, detail::HintBoundSource<MeshFieldsAdapter2LocalizationHint>>
+  : public TypedPointEvaluatorFactory<T, MeshFieldsBinding>
 {
-  using Bound = detail::HintBoundSource<MeshFieldsAdapter2LocalizationHint>;
+  using Bound = MeshFieldsBinding;
 
 public:
   /// @param layout MeshFields layout of the evaluated fields
@@ -121,27 +161,7 @@ protected:
     const EvaluationRequest& request) const override
   {
     PCMS_FUNCTION_TIMER;
-    const auto coords = request.coords;
-    const auto policy = request.policy;
-
-    auto coordinates = coords.GetValues();
-    Kokkos::View<Real* [2], DeviceMemorySpace> coords_search(
-      "coords_search", coordinates.extent(0));
-    Kokkos::parallel_for(
-      "copy_coords",
-      Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(
-        0, coordinates.extent(0)),
-      KOKKOS_LAMBDA(const int i) {
-        coords_search(i, 0) = coordinates(i, 0);
-        coords_search(i, 1) = coordinates(i, 1);
-      });
-    auto results = search_(coords_search);
-    auto owning_ids = search_.GetOwningElementIds(results);
-
-    MeshFieldsAdapter2LocalizationHint hint(mesh_, results, coords_search,
-                                            owning_ids, policy.mode);
-
-    return std::make_shared<Bound>(request, std::move(hint));
+    return std::make_shared<Bound>(request, search_, mesh_);
   }
 
   std::unique_ptr<PointEvaluator<T>> CreateEvaluator(
@@ -151,8 +171,8 @@ protected:
       throw pcms_error(
         "MeshFieldsEvaluatorFactory: derivatives are not supported");
     }
-    return std::make_unique<MeshFieldsPointEvaluator<T>>(
-      layout_, bound->GetHint(), bound->Policy().fill_value);
+    return std::make_unique<MeshFieldsPointEvaluator<T>>(layout_,
+                                                         std::move(bound));
   }
 
 private:

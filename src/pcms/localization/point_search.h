@@ -2,6 +2,7 @@
 #define PCMS_COUPLING_POINT_SEARCH_H
 #include <cassert>
 
+#include <utility>
 #include <variant>
 
 #include <Kokkos_Core.hpp>
@@ -253,6 +254,25 @@ private:
 /// mesh without building a second search.
 using GridPointSearchVariant =
   std::variant<GridPointSearch2D, GridPointSearch3D>;
+
+/// @brief Finds the owning element of each query point.
+/// @param search containing-element search over a mesh
+/// @param points query points, one row per point
+/// @return per point, whether it is in the mesh, and its owning element
+template <typename Search>
+std::pair<Kokkos::View<bool*>, Kokkos::View<LO*>> FindOwningElements(
+  const Search& search, Kokkos::View<const Real**> points)
+{
+  const auto results = search(points);
+  auto owning_ids = search.GetOwningElementIds(results);
+  const auto n = static_cast<LO>(points.extent(0));
+  Kokkos::View<bool*> found("found_in_mesh", n);
+  Kokkos::parallel_for(
+    "FindOwningElements", n, KOKKOS_LAMBDA(const LO i) {
+      found(i) = owning_ids(i) >= 0 && results(i).element_id >= 0;
+    });
+  return {found, owning_ids};
+}
 
 } // namespace pcms
 #endif // PCMS_COUPLING_POINT_SEARCH_H

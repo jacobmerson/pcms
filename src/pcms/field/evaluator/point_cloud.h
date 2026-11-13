@@ -21,23 +21,11 @@
 namespace pcms
 {
 
-namespace detail
-{
-/// The MLS supports of the bound points and the coordinates the solve uses.
-struct MLSBinding
-{
-  Omega_h::Reals source_coords;
-  Omega_h::Reals target_coords;
-  SupportResults supports;
-};
-} // namespace detail
-
 /// @brief Point evaluation of point-cloud fields by moving least squares.
 class PointCloudEvaluatorFactory
-  : public TypedPointEvaluatorFactory<
-      Real, detail::HintBoundSource<detail::MLSBinding>>
+  : public TypedPointEvaluatorFactory<Real, MLSBinding>
 {
-  using Bound = detail::HintBoundSource<detail::MLSBinding>;
+  using Bound = MLSBinding;
 
 public:
   /// @param layout point-cloud layout of the evaluated fields
@@ -71,15 +59,8 @@ protected:
 
     // Extract source coordinates for the MLS solve.
     const auto src_view = layout_->GetDOFHolderCoordinates().GetValues();
-    const int dim = layout_->GetDimension();
     Omega_h::Reals source_coords =
       flatten_to_omega_h_reals(src_view, "src_coords");
-
-    // Extract target coordinates for the MLS solve.
-    const auto tgt_view = coords.GetValues();
-    PCMS_ALWAYS_ASSERT(static_cast<int>(tgt_view.extent(1)) == dim);
-    Omega_h::Reals target_coords_oh =
-      flatten_to_omega_h_reals(tgt_view, "tgt_coords");
 
     SupportResults supports;
     auto path =
@@ -93,10 +74,8 @@ protected:
       supports = localization_->Build(coords);
     }
 
-    return std::make_shared<Bound>(
-      request,
-      detail::MLSBinding{std::move(source_coords), std::move(target_coords_oh),
-                         std::move(supports)});
+    return std::make_shared<Bound>(request, std::move(source_coords),
+                                   std::move(supports));
   }
 
   std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
@@ -106,10 +85,8 @@ protected:
       throw pcms_error(
         "PointCloudEvaluatorFactory: derivatives are not supported");
     }
-    const auto& binding = bound->GetHint();
     return std::make_unique<MLSPointEvaluator<>>(
-      binding.source_coords, binding.target_coords, binding.supports,
-      layout_->GetDimension(), options_);
+      std::move(bound), layout_->GetDimension(), options_);
   }
 
 private:

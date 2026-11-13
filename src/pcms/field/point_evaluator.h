@@ -1,6 +1,7 @@
 #ifndef PCMS_POINT_EVALUATOR_H
 #define PCMS_POINT_EVALUATOR_H
 
+#include "pcms/field/bound_source.hpp"
 #include "pcms/field/value_view.hpp"
 #include "pcms/utility/arrays.h"
 #include "pcms/utility/memory_spaces.h"
@@ -15,15 +16,40 @@ namespace pcms
 template <typename T>
 class Field;
 
-/// @brief Evaluates fields at a fixed set of query points.
+namespace detail
+{
+
+/// @brief Sets every column of the listed rows of `values` to `value`.
+/// @param values output view
+/// @param rows indices of the rows to set
+/// @param value value to write
+template <typename T, typename LayoutPolicy>
+void FillRows(Rank2View<T, DeviceMemorySpace, LayoutPolicy> values,
+              Kokkos::View<const LO*, DeviceMemorySpace> rows, T value)
+{
+  const auto num_cols = static_cast<int>(values.extent(1));
+  Kokkos::parallel_for(
+    "PointEvaluator::FillRows",
+    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(
+      0, static_cast<LO>(rows.extent(0))),
+    KOKKOS_LAMBDA(const LO k) {
+      for (int c = 0; c < num_cols; ++c) {
+        values(rows(k), c) = value;
+      }
+    });
+}
+
+} // namespace detail
+
+/// @brief Evaluates fields at the points of a bound source.
 ///
-/// Created by PointEvaluatorFactory::CreatePointEvaluator from a bound source.
-/// Evaluate writes OutputBasis(stored basis of the field): the stored basis for
-/// values, with one covariant index added per derivative order. The output has
-/// one row per query point and the field's number of components times the
-/// coordinate dimension per added index as columns. Implementations of
-/// EvaluateImpl may assume the output's shape and basis are checked, and throw
-/// pcms_error for an incompatible field.
+/// Created by PointEvaluatorFactory::CreatePointEvaluator. Evaluate writes
+/// OutputBasis(stored basis of the field): the stored basis for values, with
+/// one covariant index added per derivative order. The output has one row per
+/// query point and the field's number of components times the coordinate
+/// dimension per added index as columns. EvaluateImpl writes the rows of the
+/// bound source's FoundPoints(); in OutOfBoundsMode::FILL, Evaluate then sets
+/// the rows of MissingPoints() to the fill value.
 /// @tparam T field value type
 /// @tparam LayoutPolicy layout of the output view
 template <typename T,
@@ -45,10 +71,15 @@ public:
       "PointEvaluator::Evaluate", values.GetBasis(),
       OutputBasis(field.GetData().GetValueBasis()));
     EvaluateImpl(field, values);
+    const auto filled = FilledPoints();
+    if (filled.extent(0) > 0) {
+      detail::FillRows(values.GetValues(), filled,
+                       static_cast<T>(bound_->Policy().fill_value));
+    }
   }
 
-  /// Number of query points, fixed at construction.
-  [[nodiscard]] virtual LO NumPoints() const = 0;
+  /// @return number of query points
+  [[nodiscard]] LO NumPoints() const noexcept { return bound_->NumPoints(); }
 
   /// Value basis this evaluator writes for a field stored in `stored`.
   [[nodiscard]] virtual ValueBasis OutputBasis(const ValueBasis& stored) const
@@ -56,16 +87,32 @@ public:
     return stored;
   }
 
-  /// Query points whose output rows Evaluate sets to the out-of-bounds fill
-  /// value rather than to field values; empty unless the evaluator was created
-  /// with OutOfBoundsMode::FILL. Fixed at construction.
-  [[nodiscard]] virtual Kokkos::View<const LO*, DeviceMemorySpace>
-  FilledPoints() const = 0;
+  /// @return indices of the query points whose rows Evaluate sets to the fill
+  ///         value; empty unless the policy is OutOfBoundsMode::FILL
+  [[nodiscard]] Kokkos::View<const LO*, DeviceMemorySpace> FilledPoints()
+    const noexcept
+  {
+    if (bound_->Policy().mode != OutOfBoundsMode::FILL) {
+      return {};
+    }
+    return bound_->MissingPoints();
+  }
 
   virtual ~PointEvaluator() noexcept = default;
 
 protected:
-  /// Evaluate after its checks: `values` is shaped and tagged correctly.
+  /// @param bound bound source of the query points; not null
+  explicit PointEvaluator(std::shared_ptr<const BoundSource> bound)
+    : bound_(std::move(bound))
+  {
+  }
+
+  /// @return the bound source of the query points
+  [[nodiscard]] const BoundSource& Bound() const noexcept { return *bound_; }
+
+  /// @brief Writes the field's values at the bound source's FoundPoints().
+  /// @param field field to evaluate; its output shape and basis are checked
+  /// @param values output view; rows of other points may be left unset
   virtual void EvaluateImpl(
     const Field<T>& field,
     ValueView<T, DeviceMemorySpace, LayoutPolicy> values) const = 0;
@@ -93,6 +140,8 @@ private:
         "] (query points x output components)");
     }
   }
+
+  std::shared_ptr<const BoundSource> bound_;
 };
 
 // Variant types using default layout for device memory space

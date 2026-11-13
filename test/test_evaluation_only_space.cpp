@@ -45,33 +45,22 @@ private:
   ValueBasis basis_;
 };
 
-// The mock's per-point state: its own copy of the query points.
+// The mock evaluates every query point, so it needs no state of its own.
 class MockBound final : public pcms::BoundSource
 {
 public:
   explicit MockBound(const pcms::EvaluationRequest& request)
-    : BoundSource(request),
-      points("mock_points", request.coords.GetValues().extent(0),
-             request.coords.GetValues().extent(1))
+    : BoundSource(request)
   {
-    pcms::CopyDeviceRank2ViewToRank2View(pcms::MakeRank2View(points),
-                                         request.coords.GetValues());
   }
-
-  Kokkos::View<Real**, DeviceMemorySpace> points;
 };
 
 class MockEvaluator final : public pcms::PointEvaluator<Real>
 {
 public:
-  explicit MockEvaluator(Kokkos::View<Real**, DeviceMemorySpace> points)
-    : points_(std::move(points))
+  explicit MockEvaluator(std::shared_ptr<const pcms::BoundSource> bound)
+    : PointEvaluator(std::move(bound))
   {
-  }
-
-  [[nodiscard]] LO NumPoints() const override
-  {
-    return static_cast<LO>(points_.extent(0));
   }
 
   void EvaluateImpl(
@@ -82,7 +71,7 @@ public:
       throw pcms::pcms_error("MockEvaluator: not a field of this source");
     }
     const auto out = values.GetValues();
-    const auto points = points_;
+    const auto points = Bound().PointValues();
     Kokkos::parallel_for(
       Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(
         0, static_cast<LO>(points.extent(0))),
@@ -93,14 +82,6 @@ public:
         }
       });
   }
-
-  Kokkos::View<const LO*, DeviceMemorySpace> FilledPoints() const override
-  {
-    return {};
-  }
-
-private:
-  Kokkos::View<Real**, DeviceMemorySpace> points_;
 };
 
 class MockSpace final : public pcms::FunctionSpace
@@ -145,8 +126,7 @@ protected:
       throw pcms::pcms_error("MockSpace: derivatives are not supported");
     }
     return std::unique_ptr<pcms::PointEvaluator<Real>>(
-      std::make_unique<MockEvaluator>(
-        static_cast<const MockBound&>(*bound).points));
+      std::make_unique<MockEvaluator>(std::move(bound)));
   }
 
 private:

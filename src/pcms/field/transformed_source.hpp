@@ -23,33 +23,23 @@
 namespace pcms
 {
 
-namespace detail
-{
-
-/// Sets every component of the listed rows of `values` to `fill_value`.
-void FillRows(Rank2View<Real, DeviceMemorySpace> values,
-              const Kokkos::View<const LO*, DeviceMemorySpace>& rows,
-              Real fill_value);
-
-} // namespace detail
-
 /// Point evaluator over mapped query points that re-expresses evaluated
 /// components in the bound map's output basis.
 template <typename T>
 class TransformedPointEvaluator final : public PointEvaluator<T>
 {
 public:
-  /// @param bound map bound to the query points
-  /// @param inner evaluator bound to `bound`'s mapped points
-  /// @param policy out-of-bounds policy `inner` was built with
-  TransformedPointEvaluator(std::shared_ptr<const BoundCoordinateMap> bound,
-                            std::unique_ptr<PointEvaluator<T>> inner,
-                            OutOfBoundsPolicy policy)
-    : bound_(std::move(bound)), inner_(std::move(inner)), policy_(policy)
+  /// @param bound bound source of the query points
+  /// @param map map bound to the query points
+  /// @param inner evaluator bound to `map`'s mapped points
+  TransformedPointEvaluator(std::shared_ptr<const BoundSource> bound,
+                            std::shared_ptr<const BoundCoordinateMap> map,
+                            std::unique_ptr<PointEvaluator<T>> inner)
+    : PointEvaluator<T>(std::move(bound)),
+      map_(std::move(map)),
+      inner_(std::move(inner))
   {
   }
-
-  [[nodiscard]] LO NumPoints() const override { return inner_->NumPoints(); }
 
   // Public because CUDA forbids extended lambdas in non-public member
   // functions. User should call Evaluate
@@ -68,21 +58,11 @@ public:
       const ValueView<Real, DeviceMemorySpace> source_values(
         inner_out, values.GetValues());
       inner_->Evaluate(field, source_values);
-      bound_->TransformValues(source_values);
-      // Fill rows hold no field value to re-express, so the rotation must
-      // not change them.
-      detail::FillRows(values.GetValues(), inner_->FilledPoints(),
-                       policy_.fill_value);
+      map_->TransformValues(source_values);
     } else {
       throw pcms_error("TransformedPointEvaluator::Evaluate: basis "
                        "transformations require T == Real");
     }
-  }
-
-  [[nodiscard]] Kokkos::View<const LO*, DeviceMemorySpace> FilledPoints()
-    const override
-  {
-    return inner_->FilledPoints();
   }
 
   [[nodiscard]] ValueBasis OutputBasis(const ValueBasis& stored) const override
@@ -91,13 +71,12 @@ public:
     if (inner_out.Rank() == 0) {
       return inner_out;
     }
-    return bound_->OutputBasis(inner_out);
+    return map_->OutputBasis(inner_out);
   }
 
 private:
-  std::shared_ptr<const BoundCoordinateMap> bound_;
+  std::shared_ptr<const BoundCoordinateMap> map_;
   std::unique_ptr<PointEvaluator<T>> inner_;
-  OutOfBoundsPolicy policy_;
 };
 
 /// Presents a point-evaluator factory as one in another coordinate system:
@@ -131,8 +110,8 @@ protected:
 
 private:
   template <typename T>
-  std::unique_ptr<PointEvaluator<T>> Create(const BoundSource& bound,
-                                            int derivative_order) const;
+  std::unique_ptr<PointEvaluator<T>> Create(
+    std::shared_ptr<const BoundSource> bound, int derivative_order) const;
 
   std::shared_ptr<const PointEvaluatorFactory> source_;
   std::shared_ptr<const CoordinateMap> to_source_;
