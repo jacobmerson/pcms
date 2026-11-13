@@ -63,10 +63,10 @@ void ValidateLagrangeWrappedFieldData(const FieldLayout& layout,
 LagrangeFunctionSpace::LagrangeFunctionSpace(
   Key, std::shared_ptr<const FieldLayout> layout,
   std::function<FieldDataVariant(Type, ValueBasis)> create_field_data_fn,
-  std::shared_ptr<FieldEvaluatorFactory<Real>> evaluator_factory) noexcept
-  : layout_(std::move(layout)),
-    create_field_data_fn_(std::move(create_field_data_fn)),
-    evaluator_factory_(std::move(evaluator_factory))
+  std::shared_ptr<const PointEvaluatorFactory> evaluator) noexcept
+  : FunctionSpace(std::move(evaluator)),
+    layout_(std::move(layout)),
+    create_field_data_fn_(std::move(create_field_data_fn))
 {
 }
 
@@ -248,12 +248,6 @@ std::shared_ptr<const FieldLayout> LagrangeFunctionSpace::GetLayout()
   return layout_;
 }
 
-std::shared_ptr<const FieldEvaluatorFactory<Real>>
-LagrangeFunctionSpace::GetEvaluatorFactory() const noexcept
-{
-  return evaluator_factory_;
-}
-
 FieldVariant LagrangeFunctionSpace::CreateFieldImpl(Type storage_type,
                                                     ValueBasis basis) const
 {
@@ -283,34 +277,6 @@ FieldVariant LagrangeFunctionSpace::CreateFieldImpl(FieldDataVariant data) const
       }
     },
     std::move(data));
-}
-
-std::shared_ptr<BoundSource> LagrangeFunctionSpace::BindImpl(
-  const EvaluationRequest& request) const
-{
-  if (!evaluator_factory_) {
-    throw pcms_error("LagrangeFunctionSpace::Bind: evaluator construction is "
-                     "not available for this "
-                     "backend");
-  }
-  return evaluator_factory_->Bind(request);
-}
-
-PointEvaluatorVariant LagrangeFunctionSpace::CreatePointEvaluatorImpl(
-  Type value_type, std::shared_ptr<const BoundSource> bound,
-  int derivative_order) const
-{
-  if (value_type != Type::Real) {
-    throw pcms_error(
-      "LagrangeFunctionSpace: point evaluation only supports double (Real)");
-  }
-  if (!evaluator_factory_) {
-    throw pcms_error(
-      "LagrangeFunctionSpace::CreatePointEvaluatorImpl: evaluator construction "
-      "is not available for this backend");
-  }
-  return evaluator_factory_->CreatePointEvaluator(std::move(bound),
-                                                  derivative_order);
 }
 
 } // namespace pcms

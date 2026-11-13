@@ -1,7 +1,7 @@
 #ifndef PCMS_POINT_CLOUD_EVALUATOR_FACTORY_H
 #define PCMS_POINT_CLOUD_EVALUATOR_FACTORY_H
 
-#include "pcms/field/field_evaluator_factory.h"
+#include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/field/out_of_bounds_policy.h"
 #include "pcms/field/point_evaluator.h"
 #include "pcms/field/field_data.h"
@@ -21,30 +21,40 @@
 namespace pcms
 {
 
-class PointCloudEvaluatorFactory : public FieldEvaluatorFactory<Real>
+namespace detail
 {
+/// The MLS supports of the bound points and the coordinates the solve uses.
+struct MLSBinding
+{
+  Omega_h::Reals source_coords;
+  Omega_h::Reals target_coords;
+  SupportResults supports;
+};
+} // namespace detail
+
+/// @brief Point evaluation of point-cloud fields by moving least squares.
+class PointCloudEvaluatorFactory
+  : public TypedPointEvaluatorFactory<
+      Real, detail::HintBoundSource<detail::MLSBinding>>
+{
+  using Bound = detail::HintBoundSource<detail::MLSBinding>;
+
 public:
+  /// @param layout point-cloud layout of the evaluated fields
+  /// @param localization search for the MLS supports of query points
+  /// @param options MLS options
   PointCloudEvaluatorFactory(std::shared_ptr<const FieldLayout> layout,
                              std::shared_ptr<LocalizationFactory> localization,
                              MLSOptions options = {})
-    : layout_(std::move(layout)),
+    : TypedPointEvaluatorFactory<Real, Bound>(layout->GetCoordinateSystem()),
+      layout_(std::move(layout)),
       localization_(std::move(localization)),
       options_(options)
   {
   }
 
-  const FieldLayout& GetLayout() const override { return *layout_; }
-
-  bool HasDOFHolderCoordinates() const override { return true; }
-
-  CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const override
-  {
-    return layout_->GetDOFHolderCoordinates();
-  }
-
-  bool SupportsNearestBoundary() const override { return false; }
-
-  std::shared_ptr<BoundSource> Bind(
+protected:
+  std::shared_ptr<Bound> BindPoints(
     const EvaluationRequest& request) const override
   {
     const auto coords = request.coords;
@@ -83,37 +93,26 @@ public:
       supports = localization_->Build(coords);
     }
 
-    return std::make_shared<detail::HintBoundSource<MLSBinding>>(
-      request, MLSBinding{std::move(source_coords), std::move(target_coords_oh),
-                          std::move(supports)});
+    return std::make_shared<Bound>(
+      request,
+      detail::MLSBinding{std::move(source_coords), std::move(target_coords_oh),
+                         std::move(supports)});
   }
 
-  std::unique_ptr<PointEvaluator<Real>> CreatePointEvaluator(
-    std::shared_ptr<const BoundSource> bound,
-    int derivative_order) const override
+  std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
+    std::shared_ptr<const Bound> bound, int derivative_order) const override
   {
     if (derivative_order != 0) {
       throw pcms_error(
         "PointCloudEvaluatorFactory: derivatives are not supported");
     }
-    const auto& binding =
-      detail::BoundSourceAs<detail::HintBoundSource<MLSBinding>>(
-        *bound, "PointCloudEvaluatorFactory")
-        .GetHint();
+    const auto& binding = bound->GetHint();
     return std::make_unique<MLSPointEvaluator<>>(
       binding.source_coords, binding.target_coords, binding.supports,
       layout_->GetDimension(), options_);
   }
 
 private:
-  // The MLS supports of the bound points and the coordinates the solve uses.
-  struct MLSBinding
-  {
-    Omega_h::Reals source_coords;
-    Omega_h::Reals target_coords;
-    SupportResults supports;
-  };
-
   std::shared_ptr<const FieldLayout> layout_;
   std::shared_ptr<LocalizationFactory> localization_;
   MLSOptions options_;

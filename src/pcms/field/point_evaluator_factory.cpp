@@ -34,6 +34,11 @@ std::shared_ptr<const BoundSource> PointEvaluatorFactory::BindRequest(
       "'; map the points with a CoordinateMap or evaluate through a "
       "TransformedSource");
   }
+  if (request.policy.mode == OutOfBoundsMode::NEAREST_BOUNDARY &&
+      !SupportsNearestBoundary()) {
+    throw pcms_error("Bind: this source does not support "
+                     "OutOfBoundsMode::NEAREST_BOUNDARY");
+  }
   std::shared_ptr<BoundSource> bound = BindImpl(request);
   PCMS_ALWAYS_ASSERT(bound != nullptr);
   bound->bound_by_ = this;

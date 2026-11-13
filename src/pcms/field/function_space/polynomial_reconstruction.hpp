@@ -18,9 +18,6 @@
 namespace pcms
 {
 
-template <typename T>
-class FieldEvaluatorFactory;
-
 class PolynomialReconstructionFunctionSpace : public FunctionSpace
 {
   // Passkey: only members (the Create/FromMesh factories) can create a Key, so
@@ -33,7 +30,7 @@ class PolynomialReconstructionFunctionSpace : public FunctionSpace
 public:
   PolynomialReconstructionFunctionSpace(
     Key, std::shared_ptr<const FieldLayout> layout,
-    std::shared_ptr<FieldEvaluatorFactory<Real>> evaluator_factory) noexcept;
+    std::shared_ptr<const PointEvaluatorFactory> evaluator) noexcept;
 
   [[nodiscard]] static std::shared_ptr<PolynomialReconstructionFunctionSpace>
   Create(CoordinateView<HostMemorySpace> coords, MLSOptions options = {});
@@ -53,16 +50,8 @@ protected:
   [[nodiscard]] FieldVariant CreateFieldImpl(
     FieldDataVariant data) const override;
 
-  [[nodiscard]] std::shared_ptr<BoundSource> BindImpl(
-    const EvaluationRequest& request) const override;
-
-  [[nodiscard]] PointEvaluatorVariant CreatePointEvaluatorImpl(
-    Type value_type, std::shared_ptr<const BoundSource> bound,
-    int derivative_order) const override;
-
 private:
   std::shared_ptr<const FieldLayout> layout_;
-  std::shared_ptr<FieldEvaluatorFactory<Real>> evaluator_factory_;
 };
 
 } // namespace pcms

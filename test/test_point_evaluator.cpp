@@ -424,7 +424,7 @@ TEST_CASE("SimpleFieldData: set and get DOF holder data round-trip")
 }
 
 // ============================================================================
-// MeshFields FieldEvaluatorFactory metadata (only when MeshFields is enabled)
+// MeshFields layout metadata (only when MeshFields is enabled)
 // ============================================================================
 
 #ifdef PCMS_ENABLE_MESHFIELDS

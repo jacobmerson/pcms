@@ -39,20 +39,10 @@ protected:
     Type value_type, std::shared_ptr<const BoundSource> bound,
     int derivative_order) const override
   {
-    const int order = derivative_order + 1;
-    switch (value_type) {
-      case Type::Real:
-        return source_->CreatePointEvaluator<Real>(std::move(bound), order);
-      case Type::LO:
-        return source_->CreatePointEvaluator<LO>(std::move(bound), order);
-      case Type::GO:
-        return source_->CreatePointEvaluator<GO>(std::move(bound), order);
-      case Type::Int8:
-        return source_->CreatePointEvaluator<int8_t>(std::move(bound), order);
-      case Type::Float:
-        return source_->CreatePointEvaluator<float>(std::move(bound), order);
-    }
-    throw pcms_error("Gradient: unsupported value type");
+    return apply_to_type(value_type, [&](auto type) -> PointEvaluatorVariant {
+      return source_->CreatePointEvaluator<typename decltype(type)::type>(
+        std::move(bound), derivative_order + 1);
+    });
   }
 
 private:

@@ -4,7 +4,7 @@
 #include "pcms/field/layout/uniform_grid.h"
 #include "pcms/utility/types.h"
 #include <Kokkos_Core.hpp>
-#include "pcms/field/field_evaluator_factory.h"
+#include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/field/out_of_bounds_policy.h"
 #include "pcms/field/point_evaluator.h"
 #include "pcms/field/field_data.h"
@@ -245,41 +245,37 @@ private:
   Kokkos::View<const LO*, DeviceMemorySpace> filled_points_;
 };
 
-// UniformGridEvaluatorFactory<Dim> implements FieldEvaluatorFactory<Real> for
-// structured uniform grids. It owns the layout and creates
-// UniformGridPointEvaluator instances on demand.
-//
-// Localization logic is taken directly from
-// UniformGridField::GetLocalizationHint.
+/// @brief Point evaluation of fields on a structured uniform grid.
+/// @tparam Dim grid dimension
 template <unsigned Dim = 2>
-class UniformGridEvaluatorFactory : public FieldEvaluatorFactory<Real>
+class UniformGridEvaluatorFactory
+  : public TypedPointEvaluatorFactory<
+      Real, detail::HintBoundSource<UniformGridFieldLocalizationHint<Dim>>>
 {
+  using Bound = detail::HintBoundSource<UniformGridFieldLocalizationHint<Dim>>;
+
 public:
+  /// @param layout uniform-grid layout of the evaluated fields
   explicit UniformGridEvaluatorFactory(
     std::shared_ptr<const UniformGridFieldLayout<Dim>> layout)
-    : layout_(std::move(layout)), grid_(layout_->GetGrid())
+    : TypedPointEvaluatorFactory<Real, Bound>(layout->GetCoordinateSystem()),
+      layout_(std::move(layout)),
+      grid_(layout_->GetGrid())
   {
   }
 
-  const FieldLayout& GetLayout() const override { return *layout_; }
+  [[nodiscard]] bool SupportsNearestBoundary() const noexcept override
+  {
+    return true;
+  }
 
-  bool HasDOFHolderCoordinates() const override { return true; }
-
-  bool SupportsNearestBoundary() const override { return true; }
-
-  std::shared_ptr<BoundSource> Bind(
+protected:
+  std::shared_ptr<Bound> BindPoints(
     const EvaluationRequest& request) const override
   {
     PCMS_FUNCTION_TIMER;
     const auto coords = request.coords;
     const auto policy = request.policy;
-    PCMS_FUNCTION_TIMER;
-    if (policy.mode == OutOfBoundsMode::NEAREST_BOUNDARY &&
-        !SupportsNearestBoundary()) {
-      throw pcms_error(
-        "UniformGridEvaluatorFactory: nearest-boundary evaluation is not "
-        "supported");
-    }
 
     auto coordinates = coords.GetValues();
     LO num_points = static_cast<LO>(coordinates.extent(0));
@@ -333,31 +329,18 @@ public:
       cell_indices_device, coordinates_device, policy.mode,
       is_out_of_bounds_device, num_out_of_bounds);
 
-    return std::make_shared<
-      detail::HintBoundSource<UniformGridFieldLocalizationHint<Dim>>>(
-      request, std::move(hint));
+    return std::make_shared<Bound>(request, std::move(hint));
   }
 
-  std::unique_ptr<PointEvaluator<Real>> CreatePointEvaluator(
-    std::shared_ptr<const BoundSource> bound,
-    int derivative_order) const override
+  std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
+    std::shared_ptr<const Bound> bound, int derivative_order) const override
   {
     if (derivative_order != 0) {
       throw pcms_error(
         "UniformGridEvaluatorFactory: derivatives are not supported");
     }
-    const auto& hint =
-      detail::BoundSourceAs<
-        detail::HintBoundSource<UniformGridFieldLocalizationHint<Dim>>>(
-        *bound, "UniformGridEvaluatorFactory")
-        .GetHint();
     return std::make_unique<UniformGridPointEvaluator<Dim>>(
-      layout_, hint, bound->Policy().fill_value);
-  }
-
-  CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const override
-  {
-    return layout_->GetDOFHolderCoordinates();
+      layout_, bound->GetHint(), bound->Policy().fill_value);
   }
 
 private:

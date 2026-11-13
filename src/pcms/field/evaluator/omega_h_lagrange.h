@@ -2,7 +2,7 @@
 #define PCMS_OMEGA_H_LAGRANGE_EVALUATOR_FACTORY_H
 
 #include "pcms/field/layout/omega_h_lagrange.h"
-#include "pcms/field/field_evaluator_factory.h"
+#include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/field/out_of_bounds_policy.h"
 #include "pcms/field/point_evaluator.h"
 #include "pcms/field/field_data.h"
@@ -337,25 +337,24 @@ private:
 // EvaluatorFactory
 // ---------------------------------------------------------------------------
 
-// OmegaHLagrangeEvaluatorFactory<T> implements FieldEvaluatorFactory<T> for
-// simplex meshes backed by Omega_h. It owns the spatial search structure and
-// creates OmegaHLagrangePointEvaluator instances on demand.
+/// @brief Point evaluation of Lagrange fields on an Omega_h simplex mesh.
+/// @tparam T field value type
 template <typename T>
-class OmegaHLagrangeEvaluatorFactory : public FieldEvaluatorFactory<T>
+class OmegaHLagrangeEvaluatorFactory
+  : public TypedPointEvaluatorFactory<
+      T, detail::HintBoundSource<OmegaHLagrangeLocHint>>
 {
+  using Bound = detail::HintBoundSource<OmegaHLagrangeLocHint>;
+
 public:
+  /// @param layout Omega_h Lagrange layout of the evaluated fields
   explicit OmegaHLagrangeEvaluatorFactory(
     std::shared_ptr<const OmegaHLagrangeLayout> layout)
-    : layout_(std::move(layout)),
+    : TypedPointEvaluatorFactory<T, Bound>(layout->GetCoordinateSystem()),
+      layout_(std::move(layout)),
       search_(detail::MakeSearch(layout_->GetMesh()))
   {
   }
-
-  const FieldLayout& GetLayout() const override { return *layout_; }
-
-  bool HasDOFHolderCoordinates() const override { return true; }
-
-  bool SupportsNearestBoundary() const override { return false; }
 
   /// The containing-element search over this layout's mesh. Exposed so that
   /// operators which must locate points on the same mesh, such as the
@@ -366,16 +365,13 @@ public:
     return search_;
   }
 
-  std::shared_ptr<BoundSource> Bind(
+protected:
+  std::shared_ptr<Bound> BindPoints(
     const EvaluationRequest& request) const override
   {
     PCMS_FUNCTION_TIMER;
     const auto coords = request.coords;
     const auto policy = request.policy;
-    if (policy.mode == OutOfBoundsMode::NEAREST_BOUNDARY) {
-      throw pcms_error(
-        "OmegaHLagrangeEvaluatorFactory: NearestBoundary is not supported");
-    }
 
     auto raw_coords = coords.GetValues();
     LO n_pts = static_cast<LO>(raw_coords.extent(0));
@@ -400,29 +396,18 @@ public:
       },
       search_);
 
-    return std::make_shared<detail::HintBoundSource<OmegaHLagrangeLocHint>>(
-      request, std::move(hint));
+    return std::make_shared<Bound>(request, std::move(hint));
   }
 
-  std::unique_ptr<PointEvaluator<T>> CreatePointEvaluator(
-    std::shared_ptr<const BoundSource> bound,
-    int derivative_order) const override
+  std::unique_ptr<PointEvaluator<T>> CreateEvaluator(
+    std::shared_ptr<const Bound> bound, int derivative_order) const override
   {
     if (derivative_order != 0) {
       throw pcms_error("OmegaHLagrangeEvaluatorFactory: derivatives are not "
                        "supported");
     }
-    const auto& hint =
-      detail::BoundSourceAs<detail::HintBoundSource<OmegaHLagrangeLocHint>>(
-        *bound, "OmegaHLagrangeEvaluatorFactory")
-        .GetHint();
     return std::make_unique<OmegaHLagrangePointEvaluator<T>>(
-      layout_, hint, bound->Policy().fill_value);
-  }
-
-  CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const override
-  {
-    return layout_->GetDOFHolderCoordinates();
+      layout_, bound->GetHint(), bound->Policy().fill_value);
   }
 
 private:

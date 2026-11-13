@@ -309,9 +309,10 @@ TEST_CASE("TransformedSource: evaluator creation and evaluation errors")
     // No in-tree backend evaluates integer fields at points, so a
     // TransformedSource simply forwards the inner factory's refusal; the
     // T != Real guard in TransformedPointEvaluator::Evaluate is defensive.
-    REQUIRE_THROWS_WITH(src_as_cartesian.CreatePointEvaluator<GO>(
-                          src_as_cartesian.Bind(query.coordinate_view)),
-                        ContainsSubstring("only supports double"));
+    REQUIRE_THROWS_WITH(
+      src_as_cartesian.CreatePointEvaluator<GO>(
+        src_as_cartesian.Bind(query.coordinate_view)),
+      ContainsSubstring("only supports fields of its own value type"));
   }
 }
 

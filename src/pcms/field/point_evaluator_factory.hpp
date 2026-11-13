@@ -78,6 +78,13 @@ public:
     return *this;
   }
 
+  /// @return whether this source can bind with
+  ///         OutOfBoundsMode::NEAREST_BOUNDARY
+  [[nodiscard]] virtual bool SupportsNearestBoundary() const noexcept
+  {
+    return false;
+  }
+
   virtual ~PointEvaluatorFactory() noexcept = default;
 
 protected:
@@ -102,6 +109,69 @@ private:
   std::shared_ptr<const BoundSource> BindRequest(
     const EvaluationRequest& request) const;
   void CheckBoundByThis(const BoundSource& bound) const;
+};
+
+/// @brief Source that evaluates fields of one value type from bound sources
+///        of one type.
+///
+/// Implements BindImpl and CreatePointEvaluatorImpl: CreatePointEvaluator
+/// accepts only bound sources this source created, so the bound source is
+/// passed on as a `Bound`.
+/// @tparam T value type of the evaluated fields
+/// @tparam Bound bound-source type BindPoints creates
+template <typename T, typename Bound>
+class TypedPointEvaluatorFactory : public PointEvaluatorFactory
+{
+public:
+  [[nodiscard]] const std::shared_ptr<const CoordinateSystem>&
+  GetCoordinateSystem() const final
+  {
+    return system_;
+  }
+
+protected:
+  /// @param system coordinate system of the query points
+  explicit TypedPointEvaluatorFactory(
+    std::shared_ptr<const CoordinateSystem> system)
+    : system_(std::move(system))
+  {
+  }
+
+  /// @brief Computes the per-point data for a request.
+  /// @param request query points in GetCoordinateSystem(); may be released
+  ///        after the call
+  /// @return the bound source
+  virtual std::shared_ptr<Bound> BindPoints(
+    const EvaluationRequest& request) const = 0;
+
+  /// @brief Creates an evaluator from a bound source of this source.
+  /// @param bound result of BindPoints on this source
+  /// @param derivative_order 0 for values, 1 for first derivatives
+  /// @return the evaluator
+  /// @throws pcms_error for an unsupported derivative order
+  virtual std::unique_ptr<PointEvaluator<T>> CreateEvaluator(
+    std::shared_ptr<const Bound> bound, int derivative_order) const = 0;
+
+private:
+  std::shared_ptr<BoundSource> BindImpl(
+    const EvaluationRequest& request) const final
+  {
+    return BindPoints(request);
+  }
+
+  PointEvaluatorVariant CreatePointEvaluatorImpl(
+    Type value_type, std::shared_ptr<const BoundSource> bound,
+    int derivative_order) const final
+  {
+    if (value_type != TypeEnumFromType<T>()) {
+      throw pcms_error("CreatePointEvaluator: this source only supports "
+                       "fields of its own value type");
+    }
+    return CreateEvaluator(std::static_pointer_cast<const Bound>(bound),
+                           derivative_order);
+  }
+
+  std::shared_ptr<const CoordinateSystem> system_;
 };
 
 template <typename T>

@@ -33,17 +33,13 @@ Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
                    const OmegaHLagrangeLayout& target_layout, int quad_order,
                    const GridPointSearchVariant* source_search);
 
-// The source space's point search, if the space is an Omega_h Lagrange space
-// and so owns one the intersection can reuse; null otherwise.
+// The source space's point search, if the space binds through an Omega_h
+// Lagrange backend and so owns one the intersection can reuse; null otherwise.
 const GridPointSearchVariant* SourceSearchFromSpace(const FunctionSpace& space)
 {
-  const auto* lagrange = dynamic_cast<const LagrangeFunctionSpace*>(&space);
-  if (lagrange == nullptr) {
-    return nullptr;
-  }
   const auto* factory =
     dynamic_cast<const OmegaHLagrangeEvaluatorFactory<Real>*>(
-      lagrange->GetEvaluatorFactory().get());
+      &space.BindingSource());
   return factory ? &factory->GetSearch() : nullptr;
 }
 

@@ -107,15 +107,9 @@ PointEvaluatorVariant TransformedSource::CreatePointEvaluatorImpl(
   Type value_type, std::shared_ptr<const BoundSource> bound,
   int derivative_order) const
 {
-  switch (value_type) {
-    case Type::Real: return Create<Real>(*bound, derivative_order);
-    case Type::LO: return Create<LO>(*bound, derivative_order);
-    case Type::GO: return Create<GO>(*bound, derivative_order);
-    case Type::Int8: return Create<int8_t>(*bound, derivative_order);
-    case Type::Float: return Create<float>(*bound, derivative_order);
-  }
-  throw pcms_error("TransformedSource::CreatePointEvaluator: unsupported "
-                   "value type");
+  return apply_to_type(value_type, [&](auto type) -> PointEvaluatorVariant {
+    return Create<typename decltype(type)::type>(*bound, derivative_order);
+  });
 }
 
 } // namespace pcms

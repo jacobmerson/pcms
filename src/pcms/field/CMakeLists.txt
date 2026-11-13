@@ -33,6 +33,7 @@ set(PCMS_FIELD_SOURCES
         coordinate_map.cpp
         transformed_source.cpp
         point_evaluator_factory.cpp
+        function_space.cpp
         gradient_source.cpp
         gid_permutation.cpp
         function_space/polynomial_reconstruction.cpp
@@ -53,7 +54,6 @@ if (PCMS_ENABLE_OMEGA_H)
     list(APPEND PCMS_FIELD_HEADERS
             function_space/lagrange.h
             function_space/spline.h
-            field_evaluator_factory.h
             layout/omega_h_entity.h
             layout/omega_h_lagrange.h
             evaluator/omega_h_lagrange.h

@@ -4,7 +4,7 @@
 #include "pcms/field/evaluator/spline_interpolator.hpp"
 #include "pcms/field/evaluator/uniform_grid.h"
 #include "pcms/field/field_data.h"
-#include "pcms/field/field_evaluator_factory.h"
+#include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/field/layout/uniform_grid.h"
 #include "pcms/field/out_of_bounds_policy.h"
 #include "pcms/field/point_evaluator.h"
@@ -231,31 +231,30 @@ private:
   Kokkos::View<Real*, DeviceMemorySpace> y_coords_;
 };
 
-class UniformGridSplineEvaluatorFactory2D : public FieldEvaluatorFactory<Real>
+/// @brief Point evaluation of the bicubic spline of fields on a 2D uniform
+///        grid, and of its gradient.
+class UniformGridSplineEvaluatorFactory2D
+  : public TypedPointEvaluatorFactory<
+      Real, detail::HintBoundSource<UniformGridFieldLocalizationHint<2>>>
 {
+  using Bound = detail::HintBoundSource<UniformGridFieldLocalizationHint<2>>;
+
 public:
+  /// @param layout order-1 single-component uniform-grid layout
   explicit UniformGridSplineEvaluatorFactory2D(
     std::shared_ptr<const UniformGridFieldLayout<2>> layout)
-    : layout_(std::move(layout)), grid_(layout_->GetGrid())
+    : TypedPointEvaluatorFactory<Real, Bound>(layout->GetCoordinateSystem()),
+      layout_(std::move(layout)),
+      grid_(layout_->GetGrid())
   {
   }
 
-  const FieldLayout& GetLayout() const override { return *layout_; }
-
-  bool HasDOFHolderCoordinates() const override { return true; }
-
-  bool SupportsNearestBoundary() const override { return false; }
-
-  std::shared_ptr<BoundSource> Bind(
+protected:
+  std::shared_ptr<Bound> BindPoints(
     const EvaluationRequest& request) const override
   {
     const auto coords = request.coords;
     const auto policy = request.policy;
-    if (policy.mode == OutOfBoundsMode::NEAREST_BOUNDARY) {
-      throw pcms_error(
-        "UniformGridSplineEvaluatorFactory2D: nearest-boundary evaluation is "
-        "not supported");
-    }
     if (layout_->GetOrder() != 1) {
       throw pcms_error(
         "UniformGridSplineEvaluatorFactory2D: spline evaluation requires an "
@@ -319,33 +318,19 @@ public:
     UniformGridFieldLocalizationHint<2> hint(
       cell_indices_device, coordinates_d, policy.mode, is_out_of_bounds_device,
       num_out_of_bounds);
-    return std::make_shared<
-      detail::HintBoundSource<UniformGridFieldLocalizationHint<2>>>(
-      request, std::move(hint));
+    return std::make_shared<Bound>(request, std::move(hint));
   }
 
-  std::unique_ptr<PointEvaluator<Real>> CreatePointEvaluator(
-    std::shared_ptr<const BoundSource> bound,
-    int derivative_order) const override
+  std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
+    std::shared_ptr<const Bound> bound, int derivative_order) const override
   {
     if (derivative_order > 1) {
       throw pcms_error(
         "UniformGridSplineEvaluatorFactory2D: derivative order " +
         std::to_string(derivative_order) + " is not supported");
     }
-    const auto& hint =
-      detail::BoundSourceAs<
-        detail::HintBoundSource<UniformGridFieldLocalizationHint<2>>>(
-        *bound, "UniformGridSplineEvaluatorFactory2D")
-        .GetHint();
     return std::make_unique<UniformGridSplinePointEvaluator2D<>>(
-      layout_, hint, bound->Policy().fill_value, derivative_order);
-  }
-
-  CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const override
-  {
-    throw pcms_error("UniformGridSplineEvaluatorFactory2D: "
-                     "GetDOFHolderCoordinates not yet implemented");
+      layout_, bound->GetHint(), bound->Policy().fill_value, derivative_order);
   }
 
 private:

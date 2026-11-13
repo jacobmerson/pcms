@@ -19,8 +19,8 @@ namespace pcms
 
 PolynomialReconstructionFunctionSpace::PolynomialReconstructionFunctionSpace(
   Key, std::shared_ptr<const FieldLayout> layout,
-  std::shared_ptr<FieldEvaluatorFactory<Real>> evaluator_factory) noexcept
-  : layout_(std::move(layout)), evaluator_factory_(std::move(evaluator_factory))
+  std::shared_ptr<const PointEvaluatorFactory> evaluator) noexcept
+  : FunctionSpace(std::move(evaluator)), layout_(std::move(layout))
 {
 }
 
@@ -118,28 +118,6 @@ FieldVariant PolynomialReconstructionFunctionSpace::CreateFieldImpl(
       "does not match layout");
   }
   return WrapField<double>(layout_, std::move(fd));
-}
-
-std::shared_ptr<BoundSource> PolynomialReconstructionFunctionSpace::BindImpl(
-  const EvaluationRequest& request) const
-{
-  PCMS_ALWAYS_ASSERT(evaluator_factory_ != nullptr);
-  return evaluator_factory_->Bind(request);
-}
-
-PointEvaluatorVariant
-PolynomialReconstructionFunctionSpace::CreatePointEvaluatorImpl(
-  Type value_type, std::shared_ptr<const BoundSource> bound,
-  int derivative_order) const
-{
-  if (value_type != Type::Real) {
-    throw pcms_error(
-      "PolynomialReconstructionFunctionSpace: point evaluation only supports "
-      "double (Real)");
-  }
-  PCMS_ALWAYS_ASSERT(evaluator_factory_ != nullptr);
-  return evaluator_factory_->CreatePointEvaluator(std::move(bound),
-                                                  derivative_order);
 }
 
 } // namespace pcms

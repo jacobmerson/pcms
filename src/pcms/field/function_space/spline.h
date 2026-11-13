@@ -3,7 +3,6 @@
 
 #include "pcms/field/field.h"
 #include "pcms/field/field_data.h"
-#include "pcms/field/field_evaluator_factory.h"
 #include "pcms/field/field_layout.h"
 #include "pcms/field/value_view.hpp"
 #include "pcms/field/function_space.h"
@@ -31,7 +30,7 @@ class SplineFunctionSpace : public FunctionSpace
 public:
   SplineFunctionSpace(
     Key, std::shared_ptr<const FieldLayout> layout,
-    std::shared_ptr<FieldEvaluatorFactory<Real>> evaluator_factory) noexcept;
+    std::shared_ptr<const PointEvaluatorFactory> evaluator) noexcept;
 
   [[nodiscard]] static std::shared_ptr<SplineFunctionSpace> FromUniformGrid(
     const UniformGrid<2>& grid,
@@ -47,16 +46,8 @@ protected:
   [[nodiscard]] FieldVariant CreateFieldImpl(
     FieldDataVariant data) const override;
 
-  [[nodiscard]] std::shared_ptr<BoundSource> BindImpl(
-    const EvaluationRequest& request) const override;
-
-  [[nodiscard]] PointEvaluatorVariant CreatePointEvaluatorImpl(
-    Type value_type, std::shared_ptr<const BoundSource> bound,
-    int derivative_order) const override;
-
 private:
   std::shared_ptr<const FieldLayout> layout_;
-  std::shared_ptr<FieldEvaluatorFactory<Real>> evaluator_factory_;
 };
 
 } // namespace pcms

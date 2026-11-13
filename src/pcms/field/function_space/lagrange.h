@@ -10,7 +10,6 @@
 #include "pcms/field/value_view.hpp"
 #include "pcms/field/point_evaluator.h"
 #include "pcms/field/out_of_bounds_policy.h"
-#include "pcms/field/field_evaluator_factory.h"
 #include "pcms/field/coordinate_system.hpp"
 #include "pcms/utility/arrays.h"
 #include "pcms/utility/types.h"
@@ -38,7 +37,7 @@ public:
   LagrangeFunctionSpace(
     Key, std::shared_ptr<const FieldLayout> layout,
     std::function<FieldDataVariant(Type, ValueBasis)> create_field_data_fn,
-    std::shared_ptr<FieldEvaluatorFactory<Real>> evaluator_factory) noexcept;
+    std::shared_ptr<const PointEvaluatorFactory> evaluator) noexcept;
 
   enum class Backend
   {
@@ -81,12 +80,6 @@ public:
   [[nodiscard]] std::shared_ptr<const FieldLayout> GetLayout()
     const noexcept override;
 
-  // Expert API: the backend's evaluator factory, for operators that can reuse
-  // the localization structures it owns instead of rebuilding them. Null for
-  // backends without one.
-  [[nodiscard]] std::shared_ptr<const FieldEvaluatorFactory<Real>>
-  GetEvaluatorFactory() const noexcept;
-
 protected:
   [[nodiscard]] FieldVariant CreateFieldImpl(Type storage_type,
                                              ValueBasis basis) const override;
@@ -94,17 +87,9 @@ protected:
   [[nodiscard]] FieldVariant CreateFieldImpl(
     FieldDataVariant data) const override;
 
-  [[nodiscard]] std::shared_ptr<BoundSource> BindImpl(
-    const EvaluationRequest& request) const override;
-
-  [[nodiscard]] PointEvaluatorVariant CreatePointEvaluatorImpl(
-    Type value_type, std::shared_ptr<const BoundSource> bound,
-    int derivative_order) const override;
-
 private:
   std::shared_ptr<const FieldLayout> layout_;
   std::function<FieldDataVariant(Type, ValueBasis)> create_field_data_fn_;
-  std::shared_ptr<FieldEvaluatorFactory<Real>> evaluator_factory_;
 };
 
 } // namespace pcms

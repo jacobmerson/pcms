@@ -53,6 +53,15 @@ public:
     return GetLayout()->GetCoordinateSystem();
   }
 
+  /// @return the backend source that binds this space's evaluation, or the
+  ///         space itself if it has none
+  [[nodiscard]] const PointEvaluatorFactory& BindingSource()
+    const noexcept override;
+
+  /// @return whether the backend source supports
+  ///         OutOfBoundsMode::NEAREST_BOUNDARY
+  [[nodiscard]] bool SupportsNearestBoundary() const noexcept override;
+
   virtual ~FunctionSpace() noexcept = default;
 
   template <typename T>
@@ -74,6 +83,25 @@ public:
     std::string name, std::unique_ptr<FieldData<T>> data) const;
 
 protected:
+  /// @param evaluator backend source over this space's layout that binds and
+  ///        creates the evaluators, or null for a space that implements
+  ///        BindImpl and CreatePointEvaluatorImpl itself
+  explicit FunctionSpace(
+    std::shared_ptr<const PointEvaluatorFactory> evaluator = nullptr) noexcept
+    : evaluator_(std::move(evaluator))
+  {
+  }
+
+  /// @throws pcms_error: the space has no backend source
+  std::shared_ptr<BoundSource> BindImpl(
+    const EvaluationRequest& request) const override;
+
+  /// @brief Creates the evaluator through the backend source.
+  /// @throws pcms_error if the space has no backend source
+  PointEvaluatorVariant CreatePointEvaluatorImpl(
+    Type value_type, std::shared_ptr<const BoundSource> bound,
+    int derivative_order) const override;
+
   template <typename T>
   static Field<T> WrapField(std::shared_ptr<const FieldLayout> layout,
                             std::unique_ptr<FieldData<T>> data)
@@ -95,6 +123,9 @@ protected:
                                        ValueBasis basis) const = 0;
 
   virtual FieldVariant CreateFieldImpl(FieldDataVariant data) const = 0;
+
+private:
+  std::shared_ptr<const PointEvaluatorFactory> evaluator_;
 };
 
 template <typename T>

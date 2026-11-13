@@ -3,7 +3,7 @@
 
 #include "pcms/field/evaluator/mesh_fields_backend.h"
 #include "pcms/field/data/mesh_fields.h"
-#include "pcms/field/field_evaluator_factory.h"
+#include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/field/out_of_bounds_policy.h"
 #include "pcms/field/point_evaluator.h"
 #include "pcms/field/field_data.h"
@@ -93,16 +93,21 @@ private:
   Real fill_value_;
 };
 
-// MeshFieldsEvaluatorFactory<T> implements FieldEvaluatorFactory<T> for
-// MeshFields-backed simplex meshes. It owns the spatial search structure and
-// the MeshFieldBackend (which holds the internal shape field).
+/// @brief Point evaluation of MeshFields fields on a 2D simplex mesh.
+/// @tparam T field value type
 template <typename T>
-class MeshFieldsEvaluatorFactory : public FieldEvaluatorFactory<T>
+class MeshFieldsEvaluatorFactory
+  : public TypedPointEvaluatorFactory<
+      T, detail::HintBoundSource<MeshFieldsAdapter2LocalizationHint>>
 {
+  using Bound = detail::HintBoundSource<MeshFieldsAdapter2LocalizationHint>;
+
 public:
+  /// @param layout MeshFields layout of the evaluated fields
   explicit MeshFieldsEvaluatorFactory(
     std::shared_ptr<const MeshFieldsAdapterLayout> layout)
-    : layout_(std::move(layout)),
+    : TypedPointEvaluatorFactory<T, Bound>(layout->GetCoordinateSystem()),
+      layout_(std::move(layout)),
       mesh_(layout_->GetMesh()),
       search_(mesh_, 10, 10)
   {
@@ -111,22 +116,13 @@ public:
     }
   }
 
-  const FieldLayout& GetLayout() const override { return *layout_; }
-
-  bool HasDOFHolderCoordinates() const override { return true; }
-
-  bool SupportsNearestBoundary() const override { return false; }
-
-  std::shared_ptr<BoundSource> Bind(
+protected:
+  std::shared_ptr<Bound> BindPoints(
     const EvaluationRequest& request) const override
   {
     PCMS_FUNCTION_TIMER;
     const auto coords = request.coords;
     const auto policy = request.policy;
-    if (policy.mode == OutOfBoundsMode::NEAREST_BOUNDARY) {
-      throw pcms_error(
-        "MeshFieldsEvaluatorFactory: NearestBoundary is not supported");
-    }
 
     auto coordinates = coords.GetValues();
     Kokkos::View<Real* [2], DeviceMemorySpace> coords_search(
@@ -145,31 +141,18 @@ public:
     MeshFieldsAdapter2LocalizationHint hint(mesh_, results, coords_search,
                                             owning_ids, policy.mode);
 
-    return std::make_shared<
-      detail::HintBoundSource<MeshFieldsAdapter2LocalizationHint>>(
-      request, std::move(hint));
+    return std::make_shared<Bound>(request, std::move(hint));
   }
 
-  std::unique_ptr<PointEvaluator<T>> CreatePointEvaluator(
-    std::shared_ptr<const BoundSource> bound,
-    int derivative_order) const override
+  std::unique_ptr<PointEvaluator<T>> CreateEvaluator(
+    std::shared_ptr<const Bound> bound, int derivative_order) const override
   {
     if (derivative_order != 0) {
       throw pcms_error(
         "MeshFieldsEvaluatorFactory: derivatives are not supported");
     }
-    const auto& hint =
-      detail::BoundSourceAs<
-        detail::HintBoundSource<MeshFieldsAdapter2LocalizationHint>>(
-        *bound, "MeshFieldsEvaluatorFactory")
-        .GetHint();
     return std::make_unique<MeshFieldsPointEvaluator<T>>(
-      layout_, hint, bound->Policy().fill_value);
-  }
-
-  CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const override
-  {
-    return layout_->GetDOFHolderCoordinates();
+      layout_, bound->GetHint(), bound->Policy().fill_value);
   }
 
 private:
