@@ -111,23 +111,18 @@ using FusionIOFieldData = ExternalFieldData<FusionIOQuantity>;
 //
 // With OutOfBoundsMode::FILL the points outside the source's domain are found
 // here by evaluating the source's domain probe at every point; the fields of
-// a source share its domain, so they hold for every quantity.
-class FusionIOBoundSource final : public BoundSource
+// a source share its domain, so they hold for every quantity. Otherwise every
+// point counts as found, and evaluating outside the domain throws.
+class FusionIOBoundSource final : public HostBoundSource
 {
 public:
-  FusionIOBoundSource(const FusionIOSource& source,
-                      const EvaluationRequest& request)
-    : BoundSource(request), policy(request.policy)
+  FusionIOBoundSource(const FusionIOSource& source, const BindRequest& request)
+    : HostBoundSource(request),
+      hint_size(source.Get().sizeof_search_hint()),
+      hints(source.SearchHints(points.extent(0)))
   {
-    if (policy.mode == OutOfBoundsMode::NEAREST_BOUNDARY) {
-      throw pcms_error("FusionIOFunctionSpace: OutOfBoundsMode::"
-                       "NEAREST_BOUNDARY is not supported");
-    }
-    points = PointsOnHost(request.coords.GetValues());
-    hint_size = source.Get().sizeof_search_hint();
-    hints = source.SearchHints(points.extent(0));
-    if (policy.mode == OutOfBoundsMode::FILL) {
-      FindFilledPoints(source.DomainProbe());
+    if (request.policy.mode == OutOfBoundsMode::FILL) {
+      FindPointsInDomain(source.DomainProbe());
     }
   }
 
@@ -136,40 +131,29 @@ public:
     return hint_size > 0 ? &(*hints)[i * hint_size] : nullptr;
   }
 
-  OutOfBoundsPolicy policy;
-  HostRows points;
-  size_t hint_size = 0;
+  size_t hint_size;
   std::shared_ptr<std::vector<char>> hints;
-  /// Whether each point is outside the domain (FILL only).
-  std::vector<char> outside;
-  Kokkos::View<const LO*, DeviceMemorySpace> filled_points;
 
 private:
-  void FindFilledPoints(fio_field& probe)
+  void FindPointsInDomain(fio_field& probe)
   {
-    outside.assign(points.extent(0), 0);
+    std::vector<char> inside(points.extent(0), 1);
     std::vector<Real> values(static_cast<size_t>(probe.dimension()));
-    std::vector<LO> filled;
     for (size_t i = 0; i < points.extent(0); ++i) {
       const int status = probe.eval(&points(i, 0), values.data(), Hint(i));
       if (status == FIO_OUT_OF_BOUNDS) {
-        outside[i] = 1;
-        filled.push_back(static_cast<LO>(i));
+        inside[i] = 0;
       } else if (status != FIO_SUCCESS) {
         throw pcms_error("FusionIOFunctionSpace: locating query point " +
                          std::to_string(i) + " failed (Fusion-IO error " +
                          std::to_string(status) + ")");
       }
     }
-    Kokkos::View<LO*, DeviceMemorySpace> device("fusion_io_filled_points",
-                                                filled.size());
-    Kokkos::deep_copy(device, Kokkos::View<const LO*, HostMemorySpace>(
-                                filled.data(), filled.size()));
-    filled_points = device;
+    SetFound(inside);
   }
 };
 
-// Evaluates a quantity, or with derivative_order 1 its gradient, which
+// Evaluates a quantity, or with derivative order 1 its gradient, which
 // Fusion-IO provides for scalar quantities of some formats.
 // Fusion-IO evaluation is not thread safe, don't call Evaluate concurrently
 class FusionIOEvaluator final : public PointEvaluator<Real>
@@ -178,57 +162,41 @@ public:
   FusionIOEvaluator(std::shared_ptr<FusionIOSource> source,
                     std::shared_ptr<const FusionIOBoundSource> bound,
                     int derivative_order)
-    : source_(std::move(source)),
-      bound_(std::move(bound)),
-      derivative_order_(derivative_order)
+    : PointEvaluator<Real>(bound, derivative_order),
+      source_(std::move(source)),
+      bound_(std::move(bound))
   {
   }
 
-  [[nodiscard]] ValueBasis OutputBasis(const ValueBasis& stored) const override
-  {
-    return OutputBasisOf(stored, derivative_order_);
-  }
-
-  void Evaluate(const Field<Real>& field,
-                ValueView<Real, DeviceMemorySpace> values) const override
+protected:
+  void EvaluateImpl(const Field<Real>& field,
+                    ValueView<Real, DeviceMemorySpace> values) const override
   {
     PCMS_FUNCTION_TIMER;
-    CheckEvaluateWriteTag("FusionIOFunctionSpace", field, values);
     const auto* data = dynamic_cast<const FusionIOFieldData*>(&field.GetData());
     if (data == nullptr || data->quantity.source != source_) {
       throw pcms_error(
         "FusionIOFunctionSpace: field is not a quantity of this source");
     }
     const auto out = values.GetValues();
-    // Fusion-IO writes the field's components, or the three partials of a
-    // scalar, into each row.
-    const auto num_components =
-      derivative_order_ == 0
-        ? static_cast<size_t>(field.GetLayout().GetNumComponents())
-        : size_t{3};
     const auto& points = bound_->points;
-    CheckOutputShape("FusionIOFunctionSpace", out, points.extent(0),
-                     num_components);
     const auto host_out = HostRowsLike(out);
     fio_field& quantity = *data->quantity.field;
-    for (size_t i = 0; i < points.extent(0); ++i) {
+    const bool gradient = DerivativeOrder() == 1;
+    for (size_t k = 0; k < bound_->found.extent(0); ++k) {
+      const auto i = static_cast<size_t>(bound_->found(k));
       Real* row = &host_out(i, 0);
-      if (!bound_->outside.empty() && bound_->outside[i]) {
-        std::fill_n(row, num_components, bound_->policy.fill_value);
-        continue;
-      }
       const int status =
-        derivative_order_ == 0
-          ? quantity.eval(&points(i, 0), row, bound_->Hint(i))
-          : quantity.eval_deriv(&points(i, 0), row, bound_->Hint(i));
-      if (status == FIO_UNSUPPORTED && derivative_order_ > 0) {
+        gradient ? quantity.eval_deriv(&points(i, 0), row, bound_->Hint(i))
+                 : quantity.eval(&points(i, 0), row, bound_->Hint(i));
+      if (status == FIO_UNSUPPORTED && gradient) {
         throw pcms_error("FusionIOFunctionSpace: Fusion-IO does not provide "
                          "derivatives of this quantity for this format");
       }
       if (status == FIO_OUT_OF_BOUNDS) {
         throw pcms_error(
           "FusionIOFunctionSpace: query point " + std::to_string(i) +
-          (bound_->policy.mode == OutOfBoundsMode::FILL
+          (bound_->Policy().mode == OutOfBoundsMode::FILL
              ? " is outside this quantity's domain but inside the source's"
              : " is outside the source's domain"));
       }
@@ -238,7 +206,7 @@ public:
                          std::to_string(i) + " (Fusion-IO error " +
                          std::to_string(status) + ")");
       }
-      if (derivative_order_ == 1) {
+      if (gradient) {
         // Fusion-IO gives the coordinate partial along phi; the physical
         // component is (1/R) d/dphi.
         row[1] /= points(i, 0);
@@ -247,15 +215,44 @@ public:
     CopyToOutput(host_out, out);
   }
 
-  Kokkos::View<const LO*, DeviceMemorySpace> FilledPoints() const override
+private:
+  std::shared_ptr<FusionIOSource> source_;
+  std::shared_ptr<const FusionIOBoundSource> bound_;
+};
+
+// Binds a source's points and creates the evaluators of a space.
+class FusionIOEvaluatorFactory final
+  : public TypedPointEvaluatorFactory<Real, FusionIOBoundSource>
+{
+public:
+  FusionIOEvaluatorFactory(std::shared_ptr<FusionIOSource> source,
+                           int num_components)
+    : TypedPointEvaluatorFactory(csys::CylindricalRThetaZ::Create(), 1),
+      source_(std::move(source)),
+      num_components_(num_components)
   {
-    return bound_->filled_points;
+  }
+
+protected:
+  std::shared_ptr<FusionIOBoundSource> BindPoints(
+    const BindRequest& request) const override
+  {
+    return std::make_shared<FusionIOBoundSource>(*source_, request);
+  }
+
+  std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
+    std::shared_ptr<const FusionIOBoundSource> bound,
+    int derivative_order) const override
+  {
+    CheckGradientComponents("FusionIOFunctionSpace", derivative_order,
+                            num_components_);
+    return std::make_unique<FusionIOEvaluator>(source_, std::move(bound),
+                                               derivative_order);
   }
 
 private:
   std::shared_ptr<FusionIOSource> source_;
-  std::shared_ptr<const FusionIOBoundSource> bound_;
-  int derivative_order_;
+  int num_components_;
 };
 
 } // namespace
@@ -385,7 +382,9 @@ std::shared_ptr<FusionIOFunctionSpace> FusionIOFunctionSpace::Create(
 
 FusionIOFunctionSpace::FusionIOFunctionSpace(
   std::shared_ptr<FusionIOSource> source, int num_components)
-  : source_(std::move(source)),
+  : FunctionSpace(
+      std::make_shared<FusionIOEvaluatorFactory>(source, num_components)),
+    source_(std::move(source)),
     layout_(std::make_shared<EmptyFieldLayout>(
       csys::CylindricalRThetaZ::Create(), num_components))
 {
@@ -441,26 +440,6 @@ FieldVariant FusionIOFunctionSpace::CreateFieldImpl(FieldDataVariant data) const
 {
   return WrapField<Real>(
     layout_, std::get<std::unique_ptr<FieldData<Real>>>(std::move(data)));
-}
-
-std::shared_ptr<BoundSource> FusionIOFunctionSpace::BindImpl(
-  const EvaluationRequest& request) const
-{
-  return std::make_shared<FusionIOBoundSource>(*source_, request);
-}
-
-PointEvaluatorVariant FusionIOFunctionSpace::CreatePointEvaluatorImpl(
-  Type value_type, std::shared_ptr<const BoundSource> bound,
-  int derivative_order) const
-{
-  CheckEvaluatorRequest("FusionIOFunctionSpace", value_type, derivative_order,
-                        layout_->GetNumComponents());
-  pcms::detail::BoundSourceAs<FusionIOBoundSource>(*bound,
-                                                   "FusionIOFunctionSpace");
-  return std::unique_ptr<PointEvaluator<Real>>(
-    std::make_unique<FusionIOEvaluator>(
-      source_, std::static_pointer_cast<const FusionIOBoundSource>(bound),
-      derivative_order));
 }
 
 namespace

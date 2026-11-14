@@ -238,7 +238,7 @@ TEST_CASE("NIMROD evaluation errors")
     scalars->CreatePointEvaluator<Real>(scalars->Bind(coords.coordinate_view));
   Kokkos::View<Real**, DeviceMemorySpace> short_out("short_out", 1, 1);
   REQUIRE_THROWS_WITH(evaluator->Evaluate(n, fio::test::TagLike(n, short_out)),
-                      ContainsSubstring("but expected [2][1]"));
+                      ContainsSubstring("but must be [2][1]"));
 
   // nimeval holds one dump per process.
   REQUIRE_THROWS_WITH(

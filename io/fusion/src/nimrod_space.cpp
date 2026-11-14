@@ -121,27 +121,24 @@ using NimrodFieldData = ExternalFieldData<NimrodQuantity>;
 
 // The query points and each point's search guess, shared by every evaluator
 // created from this bound source.
-class NimrodBoundSource final : public BoundSource
+class NimrodBoundSource final : public HostBoundSource
 {
 public:
-  explicit NimrodBoundSource(const EvaluationRequest& request)
-    : BoundSource(request)
+  explicit NimrodBoundSource(const BindRequest& request)
+    : HostBoundSource(request), guesses(points.extent(0), {-1.0, -1.0})
   {
     if (request.policy.mode != OutOfBoundsMode::ERROR) {
       throw pcms_error("NimrodFunctionSpace: only OutOfBoundsMode::ERROR is "
                        "supported");
     }
-    points = PointsOnHost(request.coords.GetValues());
-    guesses.assign(points.extent(0), {-1.0, -1.0});
   }
 
-  HostRows points;
   // Each point's logical coordinates from its last search, which NIMROD
   // starts the next search from; (-1, -1) searches from scratch.
   mutable std::vector<std::array<double, 2>> guesses;
 };
 
-// Evaluates a quantity, or with derivative_order 1 the gradient of a scalar
+// Evaluates a quantity, or with derivative order 1 the gradient of a scalar
 // quantity. NIMROD evaluation is not thread safe, don't call Evaluate
 // concurrently.
 class NimrodEvaluator final : public PointEvaluator<Real>
@@ -150,22 +147,17 @@ public:
   NimrodEvaluator(std::shared_ptr<NimrodSource> source,
                   std::shared_ptr<const NimrodBoundSource> bound,
                   int derivative_order)
-    : source_(std::move(source)),
-      bound_(std::move(bound)),
-      derivative_order_(derivative_order)
+    : PointEvaluator<Real>(bound, derivative_order),
+      source_(std::move(source)),
+      bound_(std::move(bound))
   {
   }
 
-  [[nodiscard]] ValueBasis OutputBasis(const ValueBasis& stored) const override
-  {
-    return OutputBasisOf(stored, derivative_order_);
-  }
-
-  void Evaluate(const Field<Real>& field,
-                ValueView<Real, DeviceMemorySpace> values) const override
+protected:
+  void EvaluateImpl(const Field<Real>& field,
+                    ValueView<Real, DeviceMemorySpace> values) const override
   {
     PCMS_FUNCTION_TIMER;
-    CheckEvaluateWriteTag("NimrodFunctionSpace", field, values);
     const auto* data = dynamic_cast<const NimrodFieldData*>(&field.GetData());
     if (data == nullptr || data->quantity.source != source_) {
       throw pcms_error(
@@ -175,13 +167,9 @@ public:
     const auto& points = bound_->points;
     auto& guesses = bound_->guesses;
     const int num_components = field.GetLayout().GetNumComponents();
-    // A scalar's gradient has three components.
-    const int num_outputs = derivative_order_ == 0 ? num_components : 3;
-    CheckOutputShape("NimrodFunctionSpace", out, points.extent(0),
-                     static_cast<size_t>(num_outputs));
     const auto& quantity = data->quantity;
     const bool vector = data->GetValueType() == FieldValueType::Vector;
-    const int dmode = derivative_order_;
+    const int dmode = DerivativeOrder();
     // NIMROD writes the value and, for dmode 1, (d/dR, d/dZ, (1/R) d/dphi)
     // after it.
     std::array<double, 4> scalar_and_gradient{};
@@ -219,15 +207,44 @@ public:
     CopyToOutput(host_out, out);
   }
 
-  Kokkos::View<const LO*, DeviceMemorySpace> FilledPoints() const override
+private:
+  std::shared_ptr<NimrodSource> source_;
+  std::shared_ptr<const NimrodBoundSource> bound_;
+};
+
+// Binds a dump's points and creates the evaluators of a space.
+class NimrodEvaluatorFactory final
+  : public TypedPointEvaluatorFactory<Real, NimrodBoundSource>
+{
+public:
+  NimrodEvaluatorFactory(std::shared_ptr<NimrodSource> source,
+                         int num_components)
+    : TypedPointEvaluatorFactory(csys::CylindricalRThetaZ::Create(), 1),
+      source_(std::move(source)),
+      num_components_(num_components)
   {
-    return {};
+  }
+
+protected:
+  std::shared_ptr<NimrodBoundSource> BindPoints(
+    const BindRequest& request) const override
+  {
+    return std::make_shared<NimrodBoundSource>(request);
+  }
+
+  std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
+    std::shared_ptr<const NimrodBoundSource> bound,
+    int derivative_order) const override
+  {
+    CheckGradientComponents("NimrodFunctionSpace", derivative_order,
+                            num_components_);
+    return std::make_unique<NimrodEvaluator>(source_, std::move(bound),
+                                             derivative_order);
   }
 
 private:
   std::shared_ptr<NimrodSource> source_;
-  std::shared_ptr<const NimrodBoundSource> bound_;
-  int derivative_order_;
+  int num_components_;
 };
 
 } // namespace
@@ -332,7 +349,9 @@ std::shared_ptr<NimrodFunctionSpace> NimrodFunctionSpace::Create(
 
 NimrodFunctionSpace::NimrodFunctionSpace(std::shared_ptr<NimrodSource> source,
                                          int num_components)
-  : source_(std::move(source)),
+  : FunctionSpace(
+      std::make_shared<NimrodEvaluatorFactory>(source, num_components)),
+    source_(std::move(source)),
     layout_(std::make_shared<EmptyFieldLayout>(
       csys::CylindricalRThetaZ::Create(), num_components))
 {
@@ -372,25 +391,6 @@ FieldVariant NimrodFunctionSpace::CreateFieldImpl(FieldDataVariant data) const
 {
   return WrapField<Real>(
     layout_, std::get<std::unique_ptr<FieldData<Real>>>(std::move(data)));
-}
-
-std::shared_ptr<BoundSource> NimrodFunctionSpace::BindImpl(
-  const EvaluationRequest& request) const
-{
-  return std::make_shared<NimrodBoundSource>(request);
-}
-
-PointEvaluatorVariant NimrodFunctionSpace::CreatePointEvaluatorImpl(
-  Type value_type, std::shared_ptr<const BoundSource> bound,
-  int derivative_order) const
-{
-  CheckEvaluatorRequest("NimrodFunctionSpace", value_type, derivative_order,
-                        layout_->GetNumComponents());
-  pcms::detail::BoundSourceAs<NimrodBoundSource>(*bound, "NimrodFunctionSpace");
-  return std::unique_ptr<PointEvaluator<Real>>(
-    std::make_unique<NimrodEvaluator>(
-      source_, std::static_pointer_cast<const NimrodBoundSource>(bound),
-      derivative_order));
 }
 
 namespace

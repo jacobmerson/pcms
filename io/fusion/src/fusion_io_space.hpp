@@ -55,11 +55,6 @@ protected:
                                      pcms::ValueBasis basis) const override;
   pcms::FieldVariant CreateFieldImpl(
     pcms::FieldDataVariant data) const override;
-  std::shared_ptr<pcms::BoundSource> BindImpl(
-    const pcms::EvaluationRequest& request) const override;
-  pcms::PointEvaluatorVariant CreatePointEvaluatorImpl(
-    pcms::Type value_type, std::shared_ptr<const pcms::BoundSource> bound,
-    int derivative_order) const override;
 
 private:
   FusionIOFunctionSpace(std::shared_ptr<FusionIOSource> source,

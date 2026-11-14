@@ -7,6 +7,7 @@
 
 #include "pcms/field/coordinate_systems/cylindrical.hpp"
 #include "pcms/field/field_data.h"
+#include "pcms/field/bound_source.hpp"
 #include "pcms/field/function_space.h"
 #include "pcms/field/value_view.hpp"
 #include "pcms/utility/arrays.h"
@@ -60,35 +61,16 @@ inline pcms::ValueBasis QuantityBasis(bool vector)
           pcms::ComponentScaling::Physical, pcms::values::Vector};
 }
 
-/// The basis an evaluator of `derivative_order` (0 or 1) writes for a field
-/// stored in `stored`.
-inline pcms::ValueBasis OutputBasisOf(const pcms::ValueBasis& stored,
-                                      int derivative_order)
+/// Throws unless a gradient (derivative order 1) of a quantity with
+/// `num_components` components is supported: only single-component quantities
+/// have gradients so far.
+inline void CheckGradientComponents(std::string_view space,
+                                    int derivative_order, int num_components)
 {
-  if (derivative_order == 0) {
-    return stored;
-  }
-  return pcms::FirstDerivativeBasis(stored,
-                                    pcms::csys::CylindricalRThetaZ::Create());
-}
-
-/// Throws unless evaluating `num_components` components at `derivative_order`
-/// is supported: Real values, and gradients of single-component quantities.
-inline void CheckEvaluatorRequest(std::string_view space, pcms::Type value_type,
-                                  int derivative_order, int num_components)
-{
-  const std::string who(space);
-  if (value_type != pcms::Type::Real) {
-    throw pcms::pcms_error(who + ": only Real evaluation is supported");
-  }
-  if (derivative_order > 1) {
-    throw pcms::pcms_error(who + ": derivative order " +
-                           std::to_string(derivative_order) +
-                           " is not supported");
-  }
   if (derivative_order == 1 && num_components != 1) {
-    throw pcms::pcms_error(who + ": derivatives of quantities with more than "
-                                 "one component are not supported yet");
+    throw pcms::pcms_error(std::string(space) +
+                           ": derivatives of quantities with more than one "
+                           "component are not supported yet");
   }
 }
 
@@ -118,31 +100,41 @@ inline void CheckComponents(std::string_view space, std::string_view quantity,
   }
 }
 
-/// The query points on the host, each point's coordinates contiguous.
-template <typename Coordinates>
-HostRows PointsOnHost(const Coordinates& coords)
+/// Bound query points of a host evaluator, with the points and FoundPoints()
+/// copied to the host once.
+class HostBoundSource : public pcms::BoundSource
 {
-  Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> staged(
-    "external_points", coords.extent(0), coords.extent(1));
-  pcms::CopyDeviceRank2ViewToRank2View(pcms::MakeRank2View(staged), coords);
-  HostRows points("external_points", coords.extent(0), coords.extent(1));
-  pcms::DeepCopyMismatchLayouts(points, staged);
-  return points;
-}
+public:
+  /// the bound points, one row per point
+  HostRows points;
+  /// FoundPoints() on the host
+  Kokkos::View<const pcms::LO*, pcms::HostMemorySpace> found;
 
-/// Throws unless the evaluator output `out` is [rows][columns].
-template <typename Output>
-void CheckOutputShape(std::string_view space, const Output& out, size_t rows,
-                      size_t columns)
-{
-  if (out.extent(0) != rows || out.extent(1) != columns) {
-    throw pcms::pcms_error(std::string(space) + ": output is shaped [" +
-                           std::to_string(out.extent(0)) + "][" +
-                           std::to_string(out.extent(1)) + "] but expected [" +
-                           std::to_string(rows) + "][" +
-                           std::to_string(columns) + "]");
+protected:
+  explicit HostBoundSource(const pcms::BindRequest& request)
+    : BoundSource(request),
+      points("external_points", NumPoints(), PointValues().extent(1)),
+      found(Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(),
+                                                FoundPoints()))
+  {
+    pcms::DeepCopyMismatchLayouts(points, PointValues());
   }
-}
+
+  /// Records which points the source evaluates (BoundSource::SetFound).
+  /// @param is_found per point, whether the source evaluates it
+  void SetFound(const std::vector<char>& is_found)
+  {
+    Kokkos::View<bool*, pcms::HostMemorySpace> host("external_found",
+                                                    is_found.size());
+    for (size_t i = 0; i < is_found.size(); ++i) {
+      host(i) = is_found[i] != 0;
+    }
+    BoundSource::SetFound(
+      Kokkos::create_mirror_view_and_copy(pcms::DeviceMemorySpace(), host));
+    found = Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(),
+                                                FoundPoints());
+  }
+};
 
 /// Host output rows shaped like the evaluator output `out`.
 template <typename Output>

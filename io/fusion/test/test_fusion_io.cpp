@@ -276,7 +276,7 @@ TEST_CASE("Fusion-IO evaluation errors")
   Kokkos::View<Real**, DeviceMemorySpace> short_out("short_out", 1, 1);
   REQUIRE_THROWS_WITH(
     evaluator->Evaluate(psi, fio::test::TagLike(psi, short_out)),
-    ContainsSubstring("but expected [2][1]"));
+    ContainsSubstring("but must be [2][1]"));
 
   auto other = fio::detail::FusionIOFunctionSpace::Create(
     fio::detail::OpenFusionIOSource(fio::Format::GEQDSK, GeqdskFile), 1);
