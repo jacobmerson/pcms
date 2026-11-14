@@ -150,6 +150,9 @@ endif()
 # adios2 adds C and Fortran depending on how it was built
 find_package(ADIOS2 CONFIG 2.10.2 REQUIRED)
 find_package(Kokkos CONFIG 4.5 REQUIRED)
+# LLNL/units parses and compares field units (a private dependency of
+# pcms::field).
+find_package(units CONFIG REQUIRED)
 
 option(PCMS_ENABLE_MESHFIELDS "Enable MeshFields support" ON)
 option(PCMS_ENABLE_PETSC "Enable PETSc support" OFF)

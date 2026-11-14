@@ -2,6 +2,8 @@ find_package(KokkosKernels REQUIRED)
 
 set(PCMS_FIELD_HEADERS
         field.h
+        field_metadata.hpp
+        units.hpp
         coordinate_system.hpp
         coordinate_view.hpp
         coordinate_systems/cartesian.hpp
@@ -27,6 +29,8 @@ set(PCMS_FIELD_HEADERS
         data/point_cloud.h
 )
 set(PCMS_FIELD_SOURCES
+        field_metadata.cpp
+        units.cpp
         field_layout.cpp
         coordinate_system.cpp
         coordinate_map.cpp
@@ -124,6 +128,7 @@ target_link_libraries(pcms_field PUBLIC
         pcms::utility
         pcms::discretization
         pcms::localization)
+target_link_libraries(pcms_field PRIVATE units::units)
 
 if(PCMS_ENABLE_OMEGA_H)
     target_link_libraries(pcms_field PUBLIC Omega_h::omega_h)
