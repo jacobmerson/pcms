@@ -10,6 +10,7 @@ find_dependency(Kokkos CONFIG HINTS @Kokkos_DIR@)
 find_dependency(KokkosKernels CONFIG HINTS @KokkosKernels_DIR@)
 find_dependency(ADIOS2 CONFIG HINTS @ADIOS2_DIR@)
 find_dependency(MPI)
+find_dependency(units CONFIG HINTS @units_DIR@)
 
 if(@PCMS_ENABLE_MESHFIELDS@)
     find_dependency(meshfields CONFIG HINTS @meshfields_DIR@)

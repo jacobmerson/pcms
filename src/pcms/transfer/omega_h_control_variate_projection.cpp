@@ -48,8 +48,8 @@ OmegaHControlVariateProjection::OmegaHControlVariateProjection(
 // header) is a complete type when unique_ptr's destructor is instantiated.
 OmegaHControlVariateProjection::~OmegaHControlVariateProjection() = default;
 
-void OmegaHControlVariateProjection::Apply(const Field<Real>& source,
-                                           Field<Real>& target) const
+void OmegaHControlVariateProjection::ApplyImpl(const Field<Real>& source,
+                                               Field<Real>& target) const
 {
   const int num_dof_holders = target_layout_->GetNumOwnedDofHolder();
   const int num_components = target_layout_->GetNumComponents();

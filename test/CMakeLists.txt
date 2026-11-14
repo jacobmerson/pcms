@@ -401,7 +401,8 @@ if(Catch2_FOUND)
     STATUS "Found Catch2: ${Catch2_DIR} (found version ${Catch2_VERSION})")
   set(PCMS_UNIT_TEST_SOURCES unit_test_main.cpp
                              test_coordinate_transformation.cpp
-                             test_bounding_box.cpp test_field_serializer.cpp)
+                             test_bounding_box.cpp test_field_serializer.cpp
+                             test_units.cpp)
   if(PCMS_ENABLE_XGC)
     list(APPEND PCMS_UNIT_TEST_SOURCES test_xgc_reverse_classification.cpp
          test_xgc_field_data.cpp)
@@ -417,6 +418,7 @@ if(Catch2_FOUND)
       test_field_evaluation.cpp
       test_field_interpolation.cpp
       test_field_copy.cpp
+      test_field_metadata.cpp
       test_field_exchange_planner.cpp
       test_point_search.cpp
       test_mls_basis.cpp
