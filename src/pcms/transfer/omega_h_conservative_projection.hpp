@@ -42,9 +42,9 @@ public:
   // Defined in the .cpp where GalerkinProjectionSolver is a complete type.
   ~OmegaHConservativeProjection() override;
 
-  void Apply(const Field<Real>& source, Field<Real>& target) const override;
-
 private:
+  void ApplyImpl(const Field<Real>& source, Field<Real>& target) const override;
+
   std::shared_ptr<const OmegaHLagrangeLayout> source_layout_;
   std::shared_ptr<const OmegaHLagrangeLayout> target_layout_;
   std::unique_ptr<OmegaHIntersectionRHSIntegrator> rhs_integrator_;

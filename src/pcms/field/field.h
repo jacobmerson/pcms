@@ -3,6 +3,7 @@
 
 #include "field_data.h"
 #include "field_layout.h"
+#include "pcms/field/field_metadata.hpp"
 #include "pcms/utility/arrays.h"
 #include "pcms/utility/memory_spaces.h"
 #include "pcms/utility/types.h"
@@ -40,7 +41,29 @@ public:
 
   const FieldLayout& GetLayout() const { return *layout_; }
 
-  [[nodiscard]] const std::string& GetName() const noexcept { return name_; }
+  [[nodiscard]] const std::string& GetName() const noexcept
+  {
+    return metadata_.name;
+  }
+
+  /// The field's name, units and properties. The name is fixed at creation;
+  /// the coupler and transfers identify fields by it.
+  [[nodiscard]] const FieldMetadata& GetMetadata() const noexcept
+  {
+    return metadata_;
+  }
+
+  /// Units of the field's values; nullopt when unknown. Transfers check them
+  /// (see CheckSameUnits).
+  void SetUnits(std::optional<Units> units)
+  {
+    metadata_.units = std::move(units);
+  }
+
+  void SetProperties(FieldProperties properties)
+  {
+    metadata_.properties = properties;
+  }
 
   // The DOF-holder accessors below read and write the values of the DOF
   // holders this rank owns, shaped [GetNumDofHolder()][component] in owned
@@ -99,7 +122,9 @@ public:
 protected:
   Field(std::string name, std::shared_ptr<const FieldLayout> layout,
         std::unique_ptr<FieldData<T>> data)
-    : name_(std::move(name)), layout_(std::move(layout)), data_(std::move(data))
+    : metadata_{.name = std::move(name)},
+      layout_(std::move(layout)),
+      data_(std::move(data))
   {
   }
 
@@ -130,7 +155,7 @@ protected:
   {
     const auto* access = data_->GetDOFAccess();
     if (access == nullptr) {
-      throw pcms_error("Field '" + name_ +
+      throw pcms_error("Field '" + metadata_.name +
                        "': its values are not accessible through PCMS (the "
                        "field data provides no DOFAccess)");
     }
@@ -182,7 +207,7 @@ protected:
   friend class FunctionSpace;
 
 private:
-  std::string name_;
+  FieldMetadata metadata_;
   std::shared_ptr<const FieldLayout> layout_;
   std::unique_ptr<FieldData<T>> data_;
   // Host copy backing GetDOFHolderDataHost when device memory is not host

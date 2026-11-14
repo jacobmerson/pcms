@@ -46,7 +46,8 @@ public:
     }
   }
 
-  void Apply(const Field<T>& source, Field<T>& target) const override
+private:
+  void ApplyImpl(const Field<T>& source, Field<T>& target) const override
   {
     PCMS_FUNCTION_TIMER;
     detail::CheckCopyCompatible(source, target);

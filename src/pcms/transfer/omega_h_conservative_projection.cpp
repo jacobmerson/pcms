@@ -65,8 +65,8 @@ OmegaHConservativeProjection::OmegaHConservativeProjection(
 // header) is a complete type when unique_ptr's destructor is instantiated.
 OmegaHConservativeProjection::~OmegaHConservativeProjection() = default;
 
-void OmegaHConservativeProjection::Apply(const Field<Real>& source,
-                                         Field<Real>& target) const
+void OmegaHConservativeProjection::ApplyImpl(const Field<Real>& source,
+                                             Field<Real>& target) const
 {
   CheckApplyCompatible(source, target, *source_layout_, *target_layout_);
   if (&source.GetLayout() != source_layout_.get()) {
