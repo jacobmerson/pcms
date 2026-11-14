@@ -137,6 +137,9 @@ public:
 
   /// The quantity as a function of (R, phi, Z); it holds no values in PCMS,
   /// so it can be evaluated and used as a transfer source but not written.
+  /// Its metadata carries the quantity's units (unset where they are not
+  /// certain) and properties, e.g. tesla and divergence-free for the magnetic
+  /// field.
   /// Throws if the source does not provide the quantity or an option.
   [[nodiscard]] virtual pcms::Function<Real> CreateFunction(
     Quantity quantity, const Options& options = {}) const = 0;
