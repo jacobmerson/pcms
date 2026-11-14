@@ -61,6 +61,24 @@ TEST_CASE("fio::Open describes an M3D-C1 source")
   REQUIRE(*axis_r < 2.5);
 }
 
+TEST_CASE("fio::Open functions carry units and properties")
+{
+  const auto source = fio::Open(fio::Format::M3DC1, M3DC1File);
+
+  const auto b = source->CreateFunction(Quantity::MagneticField);
+  REQUIRE(b.GetMetadata().units == pcms::Units::Parse("T"));
+  REQUIRE(b.GetMetadata().properties.Has(pcms::FieldProperty::DivergenceFree));
+
+  const auto p = source->CreateFunction(Quantity::TotalPressure);
+  REQUIRE(p.GetMetadata().units == pcms::Units::Parse("Pa"));
+  REQUIRE(p.GetMetadata().properties.Has(pcms::FieldProperty::NonNegative));
+
+  // Wb or Wb/rad depends on the source, so the units stay unspecified.
+  const auto psi = source->CreateFunction(Quantity::PoloidalFlux);
+  REQUIRE_FALSE(psi.GetMetadata().units.has_value());
+  REQUIRE(psi.GetMetadata().properties == pcms::FieldProperties{});
+}
+
 TEST_CASE("fio::Open functions match the Fusion-IO function space")
 {
   const auto source = fio::Open(fio::Format::M3DC1, M3DC1File);
