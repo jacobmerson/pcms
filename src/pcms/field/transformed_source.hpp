@@ -97,6 +97,11 @@ public:
     return system_;
   }
 
+  [[nodiscard]] bool SupportsNearestBoundary() const noexcept override
+  {
+    return source_->SupportsNearestBoundary();
+  }
+
 protected:
   /// @brief Binds the map to the query points and the source to the mapped
   ///        points.

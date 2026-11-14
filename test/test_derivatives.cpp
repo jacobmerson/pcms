@@ -13,10 +13,8 @@
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
 using pcms::DeviceMemorySpace;
-using pcms::HostMemorySpace;
 using pcms::Real;
 using pcms::ValueBasis;
-using pcms::ValueView;
 
 namespace
 {
@@ -62,15 +60,9 @@ TEST_CASE("Spline gradients")
   REQUIRE(
     pcms::SameCoordinateSystem(basis.system, space->GetCoordinateSystem()));
 
-  Kokkos::View<Real**, DeviceMemorySpace> grad_out("grad", n, 2);
-  gradient->Evaluate(f, ValueView<Real, DeviceMemorySpace>(
-                          basis, pcms::MakeRank2View(grad_out)));
-  Kokkos::View<Real**, DeviceMemorySpace> value_out("values", n, 1);
-  values->Evaluate(f, pcms::test::TagLike(f, value_out));
-  const auto grad =
-    Kokkos::create_mirror_view_and_copy(HostMemorySpace(), grad_out);
+  const auto grad = pcms::test::EvaluateToHost(*gradient, f, basis, 2);
   const auto value =
-    Kokkos::create_mirror_view_and_copy(HostMemorySpace(), value_out);
+    pcms::test::EvaluateToHost(*values, f, f.GetData().GetValueBasis());
   for (size_t i = 0; i < n; ++i) {
     const Real x = pts[2 * i], y = pts[2 * i + 1];
     CAPTURE(i, x, y);
@@ -101,11 +93,8 @@ TEST_CASE("Gradients fill the out-of-bounds rows")
     space->Bind(coords.coordinate_view,
                 pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::FILL, -7.0});
   auto gradient = space->CreatePointEvaluator<Real>(bound, 1);
-  Kokkos::View<Real**, DeviceMemorySpace> out("grad", 2, 2);
-  gradient->Evaluate(f, ValueView<Real, DeviceMemorySpace>(
-                          gradient->OutputBasis(f.GetData().GetValueBasis()),
-                          pcms::MakeRank2View(out)));
-  const auto grad = Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
+  const auto grad = pcms::test::EvaluateToHost(
+    *gradient, f, gradient->OutputBasis(f.GetData().GetValueBasis()), 2);
   REQUIRE_THAT(grad(0, 0),
                WithinAbs(2.0 * 0.5 + 3.0 * 0.5, pcms::test::EvalTol));
   REQUIRE(grad(1, 0) == -7.0);

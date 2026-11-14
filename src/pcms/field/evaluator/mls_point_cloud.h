@@ -15,14 +15,6 @@
 namespace pcms
 {
 
-// MLSPointEvaluator is a concrete PointEvaluator<Real> that evaluates a
-// point-cloud-backed scalar field at a fixed set of query points using MLS.
-//
-// Supports only scalar fields (num_components == 1). Throws for any other
-// component count.
-//
-// The support structure is built once at construction and reused across
-// repeated Evaluate calls at zero additional localization cost.
 /// @brief MLS bound source: the supports of the query points and the
 ///        coordinates the solve uses. Every query point is found.
 class MLSBinding final : public BoundSource
@@ -65,6 +57,7 @@ private:
   SupportResults supports_;
 };
 
+/// @brief Evaluates a scalar point-cloud field at the bound points by MLS.
 template <typename LayoutPolicy =
             detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
 class MLSPointEvaluator : public PointEvaluator<Real, LayoutPolicy>

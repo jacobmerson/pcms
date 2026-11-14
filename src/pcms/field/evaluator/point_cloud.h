@@ -2,7 +2,6 @@
 #define PCMS_POINT_CLOUD_EVALUATOR_FACTORY_H
 
 #include "pcms/field/point_evaluator_factory.hpp"
-#include "pcms/field/out_of_bounds_policy.h"
 #include "pcms/field/point_evaluator.h"
 #include "pcms/field/field_data.h"
 #include "pcms/field/evaluation_request.h"
@@ -79,12 +78,8 @@ protected:
   }
 
   std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
-    std::shared_ptr<const Bound> bound, int derivative_order) const override
+    std::shared_ptr<const Bound> bound, int /*derivative_order*/) const override
   {
-    if (derivative_order != 0) {
-      throw pcms_error(
-        "PointCloudEvaluatorFactory: derivatives are not supported");
-    }
     return std::make_unique<MLSPointEvaluator<>>(
       std::move(bound), layout_->GetDimension(), options_);
   }

@@ -4,9 +4,9 @@
 #include "pcms/field/evaluator/mesh_fields_backend.h"
 #include "pcms/field/data/mesh_fields.h"
 #include "pcms/field/point_evaluator_factory.hpp"
-#include "pcms/field/out_of_bounds_policy.h"
 #include "pcms/field/point_evaluator.h"
 #include "pcms/field/field_data.h"
+#include "pcms/localization/point_search.h"
 #include "pcms/utility/profile.h"
 #include "pcms/utility/arrays.h"
 #include <memory>
@@ -43,8 +43,7 @@ public:
     Kokkos::parallel_scan("ComputeOffsets", Range(0, nelems),
                           ComputeOffsetsDeviceFunctor(offsets_, elem_counts),
                           total);
-    Kokkos::parallel_for("SetFinalOffset", Range(0, 1),
-                         SetFinalOffsetFunctor(offsets_, nelems, total));
+    Kokkos::deep_copy(Kokkos::subview(offsets_, nelems), total);
 
     local_coords_ = Kokkos::View<Real**>("local_coords", num_found, mesh.dim());
     indices_ = Kokkos::View<LO*>("indices", num_found);
@@ -78,10 +77,8 @@ private:
   Kokkos::View<LO*> indices_;
 };
 
-// MeshFieldsPointEvaluator<T> implements PointEvaluator<T> for
-// MeshFields-backed simplex meshes. Each Evaluate call loads DOF data from the
-// FieldData argument into the MeshFieldBackend's shape_field_ via SetData, then
-// calls evaluate().
+/// @brief Evaluates MeshFields fields at the bound points with the field's
+///        MeshFields backend.
 template <typename T,
           typename LayoutPolicy =
             detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
@@ -165,12 +162,8 @@ protected:
   }
 
   std::unique_ptr<PointEvaluator<T>> CreateEvaluator(
-    std::shared_ptr<const Bound> bound, int derivative_order) const override
+    std::shared_ptr<const Bound> bound, int /*derivative_order*/) const override
   {
-    if (derivative_order != 0) {
-      throw pcms_error(
-        "MeshFieldsEvaluatorFactory: derivatives are not supported");
-    }
     return std::make_unique<MeshFieldsPointEvaluator<T>>(layout_,
                                                          std::move(bound));
   }

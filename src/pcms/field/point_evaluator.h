@@ -3,6 +3,7 @@
 
 #include "pcms/field/bound_source.hpp"
 #include "pcms/field/value_view.hpp"
+#include "pcms/utility/assert.h"
 #include "pcms/utility/arrays.h"
 #include "pcms/utility/memory_spaces.h"
 #include "pcms/utility/types.h"
@@ -81,10 +82,17 @@ public:
   /// @return number of query points
   [[nodiscard]] LO NumPoints() const noexcept { return bound_->NumPoints(); }
 
-  /// Value basis this evaluator writes for a field stored in `stored`.
+  /// @param stored value basis of the evaluated field
+  /// @return value basis this evaluator writes: `stored`, with a covariant
+  ///         index in the bound points' coordinate system for derivative
+  ///         order 1
   [[nodiscard]] virtual ValueBasis OutputBasis(const ValueBasis& stored) const
   {
-    return stored;
+    if (derivative_order_ == 0) {
+      return stored;
+    }
+    PCMS_ALWAYS_ASSERT(derivative_order_ == 1);
+    return FirstDerivativeBasis(stored, bound_->GetCoordinateSystem());
   }
 
   /// @return indices of the query points whose rows Evaluate sets to the fill
@@ -102,13 +110,21 @@ public:
 
 protected:
   /// @param bound bound source of the query points; not null
-  explicit PointEvaluator(std::shared_ptr<const BoundSource> bound)
-    : bound_(std::move(bound))
+  /// @param derivative_order 0 for values, 1 for first derivatives
+  explicit PointEvaluator(std::shared_ptr<const BoundSource> bound,
+                          int derivative_order = 0)
+    : bound_(std::move(bound)), derivative_order_(derivative_order)
   {
   }
 
   /// @return the bound source of the query points
   [[nodiscard]] const BoundSource& Bound() const noexcept { return *bound_; }
+
+  /// @return 0 for values, 1 for first derivatives
+  [[nodiscard]] int DerivativeOrder() const noexcept
+  {
+    return derivative_order_;
+  }
 
   /// @brief Writes the field's values at the bound source's FoundPoints().
   /// @param field field to evaluate; its output shape and basis are checked
@@ -142,6 +158,7 @@ private:
   }
 
   std::shared_ptr<const BoundSource> bound_;
+  int derivative_order_;
 };
 
 // Variant types using default layout for device memory space

@@ -67,9 +67,9 @@ def test_bound_source_belongs_to_its_source(mesh, space):
 
 def test_derivatives_need_a_source_that_has_them(space):
     bound = space.bind(pcms.CoordinateView([[0.5, 0.5]]))
-    with pytest.raises(RuntimeError, match="derivatives"):
+    with pytest.raises(RuntimeError, match="derivative order 1"):
         space.create_point_evaluator(bound, derivative_order=1)
-    with pytest.raises(RuntimeError, match="derivatives"):
+    with pytest.raises(RuntimeError, match="derivative order 1"):
         pcms.gradient(space).create_point_evaluator(bound)
 
 

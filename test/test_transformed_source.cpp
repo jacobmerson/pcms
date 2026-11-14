@@ -69,18 +69,6 @@ ValueBasis CartesianVector()
                     ComponentScaling::Physical, values::Vector};
 }
 
-Kokkos::View<Real**, HostMemorySpace> EvaluateToHost(
-  const pcms::PointEvaluator<Real>& evaluator, const pcms::Field<Real>& field,
-  const ValueBasis& tag, int n, int width)
-{
-  Kokkos::View<Real**, DeviceMemorySpace> out("out", n, width);
-  evaluator.Evaluate(
-    field, ValueView<Real, DeviceMemorySpace>(tag, pcms::MakeRank2View(out)));
-  Kokkos::View<Real**, HostMemorySpace> host("host", n, width);
-  pcms::DeepCopyMismatchLayouts(host, out);
-  return host;
-}
-
 } // namespace
 
 TEST_CASE("TransformedSource: scalar evaluation maps the query points")
@@ -107,7 +95,8 @@ TEST_CASE("TransformedSource: scalar evaluation maps the query points")
   REQUIRE(SameValueBasis(evaluator->OutputBasis(ValueBasis{}), ValueBasis{}));
 
   const auto coords = pcms::test::CopyCoordinatesToHost(pts.GetValues());
-  const auto result = EvaluateToHost(*evaluator, f, ValueBasis{}, n, 1);
+  const auto result =
+    pcms::test::EvaluateToHost(*evaluator, f, ValueBasis{}, 1);
   for (int i = 0; i < n; ++i) {
     const Real x = coords(i, 0), y = coords(i, 1), z = coords(i, 2);
     CAPTURE(i);
@@ -148,7 +137,8 @@ TEST_CASE("TransformedSource: vector evaluation rotates into the target basis")
                       ContainsSubstring("cannot re-express"));
 
   const auto coords = pcms::test::CopyCoordinatesToHost(pts.GetValues());
-  const auto result = EvaluateToHost(*evaluator, b, CartesianVector(), n, 3);
+  const auto result =
+    pcms::test::EvaluateToHost(*evaluator, b, CartesianVector(), 3);
   for (int i = 0; i < n; ++i) {
     CAPTURE(i);
     REQUIRE_THAT(result(i, 0), WithinAbs(coords(i, 0), kTol));
@@ -206,7 +196,8 @@ TEST_CASE("TransformedSource: FILL rows survive the rotation untouched")
     src_as_cartesian.Bind(pts, OutOfBoundsPolicy{OutOfBoundsMode::FILL, fill}));
 
   const auto coords = pcms::test::CopyCoordinatesToHost(pts.GetValues());
-  const auto result = EvaluateToHost(*evaluator, b, CartesianVector(), n, 3);
+  const auto result =
+    pcms::test::EvaluateToHost(*evaluator, b, CartesianVector(), 3);
   int num_filled = 0;
   for (int i = 0; i < n; ++i) {
     const Real x = coords(i, 0), y = coords(i, 1);
@@ -250,7 +241,8 @@ TEST_CASE("TransformedSource: in-bounds values equal to the fill value are "
     src_as_cartesian.Bind(pts, OutOfBoundsPolicy{OutOfBoundsMode::FILL, fill}));
 
   const auto coords = pcms::test::CopyCoordinatesToHost(pts.GetValues());
-  const auto result = EvaluateToHost(*evaluator, b, CartesianVector(), n, 3);
+  const auto result =
+    pcms::test::EvaluateToHost(*evaluator, b, CartesianVector(), 3);
   int num_rotated = 0;
   for (int i = 0; i < n; ++i) {
     const Real x = coords(i, 0), y = coords(i, 1);
@@ -313,6 +305,41 @@ TEST_CASE("TransformedSource: evaluator creation and evaluation errors")
       src_as_cartesian.CreatePointEvaluator<GO>(
         src_as_cartesian.Bind(query.coordinate_view)),
       ContainsSubstring("only supports fields of its own value type"));
+  }
+}
+
+TEST_CASE("TransformedSource: NEAREST_BOUNDARY follows the wrapped source")
+{
+  auto cart_to_cyl = std::make_shared<pcms::CartesianToCylindrical>();
+  // (2, 0, 0.5) has r = 2, beyond the grid's r range
+  const std::vector<Real> cart_pts = {0.5, 0.5, 0.5, 2.0, 0.0, 0.5};
+  auto query = pcms::test::CreateDeviceCoordinateView(
+    cart_pts, pcms::csys::Cartesian::Create(3), 3);
+  const OutOfBoundsPolicy nearest{OutOfBoundsMode::NEAREST_BOUNDARY};
+
+  SECTION("a uniform grid extrapolates")
+  {
+    pcms::UniformGrid<3> grid;
+    grid.bot_left = {0.1, -3.2, 0.0};
+    grid.edge_length = {1.5, 6.4, 1.0};
+    grid.divisions = {6, 16, 4};
+    auto src = LagrangeFunctionSpace::FromUniformGrid(
+      grid, 1, pcms::csys::CylindricalRThetaZ::Create());
+    TransformedSource src_as_cartesian(src, cart_to_cyl);
+    REQUIRE(src_as_cartesian.SupportsNearestBoundary());
+    auto bound = src_as_cartesian.Bind(query.coordinate_view, nearest);
+    REQUIRE(bound->MissingPoints().extent(0) == 0);
+  }
+
+  SECTION("an Omega_h mesh rejects the mode")
+  {
+    auto lib = Omega_h::Library{};
+    Omega_h::Mesh src_mesh(&lib);
+    TransformedSource src_as_cartesian(BuildCylindricalSource(lib, src_mesh, 1),
+                                       cart_to_cyl);
+    REQUIRE_FALSE(src_as_cartesian.SupportsNearestBoundary());
+    REQUIRE_THROWS_WITH(src_as_cartesian.Bind(query.coordinate_view, nearest),
+                        ContainsSubstring("NEAREST_BOUNDARY"));
   }
 }
 
@@ -389,7 +416,8 @@ TEST_CASE("TransformedSource: nesting composes maps and rotations")
   const int n = 3;
   auto evaluator = src_as_cylindrical.CreatePointEvaluator<Real>(
     src_as_cylindrical.Bind(query.coordinate_view));
-  const auto result = EvaluateToHost(*evaluator, b, CylindricalVector(), n, 3);
+  const auto result =
+    pcms::test::EvaluateToHost(*evaluator, b, CylindricalVector(), 3);
   for (int i = 0; i < n; ++i) {
     CAPTURE(i);
     const auto k = 3 * static_cast<size_t>(i);

@@ -1,5 +1,4 @@
 #include <catch2/catch_test_macros.hpp>
-#include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <Kokkos_Core.hpp>
 #include <Omega_h_build.hpp>
@@ -11,8 +10,6 @@
 #include <vector>
 
 using Catch::Matchers::ContainsSubstring;
-using Catch::Matchers::WithinAbs;
-using pcms::DeviceMemorySpace;
 using pcms::HostMemorySpace;
 using pcms::OutOfBoundsMode;
 using pcms::OutOfBoundsPolicy;
@@ -27,19 +24,6 @@ Omega_h::Mesh BuildSquare(Omega_h::Library& lib)
                             false);
 }
 
-std::vector<Real> EvaluateHost(const pcms::PointEvaluator<Real>& evaluator,
-                               const pcms::Field<Real>& field, size_t n)
-{
-  Kokkos::View<Real**, DeviceMemorySpace> out("out", n, 1);
-  evaluator.Evaluate(field, pcms::test::TagLike(field, out));
-  auto host = Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
-  std::vector<Real> values(n);
-  for (size_t i = 0; i < n; ++i) {
-    values[i] = host(i, 0);
-  }
-  return values;
-}
-
 } // namespace
 
 TEST_CASE("Evaluators created from one bound source share its points")
@@ -48,9 +32,11 @@ TEST_CASE("Evaluators created from one bound source share its points")
   auto mesh = BuildSquare(lib);
   auto space = pcms::test::MakeP1Space(mesh);
   auto field = space->CreateFunction<Real>("f");
-  pcms::test::SetField(
-    field,
-    OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); });
+  const auto linear = OMEGA_H_LAMBDA(Real x, Real y)
+  {
+    return pcms::test::linear_f(x, y);
+  };
+  pcms::test::SetField(field, linear);
 
   const auto pts = pcms::test::StandardEvalCoords2D();
   const size_t n = pts.size() / 2;
@@ -66,14 +52,8 @@ TEST_CASE("Evaluators created from one bound source share its points")
 
   auto first = space->CreatePointEvaluator<Real>(bound);
   auto second = space->CreatePointEvaluator<Real>(bound);
-  const auto a = EvaluateHost(*first, field, n);
-  const auto b = EvaluateHost(*second, field, n);
-  for (size_t i = 0; i < n; ++i) {
-    CAPTURE(i);
-    const Real expected = pcms::test::linear_f(pts[2 * i], pts[2 * i + 1]);
-    REQUIRE_THAT(a[i], WithinAbs(expected, pcms::test::EvalTol));
-    REQUIRE_THAT(b[i], WithinAbs(expected, pcms::test::EvalTol));
-  }
+  pcms::test::CheckEvaluation(*first, field, pts, linear);
+  pcms::test::CheckEvaluation(*second, field, pts, linear);
 }
 
 TEST_CASE("Binding to a function space keeps its layout and the policy")
@@ -169,12 +149,8 @@ TEST_CASE("Binding splits found and missing points and applies the policy")
   REQUIRE(missing.extent(0) == 1);
   REQUIRE(missing(0) == 1);
 
-  auto evaluator = space->CreatePointEvaluator<Real>(bound);
-  REQUIRE(evaluator->FilledPoints().extent(0) == 1);
-  const auto values = EvaluateHost(*evaluator, field, 3);
-  REQUIRE_THAT(values[0],
-               WithinAbs(pcms::test::linear_f(0.5, 0.5), pcms::test::EvalTol));
-  REQUIRE(values[1] == -1.0);
-  REQUIRE_THAT(values[2], WithinAbs(pcms::test::linear_f(0.25, 0.75),
-                                    pcms::test::EvalTol));
+  pcms::test::CheckEvaluationWithFill(
+    *space->CreatePointEvaluator<Real>(bound), field, pts, {true, false, true},
+    OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); },
+    -1.0);
 }

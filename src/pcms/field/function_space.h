@@ -58,10 +58,6 @@ public:
   [[nodiscard]] const PointEvaluatorFactory& BindingSource()
     const noexcept override;
 
-  /// @return whether the backend source supports
-  ///         OutOfBoundsMode::NEAREST_BOUNDARY
-  [[nodiscard]] bool SupportsNearestBoundary() const noexcept override;
-
   virtual ~FunctionSpace() noexcept = default;
 
   template <typename T>
@@ -91,10 +87,6 @@ protected:
     : evaluator_(std::move(evaluator))
   {
   }
-
-  /// @throws pcms_error: the space has no backend source
-  std::shared_ptr<BoundSource> BindImpl(
-    const EvaluationRequest& request) const override;
 
   /// @brief Creates the evaluator through the backend source.
   /// @throws pcms_error if the space has no backend source

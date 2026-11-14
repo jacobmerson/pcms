@@ -10,18 +10,10 @@ namespace
 Kokkos::View<Real**, DeviceMemorySpace> CopyPoints(
   Rank2View<const Real, DeviceMemorySpace> coords)
 {
-  const auto n = static_cast<LO>(coords.extent(0));
-  const auto dim = static_cast<int>(coords.extent(1));
   Kokkos::View<Real**, DeviceMemorySpace> points(
-    Kokkos::view_alloc(Kokkos::WithoutInitializing, "bound_points"), n, dim);
-  Kokkos::parallel_for(
-    "BoundSource::CopyPoints",
-    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
-    KOKKOS_LAMBDA(const LO i) {
-      for (int d = 0; d < dim; ++d) {
-        points(i, d) = coords(i, d);
-      }
-    });
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "bound_points"),
+    coords.extent(0), coords.extent(1));
+  ConvertMismatchLayoutView2D(points, coords);
   return points;
 }
 
@@ -29,10 +21,7 @@ Kokkos::View<LO*, DeviceMemorySpace> AllPoints(LO n)
 {
   Kokkos::View<LO*, DeviceMemorySpace> all(
     Kokkos::view_alloc(Kokkos::WithoutInitializing, "bound_found_points"), n);
-  Kokkos::parallel_for(
-    "BoundSource::AllPoints",
-    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
-    KOKKOS_LAMBDA(const LO i) { all(i) = i; });
+  iota_view<LO>(all);
   return all;
 }
 
@@ -71,26 +60,19 @@ void SplitPoints(Kokkos::View<const bool*, DeviceMemorySpace> found,
 } // namespace
 
 BoundSource::BoundSource(const EvaluationRequest& request)
-  : num_points_(static_cast<LO>(request.coords.GetValues().extent(0))),
-    policy_(request.policy),
+  : policy_(request.policy),
     query_layout_(request.query_layout),
     system_(request.coords.GetCoordinateSystem()),
     points_(CopyPoints(request.coords.GetValues())),
-    found_(AllPoints(num_points_))
+    found_(AllPoints(NumPoints()))
 {
-}
-
-CoordinateView<DeviceMemorySpace> BoundSource::Points() const
-{
-  return CoordinateView<DeviceMemorySpace>(system_,
-                                           MakeConstRank2View(points_));
 }
 
 void BoundSource::SetFound(Kokkos::View<const bool*, DeviceMemorySpace> found)
 {
-  PCMS_ALWAYS_ASSERT(static_cast<LO>(found.extent(0)) == num_points_);
+  PCMS_ALWAYS_ASSERT(static_cast<LO>(found.extent(0)) == NumPoints());
   const LO num_found = CountFound(found);
-  const LO num_missing = num_points_ - num_found;
+  const LO num_missing = NumPoints() - num_found;
   if (num_missing > 0 && policy_.mode == OutOfBoundsMode::ERROR) {
     throw pcms_error("Bind: " + std::to_string(num_missing) +
                      " query point(s) are outside the source's domain");
@@ -108,7 +90,7 @@ void BoundSource::SetFound(Kokkos::View<const bool*, DeviceMemorySpace> found)
 
 void BoundSource::SetFound(const BoundSource& same_points)
 {
-  PCMS_ALWAYS_ASSERT(same_points.num_points_ == num_points_);
+  PCMS_ALWAYS_ASSERT(same_points.NumPoints() == NumPoints());
   found_ = same_points.found_;
   missing_ = same_points.missing_;
 }

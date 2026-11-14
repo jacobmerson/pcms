@@ -29,12 +29,6 @@ public:
   }
 
 protected:
-  std::shared_ptr<BoundSource> BindImpl(const EvaluationRequest&) const override
-  {
-    // Bind forwards to BindingSource(), the wrapped source.
-    throw pcms_error("Gradient: binds through the wrapped source");
-  }
-
   PointEvaluatorVariant CreatePointEvaluatorImpl(
     Type value_type, std::shared_ptr<const BoundSource> bound,
     int derivative_order) const override

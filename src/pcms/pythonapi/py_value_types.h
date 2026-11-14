@@ -95,9 +95,7 @@ inline py::array_t<LO> IndicesToNumpy(
   if (indices.extent(0) == 0) {
     return py::array_t<LO>(0);
   }
-  return ViewToNumpy(
-    Rank1View<const LO, DeviceMemorySpace>(indices.data(), indices.extent(0)),
-    owner);
+  return ViewToNumpy(MakeRank1View(indices), owner);
 }
 
 // Device copy of the coordinates together with the CoordinateView over it.

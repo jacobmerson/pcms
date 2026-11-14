@@ -25,7 +25,10 @@ class BoundSource
 {
 public:
   /// @return number of bound query points
-  [[nodiscard]] LO NumPoints() const noexcept { return num_points_; }
+  [[nodiscard]] LO NumPoints() const noexcept
+  {
+    return static_cast<LO>(points_.extent(0));
+  }
 
   /// @return out-of-bounds policy of the evaluators created from this source
   [[nodiscard]] const OutOfBoundsPolicy& Policy() const noexcept
@@ -40,10 +43,15 @@ public:
     return query_layout_.get();
   }
 
-  /// @return the bound query points (a copy owned by this object)
-  [[nodiscard]] CoordinateView<DeviceMemorySpace> Points() const;
+  /// @return coordinate system of the bound query points
+  [[nodiscard]] const std::shared_ptr<const CoordinateSystem>&
+  GetCoordinateSystem() const noexcept
+  {
+    return system_;
+  }
 
-  /// @return the coordinates of the bound query points, one row per point
+  /// @return the coordinates of the bound query points (a copy owned by this
+  ///         object), one row per point
   [[nodiscard]] Kokkos::View<const Real**, DeviceMemorySpace> PointValues()
     const noexcept
   {
@@ -91,7 +99,6 @@ private:
   friend class PointEvaluatorFactory;
   const PointEvaluatorFactory* bound_by_ = nullptr;
 
-  LO num_points_;
   OutOfBoundsPolicy policy_;
   std::shared_ptr<const FieldLayout> query_layout_;
   std::shared_ptr<const CoordinateSystem> system_;

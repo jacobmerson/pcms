@@ -127,7 +127,7 @@ public:
     // Every point has a (closest) cell, so all rows are computed; Evaluate
     // overwrites the rows of points outside the grid in FILL mode.
     auto cell_indices = binding_->CellIndices();
-    auto coordinates = binding_->Points().GetValues();
+    auto coordinates = binding_->PointValues();
 
     if (layout_->GetOrder() == 0) {
       Kokkos::parallel_for(
@@ -253,12 +253,8 @@ protected:
   }
 
   std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
-    std::shared_ptr<const Bound> bound, int derivative_order) const override
+    std::shared_ptr<const Bound> bound, int /*derivative_order*/) const override
   {
-    if (derivative_order != 0) {
-      throw pcms_error(
-        "UniformGridEvaluatorFactory: derivatives are not supported");
-    }
     return std::make_unique<UniformGridPointEvaluator<Dim>>(layout_,
                                                             std::move(bound));
   }

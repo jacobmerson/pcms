@@ -424,6 +424,22 @@ inline ValueView<T, DeviceMemorySpace> TagLike(
                                          MakeRank2View(values));
 }
 
+/// Evaluates into a new [NumPoints()][width] view tagged `basis` and returns
+/// a host copy.
+inline Kokkos::View<Real**, HostMemorySpace> EvaluateToHost(
+  const PointEvaluator<Real>& evaluator, const Field<Real>& field,
+  const ValueBasis& basis, int width = 1)
+{
+  Kokkos::View<Real**, DeviceMemorySpace> out("out", evaluator.NumPoints(),
+                                              width);
+  evaluator.Evaluate(
+    field, ValueView<Real, DeviceMemorySpace>(basis, MakeRank2View(out)));
+  Kokkos::View<Real**, HostMemorySpace> host("host", evaluator.NumPoints(),
+                                             width);
+  DeepCopyMismatchLayouts(host, out);
+  return host;
+}
+
 template <typename T>
 inline Kokkos::View<T*, DeviceMemorySpace> CreateDeviceRank1View(
   const std::vector<T>& values)
@@ -551,28 +567,20 @@ void CheckFillMode(const Factory& factory, const Field<Real>& field,
   CheckFillMode(*evaluator, field, fill_value, outside_pts);
 }
 
-// Check a mix of inside/outside points. inside points verified against func,
-// outside points against fill_value.
-template <typename Factory, typename ExecutionSpace = DefaultExecutionSpace,
-          typename Func>
-void CheckEvaluationWithFill(const Factory& factory, const Field<Real>& field,
+// Check a mix of inside/outside points with an evaluator bound to `pts` in
+// FILL mode. inside points verified against func, outside points against
+// fill_value.
+template <typename ExecutionSpace = DefaultExecutionSpace, typename Func>
+void CheckEvaluationWithFill(const PointEvaluator<Real>& evaluator,
+                             const Field<Real>& field,
                              const std::vector<Real>& pts,
                              const std::vector<bool>& is_inside, Func func,
                              Real fill_value, double abs_tol = EvalTol)
 {
   int n = static_cast<int>(pts.size()) / 2;
   REQUIRE(static_cast<int>(is_inside.size()) == n);
-
-  auto device_coords =
-    CreateDeviceCoordinateView(pts, factory->GetCoordinateSystem());
-  OutOfBoundsPolicy policy{OutOfBoundsMode::FILL, fill_value};
-  auto evaluator = factory->template CreatePointEvaluator<Real>(
-    factory->Bind(device_coords.coordinate_view, policy));
-
-  Kokkos::View<Real**, DeviceMemorySpace> out_device("out_device", n, 1);
-  evaluator->Evaluate(field, TagLike(field, out_device));
-  auto out_host =
-    Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out_device);
+  const auto out_host =
+    EvaluateToHost(evaluator, field, field.GetData().GetValueBasis());
 
   auto expected = EvaluateReferenceFunction<ExecutionSpace>(pts, func);
 
@@ -591,7 +599,24 @@ void CheckEvaluationWithFill(const Factory& factory, const Field<Real>& field,
   for (size_t i = 0; i < is_inside.size(); ++i) {
     is_filled[i] = !is_inside[i];
   }
-  CheckFilledPoints(*evaluator, is_filled);
+  CheckFilledPoints(evaluator, is_filled);
+}
+
+// Overload that binds any point evaluator factory to `pts` in FILL mode.
+template <typename Factory, typename ExecutionSpace = DefaultExecutionSpace,
+          typename Func>
+void CheckEvaluationWithFill(const Factory& factory, const Field<Real>& field,
+                             const std::vector<Real>& pts,
+                             const std::vector<bool>& is_inside, Func func,
+                             Real fill_value, double abs_tol = EvalTol)
+{
+  auto device_coords =
+    CreateDeviceCoordinateView(pts, factory->GetCoordinateSystem());
+  OutOfBoundsPolicy policy{OutOfBoundsMode::FILL, fill_value};
+  auto evaluator = factory->template CreatePointEvaluator<Real>(
+    factory->Bind(device_coords.coordinate_view, policy));
+  CheckEvaluationWithFill<ExecutionSpace>(*evaluator, field, pts, is_inside,
+                                          func, fill_value, abs_tol);
 }
 
 #if defined(PCMS_ENABLE_PETSC) && defined(PCMS_ENABLE_MESHFIELDS)

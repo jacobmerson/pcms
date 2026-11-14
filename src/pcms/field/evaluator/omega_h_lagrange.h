@@ -3,7 +3,6 @@
 
 #include "pcms/field/layout/omega_h_lagrange.h"
 #include "pcms/field/point_evaluator_factory.hpp"
-#include "pcms/field/out_of_bounds_policy.h"
 #include "pcms/field/point_evaluator.h"
 #include "pcms/field/field_data.h"
 #include "pcms/field/data/omega_h.h"
@@ -73,6 +72,20 @@ BarycentricInElements(Omega_h::Mesh& mesh,
   return {elem_ids, bary};
 }
 
+inline std::variant<GridPointSearch2D, GridPointSearch3D> MakeSearch(
+  Omega_h::Mesh& mesh)
+{
+  if (mesh.dim() == 2) {
+    const auto n = DivisionsPerAxisForMesh<2>(mesh.nelems());
+    return GridPointSearch2D(mesh, n, n);
+  } else if (mesh.dim() == 3) {
+    const auto n = DivisionsPerAxisForMesh<3>(mesh.nelems());
+    return GridPointSearch3D(mesh, n, n, n);
+  }
+  throw std::invalid_argument(
+    "OmegaHLagrangeEvaluatorFactory: only 2D and 3D meshes are supported");
+}
+
 } // namespace detail
 
 /// @brief Omega_h bound source: the element and barycentric coordinates of
@@ -118,25 +131,6 @@ private:
   Kokkos::View<LO*, DeviceMemorySpace> elem_ids_;
   Kokkos::View<Real**, DeviceMemorySpace> bary_;
 };
-
-namespace detail
-{
-
-inline std::variant<GridPointSearch2D, GridPointSearch3D> MakeSearch(
-  Omega_h::Mesh& mesh)
-{
-  if (mesh.dim() == 2) {
-    const auto n = DivisionsPerAxisForMesh<2>(mesh.nelems());
-    return GridPointSearch2D(mesh, n, n);
-  } else if (mesh.dim() == 3) {
-    const auto n = DivisionsPerAxisForMesh<3>(mesh.nelems());
-    return GridPointSearch3D(mesh, n, n, n);
-  }
-  throw std::invalid_argument(
-    "OmegaHLagrangeEvaluatorFactory: only 2D and 3D meshes are supported");
-}
-
-} // namespace detail
 
 // ---------------------------------------------------------------------------
 // PointEvaluator
@@ -288,12 +282,8 @@ protected:
   }
 
   std::unique_ptr<PointEvaluator<T>> CreateEvaluator(
-    std::shared_ptr<const Bound> bound, int derivative_order) const override
+    std::shared_ptr<const Bound> bound, int /*derivative_order*/) const override
   {
-    if (derivative_order != 0) {
-      throw pcms_error("OmegaHLagrangeEvaluatorFactory: derivatives are not "
-                       "supported");
-    }
     return std::make_unique<OmegaHLagrangePointEvaluator<T>>(layout_,
                                                              std::move(bound));
   }

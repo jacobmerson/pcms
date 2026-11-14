@@ -7,15 +7,14 @@
 #include <Kokkos_Core.hpp>
 #include <MeshField.hpp>
 #include <MeshField_Config.hpp>
+#include <Omega_h_shape.hpp>
 #include <memory>
 
 #include "pcms/field/layout/mesh_fields.h"
 #include "pcms/utility/types.h"
 #include "pcms/utility/assert.h"
 #include "pcms/utility/arrays.h"
-#include "pcms/localization/point_search.h"
 #include "pcms/field/field.h"
-#include "pcms/field/out_of_bounds_policy.h"
 
 namespace pcms
 {
@@ -175,7 +174,6 @@ std::shared_ptr<MeshFieldBackend<T>> MakeMeshFieldBackend(
 // Helper functors used in MeshFieldsBinding
 // ---------------------------------------------------------------------------
 
-// Device-side version
 struct ComputeOffsetsDeviceFunctor
 {
   Kokkos::View<LO*> offsets_;
@@ -276,25 +274,6 @@ struct FillCoordinatesDeviceFunctor
     indices_(index) = orig_idx;
   }
 };
-
-struct SetFinalOffsetFunctor
-{
-  Kokkos::View<LO*> offsets_;
-  LO nelems_;
-  LO total_;
-
-  SetFinalOffsetFunctor(Kokkos::View<LO*> offsets, LO nelems, LO total)
-    : offsets_(offsets), nelems_(nelems), total_(total)
-  {
-  }
-
-  KOKKOS_INLINE_FUNCTION
-  void operator()(LO) const { offsets_(nelems_) = total_; }
-};
-
-// ---------------------------------------------------------------------------
-// Localization hint for MeshFields
-// ---------------------------------------------------------------------------
 
 } // namespace pcms
 
