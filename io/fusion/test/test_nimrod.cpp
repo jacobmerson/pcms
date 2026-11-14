@@ -295,6 +295,12 @@ TEST_CASE("fio::OpenNimrod gives Fusion-IO's quantities")
     const auto b = source->CreateFunction(fio::Quantity::MagneticField,
                                           {.part = fio::Part::Equilibrium});
     REQUIRE(b.GetName() == "magnetic field");
+    REQUIRE(b.GetMetadata().units == pcms::Units::Parse("T"));
+    REQUIRE(
+      b.GetMetadata().properties.Has(pcms::FieldProperty::DivergenceFree));
+    const auto n = source->CreateFunction(fio::Quantity::Density);
+    REQUIRE(n.GetMetadata().units == pcms::Units::Parse("m^-3"));
+    REQUIRE(n.GetMetadata().properties.Has(pcms::FieldProperty::Conserved));
     const auto& space =
       dynamic_cast<const fio::detail::NimrodFunctionSpace&>(b.GetSpace());
     const auto expected =

@@ -1,5 +1,6 @@
 #include "nimrod_space.hpp"
 #include "host_evaluation.hpp"
+#include "quantity_metadata.hpp"
 #include "nimeval.hpp"
 #include "pcms/utility/profile.h"
 #include <unistd.h>
@@ -444,9 +445,17 @@ public:
                        std::string(fio::Name(quantity)) + " (NIMROD's \"" +
                        name + "\"); open it with that field id");
     }
-    return NimrodFunctionSpace::Create(source_, found->second.components)
-      ->CreateFunction(std::string(fio::Name(quantity)), name,
-                       {.part = options.part.value_or(Part::Total)});
+    auto function =
+      NimrodFunctionSpace::Create(source_, found->second.components)
+        ->CreateFunction(std::string(fio::Name(quantity)), name,
+                         {.part = options.part.value_or(Part::Total)});
+    SetQuantityMetadata(function, quantity);
+    if (quantity == Quantity::Temperature) {
+      // NIMROD's temperature units are the case's choice (kboltz in
+      // nimrod.in: eV or K); not read yet.
+      function.SetUnits(std::nullopt);
+    }
+    return function;
   }
 
 private:
