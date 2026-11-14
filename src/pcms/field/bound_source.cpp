@@ -59,7 +59,7 @@ void SplitPoints(Kokkos::View<const bool*, DeviceMemorySpace> found,
 
 } // namespace
 
-BoundSource::BoundSource(const EvaluationRequest& request)
+BoundSource::BoundSource(const BindRequest& request)
   : policy_(request.policy),
     query_layout_(request.query_layout),
     system_(request.coords.GetCoordinateSystem()),

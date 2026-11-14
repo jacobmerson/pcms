@@ -63,7 +63,7 @@ public:
   /// @param source source evaluated at the target's DOF-holder coordinates
   /// @param target_space space whose DOF holders receive the values; its
   ///        basis must be the basis the source's evaluators write
-  /// @param bound result of binding `source` (or its BindingSource()) to
+  /// @param bound result of binding `source` (or a source it wraps) to
   ///        `target_space` or to a space with the same DOF-holder coordinates
   Interpolator(const PointEvaluatorFactory& source,
                const FunctionSpace& target_space,

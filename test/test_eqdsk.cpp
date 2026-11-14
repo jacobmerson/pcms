@@ -3,7 +3,6 @@
 #include <pcms/field/eqdsk_field.h>
 #include <pcms/field/function_space/spline.h>
 #include <pcms/field/coordinate_view.hpp>
-#include <pcms/field/evaluation_request.h>
 #include <Kokkos_Core.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>

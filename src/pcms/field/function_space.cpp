@@ -8,7 +8,7 @@ const PointEvaluatorFactory& FunctionSpace::BindingSource() const noexcept
   if (evaluator_ == nullptr) {
     return *this;
   }
-  return evaluator_->BindingSource();
+  return detail::BindingSourceOf(*evaluator_);
 }
 
 PointEvaluatorVariant FunctionSpace::CreatePointEvaluatorImpl(

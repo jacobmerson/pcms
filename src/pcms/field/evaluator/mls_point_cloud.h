@@ -23,7 +23,7 @@ public:
   /// @param request query points and out-of-bounds policy
   /// @param source_coords flattened coordinates of the source points
   /// @param supports MLS supports of the query points
-  MLSBinding(const EvaluationRequest& request, Omega_h::Reals source_coords,
+  MLSBinding(const BindRequest& request, Omega_h::Reals source_coords,
              SupportResults supports)
     : BoundSource(request),
       source_coords_(std::move(source_coords)),

@@ -3,7 +3,6 @@
 
 #include "pcms/field/coordinate_map.hpp"
 #include "pcms/field/coordinate_system.hpp"
-#include "pcms/field/evaluation_request.h"
 #include "pcms/field/field.h"
 #include "pcms/field/field_data.h"
 #include "pcms/field/out_of_bounds_policy.h"
@@ -97,18 +96,13 @@ public:
     return system_;
   }
 
-  [[nodiscard]] bool SupportsNearestBoundary() const noexcept override
-  {
-    return source_->SupportsNearestBoundary();
-  }
-
 protected:
   /// @brief Binds the map to the query points and the source to the mapped
   ///        points.
   /// @param request query points and out-of-bounds policy
   /// @return bound source holding both bindings
   std::shared_ptr<BoundSource> BindImpl(
-    const EvaluationRequest& request) const override;
+    const BindRequest& request) const override;
   PointEvaluatorVariant CreatePointEvaluatorImpl(
     Type value_type, std::shared_ptr<const BoundSource> bound,
     int derivative_order) const override;

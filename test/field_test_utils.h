@@ -7,7 +7,6 @@
 #include "pcms/field/field.h"
 #include "pcms/field/field_data.h"
 #include "pcms/field/point_evaluator_factory.hpp"
-#include "pcms/field/evaluation_request.h"
 #include "pcms/field/point_evaluator.h"
 #include "pcms/field/out_of_bounds_policy.h"
 #include "pcms/field/coordinate_view.hpp"

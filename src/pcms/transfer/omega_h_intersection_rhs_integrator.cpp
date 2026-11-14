@@ -39,7 +39,7 @@ const GridPointSearchVariant* SourceSearchFromSpace(const FunctionSpace& space)
 {
   const auto* factory =
     dynamic_cast<const OmegaHLagrangeEvaluatorFactory<Real>*>(
-      &space.BindingSource());
+      &detail::BindingSourceOf(space));
   return factory ? &factory->GetSearch() : nullptr;
 }
 

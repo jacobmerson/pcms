@@ -8,21 +8,26 @@ namespace pcms
 std::shared_ptr<const BoundSource> PointEvaluatorFactory::Bind(
   CoordinateView<DeviceMemorySpace> coords, OutOfBoundsPolicy policy) const
 {
-  return BindRequest(EvaluationRequest(coords, nullptr, policy));
+  return BindThrough(BindRequest{coords, nullptr, policy});
 }
 
 std::shared_ptr<const BoundSource> PointEvaluatorFactory::Bind(
   const FunctionSpace& target, OutOfBoundsPolicy policy) const
 {
-  return BindRequest(EvaluationRequest(target.GetLayout(), policy));
+  std::shared_ptr<const FieldLayout> layout = target.GetLayout();
+  if (layout == nullptr) {
+    throw pcms_error("Bind: the target space has no layout");
+  }
+  return BindThrough(
+    BindRequest{layout->GetDOFHolderCoordinates(), layout, policy});
 }
 
-std::shared_ptr<const BoundSource> PointEvaluatorFactory::BindRequest(
-  const EvaluationRequest& request) const
+std::shared_ptr<const BoundSource> PointEvaluatorFactory::BindThrough(
+  const BindRequest& request) const
 {
   const PointEvaluatorFactory& binder = BindingSource();
   if (&binder != this) {
-    return binder.BindRequest(request);
+    return binder.BindThrough(request);
   }
   if (!SameCoordinateSystem(request.coords.GetCoordinateSystem(),
                             GetCoordinateSystem())) {
@@ -41,9 +46,15 @@ std::shared_ptr<const BoundSource> PointEvaluatorFactory::BindRequest(
 }
 
 std::shared_ptr<BoundSource> PointEvaluatorFactory::BindImpl(
-  const EvaluationRequest&) const
+  const BindRequest&) const
 {
   throw pcms_error("Bind: this source does not bind query points");
+}
+
+const PointEvaluatorFactory& detail::BindingSourceOf(
+  const PointEvaluatorFactory& source) noexcept
+{
+  return source.BindingSource();
 }
 
 void PointEvaluatorFactory::CheckBoundByThis(const BoundSource& bound) const

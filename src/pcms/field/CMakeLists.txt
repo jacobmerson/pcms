@@ -9,7 +9,6 @@ set(PCMS_FIELD_HEADERS
         coordinate_map.hpp
         value_view.hpp
         element_dispatch.h
-        evaluation_request.h
         gid_permutation.hpp
         field_layout.h
         layout/empty.h

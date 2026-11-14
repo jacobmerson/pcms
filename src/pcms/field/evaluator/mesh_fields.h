@@ -22,8 +22,8 @@ public:
   /// @param request query points and out-of-bounds policy
   /// @param search containing-element search over `mesh`
   /// @param mesh 2D simplex mesh of the evaluated fields
-  MeshFieldsBinding(const EvaluationRequest& request,
-                    const GridPointSearch2D& search, Omega_h::Mesh& mesh)
+  MeshFieldsBinding(const BindRequest& request, const GridPointSearch2D& search,
+                    Omega_h::Mesh& mesh)
     : BoundSource(request)
   {
     const auto points = PointValues();
@@ -154,8 +154,7 @@ public:
   }
 
 protected:
-  std::shared_ptr<Bound> BindPoints(
-    const EvaluationRequest& request) const override
+  std::shared_ptr<Bound> BindPoints(const BindRequest& request) const override
   {
     PCMS_FUNCTION_TIMER;
     return std::make_shared<Bound>(request, search_, mesh_);

@@ -22,13 +22,13 @@ public:
     return source_->GetCoordinateSystem();
   }
 
+protected:
   [[nodiscard]] const PointEvaluatorFactory& BindingSource()
     const noexcept override
   {
-    return source_->BindingSource();
+    return detail::BindingSourceOf(*source_);
   }
 
-protected:
   PointEvaluatorVariant CreatePointEvaluatorImpl(
     Type value_type, std::shared_ptr<const BoundSource> bound,
     int derivative_order) const override

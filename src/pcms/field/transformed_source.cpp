@@ -11,7 +11,7 @@ namespace
 class TransformedBoundSource final : public BoundSource
 {
 public:
-  TransformedBoundSource(const EvaluationRequest& request,
+  TransformedBoundSource(const BindRequest& request,
                          std::shared_ptr<const BoundCoordinateMap> map,
                          std::shared_ptr<const BoundSource> inner)
     : BoundSource(request), map_(std::move(map)), inner_(std::move(inner))
@@ -61,7 +61,7 @@ TransformedSource::TransformedSource(
 }
 
 std::shared_ptr<BoundSource> TransformedSource::BindImpl(
-  const EvaluationRequest& request) const
+  const BindRequest& request) const
 {
   PCMS_FUNCTION_TIMER;
   std::shared_ptr<const BoundCoordinateMap> map =

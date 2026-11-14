@@ -96,7 +96,7 @@ public:
   /// @param request query points and out-of-bounds policy
   /// @param search containing-element search over `mesh`
   /// @param mesh simplex mesh of the evaluated fields
-  OmegaHLagrangeBinding(const EvaluationRequest& request,
+  OmegaHLagrangeBinding(const BindRequest& request,
                         const GridPointSearchVariant& search,
                         Omega_h::Mesh& mesh)
     : BoundSource(request)
@@ -273,8 +273,7 @@ public:
   }
 
 protected:
-  std::shared_ptr<Bound> BindPoints(
-    const EvaluationRequest& request) const override
+  std::shared_ptr<Bound> BindPoints(const BindRequest& request) const override
   {
     PCMS_FUNCTION_TIMER;
     return std::make_shared<Bound>(

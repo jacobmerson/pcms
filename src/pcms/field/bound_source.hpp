@@ -2,7 +2,6 @@
 #define PCMS_FIELD_BOUND_SOURCE_HPP
 
 #include "pcms/field/coordinate_view.hpp"
-#include "pcms/field/evaluation_request.h"
 #include "pcms/field/field_layout.h"
 #include "pcms/field/out_of_bounds_policy.h"
 #include "pcms/utility/memory_spaces.h"
@@ -14,6 +13,19 @@ namespace pcms
 {
 
 class PointEvaluatorFactory;
+
+/// @brief Query points and out-of-bounds policy passed to
+///        PointEvaluatorFactory::BindImpl.
+struct BindRequest
+{
+  /// query points in the binding source's coordinate system; may be released
+  /// after BindImpl returns
+  CoordinateView<DeviceMemorySpace> coords;
+  /// layout whose DOF holders are the query points, or null for coordinates
+  std::shared_ptr<const FieldLayout> query_layout;
+  /// out-of-bounds policy of the evaluators created from the bound source
+  OutOfBoundsPolicy policy;
+};
 
 /// @brief Result of binding a source to a set of query points.
 ///
@@ -82,7 +94,7 @@ protected:
   /// @brief Copies the request's points; every point counts as found until
   ///        SetFound is called.
   /// @param request bound query points and out-of-bounds policy
-  explicit BoundSource(const EvaluationRequest& request);
+  explicit BoundSource(const BindRequest& request);
 
   /// @brief Records which query points the source evaluates.
   /// @param found per query point, whether the source evaluates it

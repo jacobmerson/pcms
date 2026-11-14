@@ -4,7 +4,6 @@
 #include "pcms/field/bound_source.hpp"
 #include "pcms/field/coordinate_system.hpp"
 #include "pcms/field/coordinate_view.hpp"
-#include "pcms/field/evaluation_request.h"
 #include "pcms/field/field_factory.h"
 #include "pcms/field/out_of_bounds_policy.h"
 #include "pcms/field/point_evaluator.h"
@@ -19,6 +18,16 @@ namespace pcms
 {
 
 class FunctionSpace;
+class PointEvaluatorFactory;
+
+namespace detail
+{
+/// @brief Internal: the source that binds for `source`, for wrappers and for
+///        PCMS code that reuses a backend's search.
+/// @return `source`, unless it binds through a source it wraps
+[[nodiscard]] const PointEvaluatorFactory& BindingSourceOf(
+  const PointEvaluatorFactory& source) noexcept;
+} // namespace detail
 
 /// @brief Source of point evaluators.
 ///
@@ -61,15 +70,9 @@ public:
   [[nodiscard]] std::unique_ptr<PointEvaluator<T>> CreatePointEvaluator(
     std::shared_ptr<const BoundSource> bound, int derivative_order = 0) const;
 
-  /// @brief Binds to the request's points and creates an evaluator.
-  /// @tparam T field value type
-  /// @param request query points and out-of-bounds policy
-  /// @return evaluator of the field values
-  template <typename T>
-  [[deprecated("bind with Bind(coords | space, policy) and pass the bound "
-               "source")]] [[nodiscard]] std::unique_ptr<PointEvaluator<T>>
-  CreatePointEvaluator(const EvaluationRequest& request) const;
+  virtual ~PointEvaluatorFactory() noexcept = default;
 
+protected:
   /// @return the source whose Bind this source uses and whose bound sources
   ///         it accepts: itself, unless it wraps another source
   [[nodiscard]] virtual const PointEvaluatorFactory& BindingSource()
@@ -78,18 +81,6 @@ public:
     return *this;
   }
 
-  /// @return whether this source can bind with
-  ///         OutOfBoundsMode::NEAREST_BOUNDARY; by default, whether
-  ///         BindingSource() can
-  [[nodiscard]] virtual bool SupportsNearestBoundary() const noexcept
-  {
-    const PointEvaluatorFactory& binder = BindingSource();
-    return &binder != this && binder.SupportsNearestBoundary();
-  }
-
-  virtual ~PointEvaluatorFactory() noexcept = default;
-
-protected:
   /// @brief Computes the per-point data for a request. Not called for
   ///        sources that bind through another BindingSource().
   /// @param request query points in GetCoordinateSystem(); may be released
@@ -97,7 +88,7 @@ protected:
   /// @return bound source holding copies of everything evaluators need
   /// @throws pcms_error unless overridden
   virtual std::shared_ptr<BoundSource> BindImpl(
-    const EvaluationRequest& request) const;
+    const BindRequest& request) const;
 
   /// @brief Creates an evaluator from a bound source.
   /// @param value_type field value type
@@ -110,8 +101,11 @@ protected:
     int derivative_order) const = 0;
 
 private:
-  std::shared_ptr<const BoundSource> BindRequest(
-    const EvaluationRequest& request) const;
+  friend const PointEvaluatorFactory& detail::BindingSourceOf(
+    const PointEvaluatorFactory& source) noexcept;
+
+  std::shared_ptr<const BoundSource> BindThrough(
+    const BindRequest& request) const;
   void CheckBoundByThis(const BoundSource& bound) const;
 };
 
@@ -136,6 +130,13 @@ public:
   }
 
 protected:
+  /// @return whether BindPoints supports OutOfBoundsMode::NEAREST_BOUNDARY;
+  ///         BindImpl rejects that mode otherwise
+  [[nodiscard]] virtual bool SupportsNearestBoundary() const noexcept
+  {
+    return false;
+  }
+
   /// @param system coordinate system of the query points
   /// @param max_derivative_order highest derivative order CreateEvaluator
   ///        supports
@@ -151,7 +152,7 @@ protected:
   ///        after the call
   /// @return the bound source
   virtual std::shared_ptr<Bound> BindPoints(
-    const EvaluationRequest& request) const = 0;
+    const BindRequest& request) const = 0;
 
   /// @brief Creates an evaluator from a bound source of this source.
   /// @param bound result of BindPoints on this source
@@ -161,8 +162,7 @@ protected:
     std::shared_ptr<const Bound> bound, int derivative_order) const = 0;
 
 private:
-  std::shared_ptr<BoundSource> BindImpl(
-    const EvaluationRequest& request) const final
+  std::shared_ptr<BoundSource> BindImpl(const BindRequest& request) const final
   {
     if (request.policy.mode == OutOfBoundsMode::NEAREST_BOUNDARY &&
         !this->SupportsNearestBoundary()) {
@@ -210,13 +210,6 @@ std::unique_ptr<PointEvaluator<T>> PointEvaluatorFactory::CreatePointEvaluator(
   }
   return std::get<std::unique_ptr<PointEvaluator<T>>>(CreatePointEvaluatorImpl(
     TypeEnumFromType<T>(), std::move(bound), derivative_order));
-}
-
-template <typename T>
-std::unique_ptr<PointEvaluator<T>> PointEvaluatorFactory::CreatePointEvaluator(
-  const EvaluationRequest& request) const
-{
-  return CreatePointEvaluator<T>(BindRequest(request));
 }
 
 } // namespace pcms

@@ -4,7 +4,6 @@
 #include <Omega_h_for.hpp>
 #include <Omega_h_library.hpp>
 #include <Omega_h_mesh.hpp>
-#include <pcms/field/evaluation_request.h>
 #include <pcms/field/function_space/lagrange.h>
 #include <pcms/field/layout/omega_h_lagrange.h>
 #include <pcms/transfer/omega_h_intersection_rhs_integrator.hpp>

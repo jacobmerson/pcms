@@ -64,8 +64,7 @@ class UniformGridBinding final : public BoundSource
 public:
   /// @param request query points and out-of-bounds policy
   /// @param grid grid to locate the points in
-  UniformGridBinding(const EvaluationRequest& request,
-                     const UniformGrid<Dim>& grid)
+  UniformGridBinding(const BindRequest& request, const UniformGrid<Dim>& grid)
     : BoundSource(request)
   {
     auto [found, cells] = detail::LocateInGrid(
@@ -239,14 +238,13 @@ public:
   {
   }
 
+protected:
   [[nodiscard]] bool SupportsNearestBoundary() const noexcept override
   {
     return true;
   }
 
-protected:
-  std::shared_ptr<Bound> BindPoints(
-    const EvaluationRequest& request) const override
+  std::shared_ptr<Bound> BindPoints(const BindRequest& request) const override
   {
     PCMS_FUNCTION_TIMER;
     return std::make_shared<Bound>(request, grid_);

@@ -49,10 +49,7 @@ private:
 class MockBound final : public pcms::BoundSource
 {
 public:
-  explicit MockBound(const pcms::EvaluationRequest& request)
-    : BoundSource(request)
-  {
-  }
+  explicit MockBound(const pcms::BindRequest& request) : BoundSource(request) {}
 };
 
 class MockEvaluator final : public pcms::PointEvaluator<Real>
@@ -113,7 +110,7 @@ protected:
   }
 
   std::shared_ptr<pcms::BoundSource> BindImpl(
-    const pcms::EvaluationRequest& request) const override
+    const pcms::BindRequest& request) const override
   {
     return std::make_shared<MockBound>(request);
   }

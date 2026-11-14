@@ -3,7 +3,6 @@
 
 #include "pcms/field/coordinate_system.hpp"
 #include "pcms/field/coordinate_view.hpp"
-#include "evaluation_request.h"
 #include "field.h"
 #include "field_data.h"
 #include "field_factory.h"
@@ -53,11 +52,6 @@ public:
     return GetLayout()->GetCoordinateSystem();
   }
 
-  /// @return the backend source that binds this space's evaluation, or the
-  ///         space itself if it has none
-  [[nodiscard]] const PointEvaluatorFactory& BindingSource()
-    const noexcept override;
-
   virtual ~FunctionSpace() noexcept = default;
 
   template <typename T>
@@ -79,6 +73,11 @@ public:
     std::string name, std::unique_ptr<FieldData<T>> data) const;
 
 protected:
+  /// @return the backend source that binds this space's evaluation, or the
+  ///         space itself if it has none
+  [[nodiscard]] const PointEvaluatorFactory& BindingSource()
+    const noexcept override;
+
   /// @param evaluator backend source over this space's layout that binds and
   ///        creates the evaluators, or null for a space that implements
   ///        BindImpl and CreatePointEvaluatorImpl itself
@@ -160,24 +159,6 @@ Function<T> FunctionSpace::CreateFunction(
     std::get<Field<T>>(CreateFieldImpl(FieldDataVariant{std::move(data)}));
   return WrapFunction<T>(std::move(name), std::move(field.layout_),
                          std::move(field.data_), shared_from_this());
-}
-
-inline EvaluationRequest EvaluationRequest::FromCoordinates(
-  CoordinateView<DeviceMemorySpace> coords, OutOfBoundsPolicy policy)
-{
-  return EvaluationRequest(coords, nullptr, policy);
-}
-
-inline EvaluationRequest EvaluationRequest::FromLayout(
-  std::shared_ptr<const FieldLayout> layout, OutOfBoundsPolicy policy)
-{
-  return EvaluationRequest(std::move(layout), policy);
-}
-
-inline EvaluationRequest EvaluationRequest::FromFunctionSpace(
-  const FunctionSpace& function_space, OutOfBoundsPolicy policy)
-{
-  return EvaluationRequest(function_space.GetLayout(), policy);
 }
 
 } // namespace pcms

@@ -4,7 +4,6 @@
 #include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/field/point_evaluator.h"
 #include "pcms/field/field_data.h"
-#include "pcms/field/evaluation_request.h"
 #include "pcms/field/evaluator/mls_options.h"
 #include "pcms/field/evaluator/mls_point_cloud.h"
 #include "pcms/localization/localization_path_selection.h"
@@ -41,8 +40,7 @@ public:
   }
 
 protected:
-  std::shared_ptr<Bound> BindPoints(
-    const EvaluationRequest& request) const override
+  std::shared_ptr<Bound> BindPoints(const BindRequest& request) const override
   {
     const auto coords = request.coords;
     // MLS distances are based on the unweighted Euclidean measure
@@ -63,7 +61,7 @@ protected:
 
     SupportResults supports;
     auto path =
-      detail::SelectLocalizationPath(*layout_, request.GetQueryLayout());
+      detail::SelectLocalizationPath(*layout_, request.query_layout.get());
     if (path == detail::LocalizationPath::CentroidToVertexAdjacencySearch) {
       auto* adjacency =
         dynamic_cast<const AdjacencyLocalizationFactory*>(localization_.get());

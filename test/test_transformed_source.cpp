@@ -326,7 +326,6 @@ TEST_CASE("TransformedSource: NEAREST_BOUNDARY follows the wrapped source")
     auto src = LagrangeFunctionSpace::FromUniformGrid(
       grid, 1, pcms::csys::CylindricalRThetaZ::Create());
     TransformedSource src_as_cartesian(src, cart_to_cyl);
-    REQUIRE(src_as_cartesian.SupportsNearestBoundary());
     auto bound = src_as_cartesian.Bind(query.coordinate_view, nearest);
     REQUIRE(bound->MissingPoints().extent(0) == 0);
   }
@@ -337,7 +336,6 @@ TEST_CASE("TransformedSource: NEAREST_BOUNDARY follows the wrapped source")
     Omega_h::Mesh src_mesh(&lib);
     TransformedSource src_as_cartesian(BuildCylindricalSource(lib, src_mesh, 1),
                                        cart_to_cyl);
-    REQUIRE_FALSE(src_as_cartesian.SupportsNearestBoundary());
     REQUIRE_THROWS_WITH(src_as_cartesian.Bind(query.coordinate_view, nearest),
                         ContainsSubstring("NEAREST_BOUNDARY"));
   }

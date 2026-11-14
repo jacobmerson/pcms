@@ -193,8 +193,7 @@ public:
   }
 
 protected:
-  std::shared_ptr<Bound> BindPoints(
-    const EvaluationRequest& request) const override
+  std::shared_ptr<Bound> BindPoints(const BindRequest& request) const override
   {
     if (layout_->GetOrder() != 1) {
       throw pcms_error(
