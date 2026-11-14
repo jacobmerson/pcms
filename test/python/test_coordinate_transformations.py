@@ -299,8 +299,7 @@ class TestTransformedSource:
         assert isinstance(source, pcms.PointEvaluatorFactory)
         assert source.get_coordinate_system() == \
             pcms.csys.Cartesian.create(3)
-        request = pcms.EvaluationRequest.from_function_space(cartesian_space)
-        return source.create_point_evaluator(request)
+        return source.create_point_evaluator(source.bind(cartesian_space))
 
     def test_evaluate_rotates_into_the_query_basis(self, cylindrical_space,
                                                    cartesian_space):
@@ -331,21 +330,22 @@ class TestTransformedSource:
 
     def test_query_points_must_be_in_the_factory_system(self,
                                                         cylindrical_space):
-        request = pcms.EvaluationRequest.from_coordinates(
-            pcms.CoordinateView(pcms.csys.Cartesian.create(3),
-                                np.full((2, 3), 0.5)))
+        coords = pcms.CoordinateView(pcms.csys.Cartesian.create(3),
+                                     np.full((2, 3), 0.5))
         with pytest.raises(RuntimeError, match="TransformedSource"):
-            cylindrical_space.create_point_evaluator(request)
+            cylindrical_space.bind(coords)
 
     def test_filled_points(self, cylindrical_space):
         source = pcms.TransformedSource(cylindrical_space,
                                         pcms.CartesianToCylindrical())
         # The second point has theta = pi, outside the source's [0, 1.6].
-        request = pcms.EvaluationRequest.from_coordinates(
+        bound = source.bind(
             pcms.CoordinateView(pcms.csys.Cartesian.create(3),
                                 [[0.5, 0.5, 0.5], [-0.5, 0.0, 0.5]]),
             pcms.OutOfBoundsPolicy(pcms.OutOfBoundsMode.FILL, -7.0))
-        evaluator = source.create_point_evaluator(request)
+        np.testing.assert_array_equal(bound.found_points(), [0])
+        np.testing.assert_array_equal(bound.missing_points(), [1])
+        evaluator = source.create_point_evaluator(bound)
         filled = evaluator.filled_points()
         np.testing.assert_array_equal(filled, [1])
         assert not filled.flags.writeable
@@ -400,8 +400,7 @@ class TestLifetimes:
         coords = _coordinates(f)
         f.set_dof_holder_data(coords[:, :1])
         evaluator = space.create_point_evaluator(
-            pcms.EvaluationRequest.from_coordinates(
-                pcms.CoordinateView([[0.3, 0.6]])))
+            space.bind(pcms.CoordinateView([[0.3, 0.6]])))
         out = np.zeros((1, 1))
         evaluator.evaluate(f, out)
         np.testing.assert_allclose(out, [[0.3]], atol=1e-12)
@@ -416,8 +415,7 @@ class TestLifetimes:
             cartesian_space)
         source = pcms.TransformedSource(cylindrical_space,
                                         pcms.CartesianToCylindrical())
-        evaluator = source.create_point_evaluator(
-            pcms.EvaluationRequest.from_function_space(cartesian_space))
+        evaluator = source.create_point_evaluator(source.bind(cartesian_space))
         del source
         gc.collect()
         op.apply(b_src, b_tgt)

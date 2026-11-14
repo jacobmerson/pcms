@@ -146,9 +146,8 @@ class TestPointEvaluation:
     QUERY = np.array([[0.5, 0.5], [0.25, 0.75], [0.9, 0.1]])
 
     def _evaluator(self, space, coords):
-        request = pcms.EvaluationRequest.from_coordinates(
-            pcms.CoordinateView(coords))
-        return space.create_point_evaluator(request)
+        return space.create_point_evaluator(
+            space.bind(pcms.CoordinateView(coords)))
 
     def test_evaluate_linear_field(self, p1_space):
         field = _linear_field(p1_space)

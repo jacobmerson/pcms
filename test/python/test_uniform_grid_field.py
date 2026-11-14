@@ -126,9 +126,8 @@ class TestUniformGridField:
         query_pts = np.array(
             [[0.1, 0.2], [0.5, 0.5], [0.9, 0.8]], dtype=np.float64
         )
-        request = pcms.EvaluationRequest.from_coordinates(
-            pcms.CoordinateView(query_pts))
-        evaluator = factory.create_point_evaluator(request)
+        evaluator = factory.create_point_evaluator(
+            factory.bind(pcms.CoordinateView(query_pts)))
         results = np.zeros((len(query_pts), 1), dtype=np.float64)
         evaluator.evaluate(field, results)
 

@@ -65,14 +65,8 @@ void bind_transfer_field_module(py::module& m)
     .def(
       "filled_points",
       [](py::object self) {
-        const auto filled =
-          self.cast<const PointEvaluator<Real>&>().FilledPoints();
-        if (filled.extent(0) == 0) {
-          return py::array_t<LO>(0);
-        }
-        return ViewToNumpy(Rank1View<const LO, DeviceMemorySpace>(
-                             filled.data(), filled.extent(0)),
-                           self);
+        return IndicesToNumpy(
+          self.cast<const PointEvaluator<Real>&>().FilledPoints(), self);
       },
       "Indices of the query points that get the out-of-bounds fill value, "
       "read-only");
@@ -96,7 +90,18 @@ void bind_transfer_field_module(py::module& m)
       py::keep_alive<1, 3>(),
       "Construct an interpolator from any PointEvaluatorFactory (a "
       "FunctionSpace or a TransformedSource) to the target space's DOF "
-      "holders. Localization is performed here and cached.");
+      "holders. Localization is performed here and cached.")
+    .def(py::init([](const PointEvaluatorFactory& source,
+                     const FunctionSpace& target_space,
+                     std::shared_ptr<BoundSource> bound) {
+           return std::make_unique<Interpolator<Real>>(source, target_space,
+                                                       std::move(bound));
+         }),
+         py::arg("source"), py::arg("target_space"), py::arg("bound"),
+         py::keep_alive<1, 2>(), py::keep_alive<1, 3>(),
+         "Construct an interpolator that reuses `bound`, a binding of `source` "
+         "(or of the source it binds through) to the target space's DOF "
+         "holders, so a field and its gradient can share one localization.");
 
   py::class_<Copy<Real>, TransferOperator<Real>>(m, "Copy").def(
     py::init(

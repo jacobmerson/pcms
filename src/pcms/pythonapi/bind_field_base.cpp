@@ -10,7 +10,7 @@
 #include "pcms/field/coordinate_system.hpp"
 #include "pcms/field/coordinate_systems/cartesian.hpp"
 #include "pcms/field/coordinate_view.hpp"
-#include "pcms/field/evaluation_request.h"
+#include "pcms/field/bound_source.hpp"
 #include "pcms/field/evaluator/mls_options.h"
 #include "pcms/field/field.h"
 #include "pcms/field/field_data.h"
@@ -18,6 +18,7 @@
 #include "pcms/field/function_space.h"
 #include "pcms/field/function_space/lagrange.h"
 #include "pcms/field/function_space/polynomial_reconstruction.hpp"
+#include "pcms/field/gradient_source.hpp"
 #include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/field/uniform_grid_binary_field.h"
 #include "pcms/field/value_view.hpp"
@@ -34,12 +35,6 @@ namespace pcms
 namespace
 {
 
-struct PyEvaluationRequest
-{
-  EvaluationRequest request;
-  Kokkos::View<Real**, DeviceMemorySpace> device_coords;
-};
-
 using SystemHolder = std::shared_ptr<CoordinateSystem>;
 
 void SetDOFHolderData(Field<Real>& self, const PyValueView& v)
@@ -53,10 +48,6 @@ void SetDOFHolderData(Field<Real>& self, const PyValueView& v)
 }
 
 } // namespace
-
-// The Python bindings construct EvaluationRequests.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 void bind_create_field_module(py::module& m)
 {
@@ -152,34 +143,27 @@ void bind_create_field_module(py::module& m)
       return ToPyHolder(self.GetSpacePtr());
     });
 
-  py::class_<PyEvaluationRequest>(m, "EvaluationRequest")
-    .def_static(
-      "from_coordinates",
-      [](const PyCoordinateView& coords, OutOfBoundsPolicy policy) {
-        auto device = CopyCoordinatesToDevice(coords);
-        return PyEvaluationRequest{
-          EvaluationRequest::FromCoordinates(device.view, policy),
-          device.storage};
-      },
-      py::arg("coordinates"), py::arg("policy") = OutOfBoundsPolicy{},
-      "Request evaluation at the given CoordinateView's points")
-    .def_static(
-      "from_function_space",
-      [](const FunctionSpace& function_space, OutOfBoundsPolicy policy) {
-        return PyEvaluationRequest{
-          EvaluationRequest::FromFunctionSpace(function_space, policy), {}};
-      },
-      py::arg("function_space"), py::arg("policy") = OutOfBoundsPolicy{},
-      "Request evaluation at a FunctionSpace's DOF-holder coordinates")
+  py::class_<BoundSource, std::shared_ptr<BoundSource>>(
+    m, "BoundSource",
+    "A source bound to a set of query points; evaluators created from it "
+    "share its search")
+    .def("num_points", &BoundSource::NumPoints)
     .def_property_readonly(
-      "coords",
+      "policy", [](const BoundSource& self) { return self.Policy(); })
+    .def(
+      "found_points",
       [](py::object self) {
-        return ToPyCoordinateView(
-          self.cast<const PyEvaluationRequest&>().request.coords, self);
-      })
-    .def_property_readonly("policy", [](const PyEvaluationRequest& self) {
-      return self.request.policy;
-    });
+        return IndicesToNumpy(self.cast<const BoundSource&>().FoundPoints(),
+                              self);
+      },
+      "Indices of the query points the source evaluates, read-only")
+    .def(
+      "missing_points",
+      [](py::object self) {
+        return IndicesToNumpy(self.cast<const BoundSource&>().MissingPoints(),
+                              self);
+      },
+      "Indices of the query points the source does not evaluate, read-only");
 
   py::class_<PointEvaluatorFactory, std::shared_ptr<PointEvaluatorFactory>>(
     m, "PointEvaluatorFactory", "Creates evaluators bound to query points")
@@ -190,13 +174,43 @@ void bind_create_field_module(py::module& m)
       },
       "The coordinate system query points must be expressed in")
     .def(
+      "bind",
+      [](const PointEvaluatorFactory& self, const FunctionSpace& space,
+         OutOfBoundsPolicy policy) {
+        return std::const_pointer_cast<BoundSource>(self.Bind(space, policy));
+      },
+      py::arg("space"), py::arg("policy") = OutOfBoundsPolicy{},
+      "Bind this source to the DOF-holder coordinates of `space`")
+    .def(
+      "bind",
+      [](const PointEvaluatorFactory& self, const PyCoordinateView& coords,
+         OutOfBoundsPolicy policy) {
+        // the bound source copies the points
+        auto device = CopyCoordinatesToDevice(coords);
+        return std::const_pointer_cast<BoundSource>(
+          self.Bind(device.view, policy));
+      },
+      py::arg("coordinates"), py::arg("policy") = OutOfBoundsPolicy{},
+      "Bind this source to the points of a CoordinateView")
+    .def(
       "create_point_evaluator",
       [](const PointEvaluatorFactory& self,
-         const PyEvaluationRequest& request) {
-        return self.CreatePointEvaluator<Real>(request.request);
+         const std::shared_ptr<BoundSource>& bound, int derivative_order) {
+        return self.CreatePointEvaluator<Real>(bound, derivative_order);
       },
-      py::arg("request"), py::keep_alive<0, 1>(),
-      "Create a reusable point evaluator for the request's points");
+      py::arg("bound"), py::arg("derivative_order") = 0, py::keep_alive<0, 1>(),
+      "Create an evaluator at the points of `bound` (a result of bind() on "
+      "this source): values for derivative_order 0, the gradient for 1");
+
+  m.def(
+    "gradient",
+    [](std::shared_ptr<PointEvaluatorFactory> source) {
+      return std::const_pointer_cast<PointEvaluatorFactory>(
+        Gradient(std::move(source)));
+    },
+    py::arg("source"),
+    "A source whose evaluators write the gradient of the field they are given; "
+    "it binds through `source`");
 
   py::class_<FunctionSpace, PointEvaluatorFactory,
              std::shared_ptr<FunctionSpace>>(m, "FunctionSpace")
@@ -353,7 +367,5 @@ void bind_create_field_module(py::module& m)
     py::arg("mesh"), py::arg("divisions"),
     "Create a 2D vertex mask field indicating inside/outside mesh");
 }
-
-#pragma GCC diagnostic pop
 
 } // namespace pcms

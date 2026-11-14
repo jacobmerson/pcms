@@ -89,14 +89,19 @@ Follow the instructions there.
 
 ## Python API
 
-Point-evaluator construction in Python uses `EvaluationRequest`, for example:
+A source is bound to its query points once, and evaluators of values or
+first derivatives are created from the bound source, for example:
 
 ```python
-request = pcms.EvaluationRequest.from_coordinates(eval_coords)
-evaluator = source_space.create_point_evaluator(request)
+bound = source_space.bind(pcms.CoordinateView(eval_coords))
+values = source_space.create_point_evaluator(bound)
+# for sources that evaluate derivatives
+gradient = source_space.create_point_evaluator(bound, derivative_order=1)
 
-optimized_request = pcms.EvaluationRequest.from_function_space(target_space)
-evaluator = source_space.create_point_evaluator(optimized_request)
+# binding to a space's DOF holders lets the source reuse what it knows about
+# the target, and an Interpolator can reuse the bound source
+bound = source_space.bind(target_space)
+pcms.Interpolator(source_space, target_space, bound).apply(source, target)
 ```
 
 ## Creating Archive for Release

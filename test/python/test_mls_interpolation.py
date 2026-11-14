@@ -63,9 +63,8 @@ class TestMLSInterpolation:
                 opts,
             )
             field = factory.create_function()
-            request = pcms.EvaluationRequest.from_coordinates(
-            pcms.CoordinateView(target_xy))
-            evaluator = factory.create_point_evaluator(request)
+            evaluator = factory.create_point_evaluator(
+                factory.bind(pcms.CoordinateView(target_xy)))
             results = np.zeros((num_targets, 1), dtype=np.float64)
 
             for func_degree in range(interp_degree, -1, -1):

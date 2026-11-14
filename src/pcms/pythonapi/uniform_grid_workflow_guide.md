@@ -276,11 +276,14 @@ snake_case form of the C++ method (`GetDOFHolderData` is
 - `field.get_dof_holder_data()` - Field values as a `ValueView` whose array (`.get_values()`, shape `(num_dof_holders, num_components)`) is read-only and valid until the field is next modified (use `.copy()` to keep values)
 - `field.set_dof_holder_data(value_view)` - Set field values; the basis must match the field's. Scalar fields also accept a plain array, of shape `(num_dof_holders,)` when the field has one component
 - `field.set_dof_holder_data_unchecked(data)` - Set field values without checking their basis
-- `EvaluationRequest.from_coordinates(coordinate_view, policy=...)` - Build an explicit coordinate-based evaluation request
-- `EvaluationRequest.from_function_space(space, policy=...)` - Build an evaluation request from another FunctionSpace's DOF-holder sites
-- `factory.create_point_evaluator(request)` - Create a reusable point evaluator; the request's points must be in `factory.get_coordinate_system()`
+- `bound = factory.bind(coordinate_view, policy=...)` - Bind a `PointEvaluatorFactory` to query points (in `factory.get_coordinate_system()`); the search is done once here
+- `bound = factory.bind(space, policy=...)` - Bind to another FunctionSpace's DOF-holder coordinates
+- `bound.found_points()`, `bound.missing_points()` - indices of the query points the source evaluates / does not evaluate
+- `factory.create_point_evaluator(bound, derivative_order=0)` - Create an evaluator at the bound points; `derivative_order=1` evaluates the gradient
+- `gradient(source)` - A source whose evaluators write the gradient of the field they are given
 - `evaluator.evaluate(field, output)` - Evaluate into a `ValueView` tagged `evaluator.output_basis(field.get_data().get_value_basis())` (a plain array for scalar fields, of shape `(num_points,)` when the output has one component); the output array must be writeable, C-contiguous float64
 - `Interpolator(source, target_space)` - Create an interpolator from a `PointEvaluatorFactory` (cached localization)
+- `Interpolator(source, target_space, bound)` - Create an interpolator that reuses a bound source, e.g. to interpolate a field and `gradient(source)` over one localization
 - `operator.apply(source_field, target_field)` - Apply any `TransferOperator` (`Interpolator`, `Copy`, projections)
 - `Copy(source_space, target_space)` - Create a copy operator for compatible FunctionSpaces
 - `map_entity_field_to_vertices_average(mesh, field_data, entity_dim)` - Convert element/face field to vertex field by averaging
