@@ -98,24 +98,35 @@ std::shared_ptr<BoundSource> OmegaHGeometry::BindImpl(
 }
 
 SupportResults OmegaHGeometry::Neighbourhood(
-  CoordinateView<DeviceMemorySpace> coords,
-  const NeighbourhoodOptions& options) const
+  CoordinateView<DeviceMemorySpace> coords, const NeighbourhoodOptions& options,
+  const KnownOwners& owners) const
 {
   detail::CheckNeighbourhoodArguments(*this, coords, options,
                                       "OmegaHGeometry::Neighbourhood");
-  // the sites are the mesh vertices: the adjacency BFS from the element the
-  // bind's search finds for each point (for a point outside the mesh, the
-  // element nearest it; -1, and so no supports, if its grid cell has none)
   const auto flat_points = flatten_to_omega_h_reals(coords.GetValues());
-  const auto points =
-    ConvertCoordsTo2D(flat_points, coords.GetValues().extent(0), mesh_.dim());
-  const auto start_elements = std::visit(
-    [&](const auto& s) { return FindOwningElements(s, points).second; },
-    search_);
-  Omega_h::Real radius_sq = options.radius * options.radius;
-  return searchNeighbors(mesh_, flat_points, start_elements, radius_sq,
-                         options.min_supports, 3 * options.min_supports,
-                         options.adapt_radius);
+  const LO n = static_cast<LO>(coords.GetValues().extent(0));
+  const int dim = mesh_.dim();
+  int seed_dim = dim;
+  Kokkos::View<const LO*, DeviceMemorySpace> seeds;
+  if (owners.Hints(*this, n) &&
+      (owners.entity_dim == 0 || owners.entity_dim == dim)) {
+    seed_dim = owners.entity_dim;
+    seeds = owners.entities;
+    detail::CheckEntityIds(seeds, mesh_.nents(seed_dim),
+                           "OmegaHGeometry::Neighbourhood",
+                           seed_dim == 0 ? "vertex" : "element");
+  } else {
+    // the element the bind's search finds for each point (for a point outside
+    // the mesh, the element nearest it; -1, and so no supports, if its grid
+    // cell has none)
+    const auto points = ConvertCoordsTo2D(flat_points, n, dim);
+    seeds = std::visit(
+      [&](const auto& s) { return FindOwningElements(s, points).second; },
+      search_);
+  }
+  return searchNeighbors(mesh_, /*site_dim=*/0, flat_points, seed_dim, seeds,
+                         options.radius * options.radius, options.min_supports,
+                         3 * options.min_supports, options.adapt_radius);
 }
 
 namespace

@@ -193,12 +193,16 @@ void bind_create_field_module(py::module& m)
       [](const Geometry& g, const FunctionSpace& space,
          OutOfBoundsPolicy policy, std::shared_ptr<CoordinateMap> map) {
         auto layout = space.GetLayout();
-        return std::const_pointer_cast<BoundSource>(g.Bind(
-          layout->GetDOFHolderCoordinates(), layout, policy, std::move(map)));
+        return std::const_pointer_cast<BoundSource>(
+          g.Bind(layout->GetDOFHolderCoordinates(),
+                 DOFHolderOwners(*layout, g.shared_from_this()), policy,
+                 std::move(map)));
       },
       py::arg("space"), py::arg("policy") = OutOfBoundsPolicy{},
       py::arg("map") = py::none(), py::keep_alive<0, 1>(),
-      "Bind the DOF-holder coordinates of `space`, through `map` if given");
+      "Bind the DOF-holder coordinates of `space`, through `map` if given; "
+      "without a map, a space whose DOF holders are entities of this geometry "
+      "binds them as known owners (with a map that hint is ignored)");
 
   py::class_<OmegaHGeometry, Geometry, std::shared_ptr<OmegaHGeometry>>(
     m, "OmegaHGeometry", "The geometry of an Omega_h simplex mesh");

@@ -36,7 +36,7 @@ OmegaHControlVariateProjection::OmegaHControlVariateProjection(
     interpolator_(source, target_space,
                   SourceGeometry(source).Bind(
                     target_space.GetLayout()->GetDOFHolderCoordinates(),
-                    target_space.GetLayout(), OutOfBoundsPolicy{}, to_source)),
+                    OutOfBoundsPolicy{}, to_source)),
     control_variate_(target_space.CreateFunction<Real>())
 {
   // The source lives on another mesh, so it searches for the samples; the

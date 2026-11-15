@@ -47,7 +47,6 @@ TEST_CASE("Evaluators created from one bound source share its points")
     return space->GetGeometry()->Bind(coords.coordinate_view);
   }();
   REQUIRE(bound->NumPoints() == static_cast<pcms::LO>(n));
-  REQUIRE(bound->QueryLayout() == nullptr);
   REQUIRE(bound->Policy().mode == OutOfBoundsMode::ERROR);
 
   auto first = space->CreatePointEvaluator<Real>(bound);
@@ -56,7 +55,7 @@ TEST_CASE("Evaluators created from one bound source share its points")
   pcms::test::CheckEvaluation(*second, field, pts, linear);
 }
 
-TEST_CASE("Binding to a function space keeps its layout and the policy")
+TEST_CASE("Binding to a function space keeps the policy")
 {
   auto lib = Omega_h::Library{};
   auto mesh = BuildSquare(lib);
@@ -66,9 +65,8 @@ TEST_CASE("Binding to a function space keeps its layout and the policy")
   const OutOfBoundsPolicy policy{OutOfBoundsMode::FILL, -1.0};
 
   const auto layout = target->GetLayout();
-  auto bound = space->GetGeometry()->Bind(layout->GetDOFHolderCoordinates(),
-                                          layout, policy);
-  REQUIRE(bound->QueryLayout() == target->GetLayout().get());
+  auto bound =
+    space->GetGeometry()->Bind(layout->GetDOFHolderCoordinates(), policy);
   REQUIRE(
     bound->NumPoints() ==
     static_cast<pcms::LO>(

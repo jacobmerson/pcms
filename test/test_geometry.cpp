@@ -11,6 +11,7 @@
 #include <pcms/field/evaluator/omega_h_geometry.hpp>
 #include <pcms/field/evaluator/point_cloud_geometry.hpp>
 #include <pcms/field/function_space/lagrange.h>
+#include <pcms/field/function_space/polynomial_reconstruction.hpp>
 #include <pcms/field/layout/omega_h_entity.h>
 #include <pcms/field/layout/omega_h_lagrange.h>
 #include <pcms/field/layout/point_cloud.h>
@@ -365,8 +366,8 @@ TEST_CASE("Neighbourhood returns vertex supports")
     geometry->Neighbourhood(coords.coordinate_view, options);
   Omega_h::Real radius_sq = 0.09;
   const pcms::SupportResults expected = pcms::searchNeighbors(
-    mesh, pcms::flatten_to_omega_h_reals(coords.coordinate_view.GetValues()),
-    StartElements(mesh, coords.view), radius_sq, 6, 18);
+    mesh, 0, pcms::flatten_to_omega_h_reals(coords.coordinate_view.GetValues()),
+    2, StartElements(mesh, coords.view), radius_sq, 6, 18);
   pcms::test::CheckSupportResultsEquivalent(actual, expected);
   // a point outside the mesh starts from the element nearest it
   auto outside = pcms::test::CreateDeviceCoordinateView(
@@ -420,20 +421,69 @@ TEST_CASE("PointCloudGeometry::Neighbourhood takes the search of its sites")
     pcms::PointCloudGeometry::Create(faces, mesh, pcms::Face);
   pcms::test::CheckSupportResultsEquivalent(
     centroid_sites->Neighbourhood(query, options), distance_search);
-  // element centroids queried at the vertices of their mesh: the adjacency
-  options.query_layout = vertices;
+  // element centroids queried at the vertices of their mesh, given as the
+  // owners: the adjacency search from the elements around each vertex, which
+  // on this mesh finds what the distance search finds
+  const auto vertex_owners = pcms::DOFHolderOwners(*vertices, centroid_sites);
+  REQUIRE(vertex_owners.entity_dim == pcms::Vertex);
   pcms::test::CheckSupportResultsEquivalent(
-    centroid_sites->Neighbourhood(query, options),
-    pcms::searchNeighbors(mesh, radius_sq, 8));
+    centroid_sites->Neighbourhood(query, options, vertex_owners),
+    distance_search);
+  // the search starts from the owners: from a vertex far from the point, a
+  // fixed radius finds nothing
+  auto origin = pcms::test::CreateDeviceCoordinateView({0.0, 0.0}, system);
+  Kokkos::View<LO*, DeviceMemorySpace> far("far", 1);
+  Kokkos::deep_copy(far, mesh.nverts() - 1);
+  const pcms::NeighbourhoodOptions fixed{
+    .radius = 0.25, .min_supports = 8, .adapt_radius = false};
+  REQUIRE(centroid_sites->Neighbourhood(origin.coordinate_view, fixed)
+            .supports_idx.size() > 0);
+  REQUIRE(centroid_sites
+            ->Neighbourhood(origin.coordinate_view, fixed,
+                            pcms::KnownOwners{centroid_sites, 0, far})
+            .supports_idx.size() == 0);
   // vertices: the adjacency search from the element of each query point
   pcms::test::CheckSupportResultsEquivalent(
     pcms::PointCloudGeometry::Create(vertices, mesh, pcms::Vertex)
       ->Neighbourhood(query, options),
     pcms::searchNeighbors(
-      mesh, mesh.coords(),
+      mesh, 0, mesh.coords(), 2,
       StartElements(mesh,
                     pcms::ConvertCoordsTo2D(mesh.coords(), mesh.nverts(), 2)),
       radius_sq, 8, 24));
+}
+
+TEST_CASE("Points the adjacency search cannot start from are missing")
+{
+  auto lib = Omega_h::Library{};
+  // two triangles far apart: the search cells between them hold no element
+  Omega_h::Mesh mesh(&lib);
+  Omega_h::build_from_elems_and_coords(
+    &mesh, OMEGA_H_SIMPLEX, 2, Omega_h::LOs({0, 1, 2, 3, 4, 5}),
+    Omega_h::Reals({0, 0, 1, 0, 0, 1, 9, 9, 10, 9, 9, 10}));
+  pcms::test::AddDefaultClassification(mesh);
+  const auto system = pcms::csys::Cartesian::Create(2);
+  auto vertices =
+    std::make_shared<pcms::OmegaHEntityLayout>(mesh, pcms::Vertex, 1, system);
+  auto space = pcms::PolynomialReconstructionFunctionSpace::FromGeometry(
+    pcms::PointCloudGeometry::Create(
+      vertices, mesh, pcms::Vertex,
+      pcms::NeighbourhoodOptions{.radius = 0.5, .min_supports = 3}),
+    pcms::MLSOptions{.degree = 1});
+  auto f = space->CreateFunction<Real>();
+  pcms::test::SetField(
+    f, OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); });
+  const std::vector<Real> pts{0.25, 0.25, 5.5, 5.5};
+  auto coords = pcms::test::CreateDeviceCoordinateView(pts, system);
+  const auto bound = space->GetGeometry()->Bind(
+    coords.coordinate_view,
+    pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::FILL, -1.0});
+  REQUIRE(bound->MissingPoints().extent(0) == 1);
+  const auto values = pcms::test::EvaluateToHost(
+    *space->CreatePointEvaluator<Real>(bound), f, f.GetData().GetValueBasis());
+  REQUIRE_THAT(values(0, 0), WithinAbs(pcms::test::linear_f(0.25, 0.25),
+                                       pcms::test::EvalTol));
+  REQUIRE(values(1, 0) == -1.0);
 }
 
 #ifdef PCMS_ENABLE_MESHFIELDS

@@ -43,10 +43,6 @@ struct NeighbourhoodOptions
   /// (the kinds throw otherwise)
   int max_supports = 0;
   bool adapt_radius = true;
-  /// layout whose DOF holders are the query points, or null; an opaque
-  /// handle here, which lets a kind take a search specific to the query's
-  /// entities (e.g. element centroids to the vertices of the same mesh)
-  std::shared_ptr<const FieldLayout> query_layout;
 };
 
 /// @brief Jacobian of the geometry map at bound points.
@@ -124,26 +120,12 @@ public:
     CoordinateView<DeviceMemorySpace> coords, OutOfBoundsPolicy policy = {},
     std::shared_ptr<const CoordinateMap> map = nullptr) const;
 
-  /// @brief Bind for the DOF-holder coordinates of a layout; records the
-  ///        layout on the bound source as QueryLayout(). The layout is an
-  ///        opaque handle here (pcms_geometry does not depend on pcms_field);
-  ///        it is never dereferenced in this library.
-  /// @param dof_holder_coords DOF-holder coordinates of `query_layout`
-  /// @param query_layout layout whose DOF holders are the query points
-  /// @param policy what to do with points outside the geometry
-  /// @param map map from the query coordinate system to GetCoordinateSystem(),
-  ///        or null, as for the coordinates overload
-  [[nodiscard]] std::shared_ptr<const BoundSource> Bind(
-    CoordinateView<DeviceMemorySpace> dof_holder_coords,
-    std::shared_ptr<const FieldLayout> query_layout,
-    OutOfBoundsPolicy policy = {},
-    std::shared_ptr<const CoordinateMap> map = nullptr) const;
-
   /// @brief Bind for points whose owners are known, e.g. points generated in
   ///        the elements of this geometry.
   /// @param coords query points, as for the coordinates overload
   /// @param owners the owner of each query point; used, instead of the
-  ///        search, by the kinds that can (a cell hint on a mesh), and
+  ///        search, by the kinds that can (a cell hint on a mesh; vertex
+  ///        and cell hints for the supports of a reconstruction geometry), and
   ///        ignored if it is for another geometry, not one entity per point,
   ///        or given with a map (it describes the unmapped points). The hint
   ///        is trusted, see KnownOwners: hinted points count as found.
@@ -163,9 +145,12 @@ public:
   ///         system does not have the identity metric (the distances are
   ///         Euclidean), or `options.max_supports` is neither 0 nor
   ///         3 * `options.min_supports` (other bounds are not honoured yet)
+  /// @param owners the owner of each query point, as for Bind: the kinds
+  ///        with an adjacency search start it there instead of locating the
+  ///        points (a vertex hint starts from the elements around the vertex)
   [[nodiscard]] virtual SupportResults Neighbourhood(
     CoordinateView<DeviceMemorySpace> coords,
-    const NeighbourhoodOptions& options) const;
+    const NeighbourhoodOptions& options, const KnownOwners& owners = {}) const;
 
   /// @brief Jacobian at the bound points.
   /// @param bound a bound source of this geometry
@@ -184,12 +169,6 @@ protected:
   /// @return the bound source of the kind
   [[nodiscard]] virtual std::shared_ptr<BoundSource> BindImpl(
     const BindRequest& request) const = 0;
-
-private:
-  [[nodiscard]] std::shared_ptr<const BoundSource> Bind(
-    CoordinateView<DeviceMemorySpace> coords,
-    std::shared_ptr<const FieldLayout> query_layout, const KnownOwners& owners,
-    OutOfBoundsPolicy policy, std::shared_ptr<const CoordinateMap> map) const;
 };
 
 namespace detail

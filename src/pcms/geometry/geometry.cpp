@@ -10,29 +10,11 @@ std::shared_ptr<const BoundSource> Geometry::Bind(
   CoordinateView<DeviceMemorySpace> coords, OutOfBoundsPolicy policy,
   std::shared_ptr<const CoordinateMap> map) const
 {
-  return Bind(std::move(coords), nullptr, KnownOwners{}, policy,
-              std::move(map));
-}
-
-std::shared_ptr<const BoundSource> Geometry::Bind(
-  CoordinateView<DeviceMemorySpace> coords,
-  std::shared_ptr<const FieldLayout> query_layout, OutOfBoundsPolicy policy,
-  std::shared_ptr<const CoordinateMap> map) const
-{
-  return Bind(std::move(coords), std::move(query_layout), KnownOwners{}, policy,
-              std::move(map));
+  return Bind(std::move(coords), KnownOwners{}, policy, std::move(map));
 }
 
 std::shared_ptr<const BoundSource> Geometry::Bind(
   CoordinateView<DeviceMemorySpace> coords, const KnownOwners& owners,
-  OutOfBoundsPolicy policy, std::shared_ptr<const CoordinateMap> map) const
-{
-  return Bind(std::move(coords), nullptr, owners, policy, std::move(map));
-}
-
-std::shared_ptr<const BoundSource> Geometry::Bind(
-  CoordinateView<DeviceMemorySpace> coords,
-  std::shared_ptr<const FieldLayout> query_layout, const KnownOwners& owners,
   OutOfBoundsPolicy policy, std::shared_ptr<const CoordinateMap> map) const
 {
   const auto& query_system = coords.GetCoordinateSystem();
@@ -72,18 +54,18 @@ std::shared_ptr<const BoundSource> Geometry::Bind(
   if (map != nullptr) {
     std::shared_ptr<const BoundCoordinateMap> bound_map = map->Bind(coords);
     const CoordinateView<DeviceMemorySpace> mapped = bound_map->MappedPoints();
-    bound = BindImpl(BindRequest{mapped, std::move(query_layout), policy, hint,
-                                 std::move(bound_map), coords});
+    bound =
+      BindImpl(BindRequest{mapped, policy, hint, std::move(bound_map), coords});
   } else {
-    bound = BindImpl(BindRequest{coords, std::move(query_layout), policy, hint,
-                                 nullptr, coords});
+    bound = BindImpl(BindRequest{coords, policy, hint, nullptr, coords});
   }
   PCMS_ALWAYS_ASSERT(bound != nullptr);
   return bound;
 }
 
 SupportResults Geometry::Neighbourhood(CoordinateView<DeviceMemorySpace>,
-                                       const NeighbourhoodOptions&) const
+                                       const NeighbourhoodOptions&,
+                                       const KnownOwners&) const
 {
   throw pcms_error("Geometry::Neighbourhood: this geometry has no "
                    "neighbourhood search");

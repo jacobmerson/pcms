@@ -67,7 +67,8 @@ TEST_CASE("MLS reconstruction from a mesh to vertices")
                   centroids.data(), source_mesh.nfaces(), 2)),
       {}, supports);
     const auto mesh_bound = mesh_space->GetGeometry()->Bind(
-      vertices->GetDOFHolderCoordinates(), vertices);
+      vertices->GetDOFHolderCoordinates(),
+      pcms::DOFHolderOwners(*vertices, mesh_space->GetGeometry()));
     const auto cloud_bound =
       cloud_space->GetGeometry()->Bind(vertices->GetDOFHolderCoordinates());
 

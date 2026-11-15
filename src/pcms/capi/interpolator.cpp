@@ -58,10 +58,11 @@ PcmsInterpolatorHandle pcms_create_interpolator(PcmsOmegaHMeshHandle oh_mesh,
   auto space = pcms::PolynomialReconstructionFunctionSpace::FromMesh(
     mesh, pcms::Face, system, {}, Supports(radius, 10));
   // the vertices of the same mesh, whose supports follow from its adjacency
-  auto vertices =
-    std::make_shared<pcms::OmegaHEntityLayout>(mesh, pcms::Vertex, 1, system);
-  return MakeHandle(*space, space->GetGeometry()->Bind(
-                              vertices->GetDOFHolderCoordinates(), vertices));
+  const pcms::OmegaHEntityLayout vertices(mesh, pcms::Vertex, 1, system);
+  const auto geometry = space->GetGeometry();
+  return MakeHandle(*space,
+                    geometry->Bind(vertices.GetDOFHolderCoordinates(),
+                                   pcms::DOFHolderOwners(vertices, geometry)));
 }
 
 PcmsInterpolatorHandle pcms_create_point_based_interpolator(

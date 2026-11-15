@@ -149,7 +149,7 @@ void CaseB(Omega_h::Library& lib)
   const auto layout = tgt->GetLayout();
   Interpolator<Real> op(
     *src, *tgt,
-    src->GetGeometry()->Bind(layout->GetDOFHolderCoordinates(), layout,
+    src->GetGeometry()->Bind(layout->GetDOFHolderCoordinates(),
                              OutOfBoundsPolicy{},
                              std::make_shared<CartesianToCylindrical>()));
   op.Apply(b_src, b_tgt);
@@ -184,7 +184,7 @@ void CaseC(Omega_h::Library& lib)
   const auto layout = tgt->GetLayout();
   Interpolator<Real> op(
     *src, *tgt,
-    src->GetGeometry()->Bind(layout->GetDOFHolderCoordinates(), layout,
+    src->GetGeometry()->Bind(layout->GetDOFHolderCoordinates(),
                              OutOfBoundsPolicy{},
                              std::make_shared<CartesianToCylindrical>()));
   op.Apply(b_src, b_tgt);

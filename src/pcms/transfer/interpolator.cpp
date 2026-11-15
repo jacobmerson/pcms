@@ -6,24 +6,17 @@ namespace pcms
 namespace detail
 {
 
-bool SameDOFHolderSites(const FieldLayout& a, const FieldLayout& b)
+bool SameDOFHolderSites(const BoundSource& bound, const FieldLayout& layout)
 {
-  if (&a == &b) {
-    return true;
-  }
-  const auto ca = a.GetDOFHolderCoordinates();
-  const auto cb = b.GetDOFHolderCoordinates();
-  if (!SameCoordinateSystem(ca.GetCoordinateSystem(),
-                            cb.GetCoordinateSystem())) {
+  const auto sites = layout.GetDOFHolderCoordinates();
+  if (!SameCoordinateSystem(bound.GetCoordinateSystem(),
+                            sites.GetCoordinateSystem())) {
     return false;
   }
-  const auto va = ca.GetValues();
-  const auto vb = cb.GetValues();
+  const auto va = bound.PointValues();
+  const auto vb = sites.GetValues();
   if (va.extent(0) != vb.extent(0) || va.extent(1) != vb.extent(1)) {
     return false;
-  }
-  if (va.data_handle() == vb.data_handle()) {
-    return true;
   }
   const auto num_dims = static_cast<int>(va.extent(1));
   LO num_different = 0;

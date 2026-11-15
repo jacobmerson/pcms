@@ -14,25 +14,22 @@
 namespace pcms
 {
 
-/// @brief Supports of query points among the vertices of `source_mesh`: a
-///        breadth-first search over the vertex adjacency from the vertices of
-///        each point's start element, keeping the vertices within the cutoff.
+/// @brief Supports of query points among the sites of `mesh`: a
+///        breadth-first search over the site adjacency from the sites of the
+///        elements at each point's seed, keeping the sites within the cutoff.
+/// @param site_dim 0 for the mesh vertices as sites, mesh.dim() for the
+///        element centroids
 /// @param target_coords query points, flattened [x0, y0, ..., x1, y1, ...]
-/// @param start_elements the element of `source_mesh` each query point's
-///        search starts from; a point with -1 gets no supports
+/// @param seed_dim mesh.dim() if each point's seed is the element it lies
+///        in, 0 if it is a vertex at the point (the search starts from the
+///        elements around it)
+/// @param seeds one seed per query point; a point with -1 gets no supports
 /// @param cutoffDistance initial squared radius of every query point
 SupportResults searchNeighbors(
-  Omega_h::Mesh& source_mesh, const Omega_h::Reals& target_coords,
-  Kokkos::View<const LO*, DeviceMemorySpace> start_elements,
-  Omega_h::Real& cutoffDistance, Omega_h::LO min_req_support = 12,
+  Omega_h::Mesh& mesh, int site_dim, const Omega_h::Reals& target_coords,
+  int seed_dim, Kokkos::View<const LO*, DeviceMemorySpace> seeds,
+  Omega_h::Real cutoffDistance, Omega_h::LO min_req_support = 12,
   Omega_h::LO max_allowed_support = 36, bool adapt_radius = true);
-
-/// @brief Supports of the vertices of a 2D mesh among its element centroids,
-///        by a breadth-first search over the elements around each vertex.
-SupportResults searchNeighbors(Omega_h::Mesh& mesh,
-                               Omega_h::Real cutoffDistance,
-                               Omega_h::LO min_support = 12,
-                               bool adapt_radius = true);
 } // namespace pcms
 
 #endif // PCMS_LOCALIZATION_ADJ_SEARCH_HPP

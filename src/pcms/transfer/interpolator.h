@@ -21,10 +21,10 @@ namespace pcms
 namespace detail
 {
 
-/// @brief Whether two layouts have the same DOF-holder coordinates, in the
-///        same order.
-/// @return true if they do
-bool SameDOFHolderSites(const FieldLayout& a, const FieldLayout& b);
+/// @brief Whether the query points of `bound` are the DOF-holder coordinates
+///        of `layout`, in the same order and coordinate system.
+/// @return true if they are
+bool SameDOFHolderSites(const BoundSource& bound, const FieldLayout& layout);
 
 } // namespace detail
 
@@ -43,8 +43,9 @@ bool SameDOFHolderSites(const FieldLayout& a, const FieldLayout& b);
 //
 // Interpolators of the same source at the same target share one bound source:
 //   auto layout = tgt_space->GetLayout();
-//   auto bound = src_space->GetGeometry()->Bind(
-//     layout->GetDOFHolderCoordinates(), layout);
+//   auto geometry = src_space->GetGeometry();
+//   auto bound = geometry->Bind(layout->GetDOFHolderCoordinates(),
+//                               DOFHolderOwners(*layout, geometry));
 //   Interpolator<Real> values(*src_space, *tgt_space, bound);
 //   Interpolator<Real> gradient(*Gradient(src_space), *grad_space, bound);
 template <typename T>
@@ -109,16 +110,16 @@ private:
       throw pcms_error("Interpolator: the source has no geometry");
     }
     const auto layout = target_space.GetLayout();
-    return geometry->Bind(layout->GetDOFHolderCoordinates(), layout, policy);
+    return geometry->Bind(layout->GetDOFHolderCoordinates(),
+                          DOFHolderOwners(*layout, geometry), policy);
   }
 
   static std::unique_ptr<PointEvaluator<T>> CreateEvaluator(
     const PointEvaluatorFactory& source, const FunctionSpace& target_space,
     std::shared_ptr<const BoundSource> bound)
   {
-    if (bound == nullptr || bound->QueryLayout() == nullptr ||
-        !detail::SameDOFHolderSites(*bound->QueryLayout(),
-                                    *target_space.GetLayout())) {
+    if (bound == nullptr ||
+        !detail::SameDOFHolderSites(*bound, *target_space.GetLayout())) {
       throw pcms_error("Interpolator: the bound source must be bound to a "
                        "space with the target's DOF-holder sites");
     }

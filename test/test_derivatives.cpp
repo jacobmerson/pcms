@@ -156,8 +156,8 @@ TEST_CASE("Interpolating a field and its gradient over one localization")
     gradient_space->CreateFunction<Real>("grad f", pcms::values::Covector);
 
   const auto value_layout = value_space->GetLayout();
-  const auto bound = source->GetGeometry()->Bind(
-    value_layout->GetDOFHolderCoordinates(), value_layout);
+  const auto bound =
+    source->GetGeometry()->Bind(value_layout->GetDOFHolderCoordinates());
   const auto grad_source = pcms::Gradient(source);
   pcms::Interpolator<Real> values(*source, *value_space, bound);
   pcms::Interpolator<Real> gradients(*grad_source, *gradient_space, bound);

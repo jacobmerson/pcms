@@ -80,8 +80,8 @@ std::shared_ptr<const pcms::BoundSource> BindTargetSites(
   std::shared_ptr<const CoordinateMap> map, OutOfBoundsPolicy policy = {})
 {
   const auto layout = target.GetLayout();
-  return source.GetGeometry()->Bind(layout->GetDOFHolderCoordinates(), layout,
-                                    policy, std::move(map));
+  return source.GetGeometry()->Bind(layout->GetDOFHolderCoordinates(), policy,
+                                    std::move(map));
 }
 
 } // namespace

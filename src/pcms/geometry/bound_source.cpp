@@ -65,7 +65,6 @@ BoundSource::BoundSource(std::shared_ptr<const Geometry> geometry,
                          const BindRequest& request)
   : geometry_(std::move(geometry)),
     policy_(request.policy),
-    query_layout_(request.query_layout),
     map_(request.map),
     system_(request.query_coords.GetCoordinateSystem()),
     num_points_(static_cast<LO>(request.query_coords.GetValues().extent(0))),

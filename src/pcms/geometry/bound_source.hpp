@@ -12,7 +12,6 @@ namespace pcms
 {
 
 class Geometry;
-class FieldLayout;
 class BoundCoordinateMap;
 
 /// @brief Entities of a geometry the query points are known to lie in, so a
@@ -50,10 +49,6 @@ struct BindRequest
   /// points to locate, in the geometry's coordinate system: the query points,
   /// or their images under `map`; may be released after BindImpl returns
   CoordinateView<DeviceMemorySpace> coords;
-  /// layout whose DOF-holder coordinates `query_coords` are, or null; the
-  /// bound source records it as QueryLayout() (the Interpolator's same-sites
-  /// check) and a reconstruction geometry passes it to its Neighbourhood
-  std::shared_ptr<const FieldLayout> query_layout;
   /// out-of-bounds policy of the evaluators created from the bound source
   OutOfBoundsPolicy policy;
   /// the owner of each point, from the caller, when they are owners on this
@@ -90,13 +85,6 @@ public:
   [[nodiscard]] const OutOfBoundsPolicy& Policy() const noexcept
   {
     return policy_;
-  }
-
-  /// @return layout whose DOF holders are the bound points, or null if the
-  ///         source was bound to coordinates
-  [[nodiscard]] const FieldLayout* QueryLayout() const noexcept
-  {
-    return query_layout_.get();
   }
 
   /// @return coordinate system of PointValues(): the query system, which is
@@ -175,7 +163,6 @@ protected:
 private:
   std::shared_ptr<const Geometry> geometry_;
   OutOfBoundsPolicy policy_;
-  std::shared_ptr<const FieldLayout> query_layout_;
   std::shared_ptr<const BoundCoordinateMap> map_;
   std::shared_ptr<const CoordinateSystem> system_;
   LO num_points_;

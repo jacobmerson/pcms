@@ -17,7 +17,8 @@ namespace pcms
 {
 
 /// @brief MLS bound source: the supports of the query points and the
-///        coordinates the solve uses. Every query point is found.
+///        coordinates the solve uses. A query point without supports (e.g.
+///        one the adjacency search has no start for) is missing.
 class MLSBinding final : public BoundSource
 {
 public:
@@ -34,6 +35,13 @@ public:
         flatten_to_omega_h_reals(LocatedPointValues(), "mls_target_coords")),
       supports_(std::move(supports))
   {
+    const auto ptr = supports_.supports_ptr;
+    Kokkos::View<bool*, DeviceMemorySpace> found("mls_found", NumPoints());
+    Kokkos::parallel_for(
+      "MLSBinding::found",
+      Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, NumPoints()),
+      KOKKOS_LAMBDA(const LO i) { found(i) = ptr[i + 1] > ptr[i]; });
+    SetFound(found);
   }
 
   /// @return flattened coordinates of the source points

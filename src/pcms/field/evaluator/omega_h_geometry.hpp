@@ -125,14 +125,14 @@ public:
   [[nodiscard]] Omega_h::Mesh& GetMesh() const noexcept { return mesh_; }
 
   /// Supports among the mesh vertices, by the mesh-adjacency search from the
-  /// element Bind's search finds for each point. A point outside the mesh
-  /// starts from the element nearest it, so it gets supports near the
-  /// boundary; a point whose search cell holds no element gets none.
-  /// `options.query_layout` is not used: the same-mesh search from element
-  /// centroids does not apply to vertex sites.
+  /// owner of each point: a cell or vertex hint of this geometry, or else the
+  /// element Bind's search finds. A point outside the mesh starts from the
+  /// element nearest it, so it gets supports near the boundary; a point whose
+  /// search cell holds no element gets none.
   [[nodiscard]] SupportResults Neighbourhood(
     CoordinateView<DeviceMemorySpace> coords,
-    const NeighbourhoodOptions& options) const override;
+    const NeighbourhoodOptions& options,
+    const KnownOwners& owners = {}) const override;
 
   /// The per-element constant Jacobian of the affine simplex map, computed
   /// for all elements on the first call.

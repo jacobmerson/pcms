@@ -88,25 +88,33 @@ public:
     return options_;
   }
 
-  /// The mesh-adjacency search for mesh-vertex sites, the distance search
-  /// otherwise. When the sites are the element centroids of a 2D mesh and
-  /// `options.query_layout` holds all the vertices of that mesh on this rank
-  /// (one DOF holder per vertex, no ghosts), the supports are found from the
-  /// mesh adjacency alone and `coords` is taken to be those vertices (it is
-  /// not read).
+  /// The mesh-adjacency search for the sites of a mesh (its vertices or its
+  /// element centroids) when `owners` gives the cell or vertex of the mesh at
+  /// each point, and for mesh-vertex sites, which otherwise locate the points
+  /// first; the distance search otherwise.
   [[nodiscard]] SupportResults Neighbourhood(
     CoordinateView<DeviceMemorySpace> coords,
-    const NeighbourhoodOptions& options) const override
+    const NeighbourhoodOptions& options,
+    const KnownOwners& owners = {}) const override
   {
     detail::CheckNeighbourhoodArguments(*this, coords, options,
                                         "PointCloudGeometry::Neighbourhood");
-    const FieldLayout* query = options.query_layout.get();
-    if (site_entity_dim_ == Face && mesh_->dim() == 2 && query != nullptr &&
-        query->GetDOFHolderEntityDim() == Vertex && !query->HasGhosts() &&
-        query->GetDiscretization() != nullptr &&
-        GetDiscretization()->SameEntities(*query->GetDiscretization())) {
-      return searchNeighbors(*mesh_, options.radius * options.radius,
-                             options.min_supports, options.adapt_radius);
+    const auto n = static_cast<LO>(coords.GetValues().extent(0));
+    const auto mesh_entity = [this](int dim) {
+      return dim == Vertex || dim == mesh_->dim();
+    };
+    // the supports are entity ids, which are site indices only without ghosts
+    if (mesh_ != nullptr && mesh_entity(site_entity_dim_) &&
+        !site_layout_->HasGhosts() && owners.Hints(*this, n) &&
+        mesh_entity(owners.entity_dim)) {
+      detail::CheckEntityIds(owners.entities, mesh_->nents(owners.entity_dim),
+                             "PointCloudGeometry::Neighbourhood",
+                             owners.entity_dim == Vertex ? "vertex"
+                                                         : "element");
+      return searchNeighbors(
+        *mesh_, site_entity_dim_, flatten_to_omega_h_reals(coords.GetValues()),
+        owners.entity_dim, owners.entities, options.radius * options.radius,
+        options.min_supports, 3 * options.min_supports, options.adapt_radius);
     }
     if (vertex_geometry_ != nullptr) {
       return vertex_geometry_->Neighbourhood(std::move(coords), options);
@@ -129,9 +137,8 @@ protected:
     Omega_h::Reals source_coords =
       flatten_to_omega_h_reals(src_view, "src_coords");
 
-    NeighbourhoodOptions options = options_;
-    options.query_layout = request.query_layout;
-    SupportResults supports = Neighbourhood(request.coords, options);
+    SupportResults supports =
+      Neighbourhood(request.coords, options_, request.owners);
 
     return std::make_shared<MLSBinding>(shared_from_this(), request,
                                         std::move(source_coords),
