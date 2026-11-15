@@ -7,7 +7,6 @@
 #include "pcms/utility/uniform_grid.h"
 #include <stdexcept>
 #include <string>
-#include <tuple>
 #include <variant>
 
 namespace pcms
@@ -17,7 +16,7 @@ OmegaHMeshBinding::OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
                                      const BindRequest& request,
                                      const GridPointSearchVariant& search,
                                      Omega_h::Mesh& mesh)
-  : BoundSource(std::move(geometry), request)
+  : BoundSource(std::move(geometry), request), search_(search), mesh_(mesh)
 {
   const bool hinted = request.owners.entity_dim == mesh.dim() &&
                       request.owners.entities.extent(0) > 0;
@@ -25,23 +24,35 @@ OmegaHMeshBinding::OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
     detail::CheckEntityIds(request.owners.entities, mesh.nelems(),
                            "OmegaHMeshBinding", "element");
   }
+  Locate(hinted ? request.owners.entities
+                : Kokkos::View<const LO*, DeviceMemorySpace>());
+}
+
+void OmegaHMeshBinding::RebindImpl()
+{
+  Locate({});
+}
+
+void OmegaHMeshBinding::Locate(
+  Kokkos::View<const LO*, DeviceMemorySpace> owners)
+{
   std::visit(
     [&](const auto& s) {
       constexpr int Dim = std::decay_t<decltype(s)>::DIM;
-      if (hinted) {
-        std::tie(elem_ids_, bary_) = detail::BarycentricInElements<Dim>(
-          mesh, LocatedPointValues(), FoundPoints(), request.owners.entities);
+      if (owners.extent(0) > 0) {
+        detail::BarycentricInElements<Dim>(
+          mesh_, LocatedPointValues(), FoundPoints(), owners, elem_ids_, bary_);
         return;
       }
       auto [found, results] = LocatePoints(s, LocatedPointValues());
       SetFound(found);
       const auto [lifted_elems, lifted_bary] = detail::LiftResults<Dim>(
-        mesh, Kokkos::View<const typename std::decay_t<decltype(s)>::Result*,
-                           DeviceMemorySpace>(results));
-      std::tie(elem_ids_, bary_) =
-        detail::GatherFoundLifts<Dim>(FoundPoints(), lifted_elems, lifted_bary);
+        mesh_, Kokkos::View<const typename std::decay_t<decltype(s)>::Result*,
+                            DeviceMemorySpace>(results));
+      detail::GatherFoundLifts<Dim>(FoundPoints(), lifted_elems, lifted_bary,
+                                    elem_ids_, bary_);
     },
-    search);
+    search_);
 }
 
 GridPointSearchVariant MakeGridSearch(Omega_h::Mesh& mesh,
