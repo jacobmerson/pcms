@@ -157,22 +157,6 @@ OmegaHMonteCarloRHSIntegrator::OmegaHMonteCarloRHSIntegrator(
 }
 
 OmegaHMonteCarloRHSIntegrator::OmegaHMonteCarloRHSIntegrator(
-  std::shared_ptr<const OmegaHLagrangeLayout> target_layout,
-  std::shared_ptr<const CoordinateSystem> target_coordinate_system,
-  int samples_per_element, MonteCarloSampling sampling, uint64_t seed)
-  : OmegaHMonteCarloRHSIntegrator(
-      [&] {
-        detail::CheckOmegaHScalarP1Layout(
-          target_coordinate_system, target_layout,
-          "OmegaHMonteCarloRHSIntegrator", "target");
-        return OmegaHGeometry::Create(target_layout->GetMesh(),
-                                      std::move(target_coordinate_system));
-      }(),
-      target_layout, samples_per_element, sampling, seed)
-{
-}
-
-OmegaHMonteCarloRHSIntegrator::OmegaHMonteCarloRHSIntegrator(
   std::shared_ptr<const OmegaHGeometry> target_geometry,
   std::shared_ptr<const OmegaHLagrangeLayout> target_layout,
   int samples_per_element, MonteCarloSampling /*sampling*/, uint64_t seed)

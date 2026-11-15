@@ -113,21 +113,25 @@ TEST_CASE("Bind benchmarks: Omega_h P1", "[!benchmark]")
 
   BENCHMARK("omega_h P1: build space")
   {
-    return LagrangeFunctionSpace::FromMesh(
-      mesh, 1, 1, cart, "global", LagrangeFunctionSpace::Backend::OmegaH);
+    return LagrangeFunctionSpace::FromGeometry(
+      pcms::OmegaHGeometry::Create(mesh, cart), 1, 1, "global",
+      LagrangeFunctionSpace::Backend::OmegaH);
   };
 
-  auto space = LagrangeFunctionSpace::FromMesh(
-    mesh, 1, 1, cart, "global", LagrangeFunctionSpace::Backend::OmegaH);
+  auto space = LagrangeFunctionSpace::FromGeometry(
+    pcms::OmegaHGeometry::Create(mesh, cart), 1, 1, "global",
+    LagrangeFunctionSpace::Backend::OmegaH);
   BenchmarkBindAndEvaluate("omega_h P1", space, points);
 
   auto coords = pcms::test::CreateDeviceCoordinateView(points, cart);
   BENCHMARK("omega_h P1 + P1x3: two binds")
   {
-    auto scalars = LagrangeFunctionSpace::FromMesh(
-      mesh, 1, 1, cart, "global", LagrangeFunctionSpace::Backend::OmegaH);
-    auto vectors = LagrangeFunctionSpace::FromMesh(
-      mesh, 1, 3, cart, "global", LagrangeFunctionSpace::Backend::OmegaH);
+    auto scalars = LagrangeFunctionSpace::FromGeometry(
+      pcms::OmegaHGeometry::Create(mesh, cart), 1, 1, "global",
+      LagrangeFunctionSpace::Backend::OmegaH);
+    auto vectors = LagrangeFunctionSpace::FromGeometry(
+      pcms::OmegaHGeometry::Create(mesh, cart), 1, 3, "global",
+      LagrangeFunctionSpace::Backend::OmegaH);
     auto scalar_bound = scalars->GetGeometry()->Bind(coords.coordinate_view);
     auto vector_bound = vectors->GetGeometry()->Bind(coords.coordinate_view);
     return scalar_bound->FoundPoints().extent(0) +
@@ -154,9 +158,10 @@ TEST_CASE("Bind benchmarks: MeshFields P1", "[!benchmark]")
 {
   auto lib = Omega_h::Library{};
   auto mesh = BuildSquareMesh(lib, 64);
-  auto space = LagrangeFunctionSpace::FromMesh(
-    mesh, 1, 1, pcms::csys::Cartesian::Create(2), "global",
-    LagrangeFunctionSpace::Backend::MeshFields);
+  auto geometry =
+    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Create(2));
+  auto space = LagrangeFunctionSpace::FromGeometry(
+    geometry, 1, 1, "global", LagrangeFunctionSpace::Backend::MeshFields);
   BenchmarkBindAndEvaluate("meshfields P1", space, RandomPointsInUnitSquare(),
                            /*time_create_evaluator=*/true);
 }
@@ -209,10 +214,12 @@ TEST_CASE("Bind benchmarks: interpolator", "[!benchmark]")
   auto source_mesh = BuildSquareMesh(lib, 64);
   auto target_mesh = BuildSquareMesh(lib, 48);
   const auto cart = pcms::csys::Cartesian::Create(2);
-  auto source = LagrangeFunctionSpace::FromMesh(
-    source_mesh, 1, 1, cart, "global", LagrangeFunctionSpace::Backend::OmegaH);
-  auto target = LagrangeFunctionSpace::FromMesh(
-    target_mesh, 1, 1, cart, "global", LagrangeFunctionSpace::Backend::OmegaH);
+  auto source = LagrangeFunctionSpace::FromGeometry(
+    pcms::OmegaHGeometry::Create(source_mesh, cart), 1, 1, "global",
+    LagrangeFunctionSpace::Backend::OmegaH);
+  auto target = LagrangeFunctionSpace::FromGeometry(
+    pcms::OmegaHGeometry::Create(target_mesh, cart), 1, 1, "global",
+    LagrangeFunctionSpace::Backend::OmegaH);
 
   BENCHMARK("interpolator: construct")
   {

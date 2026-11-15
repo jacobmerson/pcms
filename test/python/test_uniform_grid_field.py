@@ -154,8 +154,8 @@ class TestUniformGridOmegaHWorkflow:
         mask_data = mask_field.get_dof_holder_data().get_values()
 
         # Build a mesh-backed source field: f(x,y) = x + 2y.
-        omega_h_factory = pcms.LagrangeFunctionSpace.from_mesh(
-            mesh, 1, 1)
+        omega_h_factory = pcms.LagrangeFunctionSpace.from_geometry(
+            pcms.create_omega_h_geometry(mesh), 1, 1)
         omega_h_field = omega_h_factory.create_function()
         coords = _coordinates(omega_h_field)
         omega_h_data = np.zeros(_num_dof_holders(omega_h_field),
@@ -193,10 +193,10 @@ class TestUniformGridOmegaHWorkflow:
             world, omega_h.Family.SIMPLEX, 1.0, 1.0, 0.0, 8, 8, 0, False,
         )
 
-        src_factory = pcms.LagrangeFunctionSpace.from_mesh(
-            src_mesh, 1, 1)
-        tgt_factory = pcms.LagrangeFunctionSpace.from_mesh(
-            tgt_mesh, 1, 1)
+        src_factory = pcms.LagrangeFunctionSpace.from_geometry(
+            pcms.create_omega_h_geometry(src_mesh), 1, 1)
+        tgt_factory = pcms.LagrangeFunctionSpace.from_geometry(
+            pcms.create_omega_h_geometry(tgt_mesh), 1, 1)
         src_field = src_factory.create_function()
         tgt_field = tgt_factory.create_function()
 

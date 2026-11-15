@@ -91,14 +91,12 @@ void FillP1MassCooPattern(
 
 // Assembles the target-space mass matrix for spatial dimension Dim (triangles
 // for Dim==2, tetrahedra for Dim==3) and returns the owned PETSc matrix.
-// `geometry` gives the element measures of a P0 target: the target space's
-// geometry, or null to create one on the layout's mesh.
+// `geometry` (the target space's) gives the element measures of a P0 target.
 template <int Dim>
-Mat BuildOmegaHMassMatrixImpl(
-  Omega_h::Mesh& mesh, const OmegaHLagrangeLayout& target_layout,
-  std::shared_ptr<const Geometry> geometry,
-  const std::shared_ptr<const CoordinateSystem>& coordinate_system,
-  MassMatrixType mass_type)
+Mat BuildOmegaHMassMatrixImpl(Omega_h::Mesh& mesh,
+                              const OmegaHLagrangeLayout& target_layout,
+                              const Geometry& geometry,
+                              MassMatrixType mass_type)
 {
   const auto global_to_local = target_layout.GetGlobalToLocalPermutation();
   const PetscInt num_dofs =
@@ -110,10 +108,7 @@ Mat BuildOmegaHMassMatrixImpl(
     // P0 target: piecewise-constant basis functions have disjoint support, so
     // the mass matrix is diagonal with M_ee = measure(e). One COO entry per
     // element on its own (element-id) diagonal.
-    if (geometry == nullptr) {
-      geometry = OmegaHGeometry::Create(mesh, coordinate_system);
-    }
-    const auto measures = ElementMeasures(*geometry, nelems, Dim);
+    const auto measures = ElementMeasures(geometry, nelems, Dim);
 
     const PetscInt nnz = static_cast<PetscInt>(nelems);
     Kokkos::View<PetscInt*, DeviceMemorySpace> coo_rows("mass_coo_rows", nnz);
@@ -183,19 +178,15 @@ Mat BuildOmegaHMassMatrixImpl(
   return mat;
 }
 
-Mat BuildOmegaHMassMatrix(
-  const OmegaHLagrangeLayout& target_layout,
-  std::shared_ptr<const Geometry> geometry,
-  const std::shared_ptr<const CoordinateSystem>& coordinate_system,
-  MassMatrixType mass_type)
+Mat BuildOmegaHMassMatrix(const OmegaHLagrangeLayout& target_layout,
+                          const Geometry& geometry, MassMatrixType mass_type)
 {
   Omega_h::Mesh& mesh = target_layout.GetMesh();
   if (mesh.dim() == 3) {
-    return BuildOmegaHMassMatrixImpl<3>(
-      mesh, target_layout, std::move(geometry), coordinate_system, mass_type);
+    return BuildOmegaHMassMatrixImpl<3>(mesh, target_layout, geometry,
+                                        mass_type);
   }
-  return BuildOmegaHMassMatrixImpl<2>(mesh, target_layout, std::move(geometry),
-                                      coordinate_system, mass_type);
+  return BuildOmegaHMassMatrixImpl<2>(mesh, target_layout, geometry, mass_type);
 }
 
 } // namespace
@@ -209,25 +200,11 @@ OmegaHMassIntegrator::OmegaHMassIntegrator(const FunctionSpace& target_space,
   detail::CheckOmegaHScalarLagrangeLayout(target_space.GetCoordinateSystem(),
                                           target_layout, "OmegaHMassIntegrator",
                                           "target");
-  auto geometry = detail::OmegaHGeometryOf(target_space, *target_layout,
-                                           "OmegaHMassIntegrator", "target");
+  const auto geometry = detail::OmegaHGeometryOf(
+    target_space, *target_layout, "OmegaHMassIntegrator", "target");
   diagonal_ =
     target_layout->GetOrder() == 0 || mass_type == MassMatrixType::Lumped;
-  mat_ = BuildOmegaHMassMatrix(*target_layout, std::move(geometry),
-                               target_space.GetCoordinateSystem(), mass_type);
-}
-
-OmegaHMassIntegrator::OmegaHMassIntegrator(
-  std::shared_ptr<const OmegaHLagrangeLayout> target_layout,
-  std::shared_ptr<const CoordinateSystem> coordinate_system,
-  MassMatrixType mass_type)
-{
-  detail::CheckOmegaHScalarLagrangeLayout(coordinate_system, target_layout,
-                                          "OmegaHMassIntegrator", "target");
-  diagonal_ =
-    target_layout->GetOrder() == 0 || mass_type == MassMatrixType::Lumped;
-  mat_ = BuildOmegaHMassMatrix(*target_layout, nullptr, coordinate_system,
-                               mass_type);
+  mat_ = BuildOmegaHMassMatrix(*target_layout, *geometry, mass_type);
 }
 
 OmegaHMassIntegrator::~OmegaHMassIntegrator()

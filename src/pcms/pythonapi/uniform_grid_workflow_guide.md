@@ -133,10 +133,12 @@ mask_value = mask_data[vertex_id, 0]  # Returns 0.0 or 1.0
 #### Option A: Create Field Programmatically
 
 ```python
-# Create a concrete FunctionSpace with linear (order=1) elements and
+# Create the mesh's geometry (its coordinate system and point search) once,
+# then a concrete FunctionSpace on it with linear (order=1) elements and
 # 1 component (scalar)
-omega_h_factory = pcms.LagrangeFunctionSpace.from_mesh(
-    mesh,
+geometry = pcms.create_omega_h_geometry(mesh)
+omega_h_factory = pcms.LagrangeFunctionSpace.from_geometry(
+    geometry,
     1,
     1,
 )
@@ -171,8 +173,9 @@ face_field = mesh.get_tag(face_dim, face_tag.name())
 vertex_field = pcms.map_entity_field_to_vertices_average(mesh, face_field, face_dim)
 
 # Create vertex-based field and set data
-omega_h_factory = pcms.LagrangeFunctionSpace.from_mesh(
-    mesh, 1, 1)
+geometry = pcms.create_omega_h_geometry(mesh)
+omega_h_factory = pcms.LagrangeFunctionSpace.from_geometry(
+    geometry, 1, 1)
 omega_h_field = omega_h_factory.create_function()
 omega_h_field.set_dof_holder_data(vertex_field)
 
@@ -262,7 +265,8 @@ snake_case form of the C++ method (`GetDOFHolderData` is
 
 ### Field Factories
 - `FunctionSpace` - abstract base class for field spaces; a `PointEvaluatorFactory`
-- `LagrangeFunctionSpace.from_mesh(mesh, order, num_components, mesh_coordinate_system)` - create an Omega_h-backed FunctionSpace
+- `create_omega_h_geometry(mesh, system=None)` - the geometry of an Omega_h mesh (coordinate system and point search), shared by the spaces on it
+- `LagrangeFunctionSpace.from_geometry(geometry, order, num_components)` - create an Omega_h-backed FunctionSpace
 - `LagrangeFunctionSpace.from_uniform_grid(grid, num_components, mesh_coordinate_system, order=1)` - create a uniform-grid-backed FunctionSpace
 - `PolynomialReconstructionFunctionSpace.create(coordinate_view, options)` - MLS reconstruction over a point cloud
 

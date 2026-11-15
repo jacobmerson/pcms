@@ -39,9 +39,10 @@ Omega_h::Mesh BuildCylindricalMesh(Omega_h::Library& lib, int divisions)
 std::shared_ptr<LagrangeFunctionSpace> BuildCylindricalSpace(
   Omega_h::Mesh& mesh, int num_components)
 {
-  return LagrangeFunctionSpace::FromMesh(
-    mesh, 1, num_components, pcms::csys::CylindricalRThetaZ::Create(), "global",
-    LagrangeFunctionSpace::Backend::OmegaH);
+  return LagrangeFunctionSpace::FromGeometry(
+    pcms::OmegaHGeometry::Create(mesh,
+                                 pcms::csys::CylindricalRThetaZ::Create()),
+    1, num_components, "global", LagrangeFunctionSpace::Backend::OmegaH);
 }
 
 int NumDOFHolders(const LagrangeFunctionSpace& space)

@@ -187,9 +187,11 @@ def main(plot_path=None):
               f"{source_mesh.nelems()} elems (read from {source_path})")
 
         # The conservative-projection operators require the native Omega_h
-        # Lagrange backend (not the default MeshFields layout).
-        source_space = pcms.LagrangeFunctionSpace.from_mesh(
-            source_mesh, 1, 1,
+        # Lagrange backend (not the default MeshFields layout). The spaces on a
+        # mesh share its geometry (coordinate system and point search).
+        source_geometry = pcms.create_omega_h_geometry(source_mesh)
+        source_space = pcms.LagrangeFunctionSpace.from_geometry(
+            source_geometry, 1, 1,
             backend=pcms.LagrangeFunctionSpace.Backend.OmegaH,
         )
         source_field = evaluate_function_onto_field(source_space,
@@ -204,8 +206,9 @@ def main(plot_path=None):
         print(f"\nTarget mesh : {target_mesh.nverts()} verts, "
               f"{target_mesh.nelems()} elems (read from {target_path})")
 
-        target_space = pcms.LagrangeFunctionSpace.from_mesh(
-            target_mesh, 1, 1,
+        target_geometry = pcms.create_omega_h_geometry(target_mesh)
+        target_space = pcms.LagrangeFunctionSpace.from_geometry(
+            target_geometry, 1, 1,
             backend=pcms.LagrangeFunctionSpace.Backend.OmegaH,
         )
 
@@ -260,8 +263,8 @@ def main(plot_path=None):
         print("\nMixed-order mesh-intersection projections:")
 
         # 4a. P1 source -> P0 target (project the linear field to cell averages).
-        target_p0_space = pcms.LagrangeFunctionSpace.from_mesh(
-            target_mesh, 0, 1,
+        target_p0_space = pcms.LagrangeFunctionSpace.from_geometry(
+            target_geometry, 0, 1,
             backend=pcms.LagrangeFunctionSpace.Backend.OmegaH,
         )
         p1_to_p0 = target_p0_space.create_function()
@@ -279,8 +282,8 @@ def main(plot_path=None):
 
         # 4b. P0 source -> P1 target. Build a P0 source field by sampling the
         #     analytic function at the source element centroids.
-        source_p0_space = pcms.LagrangeFunctionSpace.from_mesh(
-            source_mesh, 0, 1,
+        source_p0_space = pcms.LagrangeFunctionSpace.from_geometry(
+            source_geometry, 0, 1,
             backend=pcms.LagrangeFunctionSpace.Backend.OmegaH,
         )
         source_p0_field = evaluate_function_onto_field(source_p0_space,

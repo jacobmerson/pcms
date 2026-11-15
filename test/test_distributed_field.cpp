@@ -5,6 +5,7 @@
 
 #include "distributed_test_utils.h"
 #include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/function_space/lagrange.h"
 #include "pcms/field/out_of_bounds_policy.h"
 #include "pcms/utility/arrays.h"
@@ -235,9 +236,10 @@ int main(int argc, char** argv)
       auto mesh = Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1.0, 1.0, 0.0, n,
                                      n, 0, false);
       mesh.set_parting(OMEGA_H_GHOSTED, 1, false);
-      auto space = pcms::LagrangeFunctionSpace::FromMesh(
-        mesh, 1, 1, pcms::csys::Cartesian::Deferred(), "global",
-        pcms::LagrangeFunctionSpace::Backend::OmegaH);
+      auto geometry =
+        pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
+      auto space = pcms::LagrangeFunctionSpace::FromGeometry(
+        geometry, 1, 1, "global", pcms::LagrangeFunctionSpace::Backend::OmegaH);
 
       check_distributed_evaluation(mesh, *space);
     }

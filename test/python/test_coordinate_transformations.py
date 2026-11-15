@@ -34,9 +34,10 @@ def cylindrical_space(world):
     """P1 vector space on a box whose coordinates are (r, theta, z)."""
     mesh = omega_h.build_box(world, omega_h.Family.SIMPLEX, 2.0, 1.6, 1.1,
                              6, 6, 4, False)
-    return pcms.LagrangeFunctionSpace.from_mesh(
-        mesh, 1, 3, pcms.csys.CylindricalRThetaZ.create(),
-        backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
+    return pcms.LagrangeFunctionSpace.from_geometry(
+        pcms.create_omega_h_geometry(
+            mesh, pcms.csys.CylindricalRThetaZ.create()),
+        1, 3, backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
 
 
 @pytest.fixture
@@ -44,9 +45,9 @@ def cartesian_space(world):
     """P1 vector space on the Cartesian unit cube."""
     mesh = omega_h.build_box(world, omega_h.Family.SIMPLEX, 1.0, 1.0, 1.0,
                              3, 3, 3, False)
-    return pcms.LagrangeFunctionSpace.from_mesh(
-        mesh, 1, 3, pcms.csys.Cartesian.create(3),
-        backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
+    return pcms.LagrangeFunctionSpace.from_geometry(
+        pcms.create_omega_h_geometry(mesh, pcms.csys.Cartesian.create(3)),
+        1, 3, backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
 
 
 def _coordinates_of(space):
@@ -98,7 +99,8 @@ class TestCoordinateSystem:
     def test_space_defaults_to_cartesian_of_mesh_dimension(self, world):
         mesh = omega_h.build_box(world, omega_h.Family.SIMPLEX, 1.0, 1.0, 0.0,
                                  4, 4, 0, False)
-        space = pcms.LagrangeFunctionSpace.from_mesh(mesh, 1, 1)
+        space = pcms.LagrangeFunctionSpace.from_geometry(
+            pcms.create_omega_h_geometry(mesh), 1, 1)
         assert (space.get_layout().get_coordinate_system()
                 == pcms.csys.Cartesian.create(2))
 
@@ -404,8 +406,9 @@ class TestLifetimes:
     def test_space_keeps_its_mesh_alive(self, world):
         mesh = omega_h.build_box(world, omega_h.Family.SIMPLEX, 1.0, 1.0, 0.0,
                                  4, 4, 0, False)
-        space = pcms.LagrangeFunctionSpace.from_mesh(
-            mesh, 1, 1, backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
+        space = pcms.LagrangeFunctionSpace.from_geometry(
+            pcms.create_omega_h_geometry(mesh), 1, 1,
+            backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
         del mesh
         gc.collect()
         f = space.create_function()

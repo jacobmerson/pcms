@@ -10,6 +10,7 @@
 #include "pcms/field/data/simple.h"
 #include "distributed_test_utils.h"
 #include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/function_space/lagrange.h"
 #include "pcms/utility/arrays.h"
 #include "pcms/utility/types.h"
@@ -441,9 +442,10 @@ int main(int argc, char** argv)
                                               /*symmetric=*/false);
       mesh.set_parting(OMEGA_H_GHOSTED, 1, false);
 
-      auto space = pcms::LagrangeFunctionSpace::FromMesh(
-        mesh, /*order=*/1, /*num_components=*/1,
-        pcms::csys::Cartesian::Deferred(), "global",
+      auto geometry =
+        pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
+      auto space = pcms::LagrangeFunctionSpace::FromGeometry(
+        geometry, /*order=*/1, /*num_components=*/1, "global",
         pcms::LagrangeFunctionSpace::Backend::OmegaH);
       const DistributedCouplingContext ctx{mesh, space, rank, nproc};
 

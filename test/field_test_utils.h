@@ -16,11 +16,11 @@
 #include <Omega_h_build.hpp>
 #include <Omega_h_mesh.hpp>
 #include <Omega_h_shape.hpp>
+#include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/function_space/lagrange.h"
 #include "pcms/localization/adj_search.hpp"
 #endif
 #if defined(PCMS_ENABLE_PETSC) && defined(PCMS_ENABLE_MESHFIELDS)
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/transfer/linear_form_integrator.hpp"
 #include "pcms/transfer/omega_h_intersection_rhs_integrator.hpp"
 #include "pcms/transfer/omega_h_mc_rhs_integrator.hpp"
@@ -153,18 +153,34 @@ inline Omega_h::Mesh BuildReferenceTet(Omega_h::Library& lib)
 }
 
 inline std::shared_ptr<LagrangeFunctionSpace> MakeP1Space(
+  std::shared_ptr<const OmegaHGeometry> geometry,
+  const std::string& global_id_name = "global")
+{
+  return LagrangeFunctionSpace::FromGeometry(
+    std::move(geometry), 1, 1, global_id_name,
+    LagrangeFunctionSpace::Backend::OmegaH);
+}
+
+inline std::shared_ptr<LagrangeFunctionSpace> MakeP0Space(
+  std::shared_ptr<const OmegaHGeometry> geometry)
+{
+  return LagrangeFunctionSpace::FromGeometry(
+    std::move(geometry), 0, 1, "global",
+    LagrangeFunctionSpace::Backend::OmegaH);
+}
+
+// Spaces on a Cartesian geometry of their own on `mesh`; spaces that should
+// share a bind take one geometry instead.
+inline std::shared_ptr<LagrangeFunctionSpace> MakeP1Space(
   Omega_h::Mesh& mesh, const std::string& global_id_name = "global")
 {
-  return LagrangeFunctionSpace::FromMesh(
-    mesh, 1, 1, csys::Cartesian::Deferred(), global_id_name,
-    LagrangeFunctionSpace::Backend::OmegaH);
+  return MakeP1Space(OmegaHGeometry::Create(mesh, csys::Cartesian::Deferred()),
+                     global_id_name);
 }
 
 inline std::shared_ptr<LagrangeFunctionSpace> MakeP0Space(Omega_h::Mesh& mesh)
 {
-  return LagrangeFunctionSpace::FromMesh(
-    mesh, 0, 1, csys::Cartesian::Deferred(), "global",
-    LagrangeFunctionSpace::Backend::OmegaH);
+  return MakeP0Space(OmegaHGeometry::Create(mesh, csys::Cartesian::Deferred()));
 }
 
 inline bool AreArraysEqualUnordered(

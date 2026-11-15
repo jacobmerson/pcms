@@ -14,8 +14,7 @@ namespace pcms
 // Mass-matrix bilinear form integrator for Lagrange spaces on Omega_h 2D
 // simplex meshes. Supports order-0 (diagonal, M_ee = area(e)) and order-1
 // (consistent 3x3 element blocks) Cartesian target spaces. The order-0 element
-// measures come from the differential of the target space's geometry (the
-// layout constructor creates a geometry on the layout's mesh for them). With
+// measures come from the differential of the target space's geometry. With
 // MassMatrixType::Lumped the order-1 matrix is row-sum lumped into a
 // diagonal matrix (order-0 is already diagonal, so lumping is a no-op).
 //
@@ -29,10 +28,6 @@ class OmegaHMassIntegrator : public BilinearFormIntegrator
 public:
   explicit OmegaHMassIntegrator(
     const FunctionSpace& target_space,
-    MassMatrixType mass_type = MassMatrixType::Consistent);
-  OmegaHMassIntegrator(
-    std::shared_ptr<const OmegaHLagrangeLayout> target_layout,
-    std::shared_ptr<const CoordinateSystem> coordinate_system,
     MassMatrixType mass_type = MassMatrixType::Consistent);
   ~OmegaHMassIntegrator();
 

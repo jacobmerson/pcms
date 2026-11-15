@@ -366,22 +366,6 @@ void bind_create_field_module(py::module& m)
   // The mesh-backed spaces refer to the mesh, so it is kept alive with them.
   lagrange_space
     .def_static(
-      "from_mesh",
-      [](Omega_h::Mesh& mesh, int order, int num_components,
-         const SystemHolder& mesh_coordinate_system, std::string global_id_name,
-         LagrangeFunctionSpace::Backend backend) {
-        return LagrangeFunctionSpace::FromMesh(
-          mesh, order, num_components, CartesianIfNone(mesh_coordinate_system),
-          std::move(global_id_name), backend);
-      },
-      py::arg("mesh"), py::arg("order"), py::arg("num_components"),
-      py::arg("mesh_coordinate_system") = py::none(),
-      py::arg("global_id_name") = "global",
-      py::arg("backend") = LagrangeFunctionSpace::DefaultBackend,
-      py::keep_alive<0, 1>(),
-      "Create a LagrangeFunctionSpace from an Omega_h mesh. The coordinate "
-      "system defaults to Cartesian.")
-    .def_static(
       "from_geometry",
       [](const std::shared_ptr<OmegaHGeometry>& geometry, int order,
          int num_components, std::string global_id_name,

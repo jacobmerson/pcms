@@ -206,8 +206,10 @@ TEST_CASE("FieldSerializer round-trips a multi-component Omega_h field")
   auto lib = Omega_h::Library{};
   auto mesh = pcms::test::BuildUnitSquare(lib, 0);
   constexpr int num_components = 3;
-  auto space = pcms::LagrangeFunctionSpace::FromMesh(
-    mesh, 1, num_components, pcms::csys::Cartesian::Deferred(), "global",
+  auto geometry =
+    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
+  auto space = pcms::LagrangeFunctionSpace::FromGeometry(
+    geometry, 1, num_components, "global",
     pcms::LagrangeFunctionSpace::Backend::OmegaH);
   auto field = space->CreateFunction<pcms::Real>();
 

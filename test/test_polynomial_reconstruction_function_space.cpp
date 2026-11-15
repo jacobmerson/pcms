@@ -134,8 +134,9 @@ TEST_CASE("Different layouts on the same mesh report SameEntities")
 
   auto nodal = pcms::PolynomialReconstructionFunctionSpace::FromMesh(
     mesh, pcms::Face, pcms::csys::Cartesian::Deferred());
-  auto lagrange = pcms::LagrangeFunctionSpace::FromMesh(
-    mesh, 1, 1, pcms::csys::Cartesian::Deferred());
+  auto geometry =
+    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
+  auto lagrange = pcms::LagrangeFunctionSpace::FromGeometry(geometry, 1, 1);
 
   auto nodal_disc = nodal->GetLayout()->GetDiscretization();
   auto lagrange_disc = lagrange->GetLayout()->GetDiscretization();
@@ -177,8 +178,9 @@ TEST_CASE(
   auto mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1.0, 1.0, 0.0, 2,
                                  2, 0, false);
 
-  auto lagrange = pcms::LagrangeFunctionSpace::FromMesh(
-    mesh, 1, 1, pcms::csys::Cartesian::Deferred());
+  auto geometry =
+    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
+  auto lagrange = pcms::LagrangeFunctionSpace::FromGeometry(geometry, 1, 1);
 
   auto coords = MakeCoords2D();
   Rank2View<Real, HostMemorySpace> coords_view(coords.data(), 4, 2);

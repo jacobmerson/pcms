@@ -11,6 +11,7 @@
 #include "pcms/coupler/coupler.hpp"
 #include "pcms/coupler/overlap_mask.h"
 #include "pcms/field/value_view.hpp"
+#include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/function_space/lagrange.h"
 #include "pcms/field/coordinate_systems/cartesian.hpp"
 
@@ -169,9 +170,11 @@ void omegah_coupler_with_overlap(MPI_Comm comm, Omega_h::Mesh& mesh,
 
     application->SetLayoutOverlapMask(ss.str(), std::move(overlap_mask));
 
-    auto factory = pcms::LagrangeFunctionSpace::FromMesh(
-      mesh, 1, 1, pcms::csys::Cartesian::Deferred(), numbering,
-      pcms::LagrangeFunctionSpace::Backend::OmegaH, ss.str());
+    auto geometry =
+      pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
+    auto factory = pcms::LagrangeFunctionSpace::FromGeometry(
+      geometry, 1, 1, numbering, pcms::LagrangeFunctionSpace::Backend::OmegaH,
+      ss.str());
 
     auto field = factory->CreateFunction<GO>(
       ss.str(), std::make_unique<pcms::OmegaHFieldData<GO>>(

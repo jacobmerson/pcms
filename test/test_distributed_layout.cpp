@@ -13,6 +13,7 @@
 #include "distributed_test_utils.h"
 #include "pcms/configuration.h"
 #include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/function_space/lagrange.h"
 #include "pcms/utility/arrays.h"
 #include "pcms/utility/types.h"
@@ -241,17 +242,19 @@ int main(int argc, char** argv)
                                      n, 0, false);
       mesh.set_parting(OMEGA_H_GHOSTED, 1, false);
 
+      auto geometry =
+        pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
       for (int nc : {1, 2}) {
         const std::string suffix = " (" + std::to_string(nc) + " components)";
         CheckLayout(mesh,
-                    *pcms::LagrangeFunctionSpace::FromMesh(
-                      mesh, 1, nc, pcms::csys::Cartesian::Deferred(), "global",
+                    *pcms::LagrangeFunctionSpace::FromGeometry(
+                      geometry, 1, nc, "global",
                       pcms::LagrangeFunctionSpace::Backend::OmegaH),
                     "Omega_h backend" + suffix);
 #ifdef PCMS_ENABLE_MESHFIELDS
         CheckLayout(mesh,
-                    *pcms::LagrangeFunctionSpace::FromMesh(
-                      mesh, 1, nc, pcms::csys::Cartesian::Deferred(), "global",
+                    *pcms::LagrangeFunctionSpace::FromGeometry(
+                      geometry, 1, nc, "global",
                       pcms::LagrangeFunctionSpace::Backend::MeshFields),
                     "MeshFields backend" + suffix);
 #endif

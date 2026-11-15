@@ -42,14 +42,15 @@ def build_spaces(world):
     it."""
     src_mesh = omega_h.build_box(world, omega_h.Family.SIMPLEX, 2.0, 1.6, 1.1,
                                  8, 8, 6, False)
-    src = pcms.LagrangeFunctionSpace.from_mesh(
-        src_mesh, 1, 3, pcms.csys.CylindricalRThetaZ.create(),
-        backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
+    src = pcms.LagrangeFunctionSpace.from_geometry(
+        pcms.create_omega_h_geometry(
+            src_mesh, pcms.csys.CylindricalRThetaZ.create()),
+        1, 3, backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
     tgt_mesh = omega_h.build_box(world, omega_h.Family.SIMPLEX, 1.0, 1.0, 1.0,
                                  4, 4, 4, False)
-    tgt = pcms.LagrangeFunctionSpace.from_mesh(
-        tgt_mesh, 1, 3, pcms.csys.Cartesian.create(3),
-        backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
+    tgt = pcms.LagrangeFunctionSpace.from_geometry(
+        pcms.create_omega_h_geometry(tgt_mesh, pcms.csys.Cartesian.create(3)),
+        1, 3, backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
     return src, tgt
 
 

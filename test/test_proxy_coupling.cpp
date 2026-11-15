@@ -7,6 +7,7 @@
 #include <redev_variant_tools.h>
 #include "test_support.h"
 #include "pcms/coupler/coupler.hpp"
+#include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/function_space/lagrange.h"
 #include "pcms/field/value_view.hpp"
 #include <chrono>
@@ -90,9 +91,11 @@ void xgc_delta_f(MPI_Comm comm, Omega_h::Mesh& mesh)
   pcms::ApplicationComm* app =
     coupler.AddApplication("proxy_couple_xgc_delta_f");
 
-  auto factory = pcms::LagrangeFunctionSpace::FromMesh(
-    mesh, 1, 1, pcms::csys::Cartesian::Deferred(), "global",
-    pcms::LagrangeFunctionSpace::DefaultBackend, "gids");
+  auto geometry =
+    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
+  auto factory = pcms::LagrangeFunctionSpace::FromGeometry(
+    geometry, 1, 1, "global", pcms::LagrangeFunctionSpace::DefaultBackend,
+    "gids");
 
   auto gids_field = factory->CreateFunction<pcms::Real>("gids");
   auto gids2_field = factory->CreateFunction<pcms::Real>("gids2");
@@ -129,9 +132,11 @@ void xgc_total_f(MPI_Comm comm, Omega_h::Mesh& mesh)
   pcms::ApplicationComm* app =
     coupler.AddApplication("proxy_couple_xgc_total_f");
 
-  auto factory = pcms::LagrangeFunctionSpace::FromMesh(
-    mesh, 1, 1, pcms::csys::Cartesian::Deferred(), "global",
-    pcms::LagrangeFunctionSpace::DefaultBackend, "gids");
+  auto geometry =
+    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
+  auto factory = pcms::LagrangeFunctionSpace::FromGeometry(
+    geometry, 1, 1, "global", pcms::LagrangeFunctionSpace::DefaultBackend,
+    "gids");
 
   auto gids_field = factory->CreateFunction<pcms::Real>("gids");
 
@@ -170,13 +175,15 @@ void xgc_coupler(MPI_Comm comm, Omega_h::Mesh& mesh, std::string_view cpn_file)
   const auto partition = std::get<redev::ClassPtn>(cpl.GetPartition());
   auto* total_f = cpl.AddApplication("proxy_couple_xgc_total_f");
   auto* delta_f = cpl.AddApplication("proxy_couple_xgc_delta_f");
-  auto factory_total = pcms::LagrangeFunctionSpace::FromMesh(
-    mesh, 1, 1, pcms::csys::Cartesian::Deferred(), "global",
-    pcms::LagrangeFunctionSpace::DefaultBackend, "gids");
+  auto geometry =
+    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
+  auto factory_total = pcms::LagrangeFunctionSpace::FromGeometry(
+    geometry, 1, 1, "global", pcms::LagrangeFunctionSpace::DefaultBackend,
+    "gids");
 
-  auto factory_delta = pcms::LagrangeFunctionSpace::FromMesh(
-    mesh, 1, 1, pcms::csys::Cartesian::Deferred(), "global",
-    pcms::LagrangeFunctionSpace::DefaultBackend, "gids");
+  auto factory_delta = pcms::LagrangeFunctionSpace::FromGeometry(
+    geometry, 1, 1, "global", pcms::LagrangeFunctionSpace::DefaultBackend,
+    "gids");
   // TODO, fields should have a transfer policy rather than parameters
   auto total_gids_field = factory_total->CreateFunction<pcms::Real>("gids");
   auto delta_gids_field = factory_delta->CreateFunction<pcms::Real>("gids");

@@ -41,12 +41,6 @@ public:
                                 int samples_per_element,
                                 MonteCarloSampling sampling,
                                 uint64_t seed = 8675309);
-  /// Creates a geometry on the layout's mesh for the samples.
-  OmegaHMonteCarloRHSIntegrator(
-    std::shared_ptr<const OmegaHLagrangeLayout> target_layout,
-    std::shared_ptr<const CoordinateSystem> target_coordinate_system,
-    int samples_per_element, MonteCarloSampling sampling,
-    uint64_t seed = 8675309);
   ~OmegaHMonteCarloRHSIntegrator();
 
   OmegaHMonteCarloRHSIntegrator(const OmegaHMonteCarloRHSIntegrator&) = delete;

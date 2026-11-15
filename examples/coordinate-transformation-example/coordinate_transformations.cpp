@@ -13,6 +13,7 @@
 #include <pcms/field/coordinate_map.hpp>
 #include <pcms/field/coordinate_systems/cartesian.hpp>
 #include <pcms/field/coordinate_systems/cylindrical.hpp>
+#include <pcms/field/evaluator/omega_h_geometry.hpp>
 #include <pcms/field/function_space/lagrange.h>
 #include <pcms/transfer/interpolator.h>
 #include <cmath>
@@ -90,14 +91,14 @@ void BuildSpaces(Omega_h::Library& lib, Omega_h::Mesh& src_mesh,
 {
   src_mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 2.0, 1.6, 1.1, 8,
                                 8, 6, false);
-  src = LagrangeFunctionSpace::FromMesh(
-    src_mesh, 1, 3, csys::CylindricalRThetaZ::Create(), "global",
-    LagrangeFunctionSpace::Backend::OmegaH);
+  src = LagrangeFunctionSpace::FromGeometry(
+    OmegaHGeometry::Create(src_mesh, csys::CylindricalRThetaZ::Create()), 1, 3,
+    "global", LagrangeFunctionSpace::Backend::OmegaH);
   tgt_mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1.0, 1.0, 1.0, 4,
                                 4, 4, false);
-  tgt = LagrangeFunctionSpace::FromMesh(tgt_mesh, 1, 3,
-                                        csys::Cartesian::Create(3), "global",
-                                        LagrangeFunctionSpace::Backend::OmegaH);
+  tgt = LagrangeFunctionSpace::FromGeometry(
+    OmegaHGeometry::Create(tgt_mesh, csys::Cartesian::Create(3)), 1, 3,
+    "global", LagrangeFunctionSpace::Backend::OmegaH);
 }
 
 void CaseA()

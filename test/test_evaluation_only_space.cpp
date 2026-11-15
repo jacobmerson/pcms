@@ -184,9 +184,9 @@ private:
 std::shared_ptr<pcms::LagrangeFunctionSpace> MakePoloidalTarget(
   Omega_h::Mesh& mesh, int num_components)
 {
-  return pcms::LagrangeFunctionSpace::FromMesh(
-    mesh, 1, num_components, pcms::csys::CylindricalRZ::Create(), "global",
-    pcms::LagrangeFunctionSpace::Backend::OmegaH);
+  return pcms::LagrangeFunctionSpace::FromGeometry(
+    pcms::OmegaHGeometry::Create(mesh, pcms::csys::CylindricalRZ::Create()), 1,
+    num_components, "global", pcms::LagrangeFunctionSpace::Backend::OmegaH);
 }
 
 } // namespace

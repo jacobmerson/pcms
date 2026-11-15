@@ -55,22 +55,6 @@ public:
   static constexpr Backend DefaultBackend = Backend::OmegaH;
 #endif
 
-  // Unstructured mesh — dispatches to MeshFields or native Omega_h backend.
-  // Each call creates its own geometry (and search); use FromGeometry to
-  // create several spaces that share one bind.
-  [[nodiscard]] static std::shared_ptr<LagrangeFunctionSpace> FromMesh(
-    Omega_h::Mesh& mesh, int order, int num_components,
-    std::shared_ptr<const CoordinateSystem> mesh_coordinate_system,
-    std::string global_id_name = "global", Backend backend = DefaultBackend,
-    std::string layout_name = "");
-
-  [[nodiscard]] static std::shared_ptr<LagrangeFunctionSpace> FromMesh(
-    Omega_h::Mesh& mesh, int order, int num_components,
-    std::shared_ptr<const CoordinateSystem> mesh_coordinate_system,
-    Omega_h::Read<Omega_h::I8> owned_mask,
-    std::string global_id_name = "global", Backend backend = DefaultBackend,
-    std::string layout_name = "");
-
   /// @brief A Lagrange space on the mesh of an Omega_h geometry; dispatches
   ///        to MeshFields or native Omega_h backend. Spaces on one geometry
   ///        accept each other's bound sources.

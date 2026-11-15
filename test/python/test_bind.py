@@ -23,9 +23,14 @@ def mesh(world):
 
 
 @pytest.fixture
-def space(mesh):
-    return pcms.LagrangeFunctionSpace.from_mesh(
-        mesh, 1, 1, backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
+def geometry(mesh):
+    return pcms.create_omega_h_geometry(mesh)
+
+
+@pytest.fixture
+def space(geometry):
+    return pcms.LagrangeFunctionSpace.from_geometry(
+        geometry, 1, 1, backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
 
 
 @pytest.fixture
@@ -61,8 +66,9 @@ def test_points_outside_raise_in_error_mode(space):
 
 
 def test_bound_source_belongs_to_its_geometry(mesh, space):
-    other = pcms.LagrangeFunctionSpace.from_mesh(
-        mesh, 1, 1, backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
+    other = pcms.LagrangeFunctionSpace.from_geometry(
+        pcms.create_omega_h_geometry(mesh), 1, 1,
+        backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
     bound = space.get_geometry().bind(pcms.CoordinateView([[0.5, 0.5]]))
     with pytest.raises(RuntimeError, match="another geometry"):
         other.create_point_evaluator(bound)
@@ -106,10 +112,10 @@ def test_derivatives_need_a_source_that_has_them(space):
         pcms.gradient(space)
 
 
-def test_interpolator_reuses_a_bound_source(mesh, space, field):
-    target = pcms.LagrangeFunctionSpace.from_mesh(
-        mesh, 1, 1, backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
-    bound = space.get_geometry().bind(target)
+def test_interpolator_reuses_a_bound_source(geometry, space, field):
+    target = pcms.LagrangeFunctionSpace.from_geometry(
+        geometry, 1, 1, backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
+    bound = geometry.bind(target)
     out = target.create_function()
     pcms.Interpolator(space, target, bound).apply(field, out)
     np.testing.assert_allclose(out.get_dof_holder_data().get_values(),
@@ -136,8 +142,9 @@ def test_get_geometry_does_not_keep_the_space_alive(world):
     assert mesh_ref() is not None
 
     # a geometry obtained from a space keeps the mesh alive by itself
-    space = pcms.LagrangeFunctionSpace.from_mesh(
-        mesh, 1, 1, backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
+    space = pcms.LagrangeFunctionSpace.from_geometry(
+        pcms.create_omega_h_geometry(mesh), 1, 1,
+        backend=pcms.LagrangeFunctionSpace.Backend.OmegaH)
     geometry = space.get_geometry()
     space_ref = weakref.ref(space)
     del space, mesh

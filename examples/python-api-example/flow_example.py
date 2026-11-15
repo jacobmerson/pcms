@@ -50,9 +50,8 @@ def demonstrate_face_field_transfer(mesh):
         f"mean={vertex_field_values.mean():.6f}"
     )
     
-    omega_h_factory = pcms.LagrangeFunctionSpace.from_mesh(
-        mesh, 1, 1
-    )
+    omega_h_factory = pcms.LagrangeFunctionSpace.from_geometry(
+        pcms.create_omega_h_geometry(mesh), 1, 1)
     omega_h_field = omega_h_factory.create_function()
     omega_h_field.set_dof_holder_data(vertex_field_values)
     

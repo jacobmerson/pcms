@@ -121,18 +121,6 @@ LagrangeFunctionSpace::LagrangeFunctionSpace(
 {
 }
 
-std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromMesh(
-  Omega_h::Mesh& mesh, int order, int num_components,
-  std::shared_ptr<const CoordinateSystem> coordinate_system,
-  std::string global_id_name, Backend backend, std::string layout_name)
-{
-  // check before the geometry builds its search
-  CheckOrderAndBackend("FromMesh", order, backend, /*owned_mask=*/false);
-  return FromGeometry(
-    OmegaHGeometry::Create(mesh, std::move(coordinate_system)), order,
-    num_components, std::move(global_id_name), backend, std::move(layout_name));
-}
-
 std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromGeometry(
   std::shared_ptr<const OmegaHGeometry> geometry, int order, int num_components,
   std::string global_id_name, Backend backend, std::string layout_name)
@@ -199,20 +187,6 @@ std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromGeometry(
       });
     },
     std::move(eval_factory));
-}
-
-std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromMesh(
-  Omega_h::Mesh& mesh, int order, int num_components,
-  std::shared_ptr<const CoordinateSystem> coordinate_system,
-  Omega_h::Read<Omega_h::I8> owned_mask, std::string global_id_name,
-  Backend backend, std::string layout_name)
-{
-  // check before the geometry builds its search
-  CheckOrderAndBackend("FromMesh", order, backend, /*owned_mask=*/true);
-  return FromGeometry(
-    OmegaHGeometry::Create(mesh, std::move(coordinate_system)), order,
-    num_components, std::move(owned_mask), std::move(global_id_name), backend,
-    std::move(layout_name));
 }
 
 std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromGeometry(
