@@ -5,6 +5,7 @@
 #include <Omega_h_library.hpp>
 #include <pcms/field/coordinate_systems/cartesian.hpp>
 #include <pcms/field/evaluator/mls_point_cloud.h>
+#include <pcms/field/evaluator/point_cloud_geometry.hpp>
 #include <pcms/field/function_space/polynomial_reconstruction.hpp>
 #include <pcms/field/layout/omega_h_entity.h>
 #include <pcms/utility/entity_types.h>
@@ -57,8 +58,11 @@ TEST_CASE("MLS reconstruction from a mesh to vertices")
   {
     // element centroids to the vertices of the same mesh, by the mesh
     // adjacency and by the distance search over the centroids as a point cloud
-    auto mesh_space = pcms::PolynomialReconstructionFunctionSpace::FromMesh(
-      source_mesh, pcms::Face, system, {}, supports);
+    auto mesh_space = pcms::PolynomialReconstructionFunctionSpace::FromGeometry(
+      pcms::PointCloudGeometry::Create(
+        std::make_shared<pcms::OmegaHEntityLayout>(source_mesh, pcms::Face, 1,
+                                                   system),
+        source_mesh, pcms::Face, supports));
     auto centroids = pcms::test::CopyOmegaHRealsToVector(
       pcms::get_entity_centroids(source_mesh, Omega_h::FACE));
     auto cloud_space = pcms::PolynomialReconstructionFunctionSpace::Create(
@@ -101,8 +105,9 @@ TEST_CASE("MLS reconstruction from a mesh to vertices")
     // the vertices of one mesh to the vertices of another
     auto target_mesh =
       Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 17, 17, 0, false);
-    auto space = pcms::PolynomialReconstructionFunctionSpace::FromMesh(
-      source_mesh, pcms::Vertex, system, {}, supports);
+    auto space = pcms::PolynomialReconstructionFunctionSpace::FromGeometry(
+      pcms::PointCloudGeometry::Create(vertices, source_mesh, pcms::Vertex,
+                                       supports));
     auto field = space->CreateFunction<Real>();
     pcms::test::SetField(
       field, OMEGA_H_LAMBDA(Real x, Real y) { return SinxCosy(x, y); });

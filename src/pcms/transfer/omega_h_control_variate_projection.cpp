@@ -1,5 +1,6 @@
 #include "pcms/transfer/omega_h_control_variate_projection.hpp"
 #include "pcms/transfer/conservative_projection_solver.hpp"
+#include "pcms/transfer/omega_h_form_integrator_utils.hpp"
 #include "pcms/transfer/omega_h_mass_integrator.hpp"
 #include "pcms/transfer/omega_h_mc_rhs_integrator.hpp"
 #include "pcms/utility/arrays.h"
@@ -28,8 +29,10 @@ OmegaHControlVariateProjection::OmegaHControlVariateProjection(
   const PointEvaluatorFactory& source, const FunctionSpace& target_space,
   int samples_per_element, uint64_t seed, MassMatrixType mass_matrix_type,
   std::shared_ptr<const CoordinateMap> to_source)
-  : target_layout_(std::dynamic_pointer_cast<const OmegaHLagrangeLayout>(
-      target_space.GetLayout())),
+  : target_layout_(
+      detail::ResolveOmegaHScalarSpace(
+        target_space, 1, 1, "OmegaHControlVariateProjection", "target")
+        .layout),
     rhs_integrator_(std::make_unique<OmegaHMonteCarloRHSIntegrator>(
       target_space, samples_per_element, seed)),
     interpolator_(source, target_space,

@@ -4,6 +4,7 @@
 #include <Omega_h_build.hpp>
 #include <Omega_h_for.hpp>
 #include "pcms/field/function_space/lagrange.h"
+#include "pcms/field/evaluator/uniform_grid_geometry.hpp"
 #include "pcms/field/function_space/spline.h"
 #include "pcms/field/value_view.hpp"
 #include "pcms/utility/uniform_grid.h"
@@ -51,8 +52,10 @@ TEST_CASE("uniform_grid_field out of bounds FILL mode")
   grid.edge_length = {1.0, 1.0};
   grid.divisions = {N, N};
 
-  auto factory = pcms::LagrangeFunctionSpace::FromUniformGrid(
-    grid, 1, pcms::csys::Cartesian::Deferred(), 1);
+  auto factory = pcms::LagrangeFunctionSpace::FromGeometry(
+    pcms::UniformGridGeometry<2>::Create(grid,
+                                         pcms::csys::Cartesian::Deferred()),
+    1, 1);
   auto field = factory->CreateFunction<Real>();
   pcms::test::SetField(field, OMEGA_H_LAMBDA(Real x, Real y) { return x + y; });
 
@@ -81,8 +84,9 @@ TEST_CASE("spline_field out of bounds FILL mode")
   grid.edge_length = {1.0, 1.0};
   grid.divisions = {N, N};
 
-  auto factory = pcms::SplineFunctionSpace::FromUniformGrid(
-    grid, pcms::csys::Cartesian::Deferred());
+  auto factory = pcms::SplineFunctionSpace::FromGeometry(
+    pcms::UniformGridGeometry<2>::Create(grid,
+                                         pcms::csys::Cartesian::Deferred()));
   auto field = factory->CreateFunction<Real>();
   pcms::test::SetField(field, OMEGA_H_LAMBDA(Real x, Real y) { return x + y; });
 

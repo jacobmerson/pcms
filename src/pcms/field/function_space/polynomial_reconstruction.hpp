@@ -23,7 +23,7 @@ class PointCloudGeometry;
 
 class PolynomialReconstructionFunctionSpace : public FunctionSpace
 {
-  // Passkey: only members (the Create/FromMesh/FromGeometry factories) can
+  // Passkey: only members (the Create/FromGeometry factories) can
   // create a Key, so
   // only they can construct a space, while std::make_shared can call the ctor.
   struct Key
@@ -44,16 +44,6 @@ public:
   [[nodiscard]] static std::shared_ptr<PolynomialReconstructionFunctionSpace>
   Create(CoordinateView<HostMemorySpace> coords, MLSOptions options = {},
          NeighbourhoodOptions neighbourhood = {});
-
-  /// @brief A space on a new geometry of the mesh entities of one dimension.
-  /// @param options the reconstruction
-  /// @param neighbourhood the support search of the new geometry
-  /// @throws pcms_error if source_entity_dim is out of range or the
-  ///         coordinate system does not have the identity metric
-  [[nodiscard]] static std::shared_ptr<PolynomialReconstructionFunctionSpace>
-  FromMesh(Omega_h::Mesh& mesh, int source_entity_dim,
-           std::shared_ptr<const CoordinateSystem> coordinate_system,
-           MLSOptions options = {}, NeighbourhoodOptions neighbourhood = {});
 
   /// @brief A space on an existing geometry, whose sites are its DOF
   ///        holders. Spaces on one geometry accept each other's bound

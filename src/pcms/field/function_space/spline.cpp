@@ -18,14 +18,6 @@ SplineFunctionSpace::SplineFunctionSpace(
 {
 }
 
-std::shared_ptr<SplineFunctionSpace> SplineFunctionSpace::FromUniformGrid(
-  const UniformGrid<2>& grid,
-  std::shared_ptr<const CoordinateSystem> mesh_coordinate_system)
-{
-  return FromGeometry(
-    UniformGridGeometry<2>::Create(grid, std::move(mesh_coordinate_system)));
-}
-
 std::shared_ptr<SplineFunctionSpace> SplineFunctionSpace::FromGeometry(
   std::shared_ptr<const UniformGridGeometry<2>> geometry)
 {

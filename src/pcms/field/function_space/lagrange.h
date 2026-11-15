@@ -69,18 +69,6 @@ public:
     std::string global_id_name = "global", Backend backend = DefaultBackend,
     std::string layout_name = "");
 
-  // Structured uniform grid — order-1 H1-conforming nodal field on a regular
-  // grid
-  [[nodiscard]] static std::shared_ptr<LagrangeFunctionSpace> FromUniformGrid(
-    const UniformGrid<2>& grid, int num_components,
-    std::shared_ptr<const CoordinateSystem> mesh_coordinate_system,
-    int order = 1, std::string layout_name = "");
-
-  [[nodiscard]] static std::shared_ptr<LagrangeFunctionSpace> FromUniformGrid(
-    const UniformGrid<3>& grid, int num_components,
-    std::shared_ptr<const CoordinateSystem> mesh_coordinate_system,
-    int order = 1, std::string layout_name = "");
-
   /// @brief A Lagrange space of order 0 or 1 on the grid of a uniform-grid
   ///        geometry; the arguments are in the order of the Omega_h overload.
   [[nodiscard]] static std::shared_ptr<LagrangeFunctionSpace> FromGeometry(

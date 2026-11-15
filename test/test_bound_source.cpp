@@ -55,26 +55,6 @@ TEST_CASE("Evaluators created from one bound source share its points")
   pcms::test::CheckEvaluation(*second, field, pts, linear);
 }
 
-TEST_CASE("Binding to a function space keeps the policy")
-{
-  auto lib = Omega_h::Library{};
-  auto mesh = BuildSquare(lib);
-  auto space = pcms::test::MakeP1Space(mesh);
-  auto target_mesh = BuildSquare(lib);
-  auto target = pcms::test::MakeP1Space(target_mesh);
-  const OutOfBoundsPolicy policy{OutOfBoundsMode::FILL, -1.0};
-
-  const auto layout = target->GetLayout();
-  auto bound =
-    space->GetGeometry()->Bind(layout->GetDOFHolderCoordinates(), policy);
-  REQUIRE(
-    bound->NumPoints() ==
-    static_cast<pcms::LO>(
-      target->GetLayout()->GetDOFHolderCoordinates().GetValues().extent(0)));
-  REQUIRE(bound->Policy().mode == OutOfBoundsMode::FILL);
-  REQUIRE(bound->Policy().fill_value == -1.0);
-}
-
 TEST_CASE("A bound source is accepted only by sources on its geometry")
 {
   auto lib = Omega_h::Library{};

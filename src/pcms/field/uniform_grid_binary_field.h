@@ -4,6 +4,7 @@
 #include "pcms/field/layout/uniform_grid.h"
 #include "pcms/field/data/simple.h"
 #include "pcms/field/function_space/lagrange.h"
+#include "pcms/field/evaluator/uniform_grid_geometry.hpp"
 #include "pcms/field/value_view.hpp"
 #include "pcms/localization/point_search.h"
 #include "pcms/utility/arrays.h"
@@ -37,8 +38,8 @@ template <unsigned Dim>
 std::pair<std::shared_ptr<const UniformGridFieldLayout<Dim>>, Field<Real>>
 CreateUniformGridBinaryField(Omega_h::Mesh& mesh, const UniformGrid<Dim>& grid)
 {
-  auto function_space = LagrangeFunctionSpace::FromUniformGrid(
-    grid, 1, csys::Cartesian::Deferred());
+  auto function_space = LagrangeFunctionSpace::FromGeometry(
+    UniformGridGeometry<Dim>::Create(grid, csys::Cartesian::Deferred()), 1, 1);
   auto layout = std::dynamic_pointer_cast<const UniformGridFieldLayout<Dim>>(
     function_space->GetLayout());
   PCMS_ALWAYS_ASSERT(layout != nullptr);

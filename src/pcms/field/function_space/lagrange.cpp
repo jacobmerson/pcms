@@ -216,20 +216,6 @@ std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromGeometry(
     std::move(eval_factory));
 }
 
-std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromUniformGrid(
-  const UniformGrid<2>& grid, int num_components,
-  std::shared_ptr<const CoordinateSystem> coordinate_system, int order,
-  std::string layout_name)
-{
-  if (order != 0 && order != 1) {
-    throw std::invalid_argument("LagrangeFunctionSpace::FromUniformGrid: only "
-                                "orders 0 and 1 are supported");
-  }
-  return FromGeometry(
-    UniformGridGeometry<2>::Create(grid, std::move(coordinate_system)), order,
-    num_components, std::move(layout_name));
-}
-
 std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromGeometry(
   std::shared_ptr<const UniformGridGeometry<2>> geometry, int order,
   int num_components, std::string layout_name)
@@ -258,20 +244,6 @@ std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromGeometry(
       });
     },
     std::move(eval_factory));
-}
-
-std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromUniformGrid(
-  const UniformGrid<3>& grid, int num_components,
-  std::shared_ptr<const CoordinateSystem> coordinate_system, int order,
-  std::string layout_name)
-{
-  if (order != 0 && order != 1) {
-    throw std::invalid_argument("LagrangeFunctionSpace::FromUniformGrid: only "
-                                "orders 0 and 1 are supported");
-  }
-  return FromGeometry(
-    UniformGridGeometry<3>::Create(grid, std::move(coordinate_system)), order,
-    num_components, std::move(layout_name));
 }
 
 std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromGeometry(

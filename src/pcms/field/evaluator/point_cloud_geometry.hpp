@@ -36,32 +36,42 @@ public:
     std::shared_ptr<const FieldLayout> site_layout,
     NeighbourhoodOptions options = {})
   {
-    return std::make_shared<PointCloudGeometry>(std::move(site_layout),
-                                                options);
+    return std::make_shared<PointCloudGeometry>(std::move(site_layout), nullptr,
+                                                -1, std::move(options));
   }
 
   [[nodiscard]] static std::shared_ptr<PointCloudGeometry> Create(
     std::shared_ptr<const FieldLayout> site_layout, Omega_h::Mesh& mesh,
     int site_entity_dim, NeighbourhoodOptions options = {})
   {
-    return std::make_shared<PointCloudGeometry>(std::move(site_layout), mesh,
-                                                site_entity_dim, options);
+    return std::make_shared<PointCloudGeometry>(
+      std::move(site_layout), &mesh, site_entity_dim, std::move(options));
   }
 
   /// Use Create or std::make_shared: Bind uses shared_from_this().
+  /// @param mesh the mesh whose entities of dimension `site_entity_dim` are
+  ///        the sites, or null for a point cloud
   PointCloudGeometry(std::shared_ptr<const FieldLayout> site_layout,
+                     Omega_h::Mesh* mesh, int site_entity_dim,
                      NeighbourhoodOptions options)
-    : PointCloudGeometry(std::move(site_layout), nullptr, -1,
-                         std::move(options))
+    : site_layout_(std::move(site_layout)),
+      mesh_(mesh),
+      site_entity_dim_(site_entity_dim),
+      options_(std::move(options)),
+      vertex_geometry_(
+        mesh != nullptr && site_entity_dim == Vertex
+          ? OmegaHGeometry::Create(*mesh, site_layout_->GetCoordinateSystem())
+          : nullptr)
   {
-  }
-
-  PointCloudGeometry(std::shared_ptr<const FieldLayout> site_layout,
-                     Omega_h::Mesh& mesh, int site_entity_dim,
-                     NeighbourhoodOptions options)
-    : PointCloudGeometry(std::move(site_layout), &mesh, site_entity_dim,
-                         std::move(options))
-  {
+    // MLS distances are based on the unweighted Euclidean measure, which is
+    // valid only with the identity metric; this almost certainly should be
+    // generalized to take the metric for distances
+    if (!HasIdentityMetric(*site_layout_->GetCoordinateSystem())) {
+      throw pcms_error(
+        "PointCloudGeometry: MLS point-cloud evaluation requires a "
+        "coordinate system whose metric is the identity; got '" +
+        std::string(site_layout_->GetCoordinateSystem()->Kind()) + "'");
+    }
   }
 
   [[nodiscard]] std::shared_ptr<const Discretization> GetDiscretization()
@@ -140,29 +150,6 @@ protected:
   }
 
 private:
-  PointCloudGeometry(std::shared_ptr<const FieldLayout> site_layout,
-                     Omega_h::Mesh* mesh, int site_entity_dim,
-                     NeighbourhoodOptions options)
-    : site_layout_(std::move(site_layout)),
-      mesh_(mesh),
-      site_entity_dim_(site_entity_dim),
-      options_(std::move(options)),
-      vertex_geometry_(
-        site_entity_dim == Vertex
-          ? OmegaHGeometry::Create(*mesh, site_layout_->GetCoordinateSystem())
-          : nullptr)
-  {
-    // MLS distances are based on the unweighted Euclidean measure, which is
-    // valid only with the identity metric; this almost certainly should be
-    // generalized to take the metric for distances
-    if (!HasIdentityMetric(*site_layout_->GetCoordinateSystem())) {
-      throw pcms_error(
-        "PointCloudGeometry: MLS point-cloud evaluation requires a "
-        "coordinate system whose metric is the identity; got '" +
-        std::string(site_layout_->GetCoordinateSystem()->Kind()) + "'");
-    }
-  }
-
   std::shared_ptr<const FieldLayout> site_layout_;
   Omega_h::Mesh* mesh_;
   int site_entity_dim_;

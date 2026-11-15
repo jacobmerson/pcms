@@ -37,21 +37,14 @@ Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
 Data BuildData(const FunctionSpace& source_space,
                const FunctionSpace& target_space)
 {
-  const auto source_layout =
-    std::dynamic_pointer_cast<const OmegaHLagrangeLayout>(
-      source_space.GetLayout());
-  const auto target_layout =
-    std::dynamic_pointer_cast<const OmegaHLagrangeLayout>(
-      target_space.GetLayout());
-  detail::CheckOmegaHScalarLagrangeLayout(
-    source_space.GetCoordinateSystem(), source_layout,
-    "OmegaHIntersectionRHSIntegrator", "source");
-  detail::CheckOmegaHScalarLagrangeLayout(
-    target_space.GetCoordinateSystem(), target_layout,
-    "OmegaHIntersectionRHSIntegrator", "target");
   // the intersection locates the target centroids with the source geometry
-  const auto source_geometry = detail::OmegaHGeometryOf(
-    source_space, *source_layout, "OmegaHIntersectionRHSIntegrator", "source");
+  const auto [source_layout, source_geometry] =
+    detail::ResolveOmegaHScalarSpace(
+      source_space, 0, 1, "OmegaHIntersectionRHSIntegrator", "source");
+  const auto target_layout =
+    detail::ResolveOmegaHScalarSpace(
+      target_space, 0, 1, "OmegaHIntersectionRHSIntegrator", "target")
+      .layout;
 
   const int dim = target_layout->GetMesh().dim();
   if (source_layout->GetMesh().dim() != dim) {
@@ -146,14 +139,8 @@ Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
     "rhs_fill", nelems, KOKKOS_LAMBDA(int elm) {
       const auto tgt_verts =
         Omega_h::gather_verts<Dim + 1>(tgt_elems2nodes, elm);
-      const Omega_h::Matrix<Dim, Dim + 1> tgt_vert_mat =
+      const Omega_h::Few<Omega_h::Vector<Dim>, Dim + 1> tgt_omh =
         Omega_h::gather_vectors<Dim + 1, Dim>(tgt_coords, tgt_verts);
-      Omega_h::Few<Omega_h::Vector<Dim>, Dim + 1> tgt_omh;
-      for (int i = 0; i < Dim + 1; ++i) {
-        for (int d = 0; d < Dim; ++d) {
-          tgt_omh[i][d] = tgt_vert_mat[i][d];
-        }
-      }
 
       int ip_local = 0;
       const int offset = ip_offsets[elm];

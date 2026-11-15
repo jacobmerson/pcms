@@ -4,6 +4,7 @@
 #include <stdexcept>
 
 #include "pcms/field/function_space/lagrange.h"
+#include "pcms/field/evaluator/uniform_grid_geometry.hpp"
 #include "pcms/field/function_space/polynomial_reconstruction.hpp"
 #include "pcms/field/function_space/spline.h"
 #include "pcms/field/field_data.h"
@@ -105,15 +106,18 @@ TEST_CASE("PointEvaluator::Evaluate checks the output for every evaluator")
 #endif
   SECTION("uniform grid Lagrange")
   {
-    auto space = pcms::LagrangeFunctionSpace::FromUniformGrid(
-      grid, 1, pcms::csys::Cartesian::Deferred(), 1);
+    auto space = pcms::LagrangeFunctionSpace::FromGeometry(
+      pcms::UniformGridGeometry<2>::Create(grid,
+                                           pcms::csys::Cartesian::Deferred()),
+      1, 1);
     CheckOutputValidation(*CreateFillEvaluator(*space),
                           space->CreateFunction<Real>(), n);
   }
   SECTION("uniform grid spline")
   {
-    auto space = pcms::SplineFunctionSpace::FromUniformGrid(
-      grid, pcms::csys::Cartesian::Deferred());
+    auto space = pcms::SplineFunctionSpace::FromGeometry(
+      pcms::UniformGridGeometry<2>::Create(grid,
+                                           pcms::csys::Cartesian::Deferred()));
     CheckOutputValidation(*CreateFillEvaluator(*space),
                           space->CreateFunction<Real>(), n);
   }
@@ -255,8 +259,10 @@ TEST_CASE("PointEvaluator: UniformGrid order-1 linear evaluation")
   grid.edge_length = {1.0, 1.0};
   grid.divisions = {N, N};
 
-  auto factory = pcms::LagrangeFunctionSpace::FromUniformGrid(
-    grid, 1, pcms::csys::Cartesian::Deferred(), 1);
+  auto factory = pcms::LagrangeFunctionSpace::FromGeometry(
+    pcms::UniformGridGeometry<2>::Create(grid,
+                                         pcms::csys::Cartesian::Deferred()),
+    1, 1);
 
   auto field_data = factory->CreateFunction<Real>();
   pcms::test::SetField(
@@ -282,8 +288,9 @@ TEST_CASE("PointEvaluator: SplineFunctionSpace uniform-grid evaluation")
   grid.edge_length = {1.0, 1.0};
   grid.divisions = {N, N};
 
-  auto factory = pcms::SplineFunctionSpace::FromUniformGrid(
-    grid, pcms::csys::Cartesian::Deferred());
+  auto factory = pcms::SplineFunctionSpace::FromGeometry(
+    pcms::UniformGridGeometry<2>::Create(grid,
+                                         pcms::csys::Cartesian::Deferred()));
 
   auto field_data = factory->CreateFunction<Real>();
   pcms::test::SetField(
@@ -316,8 +323,10 @@ TEST_CASE("PointEvaluator: uniform grids report the points they fill")
 
   SECTION("Lagrange")
   {
-    auto factory = pcms::LagrangeFunctionSpace::FromUniformGrid(
-      grid, 1, pcms::csys::Cartesian::Deferred(), 1);
+    auto factory = pcms::LagrangeFunctionSpace::FromGeometry(
+      pcms::UniformGridGeometry<2>::Create(grid,
+                                           pcms::csys::Cartesian::Deferred()),
+      1, 1);
     auto field = factory->CreateFunction<Real>();
     pcms::test::SetField(field, linear);
     pcms::test::CheckEvaluationWithFill(factory, field, pts, is_inside, linear,
@@ -325,8 +334,9 @@ TEST_CASE("PointEvaluator: uniform grids report the points they fill")
   }
   SECTION("spline")
   {
-    auto factory = pcms::SplineFunctionSpace::FromUniformGrid(
-      grid, pcms::csys::Cartesian::Deferred());
+    auto factory = pcms::SplineFunctionSpace::FromGeometry(
+      pcms::UniformGridGeometry<2>::Create(grid,
+                                           pcms::csys::Cartesian::Deferred()));
     auto field = factory->CreateFunction<Real>();
     pcms::test::SetField(field, linear);
     pcms::test::CheckEvaluationWithFill(factory, field, pts, is_inside, linear,
@@ -334,8 +344,10 @@ TEST_CASE("PointEvaluator: uniform grids report the points they fill")
   }
   SECTION("no fill without the FILL policy")
   {
-    auto factory = pcms::LagrangeFunctionSpace::FromUniformGrid(
-      grid, 1, pcms::csys::Cartesian::Deferred(), 1);
+    auto factory = pcms::LagrangeFunctionSpace::FromGeometry(
+      pcms::UniformGridGeometry<2>::Create(grid,
+                                           pcms::csys::Cartesian::Deferred()),
+      1, 1);
     auto coords = pcms::test::CreateDeviceCoordinateView(
       pts, pcms::csys::Cartesian::Deferred());
     auto evaluator =

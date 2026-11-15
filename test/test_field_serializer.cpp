@@ -13,6 +13,7 @@
 #ifdef PCMS_ENABLE_OMEGA_H
 #include "field_test_utils.h"
 #include "pcms/field/function_space/lagrange.h"
+#include "pcms/field/evaluator/uniform_grid_geometry.hpp"
 #include "pcms/field/function_space/polynomial_reconstruction.hpp"
 #include "pcms/utility/uniform_grid.h"
 #include <Omega_h_library.hpp>
@@ -171,8 +172,10 @@ TEST_CASE("FieldSerializer round-trips a uniform-grid field")
   grid.bot_left = {0.0, 0.0};
   grid.edge_length = {10.0, 10.0};
   grid.divisions = {3, 3};
-  auto space = pcms::LagrangeFunctionSpace::FromUniformGrid(
-    grid, 1, pcms::csys::Cartesian::Deferred());
+  auto space = pcms::LagrangeFunctionSpace::FromGeometry(
+    pcms::UniformGridGeometry<2>::Create(grid,
+                                         pcms::csys::Cartesian::Deferred()),
+    1, 1);
   auto field = space->CreateFunction<pcms::Real>();
 
   std::vector<pcms::Real> data(16);

@@ -15,12 +15,15 @@
 #include "pcms/field/differential_operator.hpp"
 #include "pcms/field/evaluator/mls_options.h"
 #include "pcms/field/evaluator/omega_h_geometry.hpp"
+#include "pcms/field/evaluator/uniform_grid_geometry.hpp"
 #include "pcms/field/field.h"
 #include "pcms/field/field_data.h"
 #include "pcms/field/field_layout.h"
 #include "pcms/field/function_space.h"
 #include "pcms/field/function_space/lagrange.h"
 #include "pcms/field/function_space/polynomial_reconstruction.hpp"
+#include "pcms/field/evaluator/point_cloud_geometry.hpp"
+#include "pcms/field/layout/omega_h_entity.h"
 #include "pcms/field/gradient_source.hpp"
 #include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/field/uniform_grid_binary_field.h"
@@ -374,8 +377,8 @@ void bind_create_field_module(py::module& m)
         return LagrangeFunctionSpace::FromGeometry(
           geometry, order, num_components, std::move(global_id_name), backend);
       },
-      py::arg("geometry"), py::arg("order"), py::arg("num_components"),
-      py::arg("global_id_name") = "global",
+      py::arg("geometry").none(false), py::arg("order"),
+      py::arg("num_components"), py::arg("global_id_name") = "global",
       py::arg("backend") = LagrangeFunctionSpace::DefaultBackend,
       py::keep_alive<0, 1>(),
       "Create a LagrangeFunctionSpace on an Omega_h geometry; spaces on one "
@@ -384,8 +387,10 @@ void bind_create_field_module(py::module& m)
       "from_uniform_grid",
       [](const UniformGrid<2>& grid, int num_components,
          const SystemHolder& mesh_coordinate_system, int order) {
-        return LagrangeFunctionSpace::FromUniformGrid(
-          grid, num_components, CartesianIfNone(mesh_coordinate_system), order);
+        return LagrangeFunctionSpace::FromGeometry(
+          UniformGridGeometry<2>::Create(
+            grid, CartesianIfNone(mesh_coordinate_system)),
+          order, num_components);
       },
       py::arg("grid"), py::arg("num_components"),
       py::arg("mesh_coordinate_system") = py::none(), py::arg("order") = 1,
@@ -395,8 +400,10 @@ void bind_create_field_module(py::module& m)
       "from_uniform_grid",
       [](const UniformGrid<3>& grid, int num_components,
          const SystemHolder& mesh_coordinate_system, int order) {
-        return LagrangeFunctionSpace::FromUniformGrid(
-          grid, num_components, CartesianIfNone(mesh_coordinate_system), order);
+        return LagrangeFunctionSpace::FromGeometry(
+          UniformGridGeometry<3>::Create(
+            grid, CartesianIfNone(mesh_coordinate_system)),
+          order, num_components);
       },
       py::arg("grid"), py::arg("num_components"),
       py::arg("mesh_coordinate_system") = py::none(), py::arg("order") = 1,
@@ -442,16 +449,22 @@ void bind_create_field_module(py::module& m)
       [](Omega_h::Mesh& mesh, int source_entity_dim,
          const SystemHolder& coordinate_system, MLSOptions options,
          NeighbourhoodOptions neighbourhood) {
-        return PolynomialReconstructionFunctionSpace::FromMesh(
-          mesh, source_entity_dim, CartesianIfNone(coordinate_system), options,
-          std::move(neighbourhood));
+        if (source_entity_dim < 0 || source_entity_dim > mesh.dim()) {
+          throw py::value_error("from_mesh: source_entity_dim is out of range");
+        }
+        return PolynomialReconstructionFunctionSpace::FromGeometry(
+          PointCloudGeometry::Create(
+            std::make_shared<OmegaHEntityLayout>(
+              mesh, source_entity_dim, 1, CartesianIfNone(coordinate_system)),
+            mesh, source_entity_dim, std::move(neighbourhood)),
+          options);
       },
       py::arg("mesh"), py::arg("source_entity_dim"),
       py::arg("coordinate_system") = py::none(),
       py::arg("options") = MLSOptions{},
       py::arg("neighbourhood") = NeighbourhoodOptions{}, py::keep_alive<0, 1>(),
-      "Create a PolynomialReconstructionFunctionSpace from mesh entity "
-      "coordinates.");
+      "Create a PolynomialReconstructionFunctionSpace on the entities of one "
+      "dimension of a mesh, on a new geometry of them");
 
   m.def(
     "create_uniform_grid_from_mesh",

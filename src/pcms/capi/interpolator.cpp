@@ -4,6 +4,7 @@
 #include <pcms/capi/kokkos.h>
 #include <pcms/capi/interpolator.h>
 #include <pcms/field/coordinate_systems/cartesian.hpp>
+#include <pcms/field/evaluator/point_cloud_geometry.hpp>
 #include <pcms/field/function_space/polynomial_reconstruction.hpp>
 #include <pcms/field/point_evaluator.h>
 #include <pcms/field/layout/omega_h_entity.h>
@@ -55,8 +56,10 @@ PcmsInterpolatorHandle pcms_create_interpolator(PcmsOmegaHMeshHandle oh_mesh,
   OMEGA_H_CHECK_PRINTF(
     mesh.dim() == 2, "Only 2D meshes are supported but found %d\n", mesh.dim());
   const auto system = pcms::csys::Cartesian::Create(2);
-  auto space = pcms::PolynomialReconstructionFunctionSpace::FromMesh(
-    mesh, pcms::Face, system, {}, Supports(radius, 10));
+  auto space = pcms::PolynomialReconstructionFunctionSpace::FromGeometry(
+    pcms::PointCloudGeometry::Create(
+      std::make_shared<pcms::OmegaHEntityLayout>(mesh, pcms::Face, 1, system),
+      mesh, pcms::Face, Supports(radius, 10)));
   // the vertices of the same mesh, whose supports follow from its adjacency
   const pcms::OmegaHEntityLayout vertices(mesh, pcms::Vertex, 1, system);
   const auto geometry = space->GetGeometry();

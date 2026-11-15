@@ -5,6 +5,7 @@
 #include "pcms/field/value_view.hpp"
 #include "pcms/discretization/discretization.h"
 #include "pcms/field/function_space/lagrange.h"
+#include "pcms/field/layout/omega_h_entity.h"
 #include "pcms/field/layout/point_cloud.h"
 #include "field_test_utils.h"
 
@@ -132,20 +133,20 @@ TEST_CASE("Different layouts on the same mesh report SameEntities")
   auto mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1.0, 1.0, 0.0, 2,
                                  2, 0, false);
 
-  auto nodal = pcms::PolynomialReconstructionFunctionSpace::FromMesh(
-    mesh, pcms::Face, pcms::csys::Cartesian::Deferred());
+  auto nodal = std::make_shared<pcms::OmegaHEntityLayout>(
+    mesh, pcms::Face, 1, pcms::csys::Cartesian::Deferred());
   auto geometry =
     pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
   auto lagrange = pcms::LagrangeFunctionSpace::FromGeometry(geometry, 1, 1);
 
-  auto nodal_disc = nodal->GetLayout()->GetDiscretization();
+  auto nodal_disc = nodal->GetDiscretization();
   auto lagrange_disc = lagrange->GetLayout()->GetDiscretization();
 
   REQUIRE(nodal_disc != nullptr);
   REQUIRE(lagrange_disc != nullptr);
   REQUIRE(nodal_disc->SameEntities(*lagrange_disc));
 
-  REQUIRE(nodal->GetLayout()->GetNumDofHolder() == mesh.nfaces());
+  REQUIRE(nodal->GetNumDofHolder() == mesh.nfaces());
   REQUIRE(lagrange->GetLayout()->GetNumDofHolder() == mesh.nverts());
 
   REQUIRE(nodal_disc->GetNumEntities(pcms::Face) == mesh.nfaces());
@@ -160,13 +161,12 @@ TEST_CASE("Layouts on different meshes do not report SameEntities")
   auto mesh_b = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1.0, 1.0, 0.0,
                                    3, 3, 0, false);
 
-  auto nodal_a = pcms::PolynomialReconstructionFunctionSpace::FromMesh(
-    mesh_a, pcms::Vertex, pcms::csys::Cartesian::Deferred());
-  auto nodal_b = pcms::PolynomialReconstructionFunctionSpace::FromMesh(
-    mesh_b, pcms::Vertex, pcms::csys::Cartesian::Deferred());
-
-  auto disc_a = nodal_a->GetLayout()->GetDiscretization();
-  auto disc_b = nodal_b->GetLayout()->GetDiscretization();
+  auto disc_a = pcms::OmegaHEntityLayout(mesh_a, pcms::Vertex, 1,
+                                         pcms::csys::Cartesian::Deferred())
+                  .GetDiscretization();
+  auto disc_b = pcms::OmegaHEntityLayout(mesh_b, pcms::Vertex, 1,
+                                         pcms::csys::Cartesian::Deferred())
+                  .GetDiscretization();
 
   REQUIRE_FALSE(disc_a->SameEntities(*disc_b));
 }

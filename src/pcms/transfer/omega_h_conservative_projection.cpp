@@ -1,6 +1,7 @@
 #include "pcms/transfer/omega_h_conservative_projection.hpp"
 #include "pcms/transfer/conservative_projection_solver.hpp"
 #include "pcms/transfer/omega_h_intersection_rhs_integrator.hpp"
+#include "pcms/transfer/omega_h_form_integrator_utils.hpp"
 #include "pcms/transfer/omega_h_mass_integrator.hpp"
 #include "pcms/utility/arrays.h"
 #include <Omega_h_array.hpp>
@@ -37,10 +38,14 @@ void CheckApplyCompatible(const Field<Real>& source, const Field<Real>& target,
 OmegaHConservativeProjection::OmegaHConservativeProjection(
   const FunctionSpace& source_space, const FunctionSpace& target_space,
   MassMatrixType mass_matrix_type)
-  : source_layout_(std::dynamic_pointer_cast<const OmegaHLagrangeLayout>(
-      source_space.GetLayout())),
-    target_layout_(std::dynamic_pointer_cast<const OmegaHLagrangeLayout>(
-      target_space.GetLayout()))
+  : source_layout_(
+      detail::ResolveOmegaHScalarSpace(source_space, 0, 1,
+                                       "OmegaHConservativeProjection", "source")
+        .layout),
+    target_layout_(
+      detail::ResolveOmegaHScalarSpace(target_space, 0, 1,
+                                       "OmegaHConservativeProjection", "target")
+        .layout)
 {
   // The space-based constructor lets the integrator reuse the source space's
   // point search for the intersection instead of building another.

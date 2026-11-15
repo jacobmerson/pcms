@@ -13,6 +13,11 @@
 namespace pcms
 {
 
+namespace detail
+{
+struct OmegaHScalarSpace;
+} // namespace detail
+
 // Monte Carlo RHS integrator for conservative L2 projection onto order-1
 // Lagrange spaces on Omega_h simplex meshes (triangles in 2D, tetrahedra in
 // 3D).
@@ -56,10 +61,8 @@ public:
     Rank2View<const Real, DeviceMemorySpace> sampled_values) override;
 
 private:
-  OmegaHMonteCarloRHSIntegrator(
-    std::shared_ptr<const OmegaHGeometry> target_geometry,
-    std::shared_ptr<const OmegaHLagrangeLayout> target_layout,
-    int samples_per_element, uint64_t seed);
+  OmegaHMonteCarloRHSIntegrator(detail::OmegaHScalarSpace target,
+                                int samples_per_element, uint64_t seed);
 
   Vec vec_ = nullptr;
   std::shared_ptr<const OmegaHGeometry> geometry_;

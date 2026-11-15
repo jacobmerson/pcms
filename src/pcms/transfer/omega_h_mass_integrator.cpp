@@ -19,28 +19,6 @@ namespace pcms
 namespace
 {
 
-// Measure of every element of `geometry`, from its differential at the
-// element centroids (the one-point rule, exact for the P0 mass matrix), bound
-// in their elements.
-Kokkos::View<Real*, DeviceMemorySpace> ElementMeasures(const Geometry& geometry,
-                                                       Omega_h::Mesh& mesh,
-                                                       int dim)
-{
-  const int nelems = mesh.nelems();
-  Kokkos::View<LO*, DeviceMemorySpace> ids(
-    Kokkos::view_alloc(Kokkos::WithoutInitializing, "mass_p0_elements"),
-    nelems);
-  iota_view<LO>(ids);
-  const auto centroids =
-    ConvertCoordsTo2D(get_entity_centroids(mesh, dim), nelems, dim);
-  const auto bound = geometry.Bind(
-    CoordinateView<DeviceMemorySpace>(geometry.GetCoordinateSystem(),
-                                      MakeConstRank2View(centroids)),
-    KnownOwners{geometry.shared_from_this(), dim, ids});
-  return detail::ElementMeasuresAtPoints(geometry, *bound, ids, dim,
-                                         "OmegaHMassIntegrator");
-}
-
 // Fills the diagonal COO entries of a P0 (piecewise-constant) mass matrix: one
 // entry per element on its own DOF, valued at the element measure.
 void FillP0MassCoo(
@@ -105,8 +83,21 @@ Mat BuildOmegaHMassMatrixImpl(Omega_h::Mesh& mesh,
   if (target_layout.GetOrder() == 0) {
     // P0 target: piecewise-constant basis functions have disjoint support, so
     // the mass matrix is diagonal with M_ee = measure(e). One COO entry per
-    // element on its own (element-id) diagonal.
-    const auto measures = ElementMeasures(geometry, mesh, Dim);
+    // element on its own (element-id) diagonal. The measures come from the
+    // differential at the element centroids (the one-point rule, exact here),
+    // bound in their elements.
+    Kokkos::View<LO*, DeviceMemorySpace> elements(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing, "mass_p0_elements"),
+      nelems);
+    iota_view<LO>(elements);
+    const auto centroids =
+      ConvertCoordsTo2D(get_entity_centroids(mesh, Dim), nelems, Dim);
+    const auto measures = detail::ElementMeasuresAtPoints(
+      geometry,
+      CoordinateView<DeviceMemorySpace>(geometry.GetCoordinateSystem(),
+                                        MakeConstRank2View(centroids)),
+      KnownOwners{geometry.shared_from_this(), Dim, elements},
+      "OmegaHMassIntegrator");
 
     const PetscInt nnz = static_cast<PetscInt>(nelems);
     Kokkos::View<PetscInt*, DeviceMemorySpace> coo_rows("mass_coo_rows", nnz);
@@ -192,14 +183,8 @@ Mat BuildOmegaHMassMatrix(const OmegaHLagrangeLayout& target_layout,
 OmegaHMassIntegrator::OmegaHMassIntegrator(const FunctionSpace& target_space,
                                            MassMatrixType mass_type)
 {
-  const auto target_layout =
-    std::dynamic_pointer_cast<const OmegaHLagrangeLayout>(
-      target_space.GetLayout());
-  detail::CheckOmegaHScalarLagrangeLayout(target_space.GetCoordinateSystem(),
-                                          target_layout, "OmegaHMassIntegrator",
-                                          "target");
-  const auto geometry = detail::OmegaHGeometryOf(
-    target_space, *target_layout, "OmegaHMassIntegrator", "target");
+  const auto [target_layout, geometry] = detail::ResolveOmegaHScalarSpace(
+    target_space, 0, 1, "OmegaHMassIntegrator", "target");
   diagonal_ =
     target_layout->GetOrder() == 0 || mass_type == MassMatrixType::Lumped;
   mat_ = BuildOmegaHMassMatrix(*target_layout, *geometry, mass_type);

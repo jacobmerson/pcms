@@ -35,10 +35,6 @@ public:
     Key, std::shared_ptr<const FieldLayout> layout,
     std::shared_ptr<const PointEvaluatorFactory> evaluator) noexcept;
 
-  [[nodiscard]] static std::shared_ptr<SplineFunctionSpace> FromUniformGrid(
-    const UniformGrid<2>& grid,
-    std::shared_ptr<const CoordinateSystem> mesh_coordinate_system);
-
   /// @brief The bicubic spline space on the grid of a uniform-grid geometry.
   [[nodiscard]] static std::shared_ptr<SplineFunctionSpace> FromGeometry(
     std::shared_ptr<const UniformGridGeometry<2>> geometry);

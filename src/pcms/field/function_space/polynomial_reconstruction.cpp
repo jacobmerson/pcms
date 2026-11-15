@@ -1,13 +1,10 @@
 #include "pcms/field/function_space/polynomial_reconstruction.hpp"
-#include "pcms/field/layout/omega_h_entity.h"
 #include "pcms/field/layout/point_cloud.h"
 #include "pcms/field/evaluator/point_cloud.h"
 #include "pcms/field/evaluator/point_cloud_geometry.hpp"
 #include "pcms/field/data/simple.h"
-#include "pcms/discretization/discretization/omega_h.hpp"
 #include "pcms/utility/assert.h"
 #include "pcms/utility/common.h"
-#include "pcms/utility/mesh_geometry.h"
 
 #include <Kokkos_Core.hpp>
 #include <Omega_h_array.hpp>
@@ -39,26 +36,6 @@ PolynomialReconstructionFunctionSpace::Create(
     dim, device_view, coords.GetCoordinateSystem());
   return FromGeometry(
     PointCloudGeometry::Create(pc_layout, std::move(neighbourhood)), options);
-}
-
-std::shared_ptr<PolynomialReconstructionFunctionSpace>
-PolynomialReconstructionFunctionSpace::FromMesh(
-  Omega_h::Mesh& mesh, int source_entity_dim,
-  std::shared_ptr<const CoordinateSystem> coordinate_system, MLSOptions options,
-  NeighbourhoodOptions neighbourhood)
-{
-  if (source_entity_dim < 0 || source_entity_dim > mesh.dim()) {
-    throw pcms_error(
-      "PolynomialReconstructionFunctionSpace::FromMesh: source_entity_dim is "
-      "out of range");
-  }
-
-  auto mesh_layout = std::make_shared<OmegaHEntityLayout>(
-    mesh, source_entity_dim, 1, std::move(coordinate_system));
-  return FromGeometry(PointCloudGeometry::Create(mesh_layout, mesh,
-                                                 source_entity_dim,
-                                                 std::move(neighbourhood)),
-                      options);
 }
 
 std::shared_ptr<PolynomialReconstructionFunctionSpace>

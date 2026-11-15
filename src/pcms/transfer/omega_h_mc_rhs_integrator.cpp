@@ -147,27 +147,17 @@ void ScaleByElementMeasure(
 OmegaHMonteCarloRHSIntegrator::OmegaHMonteCarloRHSIntegrator(
   const FunctionSpace& target_space, int samples_per_element, uint64_t seed)
   : OmegaHMonteCarloRHSIntegrator(
-      [&target_space] {
-        auto layout = std::dynamic_pointer_cast<const OmegaHLagrangeLayout>(
-          target_space.GetLayout());
-        detail::CheckOmegaHScalarP1Layout(
-          target_space.GetCoordinateSystem(), layout,
-          "OmegaHMonteCarloRHSIntegrator", "target");
-        return detail::OmegaHGeometryOf(
-          target_space, *layout, "OmegaHMonteCarloRHSIntegrator", "target");
-      }(),
-      std::dynamic_pointer_cast<const OmegaHLagrangeLayout>(
-        target_space.GetLayout()),
+      detail::ResolveOmegaHScalarSpace(
+        target_space, 1, 1, "OmegaHMonteCarloRHSIntegrator", "target"),
       samples_per_element, seed)
 {
 }
 
 OmegaHMonteCarloRHSIntegrator::OmegaHMonteCarloRHSIntegrator(
-  std::shared_ptr<const OmegaHGeometry> target_geometry,
-  std::shared_ptr<const OmegaHLagrangeLayout> target_layout,
-  int samples_per_element, uint64_t seed)
-  : geometry_(std::move(target_geometry))
+  detail::OmegaHScalarSpace target, int samples_per_element, uint64_t seed)
+  : geometry_(std::move(target.geometry))
 {
+  const auto& target_layout = target.layout;
   if (samples_per_element <= 0) {
     throw pcms_error(
       "OmegaHMonteCarloRHSIntegrator: samples_per_element must be positive");
@@ -206,9 +196,8 @@ OmegaHMonteCarloRHSIntegrator::OmegaHMonteCarloRHSIntegrator(
   // The weights |T| / N take the element measures from the geometry's
   // differential at the samples, bound in the elements they were drawn in.
   const auto measures = detail::ElementMeasuresAtPoints(
-    *geometry_,
-    *geometry_->Bind(GetIntegrationPoints(), IntegrationPointOwners()),
-    elements_, dim, "OmegaHMonteCarloRHSIntegrator");
+    *geometry_, GetIntegrationPoints(), IntegrationPointOwners(),
+    "OmegaHMonteCarloRHSIntegrator");
   ScaleByElementMeasure(coeffs, measures, samples_per_element, nbary_);
   node_gids_ = std::move(node_gids);
   coeffs_ = std::move(coeffs);

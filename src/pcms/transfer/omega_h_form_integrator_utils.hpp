@@ -17,115 +17,96 @@
 namespace pcms::detail
 {
 
-// Shared checks for a scalar Cartesian Lagrange space on a simplex mesh
-// (triangles in 2D, tetrahedra in 3D), independent of order. Order is validated
-// separately by the callers below. The integrators take their integrals in the
-// mesh coordinates without a metric, which is only the physical measure in
-// Cartesian coordinates; other systems are refused until the geometry's metric
-// enters the measures.
-inline void CheckOmegaHScalarSimplexLayout(
-  const std::shared_ptr<const CoordinateSystem>& coordinate_system,
-  const std::shared_ptr<const OmegaHLagrangeLayout>& layout,
-  const char* context, const char* role)
+// The layout and Omega_h geometry of a scalar Lagrange space on a simplex mesh
+// (triangles in 2D, tetrahedra in 3D) in Cartesian coordinates.
+struct OmegaHScalarSpace
 {
+  std::shared_ptr<const OmegaHLagrangeLayout> layout;
+  std::shared_ptr<const OmegaHGeometry> geometry;
+};
+
+// Checks that `space` is a scalar Lagrange space of an order in [min_order,
+// max_order] on the Omega_h geometry of a 2D or 3D simplex mesh, in the
+// Cartesian coordinate system of the mesh dimension, and returns its layout and
+// geometry. The integrators take their integrals in the mesh coordinates
+// without a metric, which is only the physical measure in Cartesian
+// coordinates; other systems are refused until the geometry's metric enters
+// the measures.
+inline OmegaHScalarSpace ResolveOmegaHScalarSpace(const FunctionSpace& space,
+                                                  int min_order, int max_order,
+                                                  const char* context,
+                                                  const char* role)
+{
+  const std::string prefix = std::string(context) + ": " + role + " ";
+  auto layout =
+    std::dynamic_pointer_cast<const OmegaHLagrangeLayout>(space.GetLayout());
   if (layout == nullptr) {
-    throw pcms_error(std::string(context) + ": " + role +
-                     " space must use OmegaHLagrangeLayout");
+    throw pcms_error(prefix + "space must use OmegaHLagrangeLayout");
   }
   if (layout->GetNumComponents() != 1) {
-    throw pcms_error(std::string(context) + ": " + role +
-                     " space must have exactly one component");
+    throw pcms_error(prefix + "space must have exactly one component");
   }
   const Omega_h::Mesh& mesh = layout->GetMesh();
   if (mesh.dim() != 2 && mesh.dim() != 3) {
-    throw pcms_error(std::string(context) + ": " + role +
-                     " mesh must be 2D or 3D");
+    throw pcms_error(prefix + "mesh must be 2D or 3D");
   }
-  if (!SameCoordinateSystem(coordinate_system,
+  if (!SameCoordinateSystem(space.GetCoordinateSystem(),
                             csys::Cartesian::Create(mesh.dim()))) {
-    throw pcms_error(std::string(context) + ": " + role +
-                     " space must use the Cartesian coordinate system of its "
+    throw pcms_error(prefix +
+                     "space must use the Cartesian coordinate system of its "
                      "mesh dimension; map other systems explicitly");
   }
   if (mesh.family() != OMEGA_H_SIMPLEX) {
-    throw pcms_error(std::string(context) + ": " + role +
-                     " mesh must be a simplex (triangle/tetrahedron) mesh");
+    throw pcms_error(prefix +
+                     "mesh must be a simplex (triangle/tetrahedron) mesh");
   }
-}
-
-// Strict order-1 check (used where only P1 is supported, e.g. Monte-Carlo RHS).
-inline void CheckOmegaHScalarP1Layout(
-  const std::shared_ptr<const CoordinateSystem>& coordinate_system,
-  const std::shared_ptr<const OmegaHLagrangeLayout>& layout,
-  const char* context, const char* role)
-{
-  CheckOmegaHScalarSimplexLayout(coordinate_system, layout, context, role);
-  if (layout->GetOrder() != 1) {
-    throw pcms_error(std::string(context) + ": " + role +
-                     " space must be order-1");
-  }
-}
-
-// Conservative-projection check: any supported Lagrange order (P0 or P1). The
-// intersection integrator handles source and target orders independently, so
-// this replaces the strict P1 requirement on those paths.
-inline void CheckOmegaHScalarLagrangeLayout(
-  const std::shared_ptr<const CoordinateSystem>& coordinate_system,
-  const std::shared_ptr<const OmegaHLagrangeLayout>& layout,
-  const char* context, const char* role)
-{
-  CheckOmegaHScalarSimplexLayout(coordinate_system, layout, context, role);
   const int order = layout->GetOrder();
-  if (order != 0 && order != 1) {
-    throw pcms_error(std::string(context) + ": " + role +
-                     " space must be order-0 or order-1");
+  if (order < min_order || order > max_order) {
+    throw pcms_error(
+      prefix + "space must be order-" + std::to_string(min_order) +
+      (max_order > min_order ? " or order-" + std::to_string(max_order)
+                             : std::string()));
   }
-}
-
-// The Omega_h geometry of a space whose layout is `layout`: the geometry the
-// integrators bind parametric points on and take element measures from.
-inline std::shared_ptr<const OmegaHGeometry> OmegaHGeometryOf(
-  const FunctionSpace& space, const OmegaHLagrangeLayout& layout,
-  const char* context, const char* role)
-{
   auto geometry =
     std::dynamic_pointer_cast<const OmegaHGeometry>(space.GetGeometry());
-  if (geometry == nullptr || &geometry->GetMesh() != &layout.GetMesh()) {
-    throw pcms_error(std::string(context) + ": " + role +
-                     " space must be on the Omega_h geometry of its layout's "
+  if (geometry == nullptr || &geometry->GetMesh() != &mesh) {
+    throw pcms_error(prefix +
+                     "space must be on the Omega_h geometry of its layout's "
                      "mesh");
   }
-  return geometry;
+  return {std::move(layout), std::move(geometry)};
 }
 
-// Measure of the element of each point of a bind on an affine simplex geometry,
-// |det J| / Dim!, from the geometry's differential. `element_ids` holds the
-// element of each point of `bound`, all of which are found (e.g. a bind with
-// those elements as known owners).
+// Measure of the element of each of `points`, which lie in the elements
+// `owners` names, on an affine simplex geometry: |det J| / Dim! from the
+// differential of the geometry's bind of the points with those owners.
 inline Kokkos::View<Real*, DeviceMemorySpace> ElementMeasuresAtPoints(
-  const Geometry& geometry, const BoundSource& bound,
-  Kokkos::View<const LO*, DeviceMemorySpace> element_ids, int dim,
-  const char* context)
+  const Geometry& geometry, CoordinateView<DeviceMemorySpace> points,
+  const KnownOwners& owners, const char* context)
 {
-  const DifferentialView differential = geometry.Differential(bound);
+  const auto bound = geometry.Bind(points, owners);
+  const DifferentialView differential = geometry.Differential(*bound);
   if (differential.Empty()) {
     throw pcms_error(std::string(context) +
                      ": the geometry provides no differential to take element "
                      "measures from");
   }
-  PCMS_ALWAYS_ASSERT(element_ids.extent(0) ==
-                     static_cast<size_t>(bound.NumPoints()));
+  PCMS_ALWAYS_ASSERT(owners.entities.extent(0) ==
+                     static_cast<size_t>(bound->NumPoints()));
+  const int dim = geometry.GetDiscretization()->GetDimension();
   const Real reference_measure = dim == 3 ? 1.0 / 6.0 : 0.5;
   const auto determinant = differential.determinant;
   const bool per_element = differential.per_element;
-  const LO n = bound.NumPoints();
+  const auto element_ids = owners.entities;
+  const LO n = bound->NumPoints();
   Kokkos::View<Real*, DeviceMemorySpace> measures(
     Kokkos::view_alloc(Kokkos::WithoutInitializing, "element_measures"), n);
   Kokkos::parallel_for(
     "ElementMeasuresAtPoints",
     Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
     KOKKOS_LAMBDA(const LO i) {
-      // every point is found, so row i of a per-point differential is point i
+      // hinted points are all found, so row i of a per-point differential is
+      // point i
       const LO row = per_element ? element_ids(i) : i;
       measures(i) = Kokkos::fabs(determinant(row)) * reference_measure;
     });

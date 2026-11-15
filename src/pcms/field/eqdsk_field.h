@@ -4,6 +4,7 @@
 #include "pcms/utility/eqdsk.h"
 #include "pcms/field/layout/uniform_grid.h"
 #include "pcms/field/function_space/spline.h"
+#include "pcms/field/evaluator/uniform_grid_geometry.hpp"
 
 #include <string>
 #include "pcms/field/coordinate_systems/cylindrical.hpp"
@@ -43,8 +44,8 @@ struct EQDSKFieldWithData
 inline EQDSKField MakeEQDSKField(const EQDSKData& eqdsk_data)
 {
   // EQDSK is a poloidal plane in cylindrical RZ coordinates
-  auto space = SplineFunctionSpace::FromUniformGrid(
-    eqdsk_data.grid, csys::CylindricalRZ::Create());
+  auto space = SplineFunctionSpace::FromGeometry(UniformGridGeometry<2>::Create(
+    eqdsk_data.grid, csys::CylindricalRZ::Create()));
   Field<Real> field = space->CreateFunction<Real>();
   field.SetDOFHolderDataUnchecked(Rank2View<const Real, DeviceMemorySpace>(
     eqdsk_data.PSIZR.data(), eqdsk_data.PSIZR.extent(0), 1));

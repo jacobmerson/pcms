@@ -5,6 +5,7 @@
 #include <pcms/field/coordinate_systems/cartesian.hpp>
 #include <pcms/field/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/function_space/lagrange.h>
+#include <pcms/field/evaluator/uniform_grid_geometry.hpp>
 #include <pcms/field/function_space/spline.h>
 #include <pcms/field/gradient_source.hpp>
 #include <pcms/transfer/interpolator.h>
@@ -33,8 +34,9 @@ std::shared_ptr<pcms::SplineFunctionSpace> MakeSplineSpace()
   grid.bot_left = {0.0, -1.0};
   grid.edge_length = {2.0, 2.0};
   grid.divisions = {16, 16};
-  return pcms::SplineFunctionSpace::FromUniformGrid(
-    grid, pcms::csys::Cartesian::Create(2));
+  return pcms::SplineFunctionSpace::FromGeometry(
+    pcms::UniformGridGeometry<2>::Create(grid,
+                                         pcms::csys::Cartesian::Create(2)));
 }
 
 } // namespace
@@ -147,10 +149,12 @@ TEST_CASE("Interpolating a field and its gradient over one localization")
   grid.bot_left = {0.2, -0.8};
   grid.edge_length = {1.5, 1.4};
   grid.divisions = {5, 7};
-  auto value_space = pcms::LagrangeFunctionSpace::FromUniformGrid(
-    grid, 1, source->GetCoordinateSystem());
-  auto gradient_space = pcms::LagrangeFunctionSpace::FromUniformGrid(
-    grid, 2, source->GetCoordinateSystem());
+  auto value_space = pcms::LagrangeFunctionSpace::FromGeometry(
+    pcms::UniformGridGeometry<2>::Create(grid, source->GetCoordinateSystem()),
+    1, 1);
+  auto gradient_space = pcms::LagrangeFunctionSpace::FromGeometry(
+    pcms::UniformGridGeometry<2>::Create(grid, source->GetCoordinateSystem()),
+    1, 2);
   auto value = value_space->CreateFunction<Real>("f");
   auto gradient =
     gradient_space->CreateFunction<Real>("grad f", pcms::values::Covector);
@@ -191,8 +195,10 @@ TEST_CASE("Interpolating a field and its gradient over one localization")
   // The bound points must be the target's DOF holders.
   pcms::UniformGrid<2> other_grid = grid;
   other_grid.divisions = {4, 7};
-  auto other_space = pcms::LagrangeFunctionSpace::FromUniformGrid(
-    other_grid, 1, source->GetCoordinateSystem());
+  auto other_space = pcms::LagrangeFunctionSpace::FromGeometry(
+    pcms::UniformGridGeometry<2>::Create(other_grid,
+                                         source->GetCoordinateSystem()),
+    1, 1);
   REQUIRE_THROWS_WITH(pcms::Interpolator<Real>(*source, *other_space, bound),
                       ContainsSubstring("target's DOF-holder sites"));
   // Second derivatives are not available from the spline yet.
