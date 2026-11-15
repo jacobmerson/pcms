@@ -104,15 +104,65 @@ struct FusionIOQuantity
 
 using FusionIOFieldData = ExternalFieldData<FusionIOQuantity>;
 
+// Search hint i of `hints`, a block of hint_size bytes per point; null if the
+// source has no hints.
+fio_hint HintOf(std::vector<char>& hints, size_t hint_size, size_t i)
+{
+  return hint_size > 0 ? &hints[i * hint_size] : nullptr;
+}
+
+// Which of `points` (rows of (R, phi, Z)) are inside the source's domain: the
+// bind step of OutOfBoundsMode::FILL. The fields of a source share its
+// domain, so the result holds for every quantity. Each point's search hint is
+// left where the point was found, as an evaluation leaves it, so evaluations
+// of the found points start there.
+//
+// M3D-C1 sources search the domain probe's mesh, which finds the same points
+// and elements the probe's evaluation would without evaluating it; other
+// formats evaluate the probe.
+Kokkos::View<bool*, HostMemorySpace> FindPointsInDomain(
+  const FusionIOSource& source, HostPoints points, std::vector<char>& hints)
+{
+  const auto hint_size = static_cast<size_t>(source.Get().sizeof_search_hint());
+  Kokkos::View<bool*, HostMemorySpace> inside(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "fusion_io_inside"),
+    points.extent(0));
+  if (m3dc1_mesh* mesh = source.DomainMesh()) {
+    // An M3D-C1 hint is the element to try first (m3dc1_field::eval). The
+    // probe's phase is 0, so its phi is the point's.
+    for (size_t i = 0; i < points.extent(0); ++i) {
+      int* element = static_cast<int*>(HintOf(hints, hint_size, i));
+      *element = mesh->in_element(points(i, 0), points(i, 1), points(i, 2),
+                                  nullptr, nullptr, nullptr, *element);
+      inside(i) = *element >= 0;
+    }
+    return inside;
+  }
+  fio_field& probe = source.DomainProbe();
+  std::vector<Real> values(static_cast<size_t>(probe.dimension()));
+  for (size_t i = 0; i < points.extent(0); ++i) {
+    const int status =
+      probe.eval(&points(i, 0), values.data(), HintOf(hints, hint_size, i));
+    inside(i) = status != FIO_OUT_OF_BOUNDS;
+    if (status != FIO_SUCCESS && status != FIO_OUT_OF_BOUNDS) {
+      throw pcms_error("FusionIOFunctionSpace: locating query point " +
+                       std::to_string(i) + " failed (Fusion-IO error " +
+                       std::to_string(status) + ")");
+    }
+  }
+  return inside;
+}
+
 // The query points in Fusion-IO's layout and the per-point search hints. The
 // hints let Fusion-IO start each point's search where it last found it; every
 // field and evaluator created from this bound source shares them, and the
-// next binding of the source to as many points starts from them.
+// next binding of the source to as many points starts from them. Fusion-IO's
+// evaluation writes them, so evaluators change this bound source's hints
+// although they hold it const.
 //
 // With OutOfBoundsMode::FILL the points outside the source's domain are found
-// here by evaluating the source's domain probe at every point; the fields of
-// a source share its domain, so they hold for every quantity. Otherwise every
-// point counts as found, and evaluating outside the domain throws.
+// here (FindPointsInDomain). Otherwise every point counts as found, and
+// evaluating outside the domain throws.
 class FusionIOBoundSource final : public HostBoundSource
 {
 public:
@@ -122,36 +172,17 @@ public:
       hints(source.SearchHints(points.extent(0)))
   {
     if (request.policy.mode == OutOfBoundsMode::FILL) {
-      FindPointsInDomain(source.DomainProbe());
+      SetFound(FindPointsInDomain(source, points, *hints));
     }
   }
 
   [[nodiscard]] fio_hint Hint(size_t i) const
   {
-    return hint_size > 0 ? &(*hints)[i * hint_size] : nullptr;
+    return HintOf(*hints, hint_size, i);
   }
 
   size_t hint_size;
   std::shared_ptr<std::vector<char>> hints;
-
-private:
-  void FindPointsInDomain(fio_field& probe)
-  {
-    Kokkos::View<bool*, HostMemorySpace> inside(
-      Kokkos::view_alloc(Kokkos::WithoutInitializing, "fusion_io_inside"),
-      points.extent(0));
-    std::vector<Real> values(static_cast<size_t>(probe.dimension()));
-    for (size_t i = 0; i < points.extent(0); ++i) {
-      const int status = probe.eval(&points(i, 0), values.data(), Hint(i));
-      inside(i) = status != FIO_OUT_OF_BOUNDS;
-      if (status != FIO_SUCCESS && status != FIO_OUT_OF_BOUNDS) {
-        throw pcms_error("FusionIOFunctionSpace: locating query point " +
-                         std::to_string(i) + " failed (Fusion-IO error " +
-                         std::to_string(status) + ")");
-      }
-    }
-    SetFound(inside);
-  }
 };
 
 // Evaluates a quantity, or with derivative order 1 its gradient, which
@@ -337,6 +368,34 @@ fio_field& FusionIOSource::DomainProbe() const
   }
   throw pcms_error("fio: none of the source's quantities can be read to "
                    "locate points");
+}
+
+m3dc1_mesh* FusionIOSource::DomainMesh() const
+{
+  if (domain_mesh_) {
+    return *domain_mesh_;
+  }
+  domain_mesh_ = nullptr;
+  auto* m3dc1 = dynamic_cast<m3dc1_source*>(source_.get());
+  if (m3dc1 == nullptr) {
+    return nullptr;
+  }
+  // DomainProbe() of an M3D-C1 source is the equilibrium part of the
+  // poloidal flux, which m3dc1_scalar_field::load reads from time slice -1,
+  // or from the default slice if the file does not subtract the
+  // equilibrium.
+  fio_option_list options;
+  source_->get_field_options(&options);
+  int timeslice = 0;
+  options.get_option(FIO_TIMESLICE, &timeslice);
+  if (m3dc1->eqsubtract == 1) {
+    timeslice = -1;
+  }
+  m3dc1_field* psi = m3dc1->file.load_field("psi", timeslice);
+  if (psi != nullptr && dynamic_cast<m3dc1_stell_field*>(psi) == nullptr) {
+    domain_mesh_ = psi->mesh;
+  }
+  return *domain_mesh_;
 }
 
 std::shared_ptr<std::vector<char>> FusionIOSource::SearchHints(
