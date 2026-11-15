@@ -637,6 +637,25 @@ void CheckEvaluationWithFill(const Factory& factory, const Field<Real>& field,
                                           func, fill_value, abs_tol);
 }
 
+// Checks that `points` bound with `owners` on their Omega_h geometry are in
+// the elements its search finds.
+inline void CheckOwnersMatchSearch(CoordinateView<DeviceMemorySpace> points,
+                                   const KnownOwners& owners)
+{
+  const auto element_ids = [](const std::shared_ptr<const BoundSource>& b) {
+    return Kokkos::create_mirror_view_and_copy(
+      HostMemorySpace(),
+      dynamic_cast<const OmegaHMeshBinding&>(*b).ElementIds());
+  };
+  const auto hinted = element_ids(owners.geometry->Bind(points, owners));
+  const auto searched = element_ids(owners.geometry->Bind(points));
+  REQUIRE(hinted.extent(0) == searched.extent(0));
+  for (size_t i = 0; i < hinted.extent(0); ++i) {
+    CAPTURE(i);
+    REQUIRE(hinted(i) == searched(i));
+  }
+}
+
 #if defined(PCMS_ENABLE_PETSC) && defined(PCMS_ENABLE_MESHFIELDS)
 // Evaluates source_field at the integrator's points, searched on the source
 // space's geometry, and assembles the load vector.

@@ -10,6 +10,7 @@
 #include <pcms/field/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/evaluator/omega_h_geometry.hpp>
 #include <pcms/field/evaluator/point_cloud_geometry.hpp>
+#include <pcms/field/evaluator/uniform_grid_geometry.hpp>
 #include <pcms/field/function_space/lagrange.h>
 #include <pcms/field/function_space/polynomial_reconstruction.hpp>
 #include <pcms/field/layout/omega_h_entity.h>
@@ -483,6 +484,114 @@ TEST_CASE("Points the adjacency search cannot start from are missing")
     *space->CreatePointEvaluator<Real>(bound), f, f.GetData().GetValueBasis());
   REQUIRE_THAT(values(0, 0), WithinAbs(pcms::test::linear_f(0.25, 0.25),
                                        pcms::test::EvalTol));
+  REQUIRE(values(1, 0) == -1.0);
+}
+
+TEST_CASE("An empty bind evaluates to nothing")
+{
+  auto lib = Omega_h::Library{};
+  auto mesh = BuildSquareMesh(lib, 2);
+  auto geometry = MakeGeometry(mesh);
+  pcms::UniformGrid<2> grid;
+  grid.bot_left = {0.0, 0.0};
+  grid.edge_length = {1.0, 1.0};
+  grid.divisions = {2, 2};
+  std::vector<std::shared_ptr<LagrangeFunctionSpace>> spaces{
+    MakeSpace(geometry, 1, 1), LagrangeFunctionSpace::FromGeometry(
+                                 pcms::UniformGridGeometry<2>::Create(
+                                   grid, pcms::csys::Cartesian::Create(2)),
+                                 1, 1)};
+#ifdef PCMS_ENABLE_MESHFIELDS
+  spaces.push_back(LagrangeFunctionSpace::FromGeometry(
+    geometry, 1, 1, "global", LagrangeFunctionSpace::Backend::MeshFields));
+#endif
+  const Kokkos::View<Real**, DeviceMemorySpace> none("none", 0, 2);
+  for (const auto& space : spaces) {
+    auto f = space->CreateFunction<Real>("f");
+    const auto bound = space->GetGeometry()->Bind(
+      pcms::test::MakeCoords(none, space->GetCoordinateSystem()));
+    REQUIRE(
+      pcms::test::EvaluateToHost(*space->CreatePointEvaluator<Real>(bound), f,
+                                 f.GetData().GetValueBasis())
+        .extent(0) == 0);
+  }
+}
+
+TEST_CASE("DOFHolderOwners gives the entity of each DOF holder")
+{
+  auto lib = Omega_h::Library{};
+  auto mesh = BuildSquareMesh(lib, 3);
+  auto geometry = MakeGeometry(mesh);
+  const auto entities = [&](const pcms::FunctionSpace& space, int dim) {
+    const auto owners = pcms::DOFHolderOwners(*space.GetLayout(), geometry);
+    REQUIRE(owners.geometry == geometry);
+    REQUIRE(owners.entity_dim == dim);
+    const auto ids =
+      Kokkos::create_mirror_view_and_copy(HostMemorySpace(), owners.entities);
+    REQUIRE(ids.extent(0) == static_cast<size_t>(mesh.nents(dim)));
+    for (LO i = 0; i < mesh.nents(dim); ++i) {
+      REQUIRE(ids(i) == i);
+    }
+  };
+  entities(*MakeSpace(geometry, 1, 1), pcms::Vertex);
+  entities(*MakeSpace(geometry, 0, 1), pcms::Face);
+#ifdef PCMS_ENABLE_MESHFIELDS
+  entities(
+    *LagrangeFunctionSpace::FromGeometry(
+      geometry, 1, 1, "global", LagrangeFunctionSpace::Backend::MeshFields),
+    pcms::Vertex);
+#endif
+  // with ghosts, DOF holders are not the entities
+  Omega_h::Write<Omega_h::I8> mask(mesh.nverts(), 1);
+  Kokkos::deep_copy(Kokkos::View<Omega_h::I8*>(mask.data(), 1), 0);
+  const auto ghosted = LagrangeFunctionSpace::FromGeometry(
+    geometry, 1, 1, Omega_h::Read(mask), "global",
+    LagrangeFunctionSpace::Backend::OmegaH);
+  REQUIRE(ghosted->GetLayout()->HasGhosts());
+  REQUIRE(
+    pcms::DOFHolderOwners(*ghosted->GetLayout(), geometry).entities.extent(0) ==
+    0);
+}
+
+TEST_CASE("Hinted neighbourhoods equal searched ones inside the mesh")
+{
+  auto lib = Omega_h::Library{};
+  auto mesh = BuildSquareMesh(lib, 6);
+  auto geometry = MakeGeometry(mesh);
+  const pcms::NeighbourhoodOptions options{.radius = 0.3, .min_supports = 6};
+  for (const int dim : {pcms::Vertex, pcms::Face}) {
+    CAPTURE(dim);
+    const auto points = pcms::ConvertCoordsTo2D(
+      pcms::get_entity_centroids(mesh, dim), mesh.nents(dim), 2);
+    const auto coords =
+      pcms::test::MakeCoords(points, geometry->GetCoordinateSystem());
+    Kokkos::View<LO*, DeviceMemorySpace> ids("ids", mesh.nents(dim));
+    pcms::iota_view<LO>(ids);
+    pcms::test::CheckSupportResultsEquivalent(
+      geometry->Neighbourhood(coords, options,
+                              pcms::KnownOwners{geometry, dim, ids}),
+      geometry->Neighbourhood(coords, options));
+  }
+}
+
+TEST_CASE("Binding with owners keeps the policy")
+{
+  auto lib = Omega_h::Library{};
+  auto mesh = BuildSquareMesh(lib, 4);
+  auto geometry = MakeGeometry(mesh);
+  auto space = MakeSpace(geometry, 1, 1);
+  auto f = space->CreateFunction<Real>("f");
+  // the second point is outside; without a usable hint it is searched
+  const std::vector<Real> pts{0.5, 0.5, 2.0, 2.0};
+  auto coords = pcms::test::CreateDeviceCoordinateView(
+    pts, geometry->GetCoordinateSystem());
+  const auto bound =
+    geometry->Bind(coords.coordinate_view, pcms::KnownOwners{},
+                   pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::FILL, -1.0});
+  REQUIRE(bound->Policy().fill_value == -1.0);
+  REQUIRE(bound->MissingPoints().extent(0) == 1);
+  const auto values = pcms::test::EvaluateToHost(
+    *space->CreatePointEvaluator<Real>(bound), f, f.GetData().GetValueBasis());
   REQUIRE(values(1, 0) == -1.0);
 }
 

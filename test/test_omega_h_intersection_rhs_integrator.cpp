@@ -109,6 +109,9 @@ TEST_CASE("OmegaHIntersectionRHSIntegrator: integration points lie inside "
   const std::size_t n = raw_coords_host.extent(0);
 
   REQUIRE(n > 0);
+  // the points are in the source elements they were generated in
+  pcms::test::CheckOwnersMatchSearch(integrator->GetIntegrationPoints(),
+                                     integrator->IntegrationPointOwners());
   for (std::size_t i = 0; i < n; ++i) {
     CAPTURE(i, raw_coords_host(i, 0), raw_coords_host(i, 1));
     CHECK(raw_coords_host(i, 0) >= -1e-12);
