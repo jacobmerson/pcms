@@ -7,6 +7,7 @@
 #include <Omega_h_mesh.hpp>
 
 #include <array>
+#include <memory>
 
 namespace pcms
 {
@@ -40,6 +41,22 @@ private:
   std::array<Omega_h::Read<Omega_h::ClassId>, max_entity_dim_ + 1>
     class_ids_by_dim_;
 };
+
+namespace detail
+{
+
+/// @brief The discretization a layout of `mesh` holds.
+/// @param mesh the layout's mesh
+/// @param discretization discretization to share, or null
+/// @param caller name of the layout, for the message
+/// @return `discretization`, or a new discretization of `mesh` if it is null
+/// @throws pcms_error if `discretization` is of another mesh
+std::shared_ptr<const OmegaHDiscretization> ShareOrCreateDiscretization(
+  Omega_h::Mesh& mesh,
+  std::shared_ptr<const OmegaHDiscretization> discretization,
+  const char* caller);
+
+} // namespace detail
 
 } // namespace pcms
 

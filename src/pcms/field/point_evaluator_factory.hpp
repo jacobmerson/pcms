@@ -40,7 +40,9 @@ public:
   /// points and re-expresses the values through the bound map
   /// (TransformedPointEvaluator).
   /// @tparam T field value type
-  /// @param bound result of GetGeometry()->Bind
+  /// @param bound a bound source of this source's geometry (a result of
+  ///        GetGeometry()->Bind); bound sources of other geometries are
+  ///        refused, even on the same mesh
   /// @param op the operator the evaluator applies
   /// @return evaluator that writes OutputBasis of the field's stored basis
   /// @throws pcms_error if the source has no geometry (it does not evaluate

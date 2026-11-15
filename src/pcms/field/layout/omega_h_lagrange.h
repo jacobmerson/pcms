@@ -17,15 +17,25 @@ namespace pcms
 class OmegaHLagrangeLayout : public FieldLayout
 {
 public:
+  /// @param discretization discretization of `mesh` to share, e.g. its
+  ///        geometry's, so SameEntities is pointer equality for spaces on one
+  ///        geometry; null creates one
+  /// @throws pcms_error if `discretization` is not of `mesh`
   OmegaHLagrangeLayout(
     Omega_h::Mesh& mesh, int order, int num_components,
     std::shared_ptr<const CoordinateSystem> coordinate_system,
-    std::string global_id_name = "global");
+    std::string global_id_name = "global",
+    std::shared_ptr<const OmegaHDiscretization> discretization = nullptr);
+  /// @param discretization discretization of `mesh` to share, e.g. its
+  ///        geometry's, so SameEntities is pointer equality for spaces on one
+  ///        geometry; null creates one
+  /// @throws pcms_error if `discretization` is not of `mesh`
   OmegaHLagrangeLayout(
     Omega_h::Mesh& mesh, int order, int num_components,
     std::shared_ptr<const CoordinateSystem> coordinate_system,
     Omega_h::Read<Omega_h::I8> owned_mask,
-    std::string global_id_name = "global");
+    std::string global_id_name = "global",
+    std::shared_ptr<const OmegaHDiscretization> discretization = nullptr);
 
   std::shared_ptr<const Discretization> GetDiscretization()
     const noexcept override;

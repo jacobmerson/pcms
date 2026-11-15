@@ -63,6 +63,10 @@ class PointEvaluator
 {
 public:
   /// Writes the field's values at the query points into `values`.
+  /// @param field a field of a compatible space; today that is the space
+  ///        this evaluator was created from (a field of its layout), or any
+  ///        field for an evaluator that accepts every layout
+  /// @param values output, tagged with OutputBasis of the field's basis
   /// @throws std::invalid_argument if `values` is not shaped
   ///         [NumPoints()][number of output components]
   /// @throws pcms_error if `values` does not claim the basis this evaluator

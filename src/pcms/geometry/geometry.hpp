@@ -72,10 +72,15 @@ struct DifferentialView
 /// from parametric to physical coordinates. Function spaces are created on a
 /// geometry; Bind produces bound sources every space on the geometry accepts.
 ///
-/// Lifetime: a geometry outlives its bound sources and the spaces created on
-/// it. A bound source stays valid after later binds. Bind uses
-/// shared_from_this(), so a geometry must be owned by a std::shared_ptr
-/// (create it with the kind's Create or std::make_shared).
+/// Lifetime: bound sources and the spaces created on a geometry hold it by
+/// std::shared_ptr, so it outlives them; what the geometry refers to (e.g. a
+/// mesh) must outlive the geometry. A bound source is immutable and
+/// stays valid after later binds on the same geometry; evaluators hold their
+/// bound source. Bind uses shared_from_this(), so a geometry must be owned by
+/// a std::shared_ptr (create it with the kind's Create or std::make_shared).
+/// Compatibility of spaces is decided by the discretization (SameEntities):
+/// the Lagrange spaces created on a mesh geometry share its
+/// Discretization object, so the test is pointer equality for them.
 class Geometry : public std::enable_shared_from_this<Geometry>
 {
 public:

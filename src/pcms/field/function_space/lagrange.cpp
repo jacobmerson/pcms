@@ -64,6 +64,15 @@ void ValidateLagrangeWrappedFieldData(const FieldLayout& layout,
 
 using Backend = LagrangeFunctionSpace::Backend;
 
+// The discretization of an Omega_h geometry, which the layouts of the spaces
+// on it share (OmegaHGeometry creates an OmegaHDiscretization).
+std::shared_ptr<const OmegaHDiscretization> GeometryDiscretization(
+  const OmegaHGeometry& geometry)
+{
+  return std::static_pointer_cast<const OmegaHDiscretization>(
+    geometry.GetDiscretization());
+}
+
 /// Checks that `backend` supports Lagrange order `order` (and an owned mask
 /// if `owned_mask`) before anything is built.
 /// @param caller name of the calling factory, for the messages
@@ -143,7 +152,7 @@ std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromGeometry(
                                                : std::array<int, 4>{1, 1, 0, 0};
     auto mesh_layout = std::make_shared<MeshFieldsAdapterLayout>(
       mesh, nodes_per_dim, num_components, coordinate_system,
-      std::move(global_id_name));
+      std::move(global_id_name), GeometryDiscretization(*geometry));
     mesh_layout->SetName(layout_name);
     auto eval_factory =
       std::make_shared<MeshFieldsEvaluatorFactory<Real>>(geometry, mesh_layout);
@@ -172,7 +181,8 @@ std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromGeometry(
 #endif
   }
   auto layout = std::make_shared<OmegaHLagrangeLayout>(
-    mesh, order, num_components, coordinate_system, std::move(global_id_name));
+    mesh, order, num_components, coordinate_system, std::move(global_id_name),
+    GeometryDiscretization(*geometry));
   layout->SetName(std::move(layout_name));
   auto eval_factory = std::make_shared<OmegaHLagrangeEvaluatorFactory<Real>>(
     std::move(geometry), layout);
@@ -219,7 +229,7 @@ std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromGeometry(
   const auto& coordinate_system = geometry->GetCoordinateSystem();
   auto layout = std::make_shared<OmegaHLagrangeLayout>(
     mesh, order, num_components, coordinate_system, std::move(owned_mask),
-    std::move(global_id_name));
+    std::move(global_id_name), GeometryDiscretization(*geometry));
   layout->SetName(std::move(layout_name));
   auto eval_factory = std::make_shared<OmegaHLagrangeEvaluatorFactory<Real>>(
     std::move(geometry), layout);

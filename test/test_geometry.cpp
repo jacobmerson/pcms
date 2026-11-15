@@ -12,6 +12,7 @@
 #include <pcms/field/evaluator/omega_h_geometry.hpp>
 #include <pcms/field/evaluator/uniform_grid_geometry.hpp>
 #include <pcms/field/function_space/lagrange.h>
+#include <pcms/field/layout/omega_h_lagrange.h>
 #include <pcms/geometry/geometry.hpp>
 #include <pcms/localization/adj_search.hpp>
 #include <pcms/localization/mesh_localization.h>
@@ -133,6 +134,39 @@ TEST_CASE("One bind serves every space on a geometry")
                   pcms::test::EvalTol));
     }
   }
+}
+
+TEST_CASE("Spaces on a geometry share its discretization")
+{
+  auto lib = Omega_h::Library{};
+  auto mesh = BuildSquareMesh(lib, 4);
+  auto geometry = MakeGeometry(mesh);
+  const auto discretization = geometry->GetDiscretization();
+  auto scalars = MakeSpace(geometry, 1, 1);
+  auto cells = MakeSpace(geometry, 0, 1);
+  REQUIRE(scalars->GetLayout()->GetDiscretization() == discretization);
+  REQUIRE(cells->GetLayout()->GetDiscretization() == discretization);
+  REQUIRE(scalars->GetDiscretization() == discretization);
+#ifdef PCMS_ENABLE_MESHFIELDS
+  auto p2 = LagrangeFunctionSpace::FromGeometry(
+    geometry, 2, 1, "global", LagrangeFunctionSpace::Backend::MeshFields);
+  REQUIRE(p2->GetLayout()->GetDiscretization() == discretization);
+#endif
+  // a space on another geometry of the same mesh has the same entities, but
+  // not the same discretization object
+  auto other = MakeSpace(MakeGeometry(mesh), 1, 1);
+  REQUIRE(other->GetLayout()->GetDiscretization() != discretization);
+  REQUIRE(
+    other->GetLayout()->GetDiscretization()->SameEntities(*discretization));
+  // a layout refuses a discretization of another mesh
+  auto other_mesh = BuildSquareMesh(lib, 2);
+  REQUIRE_THROWS_WITH(
+    pcms::OmegaHLagrangeLayout(
+      other_mesh, 1, 1, pcms::csys::Cartesian::Create(2), "global",
+      std::static_pointer_cast<const pcms::OmegaHDiscretization>(
+        discretization)),
+    ContainsSubstring("OmegaHLagrangeLayout: the discretization is of another "
+                      "mesh"));
 }
 
 TEST_CASE("Bound sources of another geometry are rejected")

@@ -1,6 +1,7 @@
 #include "pcms/discretization/discretization/omega_h.hpp"
 #include "pcms/utility/assert.h"
 #include "pcms/utility/mesh_geometry.h"
+#include <string>
 
 namespace pcms
 {
@@ -24,6 +25,22 @@ OmegaHDiscretization::OmegaHDiscretization(Omega_h::Mesh& mesh) : mesh_(mesh)
     class_ids_by_dim_[entity_dim] = Omega_h::Read<Omega_h::ClassId>(
       mesh_.get_array<Omega_h::ClassId>(entity_dim, "class_id"));
   }
+}
+
+std::shared_ptr<const OmegaHDiscretization> detail::ShareOrCreateDiscretization(
+  Omega_h::Mesh& mesh,
+  std::shared_ptr<const OmegaHDiscretization> discretization,
+  const char* caller)
+{
+  if (discretization == nullptr) {
+    return std::make_shared<OmegaHDiscretization>(mesh);
+  }
+  if (&discretization->GetMesh() != &mesh) {
+    throw pcms_error(std::string(caller) +
+                     ": the discretization is of another mesh than the "
+                     "layout's");
+  }
+  return discretization;
 }
 
 bool OmegaHDiscretization::SameEntities(
