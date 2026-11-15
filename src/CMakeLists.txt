@@ -19,6 +19,7 @@ if(PCMS_ENABLE_TRANSIENT)
 endif()
 add_subdirectory(pcms/discretization)
 add_subdirectory(pcms/localization)
+add_subdirectory(pcms/geometry)
 add_subdirectory(pcms/field)
 add_subdirectory(pcms/coupler)
 

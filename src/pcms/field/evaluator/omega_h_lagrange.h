@@ -1,12 +1,12 @@
 #ifndef PCMS_OMEGA_H_LAGRANGE_EVALUATOR_FACTORY_H
 #define PCMS_OMEGA_H_LAGRANGE_EVALUATOR_FACTORY_H
 
+#include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/layout/omega_h_lagrange.h"
 #include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/field/point_evaluator.h"
 #include "pcms/field/field_data.h"
 #include "pcms/field/data/omega_h.h"
-#include "pcms/localization/point_search.h"
 #include "pcms/utility/assert.h"
 #include "pcms/utility/arrays.h"
 #include "pcms/utility/profile.h"
@@ -15,122 +15,10 @@
 #include <Omega_h_mesh.hpp>
 #include <Kokkos_Core.hpp>
 #include <memory>
-#include <stdexcept>
-#include <tuple>
 #include <utility>
-#include <variant>
 
 namespace pcms
 {
-
-namespace detail
-{
-
-/// @brief Barycentric coordinates of points in their owning elements.
-/// @tparam Dim mesh dimension
-/// @param mesh simplex mesh
-/// @param points query points, one row per point
-/// @param rows points to compute, as indices into `points`
-/// @param owning_ids owning element of each point
-/// @return owning element and barycentric coordinates ([row][vertex]) of each
-///         row
-template <int Dim>
-std::pair<Kokkos::View<LO*, DeviceMemorySpace>,
-          Kokkos::View<Real**, DeviceMemorySpace>>
-BarycentricInElements(Omega_h::Mesh& mesh,
-                      Kokkos::View<const Real**, DeviceMemorySpace> points,
-                      Kokkos::View<const LO*, DeviceMemorySpace> rows,
-                      Kokkos::View<const LO*, DeviceMemorySpace> owning_ids)
-{
-  const auto n = static_cast<LO>(rows.extent(0));
-  Kokkos::View<LO*, DeviceMemorySpace> elem_ids("omega_h_elem_ids", n);
-  Kokkos::View<Real**, DeviceMemorySpace> bary("omega_h_bary", n, Dim + 1);
-  const auto elem_verts = mesh.ask_elem_verts();
-  const auto mesh_coords = mesh.coords();
-  Kokkos::parallel_for(
-    "BarycentricInElements",
-    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
-    KOKKOS_LAMBDA(const LO k) {
-      const LO i = rows(k);
-      const LO elem = owning_ids(i);
-      elem_ids(k) = elem;
-      Omega_h::Few<Omega_h::Vector<Dim>, Dim + 1> vertex_coords;
-      for (int v = 0; v < Dim + 1; ++v) {
-        vertex_coords[v] = Omega_h::get_vector<Dim>(
-          mesh_coords, elem_verts[elem * (Dim + 1) + v]);
-      }
-      Omega_h::Vector<Dim> point;
-      for (int d = 0; d < Dim; ++d) {
-        point[d] = points(i, d);
-      }
-      const auto local =
-        Omega_h::barycentric_from_global<Dim, Dim>(point, vertex_coords);
-      for (int v = 0; v < Dim + 1; ++v) {
-        bary(k, v) = local[v];
-      }
-    });
-  return {elem_ids, bary};
-}
-
-inline std::variant<GridPointSearch2D, GridPointSearch3D> MakeSearch(
-  Omega_h::Mesh& mesh)
-{
-  if (mesh.dim() == 2) {
-    const auto n = DivisionsPerAxisForMesh<2>(mesh.nelems());
-    return GridPointSearch2D(mesh, n, n);
-  } else if (mesh.dim() == 3) {
-    const auto n = DivisionsPerAxisForMesh<3>(mesh.nelems());
-    return GridPointSearch3D(mesh, n, n, n);
-  }
-  throw std::invalid_argument(
-    "OmegaHLagrangeEvaluatorFactory: only 2D and 3D meshes are supported");
-}
-
-} // namespace detail
-
-/// @brief Omega_h bound source: the element and barycentric coordinates of
-///        each found query point.
-class OmegaHLagrangeBinding final : public BoundSource
-{
-public:
-  /// @param request query points and out-of-bounds policy
-  /// @param search containing-element search over `mesh`
-  /// @param mesh simplex mesh of the evaluated fields
-  OmegaHLagrangeBinding(const BindRequest& request,
-                        const GridPointSearchVariant& search,
-                        Omega_h::Mesh& mesh)
-    : BoundSource(request)
-  {
-    std::visit(
-      [&](const auto& s) {
-        constexpr int Dim = std::decay_t<decltype(s)>::DIM;
-        auto [found, owning_ids] = FindOwningElements(s, PointValues());
-        SetFound(found);
-        std::tie(elem_ids_, bary_) = detail::BarycentricInElements<Dim>(
-          mesh, PointValues(), FoundPoints(), owning_ids);
-      },
-      search);
-  }
-
-  /// @return element of each found point, in FoundPoints() order
-  [[nodiscard]] Kokkos::View<const LO*, DeviceMemorySpace> ElementIds()
-    const noexcept
-  {
-    return elem_ids_;
-  }
-
-  /// @return barycentric coordinates of each found point in its element
-  ///         ([found point][vertex]), in FoundPoints() order
-  [[nodiscard]] Kokkos::View<const Real**, DeviceMemorySpace> Barycentric()
-    const noexcept
-  {
-    return bary_;
-  }
-
-private:
-  Kokkos::View<LO*, DeviceMemorySpace> elem_ids_;
-  Kokkos::View<Real**, DeviceMemorySpace> bary_;
-};
 
 // ---------------------------------------------------------------------------
 // PointEvaluator
@@ -172,7 +60,7 @@ public:
   /// @param binding elements and barycentric coordinates of the query points
   OmegaHLagrangePointEvaluator(
     std::shared_ptr<const OmegaHLagrangeLayout> layout,
-    std::shared_ptr<const OmegaHLagrangeBinding> binding)
+    std::shared_ptr<const OmegaHMeshBinding> binding)
     : PointEvaluator<T, LayoutPolicy>(binding, DifferentialOperator::Value,
                                       layout),
       layout_(std::move(layout)),
@@ -239,7 +127,7 @@ public:
 
 private:
   std::shared_ptr<const OmegaHLagrangeLayout> layout_;
-  std::shared_ptr<const OmegaHLagrangeBinding> binding_;
+  std::shared_ptr<const OmegaHMeshBinding> binding_;
 };
 
 // ---------------------------------------------------------------------------
@@ -250,39 +138,22 @@ private:
 /// @tparam T field value type
 template <typename T>
 class OmegaHLagrangeEvaluatorFactory
-  : public TypedPointEvaluatorFactory<T, OmegaHLagrangeBinding>
+  : public TypedPointEvaluatorFactory<T, OmegaHMeshBinding>
 {
-  using Bound = OmegaHLagrangeBinding;
-
 public:
+  /// @param geometry geometry of the layout's mesh
   /// @param layout Omega_h Lagrange layout of the evaluated fields
-  explicit OmegaHLagrangeEvaluatorFactory(
+  OmegaHLagrangeEvaluatorFactory(
+    std::shared_ptr<const OmegaHGeometry> geometry,
     std::shared_ptr<const OmegaHLagrangeLayout> layout)
-    : TypedPointEvaluatorFactory<T, Bound>(layout->GetCoordinateSystem()),
-      layout_(std::move(layout)),
-      search_(detail::MakeSearch(layout_->GetMesh()))
+    : TypedPointEvaluatorFactory<T, OmegaHMeshBinding>(std::move(geometry)),
+      layout_(std::move(layout))
   {
-  }
-
-  /// The containing-element search over this layout's mesh. Exposed so that
-  /// operators which must locate points on the same mesh, such as the
-  /// conservative transfer's intersection search, reuse it rather than build
-  /// and hold a second copy of the candidate map.
-  [[nodiscard]] const GridPointSearchVariant& GetSearch() const noexcept
-  {
-    return search_;
   }
 
 protected:
-  std::shared_ptr<Bound> BindPoints(const BindRequest& request) const override
-  {
-    PCMS_FUNCTION_TIMER;
-    return std::make_shared<Bound>(
-      request, search_, const_cast<Omega_h::Mesh&>(layout_->GetMesh()));
-  }
-
   std::unique_ptr<PointEvaluator<T>> CreateEvaluator(
-    std::shared_ptr<const Bound> bound,
+    std::shared_ptr<const OmegaHMeshBinding> bound,
     DifferentialOperator /*op*/) const override
   {
     return std::make_unique<OmegaHLagrangePointEvaluator<T>>(layout_,
@@ -291,7 +162,6 @@ protected:
 
 private:
   std::shared_ptr<const OmegaHLagrangeLayout> layout_;
-  GridPointSearchVariant search_;
 };
 
 } // namespace pcms

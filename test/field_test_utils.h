@@ -511,10 +511,10 @@ void CheckEvaluation(const Factory& factory, const Field<Real>& field,
                      const std::vector<Real>& pts, Func func,
                      double abs_tol = EvalTol)
 {
-  auto device_coords =
-    CreateDeviceCoordinateView(pts, factory->GetCoordinateSystem());
+  auto device_coords = CreateDeviceCoordinateView(
+    pts, factory->GetGeometry()->GetCoordinateSystem());
   auto evaluator = factory->template CreatePointEvaluator<Real>(
-    factory->Bind(device_coords.coordinate_view));
+    factory->GetGeometry()->Bind(device_coords.coordinate_view));
   CheckEvaluation<ExecutionSpace>(*evaluator, field, pts, func, abs_tol);
 }
 
@@ -558,11 +558,11 @@ template <typename Factory>
 void CheckFillMode(const Factory& factory, const Field<Real>& field,
                    Real fill_value, const std::vector<Real>& outside_pts)
 {
-  auto device_coords =
-    CreateDeviceCoordinateView(outside_pts, factory->GetCoordinateSystem());
+  auto device_coords = CreateDeviceCoordinateView(
+    outside_pts, factory->GetGeometry()->GetCoordinateSystem());
   OutOfBoundsPolicy policy{OutOfBoundsMode::FILL, fill_value};
   auto evaluator = factory->template CreatePointEvaluator<Real>(
-    factory->Bind(device_coords.coordinate_view, policy));
+    factory->GetGeometry()->Bind(device_coords.coordinate_view, policy));
   CheckFillMode(*evaluator, field, fill_value, outside_pts);
 }
 
@@ -609,11 +609,11 @@ void CheckEvaluationWithFill(const Factory& factory, const Field<Real>& field,
                              const std::vector<bool>& is_inside, Func func,
                              Real fill_value, double abs_tol = EvalTol)
 {
-  auto device_coords =
-    CreateDeviceCoordinateView(pts, factory->GetCoordinateSystem());
+  auto device_coords = CreateDeviceCoordinateView(
+    pts, factory->GetGeometry()->GetCoordinateSystem());
   OutOfBoundsPolicy policy{OutOfBoundsMode::FILL, fill_value};
   auto evaluator = factory->template CreatePointEvaluator<Real>(
-    factory->Bind(device_coords.coordinate_view, policy));
+    factory->GetGeometry()->Bind(device_coords.coordinate_view, policy));
   CheckEvaluationWithFill<ExecutionSpace>(*evaluator, field, pts, is_inside,
                                           func, fill_value, abs_tol);
 }
@@ -628,8 +628,8 @@ inline void EvaluateAndAssemble(
 {
   const auto& pts = integrator.GetIntegrationPoints();
   const std::size_t npts = pts.GetValues().extent(0);
-  auto evaluator =
-    source_space->CreatePointEvaluator<Real>(source_space->Bind(pts));
+  auto evaluator = source_space->CreatePointEvaluator<Real>(
+    source_space->GetGeometry()->Bind(pts));
   Kokkos::View<Real**, DeviceMemorySpace> sampled("sampled", npts, 1);
   evaluator->Evaluate(source_field, TagLike(source_field, sampled));
   integrator.Assemble(MakeConstRank2View(sampled));

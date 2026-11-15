@@ -18,6 +18,9 @@
 namespace pcms
 {
 
+template <unsigned Dim>
+class UniformGridGeometry;
+
 class SplineFunctionSpace : public FunctionSpace
 {
   // Passkey: only members (the From* factories) can create a Key, so only they
@@ -35,6 +38,10 @@ public:
   [[nodiscard]] static std::shared_ptr<SplineFunctionSpace> FromUniformGrid(
     const UniformGrid<2>& grid,
     std::shared_ptr<const CoordinateSystem> mesh_coordinate_system);
+
+  /// @brief The bicubic spline space on the grid of a uniform-grid geometry.
+  [[nodiscard]] static std::shared_ptr<SplineFunctionSpace> FromGeometry(
+    std::shared_ptr<const UniformGridGeometry<2>> geometry);
 
   [[nodiscard]] std::shared_ptr<const FieldLayout> GetLayout()
     const noexcept override;

@@ -10,6 +10,7 @@
 #include <Omega_h_library.hpp>
 #include <pcms/configuration.h>
 #include <pcms/field/coordinate_systems/cartesian.hpp>
+#include <pcms/field/evaluator/omega_h_geometry.hpp>
 #include <pcms/field/function_space/lagrange.h>
 #include <pcms/field/function_space/spline.h>
 #include <pcms/transfer/interpolator.h>
@@ -82,10 +83,10 @@ void BenchmarkBindAndEvaluate(
 
   BENCHMARK(name + ": bind")
   {
-    return space->Bind(coords.coordinate_view);
+    return space->GetGeometry()->Bind(coords.coordinate_view);
   };
 
-  const auto bound = space->Bind(coords.coordinate_view);
+  const auto bound = space->GetGeometry()->Bind(coords.coordinate_view);
   const auto evaluator = space->CreatePointEvaluator<Real>(bound);
   if (time_create_evaluator) {
     BENCHMARK(name + ": create evaluator")
@@ -127,10 +128,24 @@ TEST_CASE("Bind benchmarks: Omega_h P1", "[!benchmark]")
       mesh, 1, 1, cart, "global", LagrangeFunctionSpace::Backend::OmegaH);
     auto vectors = LagrangeFunctionSpace::FromMesh(
       mesh, 1, 3, cart, "global", LagrangeFunctionSpace::Backend::OmegaH);
-    auto scalar_bound = scalars->Bind(coords.coordinate_view);
-    auto vector_bound = vectors->Bind(coords.coordinate_view);
+    auto scalar_bound = scalars->GetGeometry()->Bind(coords.coordinate_view);
+    auto vector_bound = vectors->GetGeometry()->Bind(coords.coordinate_view);
     return scalar_bound->FoundPoints().extent(0) +
            vector_bound->FoundPoints().extent(0);
+  };
+
+  BENCHMARK("omega_h P1 + P1x3: one geometry, one bind")
+  {
+    auto geometry = pcms::OmegaHGeometry::Create(mesh, cart);
+    auto scalars = LagrangeFunctionSpace::FromGeometry(
+      geometry, 1, 1, "global", LagrangeFunctionSpace::Backend::OmegaH);
+    auto vectors = LagrangeFunctionSpace::FromGeometry(
+      geometry, 1, 3, "global", LagrangeFunctionSpace::Backend::OmegaH);
+    // one bound source serves both spaces
+    auto bound = geometry->Bind(coords.coordinate_view);
+    return scalars->GetLayout()->GetNumComponents() +
+           vectors->GetLayout()->GetNumComponents() +
+           bound->FoundPoints().extent(0);
   };
 }
 
@@ -166,10 +181,10 @@ TEST_CASE("Bind benchmarks: spline", "[!benchmark]")
 
   BENCHMARK("spline: bind")
   {
-    return space->Bind(coords.coordinate_view);
+    return space->GetGeometry()->Bind(coords.coordinate_view);
   };
 
-  const auto bound = space->Bind(coords.coordinate_view);
+  const auto bound = space->GetGeometry()->Bind(coords.coordinate_view);
   const auto values = space->CreatePointEvaluator<Real>(bound);
   const auto gradient = space->CreatePointEvaluator<Real>(
     bound, pcms::DifferentialOperator::Gradient);

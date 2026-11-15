@@ -2,7 +2,7 @@
 #define PCMS_UNIFORM_GRID_SPLINE_EVALUATOR_FACTORY_H
 
 #include "pcms/field/evaluator/spline_interpolator.hpp"
-#include "pcms/field/evaluator/uniform_grid.h"
+#include "pcms/field/evaluator/uniform_grid_geometry.hpp"
 #include "pcms/field/field_data.h"
 #include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/field/layout/uniform_grid.h"
@@ -79,6 +79,10 @@ public:
       select_("uniform_grid_spline_select", 6),
       empty_bc_("uniform_grid_spline_empty_bc", 0)
   {
+    if (binding->NumPoints() > 0 && !binding->HasPointValues()) {
+      throw pcms_error("UniformGridSplinePointEvaluator2D: parametric binds "
+                       "are not supported yet");
+    }
     Real dx = grid_.edge_length[0] / grid_.divisions[0];
     Real dy = grid_.edge_length[1] / grid_.divisions[1];
     Kokkos::parallel_for(
@@ -183,18 +187,15 @@ class UniformGridSplineEvaluatorFactory2D
   using Bound = UniformGridBinding<2>;
 
 public:
+  /// @param geometry geometry of the layout's grid
   /// @param layout order-1 single-component uniform-grid layout
-  explicit UniformGridSplineEvaluatorFactory2D(
+  /// @throws pcms_error if the layout is not order 1 with one component
+  UniformGridSplineEvaluatorFactory2D(
+    std::shared_ptr<const UniformGridGeometry<2>> geometry,
     std::shared_ptr<const UniformGridFieldLayout<2>> layout)
-    : TypedPointEvaluatorFactory<Real, Bound>(layout->GetCoordinateSystem(),
+    : TypedPointEvaluatorFactory<Real, Bound>(std::move(geometry),
                                               {DifferentialOperator::Gradient}),
-      layout_(std::move(layout)),
-      grid_(layout_->GetGrid())
-  {
-  }
-
-protected:
-  std::shared_ptr<Bound> BindPoints(const BindRequest& request) const override
+      layout_(std::move(layout))
   {
     if (layout_->GetOrder() != 1) {
       throw pcms_error(
@@ -206,10 +207,9 @@ protected:
         "UniformGridSplineEvaluatorFactory2D: spline evaluation only supports "
         "single-component fields");
     }
-
-    return std::make_shared<Bound>(request, grid_);
   }
 
+protected:
   std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
     std::shared_ptr<const Bound> bound, DifferentialOperator op) const override
   {
@@ -219,7 +219,6 @@ protected:
 
 private:
   std::shared_ptr<const UniformGridFieldLayout<2>> layout_;
-  UniformGrid<2> grid_;
 };
 
 } // namespace pcms

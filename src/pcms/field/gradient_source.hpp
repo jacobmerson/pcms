@@ -10,7 +10,8 @@ namespace pcms
 
 /// @brief Source whose evaluators apply `op` to the fields of `source`.
 ///
-/// Binds through `source`. Only Value is supported on the returned source.
+/// It has the geometry of `source`, so it accepts the bound sources `source`
+/// accepts. Only Value is supported on the returned source.
 /// @param op operator to apply; not Value
 /// @param source source whose evaluators compute `op`; not null
 /// @return source whose evaluators write the basis `op` gives for the field's

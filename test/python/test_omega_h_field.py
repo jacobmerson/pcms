@@ -127,7 +127,7 @@ class TestOmegaHField:
             ], dtype=np.float64)
 
         evaluator = factory.create_point_evaluator(
-            factory.bind(pcms.CoordinateView(eval_coords)))
+            factory.get_geometry().bind(pcms.CoordinateView(eval_coords)))
         eval_values = np.zeros((eval_coords.shape[0], num_components),
                                dtype=np.float64)
         evaluator.evaluate(field, eval_values)
@@ -147,6 +147,6 @@ class TestOmegaHField:
         field = factory.create_function()
         eval_coords = np.full((5, 2), 0.5)
         evaluator = factory.create_point_evaluator(
-            factory.bind(pcms.CoordinateView(eval_coords)))
+            factory.get_geometry().bind(pcms.CoordinateView(eval_coords)))
         with pytest.raises(ValueError, match="must be \\[5\\]\\[1\\]"):
             evaluator.evaluate(field, np.zeros(shape))

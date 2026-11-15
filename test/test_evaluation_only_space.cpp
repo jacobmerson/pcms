@@ -4,12 +4,14 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <Kokkos_Core.hpp>
 #include <Omega_h_library.hpp>
+#include <pcms/discretization/discretization/empty.hpp>
 #include <pcms/field/coordinate_map.hpp>
 #include <pcms/field/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/function_space.h>
 #include <pcms/field/function_space/lagrange.h>
 #include <pcms/field/layout/empty.h>
 #include <pcms/field/transformed_source.hpp>
+#include <pcms/geometry/geometry.hpp>
 #include <pcms/transfer/interpolator.h>
 #include "field_test_utils.h"
 
@@ -22,8 +24,9 @@ using pcms::ValueBasis;
 
 // An evaluation-only source, the pattern external codes (NIMROD, Fusion-IO)
 // follow: a FunctionSpace on an EmptyFieldLayout whose field data names a
-// quantity but provides no DOFAccess. Here the quantity is analytic:
-// component c of f at (R, theta, Z) is 2R + 3 theta - Z + c.
+// quantity but provides no DOFAccess, created on a geometry of its own. Here
+// the quantity is analytic: component c of f at (R, theta, Z) is
+// 2R + 3 theta - Z + c, and the geometry is all of space.
 namespace
 {
 
@@ -49,7 +52,51 @@ private:
 class MockBound final : public pcms::BoundSource
 {
 public:
-  explicit MockBound(const pcms::BindRequest& request) : BoundSource(request) {}
+  MockBound(std::shared_ptr<const pcms::Geometry> geometry,
+            const pcms::BindRequest& request)
+    : BoundSource(std::move(geometry), request)
+  {
+  }
+};
+
+// All of (R, theta, Z) space: every point is found, without a search.
+class AnalyticGeometry final : public pcms::Geometry
+{
+public:
+  AnalyticGeometry()
+    : discretization_(std::make_shared<pcms::EmptyDiscretization>()),
+      system_(pcms::csys::CylindricalRThetaZ::Create())
+  {
+  }
+
+  std::shared_ptr<const pcms::Discretization> GetDiscretization()
+    const noexcept override
+  {
+    return discretization_;
+  }
+
+  const std::shared_ptr<const pcms::CoordinateSystem>& GetCoordinateSystem()
+    const noexcept override
+  {
+    return system_;
+  }
+
+protected:
+  std::shared_ptr<pcms::BoundSource> BindImpl(
+    const pcms::BindRequest& request) const override
+  {
+    return std::make_shared<MockBound>(shared_from_this(), request);
+  }
+
+  std::shared_ptr<pcms::BoundSource> BindParametricImpl(
+    const pcms::ParametricPoints&, pcms::OutOfBoundsPolicy) const override
+  {
+    throw pcms::pcms_error("AnalyticGeometry: no parametric coordinates");
+  }
+
+private:
+  std::shared_ptr<const pcms::Discretization> discretization_;
+  std::shared_ptr<const pcms::CoordinateSystem> system_;
 };
 
 class MockEvaluator final : public pcms::PointEvaluator<Real>
@@ -116,12 +163,6 @@ protected:
     return WrapField<Real>(layout_, std::move(real));
   }
 
-  std::shared_ptr<pcms::BoundSource> BindImpl(
-    const pcms::BindRequest& request) const override
-  {
-    return std::make_shared<MockBound>(request);
-  }
-
   pcms::PointEvaluatorVariant CreatePointEvaluatorImpl(
     pcms::Type, std::shared_ptr<const pcms::BoundSource> bound,
     pcms::DifferentialOperator /*op*/) const override
@@ -132,7 +173,8 @@ protected:
 
 private:
   explicit MockSpace(int num_components)
-    : layout_(std::make_shared<pcms::EmptyFieldLayout>(
+    : FunctionSpace(nullptr, std::make_shared<AnalyticGeometry>()),
+      layout_(std::make_shared<pcms::EmptyFieldLayout>(
         pcms::csys::CylindricalRThetaZ::Create(), num_components))
   {
   }
@@ -179,7 +221,10 @@ TEST_CASE("Evaluation-only space interpolates onto a poloidal plane")
   }
 
   // The embedding maps points only, so vector values cannot pass through it.
-  auto evaluator = on_plane.CreatePointEvaluator<Real>(on_plane.Bind(*target));
+  const auto target_layout = target->GetLayout();
+  auto evaluator =
+    on_plane.CreatePointEvaluator<Real>(on_plane.GetGeometry()->Bind(
+      target_layout->GetDOFHolderCoordinates(), target_layout));
   REQUIRE_THROWS_WITH(
     evaluator->OutputBasis(ValueBasis{pcms::csys::CylindricalRThetaZ::Create(),
                                       pcms::ComponentScaling::Physical,

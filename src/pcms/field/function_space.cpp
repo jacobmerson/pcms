@@ -3,17 +3,11 @@
 namespace pcms
 {
 
-const PointEvaluatorFactory& FunctionSpace::BindingSource() const noexcept
-{
-  if (evaluator_ == nullptr) {
-    return *this;
-  }
-  return detail::BindingSourceOf(*evaluator_);
-}
-
 bool FunctionSpace::Supports(DifferentialOperator op) const noexcept
 {
-  return evaluator_ != nullptr && evaluator_->Supports(op);
+  return evaluator_ != nullptr
+           ? evaluator_->Supports(op)
+           : (geometry_ != nullptr && op == DifferentialOperator::Value);
 }
 
 PointEvaluatorVariant FunctionSpace::CreatePointEvaluatorImpl(

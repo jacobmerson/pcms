@@ -1,9 +1,9 @@
-#ifndef PCMS_FIELD_BOUND_SOURCE_HPP
-#define PCMS_FIELD_BOUND_SOURCE_HPP
+#ifndef PCMS_GEOMETRY_BOUND_SOURCE_HPP
+#define PCMS_GEOMETRY_BOUND_SOURCE_HPP
 
 #include "pcms/field/coordinate_view.hpp"
-#include "pcms/field/field_layout.h"
 #include "pcms/field/out_of_bounds_policy.h"
+#include "pcms/geometry/parametric_points.hpp"
 #include "pcms/utility/memory_spaces.h"
 #include "pcms/utility/types.h"
 #include <Kokkos_Core.hpp>
@@ -12,35 +12,41 @@
 namespace pcms
 {
 
-class PointEvaluatorFactory;
+class Geometry;
+class FieldLayout;
 
-/// @brief Query points and out-of-bounds policy passed to
-///        PointEvaluatorFactory::BindImpl.
+/// @brief What Geometry::Bind hands to BindImpl.
 struct BindRequest
 {
-  /// query points in the binding source's coordinate system; may be released
-  /// after BindImpl returns
+  /// query points in the geometry's coordinate system; may be released after
+  /// BindImpl returns
   CoordinateView<DeviceMemorySpace> coords;
-  /// layout whose DOF holders are the query points, or null for coordinates
+  /// layout whose DOF-holder coordinates `coords` are, or null (used by
+  /// localization path selection until S5 removes it)
   std::shared_ptr<const FieldLayout> query_layout;
   /// out-of-bounds policy of the evaluators created from the bound source
   OutOfBoundsPolicy policy;
 };
 
-/// @brief Result of binding a source to a set of query points.
+/// @brief A set of query points localized on a geometry.
 ///
-/// Holds the query points, which of them the source evaluates, and, in
-/// subclasses, the source's per-point search results. It is shared by every
+/// Created by Geometry::Bind. Valid for every evaluator source whose
+/// GetGeometry() is this source's geometry, and stays valid after later binds
+/// on the same geometry. Immutable after construction. It is shared by every
 /// evaluator created from it; evaluators that share a bound source must not be
 /// evaluated concurrently.
 class BoundSource
 {
 public:
-  /// @return number of bound query points
-  [[nodiscard]] LO NumPoints() const noexcept
+  /// @return the geometry the points were localized on
+  [[nodiscard]] const std::shared_ptr<const Geometry>& GetGeometry()
+    const noexcept
   {
-    return static_cast<LO>(points_.extent(0));
+    return geometry_;
   }
+
+  /// @return number of bound query points
+  [[nodiscard]] LO NumPoints() const noexcept { return num_points_; }
 
   /// @return out-of-bounds policy of the evaluators created from this source
   [[nodiscard]] const OutOfBoundsPolicy& Policy() const noexcept
@@ -55,15 +61,23 @@ public:
     return query_layout_.get();
   }
 
-  /// @return coordinate system of the bound query points
+  /// @return coordinate system of PointValues(): the query system, which is
+  ///         the geometry's system unless the bind used a coordinate map
   [[nodiscard]] const std::shared_ptr<const CoordinateSystem>&
   GetCoordinateSystem() const noexcept
   {
     return system_;
   }
 
+  /// @return whether the bind had physical query points; false for a
+  ///         parametric bind, whose PointValues() is empty
+  [[nodiscard]] bool HasPointValues() const noexcept
+  {
+    return points_.extent(0) > 0;
+  }
+
   /// @return the coordinates of the bound query points (a copy owned by this
-  ///         object), one row per point
+  ///         object), one row per point; empty for a parametric bind
   [[nodiscard]] Kokkos::View<const Real**, DeviceMemorySpace> PointValues()
     const noexcept
   {
@@ -93,8 +107,19 @@ public:
 protected:
   /// @brief Copies the request's points; every point counts as found until
   ///        SetFound is called.
+  /// @param geometry geometry the points are localized on
   /// @param request bound query points and out-of-bounds policy
-  explicit BoundSource(const BindRequest& request);
+  BoundSource(std::shared_ptr<const Geometry> geometry,
+              const BindRequest& request);
+
+  /// @brief Points given in parametric coordinates: no physical coordinates,
+  ///        every point found.
+  /// @param geometry geometry the points are localized on
+  /// @param points parametric points
+  /// @param policy out-of-bounds policy of the evaluators created from this
+  ///        source
+  BoundSource(std::shared_ptr<const Geometry> geometry,
+              const ParametricPoints& points, OutOfBoundsPolicy policy);
 
   /// @brief Records which query points the source evaluates.
   /// @param found per query point, whether the source evaluates it
@@ -107,13 +132,11 @@ protected:
   void SetFound(const BoundSource& same_points);
 
 private:
-  // set by PointEvaluatorFactory::Bind, checked by CreatePointEvaluator
-  friend class PointEvaluatorFactory;
-  const PointEvaluatorFactory* bound_by_ = nullptr;
-
+  std::shared_ptr<const Geometry> geometry_;
   OutOfBoundsPolicy policy_;
   std::shared_ptr<const FieldLayout> query_layout_;
   std::shared_ptr<const CoordinateSystem> system_;
+  LO num_points_;
   Kokkos::View<Real**, DeviceMemorySpace> points_;
   Kokkos::View<LO*, DeviceMemorySpace> found_;
   Kokkos::View<LO*, DeviceMemorySpace> missing_;
@@ -121,4 +144,4 @@ private:
 
 } // namespace pcms
 
-#endif // PCMS_FIELD_BOUND_SOURCE_HPP
+#endif // PCMS_GEOMETRY_BOUND_SOURCE_HPP

@@ -452,6 +452,7 @@ if(Catch2_FOUND)
       test_transformed_source.cpp
       test_evaluation_only_space.cpp
       test_bound_source.cpp
+      test_geometry.cpp
       test_derivatives.cpp
       bench_bind.cpp)
   endif()

@@ -216,7 +216,7 @@ TEST_CASE("EQDSKData with SplineFunctionSpace")
     auto device_coords = pcms::test::CreateDeviceCoordinateView(
       eval_coords, pcms::csys::CylindricalRZ::Create());
     auto evaluator = spline_space->CreatePointEvaluator<pcms::Real>(
-      spline_space->Bind(device_coords.coordinate_view));
+      spline_space->GetGeometry()->Bind(device_coords.coordinate_view));
 
     Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> eval_results(
       "eval_results", num_eval_points, 1);

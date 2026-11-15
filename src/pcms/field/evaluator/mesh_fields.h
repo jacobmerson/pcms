@@ -2,80 +2,76 @@
 #define PCMS_ADAPTER_MESHFIELDS_MESH_FIELDS_EVALUATOR_FACTORY_H
 
 #include "pcms/field/evaluator/mesh_fields_backend.h"
+#include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/data/mesh_fields.h"
 #include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/field/point_evaluator.h"
 #include "pcms/field/field_data.h"
-#include "pcms/localization/point_search.h"
 #include "pcms/utility/profile.h"
 #include "pcms/utility/arrays.h"
 #include <memory>
+#include <tuple>
 
 namespace pcms
 {
 
-/// @brief MeshFields bound source: the found query points grouped by owning
-///        element, with their coordinates in that element.
-class MeshFieldsBinding final : public BoundSource
+namespace detail
 {
-public:
-  /// @param request query points and out-of-bounds policy
-  /// @param search containing-element search over `mesh`
-  /// @param mesh 2D simplex mesh of the evaluated fields
-  MeshFieldsBinding(const BindRequest& request, const GridPointSearch2D& search,
-                    Omega_h::Mesh& mesh)
-    : BoundSource(request)
-  {
-    const auto points = PointValues();
-    auto [found, owning_ids] = FindOwningElements(search, points);
-    SetFound(found);
-    const auto found_points = FoundPoints();
-    const auto num_found = static_cast<LO>(found_points.extent(0));
-    const LO nelems = mesh.nelems();
-    using Range = Kokkos::RangePolicy<DeviceMemorySpace::execution_space>;
 
-    Kokkos::View<LO*> elem_counts("elem_counts", nelems);
-    Kokkos::parallel_for(
-      "CountPerElement", Range(0, num_found),
-      CountPerElementFunctor(found_points, owning_ids, elem_counts));
-    offsets_ = Kokkos::View<LO*>("offsets", nelems + 1);
-    LO total = 0;
-    Kokkos::parallel_scan("ComputeOffsets", Range(0, nelems),
-                          ComputeOffsetsDeviceFunctor(offsets_, elem_counts),
-                          total);
-    Kokkos::deep_copy(Kokkos::subview(offsets_, nelems), total);
+/// @brief Groups found points by their element (CSR), for MeshFields.
+/// @param found query point of each found point
+/// @param elem_ids element of each found point
+/// @param bary barycentric coordinates of each found point ([point][vertex])
+/// @param dim mesh dimension; the first `dim` barycentric coordinates are the
+///        local coordinates
+/// @param nelems number of elements
+/// @return offsets into the rows of each element's points (nelems + 1
+///         entries), the local coordinates of each row, and the query point of
+///         each row
+inline std::tuple<Kokkos::View<LO*>, Kokkos::View<Real**>, Kokkos::View<LO*>>
+GroupFoundPointsByElement(Kokkos::View<const LO*, DeviceMemorySpace> found,
+                          Kokkos::View<const LO*, DeviceMemorySpace> elem_ids,
+                          Kokkos::View<const Real**, DeviceMemorySpace> bary,
+                          int dim, LO nelems)
+{
+  const auto num_found = static_cast<LO>(found.extent(0));
+  using Range = Kokkos::RangePolicy<DeviceMemorySpace::execution_space>;
 
-    local_coords_ = Kokkos::View<Real**>("local_coords", num_found, mesh.dim());
-    indices_ = Kokkos::View<LO*>("indices", num_found);
-    Kokkos::parallel_for("FillLocalCoordinates", Range(0, num_found),
-                         FillCoordinatesDeviceFunctor(
-                           found_points, owning_ids, elem_counts, offsets_,
-                           local_coords_, indices_, mesh.ask_elem_verts(),
-                           mesh.coords(), points, mesh.dim()));
-  }
+  Kokkos::View<LO*> elem_counts("elem_counts", nelems);
+  Kokkos::parallel_for(
+    "CountPerElement", Range(0, num_found), KOKKOS_LAMBDA(const LO k) {
+      Kokkos::atomic_add(&elem_counts(elem_ids(k)), 1);
+    });
+  Kokkos::View<LO*> offsets("offsets", nelems + 1);
+  LO total = 0;
+  Kokkos::parallel_scan(
+    "ComputeOffsets", Range(0, nelems),
+    KOKKOS_LAMBDA(const LO e, LO& partial, const bool is_final) {
+      if (is_final) {
+        offsets(e) = partial;
+      }
+      partial += elem_counts(e);
+    },
+    total);
+  Kokkos::deep_copy(Kokkos::subview(offsets, nelems), total);
 
-  /// @return offsets into LocalCoordinates() of each element's points
-  ///         (number of elements + 1 entries)
-  [[nodiscard]] Kokkos::View<LO*> Offsets() const noexcept { return offsets_; }
+  Kokkos::View<Real**> local_coords("local_coords", num_found, dim);
+  Kokkos::View<LO*> indices("indices", num_found);
+  Kokkos::parallel_for(
+    "FillLocalCoordinates", Range(0, num_found), KOKKOS_LAMBDA(const LO k) {
+      const LO elem = elem_ids(k);
+      const LO count =
+        Kokkos::atomic_fetch_add(&elem_counts(elem), static_cast<LO>(-1));
+      const LO index = offsets(elem) + count - 1;
+      for (int j = 0; j < dim; ++j) {
+        local_coords(index, j) = bary(k, j);
+      }
+      indices(index) = found(k);
+    });
+  return {offsets, local_coords, indices};
+}
 
-  /// @return coordinates of the found points in their owning elements, grouped
-  ///         by element
-  [[nodiscard]] Kokkos::View<Real**> LocalCoordinates() const noexcept
-  {
-    return local_coords_;
-  }
-
-  /// @return query point of each row of LocalCoordinates()
-  [[nodiscard]] Kokkos::View<const LO*> Indices() const noexcept
-  {
-    return indices_;
-  }
-
-private:
-  Kokkos::View<LO*> offsets_;
-  Kokkos::View<Real**> local_coords_;
-  Kokkos::View<LO*> indices_;
-};
+} // namespace detail
 
 /// @brief Evaluates MeshFields fields at the bound points with the field's
 ///        MeshFields backend.
@@ -85,16 +81,23 @@ template <typename T,
 class MeshFieldsPointEvaluator : public PointEvaluator<T, LayoutPolicy>
 {
 public:
+  /// @brief Groups the found points by element, with their first `dim`
+  ///        barycentric coordinates as the coordinates MeshFields evaluates
+  ///        at.
   /// @param layout MeshFields layout of the evaluated fields
-  /// @param binding found query points grouped by element
+  /// @param binding elements and barycentric coordinates of the query points
   MeshFieldsPointEvaluator(
     std::shared_ptr<const MeshFieldsAdapterLayout> layout,
-    std::shared_ptr<const MeshFieldsBinding> binding)
+    std::shared_ptr<const OmegaHMeshBinding> binding)
     : PointEvaluator<T, LayoutPolicy>(binding, DifferentialOperator::Value,
                                       layout),
-      layout_(std::move(layout)),
-      binding_(std::move(binding))
+      layout_(std::move(layout))
   {
+    auto& mesh = layout_->GetMesh();
+    std::tie(offsets_, local_coords_, indices_) =
+      detail::GroupFoundPointsByElement(
+        binding->FoundPoints(), binding->ElementIds(), binding->Barycentric(),
+        mesh.dim(), mesh.nelems());
   }
 
   // Public because CUDA forbids extended lambdas in non-public member
@@ -113,12 +116,12 @@ public:
         "MeshFieldsPointEvaluator::Evaluate: incompatible FieldData type");
     }
 
-    auto eval_results = mesh_field_data->GetMeshFieldBackend()->evaluate(
-      binding_->LocalCoordinates(), binding_->Offsets());
+    auto eval_results =
+      mesh_field_data->GetMeshFieldBackend()->evaluate(local_coords_, offsets_);
 
     int ncomp = layout_->GetNumComponents();
     int num_eval = static_cast<int>(eval_results.extent(0));
-    const auto indices = binding_->Indices();
+    const auto indices = indices_;
     Kokkos::parallel_for(
       "CopyEvalResultsToValues",
       Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {num_eval, ncomp}),
@@ -129,40 +132,37 @@ public:
 
 private:
   std::shared_ptr<const MeshFieldsAdapterLayout> layout_;
-  std::shared_ptr<const MeshFieldsBinding> binding_;
+  // the found points grouped by element: offsets into local_coords_ of each
+  // element's points (number of elements + 1 entries), the points'
+  // coordinates in their element, and the query point of each row
+  Kokkos::View<LO*> offsets_;
+  Kokkos::View<Real**> local_coords_;
+  Kokkos::View<LO*> indices_;
 };
 
 /// @brief Point evaluation of MeshFields fields on a 2D simplex mesh.
 /// @tparam T field value type
 template <typename T>
 class MeshFieldsEvaluatorFactory
-  : public TypedPointEvaluatorFactory<T, MeshFieldsBinding>
+  : public TypedPointEvaluatorFactory<T, OmegaHMeshBinding>
 {
-  using Bound = MeshFieldsBinding;
-
 public:
+  /// @param geometry geometry of the layout's mesh
   /// @param layout MeshFields layout of the evaluated fields
-  explicit MeshFieldsEvaluatorFactory(
+  MeshFieldsEvaluatorFactory(
+    std::shared_ptr<const OmegaHGeometry> geometry,
     std::shared_ptr<const MeshFieldsAdapterLayout> layout)
-    : TypedPointEvaluatorFactory<T, Bound>(layout->GetCoordinateSystem()),
-      layout_(std::move(layout)),
-      mesh_(layout_->GetMesh()),
-      search_(mesh_, 10, 10)
+    : TypedPointEvaluatorFactory<T, OmegaHMeshBinding>(std::move(geometry)),
+      layout_(std::move(layout))
   {
-    if (mesh_.dim() == 3) {
+    if (layout_->GetMesh().dim() == 3) {
       throw pcms_error("MeshFieldsEvaluatorFactory does not support 3D meshes");
     }
   }
 
 protected:
-  std::shared_ptr<Bound> BindPoints(const BindRequest& request) const override
-  {
-    PCMS_FUNCTION_TIMER;
-    return std::make_shared<Bound>(request, search_, mesh_);
-  }
-
   std::unique_ptr<PointEvaluator<T>> CreateEvaluator(
-    std::shared_ptr<const Bound> bound,
+    std::shared_ptr<const OmegaHMeshBinding> bound,
     DifferentialOperator /*op*/) const override
   {
     return std::make_unique<MeshFieldsPointEvaluator<T>>(layout_,
@@ -171,8 +171,6 @@ protected:
 
 private:
   std::shared_ptr<const MeshFieldsAdapterLayout> layout_;
-  Omega_h::Mesh& mesh_;
-  mutable GridPointSearch2D search_;
 };
 
 } // namespace pcms

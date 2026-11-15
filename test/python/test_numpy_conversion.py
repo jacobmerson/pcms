@@ -147,7 +147,7 @@ class TestPointEvaluation:
 
     def _evaluator(self, space, coords):
         return space.create_point_evaluator(
-            space.bind(pcms.CoordinateView(coords)))
+            space.get_geometry().bind(pcms.CoordinateView(coords)))
 
     def test_evaluate_linear_field(self, p1_space):
         field = _linear_field(p1_space)

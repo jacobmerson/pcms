@@ -20,10 +20,10 @@ public:
   {
   }
 
-  [[nodiscard]] const std::shared_ptr<const CoordinateSystem>&
-  GetCoordinateSystem() const override
+  [[nodiscard]] std::shared_ptr<const Geometry> GetGeometry()
+    const noexcept override
   {
-    return source_->GetCoordinateSystem();
+    return source_->GetGeometry();
   }
 
   [[nodiscard]] bool Supports(DifferentialOperator op) const noexcept override
@@ -32,12 +32,6 @@ public:
   }
 
 protected:
-  [[nodiscard]] const PointEvaluatorFactory& BindingSource()
-    const noexcept override
-  {
-    return detail::BindingSourceOf(*source_);
-  }
-
   PointEvaluatorVariant CreatePointEvaluatorImpl(
     Type value_type, std::shared_ptr<const BoundSource> bound,
     DifferentialOperator op) const override

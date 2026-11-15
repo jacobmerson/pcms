@@ -1,5 +1,7 @@
-#include "pcms/field/bound_source.hpp"
+#include "pcms/geometry/bound_source.hpp"
+#include "pcms/geometry/geometry.hpp"
 #include "pcms/utility/arrays.h"
+#include "pcms/utility/assert.h"
 #include <string>
 
 namespace pcms
@@ -59,12 +61,26 @@ void SplitPoints(Kokkos::View<const bool*, DeviceMemorySpace> found,
 
 } // namespace
 
-BoundSource::BoundSource(const BindRequest& request)
-  : policy_(request.policy),
+BoundSource::BoundSource(std::shared_ptr<const Geometry> geometry,
+                         const BindRequest& request)
+  : geometry_(std::move(geometry)),
+    policy_(request.policy),
     query_layout_(request.query_layout),
     system_(request.coords.GetCoordinateSystem()),
+    num_points_(static_cast<LO>(request.coords.GetValues().extent(0))),
     points_(CopyPoints(request.coords.GetValues())),
-    found_(AllPoints(NumPoints()))
+    found_(AllPoints(num_points_))
+{
+}
+
+BoundSource::BoundSource(std::shared_ptr<const Geometry> geometry,
+                         const ParametricPoints& points,
+                         OutOfBoundsPolicy policy)
+  : geometry_(std::move(geometry)),
+    policy_(policy),
+    system_(geometry_->GetCoordinateSystem()),
+    num_points_(points.NumPoints()),
+    found_(AllPoints(num_points_))
 {
 }
 

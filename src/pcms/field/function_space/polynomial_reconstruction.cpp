@@ -2,6 +2,7 @@
 #include "pcms/field/layout/omega_h_entity.h"
 #include "pcms/field/layout/point_cloud.h"
 #include "pcms/field/evaluator/point_cloud.h"
+#include "pcms/field/evaluator/point_cloud_geometry.hpp"
 #include "pcms/field/data/simple.h"
 #include "pcms/discretization/discretization/omega_h.hpp"
 #include "pcms/utility/assert.h"
@@ -39,8 +40,9 @@ PolynomialReconstructionFunctionSpace::Create(
     dim, device_view, coords.GetCoordinateSystem());
   auto localization =
     std::make_shared<PointCloudLocalizationFactory>(pc_layout, options);
+  auto geometry = PointCloudGeometry::Create(pc_layout, localization);
   auto eval_factory = std::make_shared<PointCloudEvaluatorFactory>(
-    pc_layout, localization, options);
+    std::move(geometry), pc_layout, options);
   return std::make_shared<PolynomialReconstructionFunctionSpace>(
     Key{}, pc_layout, std::move(eval_factory));
 }
@@ -67,8 +69,9 @@ PolynomialReconstructionFunctionSpace::FromMesh(
   }
   auto localization = std::make_shared<AdjacencyLocalizationFactory>(
     mesh, source_entity_dim, options);
+  auto geometry = PointCloudGeometry::Create(mesh_layout, localization);
   auto eval_factory = std::make_shared<PointCloudEvaluatorFactory>(
-    mesh_layout, localization, options);
+    std::move(geometry), mesh_layout, options);
   return std::make_shared<PolynomialReconstructionFunctionSpace>(
     Key{}, mesh_layout, std::move(eval_factory));
 }

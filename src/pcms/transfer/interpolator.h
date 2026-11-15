@@ -42,7 +42,9 @@ bool SameDOFHolderSites(const FieldLayout& a, const FieldLayout& b);
 //   interp.Apply(src_field_next, tgt_field_next); // reuses cached localization
 //
 // Interpolators of the same source at the same target share one bound source:
-//   auto bound = src_space->Bind(*tgt_space);
+//   auto layout = tgt_space->GetLayout();
+//   auto bound = src_space->GetGeometry()->Bind(
+//     layout->GetDOFHolderCoordinates(), layout);
 //   Interpolator<Real> values(*src_space, *tgt_space, bound);
 //   Interpolator<Real> gradient(*Gradient(src_space), *grad_space, bound);
 template <typename T>
@@ -53,9 +55,11 @@ public:
   /// @param source factory evaluated at the target's DOF-holder coordinates
   /// @param target_space space whose DOF holders receive the values
   /// @param policy out-of-bounds policy for the evaluation
+  /// @throws pcms_error if the source has no geometry
   Interpolator(const PointEvaluatorFactory& source,
                const FunctionSpace& target_space, OutOfBoundsPolicy policy = {})
-    : Interpolator(source, target_space, source.Bind(target_space, policy))
+    : Interpolator(source, target_space,
+                   BindTargetSites(source, target_space, policy))
   {
   }
 
@@ -63,8 +67,9 @@ public:
   /// @param source source evaluated at the target's DOF-holder coordinates
   /// @param target_space space whose DOF holders receive the values; its
   ///        basis must be the basis the source's evaluators write
-  /// @param bound result of binding `source` (or a source it wraps) to
-  ///        `target_space` or to a space with the same DOF-holder coordinates
+  /// @param bound result of binding the source's geometry to the DOF-holder
+  ///        coordinates of `target_space` or of a space with the same
+  ///        DOF-holder coordinates
   Interpolator(const PointEvaluatorFactory& source,
                const FunctionSpace& target_space,
                std::shared_ptr<const BoundSource> bound)
@@ -95,6 +100,18 @@ public:
   }
 
 private:
+  static std::shared_ptr<const BoundSource> BindTargetSites(
+    const PointEvaluatorFactory& source, const FunctionSpace& target_space,
+    OutOfBoundsPolicy policy)
+  {
+    const auto geometry = source.GetGeometry();
+    if (geometry == nullptr) {
+      throw pcms_error("Interpolator: the source has no geometry");
+    }
+    const auto layout = target_space.GetLayout();
+    return geometry->Bind(layout->GetDOFHolderCoordinates(), layout, policy);
+  }
+
   static std::unique_ptr<PointEvaluator<T>> CreateEvaluator(
     const PointEvaluatorFactory& source, const FunctionSpace& target_space,
     std::shared_ptr<const BoundSource> bound)

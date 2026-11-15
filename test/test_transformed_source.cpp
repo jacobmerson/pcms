@@ -85,13 +85,14 @@ TEST_CASE("TransformedSource: scalar evaluation maps the query points")
 
   TransformedSource src_as_cartesian(
     src, std::make_shared<pcms::CartesianToCylindrical>());
-  REQUIRE(pcms::SameCoordinateSystem(src_as_cartesian.GetCoordinateSystem(),
-                                     tgt->GetCoordinateSystem()));
+  REQUIRE(pcms::SameCoordinateSystem(
+    src_as_cartesian.GetGeometry()->GetCoordinateSystem(),
+    tgt->GetCoordinateSystem()));
 
   const auto pts = tgt->GetLayout()->GetDOFHolderCoordinates();
   const int n = static_cast<int>(pts.GetValues().extent(0));
-  auto evaluator =
-    src_as_cartesian.CreatePointEvaluator<Real>(src_as_cartesian.Bind(pts));
+  auto evaluator = src_as_cartesian.CreatePointEvaluator<Real>(
+    src_as_cartesian.GetGeometry()->Bind(pts));
   REQUIRE(SameValueBasis(evaluator->OutputBasis(ValueBasis{}), ValueBasis{}));
 
   const auto coords = pcms::test::CopyCoordinatesToHost(pts.GetValues());
@@ -124,8 +125,8 @@ TEST_CASE("TransformedSource: vector evaluation rotates into the target basis")
     src, std::make_shared<pcms::CartesianToCylindrical>());
   const auto pts = tgt->GetLayout()->GetDOFHolderCoordinates();
   const int n = static_cast<int>(pts.GetValues().extent(0));
-  auto evaluator =
-    src_as_cartesian.CreatePointEvaluator<Real>(src_as_cartesian.Bind(pts));
+  auto evaluator = src_as_cartesian.CreatePointEvaluator<Real>(
+    src_as_cartesian.GetGeometry()->Bind(pts));
   REQUIRE(SameValueBasis(evaluator->OutputBasis(CylindricalVector()),
                          CartesianVector()));
   REQUIRE(SameValueBasis(evaluator->OutputBasis(CartesianVector()),
@@ -193,7 +194,8 @@ TEST_CASE("TransformedSource: FILL rows survive the rotation untouched")
   const auto pts = tgt->GetLayout()->GetDOFHolderCoordinates();
   const int n = static_cast<int>(pts.GetValues().extent(0));
   auto evaluator = src_as_cartesian.CreatePointEvaluator<Real>(
-    src_as_cartesian.Bind(pts, OutOfBoundsPolicy{OutOfBoundsMode::FILL, fill}));
+    src_as_cartesian.GetGeometry()->Bind(
+      pts, OutOfBoundsPolicy{OutOfBoundsMode::FILL, fill}));
 
   const auto coords = pcms::test::CopyCoordinatesToHost(pts.GetValues());
   const auto result =
@@ -238,7 +240,8 @@ TEST_CASE("TransformedSource: in-bounds values equal to the fill value are "
   const auto pts = tgt->GetLayout()->GetDOFHolderCoordinates();
   const int n = static_cast<int>(pts.GetValues().extent(0));
   auto evaluator = src_as_cartesian.CreatePointEvaluator<Real>(
-    src_as_cartesian.Bind(pts, OutOfBoundsPolicy{OutOfBoundsMode::FILL, fill}));
+    src_as_cartesian.GetGeometry()->Bind(
+      pts, OutOfBoundsPolicy{OutOfBoundsMode::FILL, fill}));
 
   const auto coords = pcms::test::CopyCoordinatesToHost(pts.GetValues());
   const auto result =
@@ -292,8 +295,8 @@ TEST_CASE("TransformedSource: evaluator creation and evaluation errors")
       cart_pts, pcms::csys::CylindricalRThetaZ::Create(), 3);
     REQUIRE_THROWS_WITH(
       src_as_cartesian.CreatePointEvaluator<Real>(
-        src_as_cartesian.Bind(cyl_query.coordinate_view)),
-      ContainsSubstring("not the factory's coordinate system"));
+        src_as_cartesian.GetGeometry()->Bind(cyl_query.coordinate_view)),
+      ContainsSubstring("not the geometry's coordinate system"));
   }
 
   SECTION("non-Real evaluation surfaces the source backend's own limit")
@@ -303,7 +306,7 @@ TEST_CASE("TransformedSource: evaluator creation and evaluation errors")
     // T != Real guard in TransformedPointEvaluator::Evaluate is defensive.
     REQUIRE_THROWS_WITH(
       src_as_cartesian.CreatePointEvaluator<GO>(
-        src_as_cartesian.Bind(query.coordinate_view)),
+        src_as_cartesian.GetGeometry()->Bind(query.coordinate_view)),
       ContainsSubstring("only supports fields of its own value type"));
   }
 }
@@ -326,7 +329,8 @@ TEST_CASE("TransformedSource: NEAREST_BOUNDARY follows the wrapped source")
     auto src = LagrangeFunctionSpace::FromUniformGrid(
       grid, 1, pcms::csys::CylindricalRThetaZ::Create());
     TransformedSource src_as_cartesian(src, cart_to_cyl);
-    auto bound = src_as_cartesian.Bind(query.coordinate_view, nearest);
+    auto bound =
+      src_as_cartesian.GetGeometry()->Bind(query.coordinate_view, nearest);
     REQUIRE(bound->MissingPoints().extent(0) == 0);
   }
 
@@ -336,8 +340,9 @@ TEST_CASE("TransformedSource: NEAREST_BOUNDARY follows the wrapped source")
     Omega_h::Mesh src_mesh(&lib);
     TransformedSource src_as_cartesian(BuildCylindricalSource(lib, src_mesh, 1),
                                        cart_to_cyl);
-    REQUIRE_THROWS_WITH(src_as_cartesian.Bind(query.coordinate_view, nearest),
-                        ContainsSubstring("NEAREST_BOUNDARY"));
+    REQUIRE_THROWS_WITH(
+      src_as_cartesian.GetGeometry()->Bind(query.coordinate_view, nearest),
+      ContainsSubstring("NEAREST_BOUNDARY"));
   }
 }
 
@@ -413,7 +418,7 @@ TEST_CASE("TransformedSource: nesting composes maps and rotations")
     cyl_pts, pcms::csys::CylindricalRThetaZ::Create(), 3);
   const int n = 3;
   auto evaluator = src_as_cylindrical.CreatePointEvaluator<Real>(
-    src_as_cylindrical.Bind(query.coordinate_view));
+    src_as_cylindrical.GetGeometry()->Bind(query.coordinate_view));
   const auto result =
     pcms::test::EvaluateToHost(*evaluator, b, CylindricalVector(), 3);
   for (int i = 0; i < n; ++i) {

@@ -297,9 +297,10 @@ class TestTransformedSource:
         source = pcms.TransformedSource(cylindrical_space,
                                         pcms.CartesianToCylindrical())
         assert isinstance(source, pcms.PointEvaluatorFactory)
-        assert source.get_coordinate_system() == \
+        assert source.get_geometry().get_coordinate_system() == \
             pcms.csys.Cartesian.create(3)
-        return source.create_point_evaluator(source.bind(cartesian_space))
+        return source.create_point_evaluator(
+            source.get_geometry().bind(cartesian_space))
 
     def test_evaluate_rotates_into_the_query_basis(self, cylindrical_space,
                                                    cartesian_space):
@@ -332,14 +333,16 @@ class TestTransformedSource:
                                                         cylindrical_space):
         coords = pcms.CoordinateView(pcms.csys.Cartesian.create(3),
                                      np.full((2, 3), 0.5))
-        with pytest.raises(RuntimeError, match="TransformedSource"):
-            cylindrical_space.bind(coords)
+        with pytest.raises(RuntimeError,
+                           match="map the points with a CoordinateMap "
+                                 r"\(evaluate through a TransformedSource"):
+            cylindrical_space.get_geometry().bind(coords)
 
     def test_filled_points(self, cylindrical_space):
         source = pcms.TransformedSource(cylindrical_space,
                                         pcms.CartesianToCylindrical())
         # The second point has theta = pi, outside the source's [0, 1.6].
-        bound = source.bind(
+        bound = source.get_geometry().bind(
             pcms.CoordinateView(pcms.csys.Cartesian.create(3),
                                 [[0.5, 0.5, 0.5], [-0.5, 0.0, 0.5]]),
             pcms.OutOfBoundsPolicy(pcms.OutOfBoundsMode.FILL, -7.0))
@@ -384,7 +387,9 @@ class TestTransformedSource:
 
     def test_plain_interpolator_refuses_to_bridge_systems(
             self, cylindrical_space, cartesian_space):
-        with pytest.raises(RuntimeError, match="TransformedSource"):
+        with pytest.raises(RuntimeError,
+                           match="map the points with a CoordinateMap "
+                                 r"\(evaluate through a TransformedSource"):
             pcms.Interpolator(cylindrical_space, cartesian_space)
 
 
@@ -400,7 +405,7 @@ class TestLifetimes:
         coords = _coordinates(f)
         f.set_dof_holder_data(coords[:, :1])
         evaluator = space.create_point_evaluator(
-            space.bind(pcms.CoordinateView([[0.3, 0.6]])))
+            space.get_geometry().bind(pcms.CoordinateView([[0.3, 0.6]])))
         out = np.zeros((1, 1))
         evaluator.evaluate(f, out)
         np.testing.assert_allclose(out, [[0.3]], atol=1e-12)
@@ -415,7 +420,8 @@ class TestLifetimes:
             cartesian_space)
         source = pcms.TransformedSource(cylindrical_space,
                                         pcms.CartesianToCylindrical())
-        evaluator = source.create_point_evaluator(source.bind(cartesian_space))
+        evaluator = source.create_point_evaluator(
+            source.get_geometry().bind(cartesian_space))
         del source
         gc.collect()
         op.apply(b_src, b_tgt)

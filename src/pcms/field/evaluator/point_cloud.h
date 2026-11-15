@@ -6,15 +6,9 @@
 #include "pcms/field/field_data.h"
 #include "pcms/field/evaluator/mls_options.h"
 #include "pcms/field/evaluator/mls_point_cloud.h"
-#include "pcms/localization/localization_path_selection.h"
-#include "pcms/localization/mesh_localization.h"
-#include "pcms/localization/localization_factory.h"
-#include "pcms/utility/assert.h"
-#include "pcms/utility/omega_h_array_utils.h"
+#include "pcms/geometry/geometry.hpp"
 
-#include <Omega_h_array.hpp>
 #include <memory>
-#include <string>
 
 namespace pcms
 {
@@ -26,55 +20,20 @@ class PointCloudEvaluatorFactory
   using Bound = MLSBinding;
 
 public:
+  /// @param geometry geometry whose Bind computes the MLS supports of query
+  ///        points among the layout's DOF holders
   /// @param layout point-cloud layout of the evaluated fields
-  /// @param localization search for the MLS supports of query points
   /// @param options MLS options
-  PointCloudEvaluatorFactory(std::shared_ptr<const FieldLayout> layout,
-                             std::shared_ptr<LocalizationFactory> localization,
+  PointCloudEvaluatorFactory(std::shared_ptr<const Geometry> geometry,
+                             std::shared_ptr<const FieldLayout> layout,
                              MLSOptions options = {})
-    : TypedPointEvaluatorFactory<Real, Bound>(layout->GetCoordinateSystem()),
+    : TypedPointEvaluatorFactory<Real, Bound>(std::move(geometry)),
       layout_(std::move(layout)),
-      localization_(std::move(localization)),
       options_(options)
   {
   }
 
 protected:
-  std::shared_ptr<Bound> BindPoints(const BindRequest& request) const override
-  {
-    const auto coords = request.coords;
-    // MLS distances are based on the unweighted Euclidean measure
-    // this is only valid with identity metric
-    // this almost certainly should be generalized to take metric for distances
-    // for now, we just check and fail so at least the user gets a warning
-    if (!HasIdentityMetric(*layout_->GetCoordinateSystem())) {
-      throw pcms_error(
-        "PointCloudEvaluatorFactory: MLS point-cloud evaluation requires a "
-        "coordinate system whose metric is the identity; got '" +
-        std::string(layout_->GetCoordinateSystem()->Kind()) + "'");
-    }
-
-    // Extract source coordinates for the MLS solve.
-    const auto src_view = layout_->GetDOFHolderCoordinates().GetValues();
-    Omega_h::Reals source_coords =
-      flatten_to_omega_h_reals(src_view, "src_coords");
-
-    SupportResults supports;
-    auto path =
-      detail::SelectLocalizationPath(*layout_, request.query_layout.get());
-    if (path == detail::LocalizationPath::CentroidToVertexAdjacencySearch) {
-      auto* adjacency =
-        dynamic_cast<const AdjacencyLocalizationFactory*>(localization_.get());
-      PCMS_ALWAYS_ASSERT(adjacency != nullptr);
-      supports = adjacency->BuildSameMeshCentroidToVertex();
-    } else {
-      supports = localization_->Build(coords);
-    }
-
-    return std::make_shared<Bound>(request, std::move(source_coords),
-                                   std::move(supports));
-  }
-
   std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
     std::shared_ptr<const Bound> bound,
     DifferentialOperator /*op*/) const override
@@ -85,7 +44,6 @@ protected:
 
 private:
   std::shared_ptr<const FieldLayout> layout_;
-  std::shared_ptr<LocalizationFactory> localization_;
   MLSOptions options_;
 };
 

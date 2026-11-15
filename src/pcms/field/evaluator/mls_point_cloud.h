@@ -20,12 +20,14 @@ namespace pcms
 class MLSBinding final : public BoundSource
 {
 public:
+  /// @param geometry geometry the points are localized on
   /// @param request query points and out-of-bounds policy
   /// @param source_coords flattened coordinates of the source points
   /// @param supports MLS supports of the query points
-  MLSBinding(const BindRequest& request, Omega_h::Reals source_coords,
+  MLSBinding(std::shared_ptr<const Geometry> geometry,
+             const BindRequest& request, Omega_h::Reals source_coords,
              SupportResults supports)
-    : BoundSource(request),
+    : BoundSource(std::move(geometry), request),
       source_coords_(std::move(source_coords)),
       target_coords_(
         flatten_to_omega_h_reals(PointValues(), "mls_target_coords")),

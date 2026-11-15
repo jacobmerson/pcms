@@ -99,9 +99,10 @@ void bind_transfer_field_module(py::module& m)
          }),
          py::arg("source"), py::arg("target_space"), py::arg("bound"),
          py::keep_alive<1, 2>(), py::keep_alive<1, 3>(),
-         "Construct an interpolator that reuses `bound`, a binding of `source` "
-         "(or of the source it binds through) to the target space's DOF "
-         "holders, so a field and its gradient can share one localization.");
+         "Construct an interpolator that reuses `bound`, a binding of the "
+         "target space's DOF holders by `source`'s geometry "
+         "(source.get_geometry().bind(target_space)), so a field and its "
+         "gradient can share one localization.");
 
   py::class_<Copy<Real>, TransferOperator<Real>>(m, "Copy").def(
     py::init(

@@ -12,6 +12,7 @@
 #include "point_evaluator.h"
 #include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/discretization/discretization.h"
+#include "pcms/geometry/geometry.hpp"
 #include "pcms/utility/arrays.h"
 #include "pcms/utility/memory_spaces.h"
 #include "pcms/utility/types.h"
@@ -38,22 +39,42 @@ class FunctionSpace
   , public std::enable_shared_from_this<FunctionSpace>
 {
 public:
-  virtual std::shared_ptr<const Discretization> GetDiscretization()
-    const noexcept
+  /// @return the geometry the space is created on: its backend source's, or
+  ///         the one given to the constructor; null for a space that does not
+  ///         evaluate at points
+  [[nodiscard]] std::shared_ptr<const Geometry> GetGeometry()
+    const noexcept override
   {
-    return GetLayout()->GetDiscretization();
+    return evaluator_ != nullptr ? evaluator_->GetGeometry() : geometry_;
+  }
+
+  /// @return the geometry's discretization, or the layout's for a space
+  ///         without a geometry
+  [[nodiscard]] virtual std::shared_ptr<const Discretization>
+  GetDiscretization() const noexcept
+  {
+    const auto geometry = GetGeometry();
+    return geometry != nullptr ? geometry->GetDiscretization()
+                               : GetLayout()->GetDiscretization();
   }
 
   virtual std::shared_ptr<const FieldLayout> GetLayout() const noexcept = 0;
 
+  /// @return the geometry's coordinate system, or the layout's for a space
+  ///         without a geometry
   [[nodiscard]] const std::shared_ptr<const CoordinateSystem>&
-  GetCoordinateSystem() const override
+  GetCoordinateSystem() const noexcept
   {
-    return GetLayout()->GetCoordinateSystem();
+    const Geometry* geometry =
+      evaluator_ != nullptr ? evaluator_->GetGeometry().get() : geometry_.get();
+    return geometry != nullptr ? geometry->GetCoordinateSystem()
+                               : GetLayout()->GetCoordinateSystem();
   }
 
-  /// @return whether the space's backend source supports `op`; false for a
-  ///         space without one unless it overrides this
+  /// @return whether the space's backend source supports `op`; for a space
+  ///         without one, whether `op` is Value and the space has a geometry
+  ///         (it implements CreatePointEvaluatorImpl), unless it overrides
+  ///         this
   [[nodiscard]] bool Supports(DifferentialOperator op) const noexcept override;
 
   virtual ~FunctionSpace() noexcept = default;
@@ -77,18 +98,17 @@ public:
     std::string name, std::unique_ptr<FieldData<T>> data) const;
 
 protected:
-  /// @return the backend source that binds this space's evaluation, or the
-  ///         space itself if it has none
-  [[nodiscard]] const PointEvaluatorFactory& BindingSource()
-    const noexcept override;
-
-  /// @param evaluator backend source over this space's layout that binds and
-  ///        creates the evaluators, or null for a space that implements
-  ///        BindImpl, Supports and CreatePointEvaluatorImpl itself
+  /// @param evaluator backend source over this space's geometry, or null for
+  ///        a space that implements Supports and CreatePointEvaluatorImpl
+  ///        itself and then must pass its geometry
+  /// @param geometry the geometry of a space without a backend source, or
+  ///        null; both null for a space that does not evaluate at points
   explicit FunctionSpace(
-    std::shared_ptr<const PointEvaluatorFactory> evaluator = nullptr) noexcept
-    : evaluator_(std::move(evaluator))
+    std::shared_ptr<const PointEvaluatorFactory> evaluator = nullptr,
+    std::shared_ptr<const Geometry> geometry = nullptr) noexcept
+    : evaluator_(std::move(evaluator)), geometry_(std::move(geometry))
   {
+    PCMS_ALWAYS_ASSERT(evaluator_ == nullptr || geometry_ == nullptr);
   }
 
   /// @brief Creates the evaluator through the backend source.
@@ -121,6 +141,7 @@ protected:
 
 private:
   std::shared_ptr<const PointEvaluatorFactory> evaluator_;
+  std::shared_ptr<const Geometry> geometry_;
 };
 
 template <typename T>

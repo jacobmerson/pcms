@@ -150,7 +150,7 @@ TEST_CASE("UniformGrid order-0 field creation and evaluation")
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     eval_coords, pcms::csys::Cartesian::Deferred());
   auto evaluator = field_space->CreatePointEvaluator<pcms::Real>(
-    field_space->Bind(device_coords.coordinate_view));
+    field_space->GetGeometry()->Bind(device_coords.coordinate_view));
 
   Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> results_device(
     "results_device", 4, 1);
@@ -230,7 +230,7 @@ TEST_CASE("UniformGrid field evaluation - piecewise constant")
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     eval_coords, pcms::csys::Cartesian::Deferred());
   auto evaluator = field_space->CreatePointEvaluator<pcms::Real>(
-    field_space->Bind(device_coords.coordinate_view));
+    field_space->GetGeometry()->Bind(device_coords.coordinate_view));
 
   Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> results_device(
     "results_device", 4, 1);
@@ -707,7 +707,7 @@ TEST_CASE("UniformGrid Order-1 multi-component field evaluation")
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     eval_coords, pcms::csys::Cartesian::Deferred());
   auto evaluator = field_space->CreatePointEvaluator<pcms::Real>(
-    field_space->Bind(device_coords.coordinate_view));
+    field_space->GetGeometry()->Bind(device_coords.coordinate_view));
 
   Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> results_device(
     "results_device", num_points, num_components);
@@ -771,7 +771,7 @@ TEST_CASE("UniformGrid Order-0 multi-component field (regression)")
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
     eval_coords, pcms::csys::Cartesian::Deferred());
   auto evaluator = field_space->CreatePointEvaluator<pcms::Real>(
-    field_space->Bind(device_coords.coordinate_view));
+    field_space->GetGeometry()->Bind(device_coords.coordinate_view));
 
   Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> results_device(
     "results_device", 4, num_components);

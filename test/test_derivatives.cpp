@@ -50,7 +50,7 @@ TEST_CASE("Spline gradients")
   const size_t n = pts.size() / 2;
   auto coords =
     pcms::test::CreateDeviceCoordinateView(pts, space->GetCoordinateSystem());
-  const auto bound = space->Bind(coords.coordinate_view);
+  const auto bound = space->GetGeometry()->Bind(coords.coordinate_view);
   auto values = space->CreatePointEvaluator<Real>(bound);
   auto gradient = space->CreatePointEvaluator<Real>(
     bound, pcms::DifferentialOperator::Gradient);
@@ -98,7 +98,7 @@ TEST_CASE("Evaluators reject fields of another function space")
   const std::vector<Real> pts = {0.3, -0.7, 1.1, 0.2};
   auto coords =
     pcms::test::CreateDeviceCoordinateView(pts, space->GetCoordinateSystem());
-  const auto bound = space->Bind(coords.coordinate_view);
+  const auto bound = space->GetGeometry()->Bind(coords.coordinate_view);
   auto values = space->CreatePointEvaluator<Real>(bound);
   auto gradient = pcms::Gradient(space)->CreatePointEvaluator<Real>(bound);
 
@@ -122,9 +122,9 @@ TEST_CASE("Gradients fill the out-of-bounds rows")
   const std::vector<Real> pts = {0.5, 0.5, 3.0, 0.0};
   auto coords =
     pcms::test::CreateDeviceCoordinateView(pts, space->GetCoordinateSystem());
-  const auto bound =
-    space->Bind(coords.coordinate_view,
-                pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::FILL, -7.0});
+  const auto bound = space->GetGeometry()->Bind(
+    coords.coordinate_view,
+    pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::FILL, -7.0});
   auto gradient = space->CreatePointEvaluator<Real>(
     bound, pcms::DifferentialOperator::Gradient);
   const auto grad = pcms::test::EvaluateToHost(
@@ -155,7 +155,9 @@ TEST_CASE("Interpolating a field and its gradient over one localization")
   auto gradient =
     gradient_space->CreateFunction<Real>("grad f", pcms::values::Covector);
 
-  const auto bound = source->Bind(*value_space);
+  const auto value_layout = value_space->GetLayout();
+  const auto bound = source->GetGeometry()->Bind(
+    value_layout->GetDOFHolderCoordinates(), value_layout);
   const auto grad_source = pcms::Gradient(source);
   pcms::Interpolator<Real> values(*source, *value_space, bound);
   pcms::Interpolator<Real> gradients(*grad_source, *gradient_space, bound);
@@ -205,7 +207,7 @@ TEST_CASE("Unsupported operators are refused by name")
   auto space = MakeSplineSpace();
   auto coords = pcms::test::CreateDeviceCoordinateView(
     {0.3, -0.7}, space->GetCoordinateSystem());
-  const auto bound = space->Bind(coords.coordinate_view);
+  const auto bound = space->GetGeometry()->Bind(coords.coordinate_view);
   REQUIRE_FALSE(space->Supports(pcms::DifferentialOperator::Curl));
   REQUIRE_THROWS_WITH(
     space->CreatePointEvaluator<Real>(bound, pcms::DifferentialOperator::Curl),

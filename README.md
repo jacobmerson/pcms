@@ -93,14 +93,15 @@ A source is bound to its query points once, and evaluators of values or
 first derivatives are created from the bound source, for example:
 
 ```python
-bound = source_space.bind(pcms.CoordinateView(eval_coords))
+bound = source_space.get_geometry().bind(pcms.CoordinateView(eval_coords))
 values = source_space.create_point_evaluator(bound)
 # for sources that evaluate derivatives
-gradient = source_space.create_point_evaluator(bound, derivative_order=1)
+gradient = source_space.create_point_evaluator(
+    bound, op=pcms.DifferentialOperator.Gradient)
 
 # binding to a space's DOF holders lets the source reuse what it knows about
 # the target, and an Interpolator can reuse the bound source
-bound = source_space.bind(target_space)
+bound = source_space.get_geometry().bind(target_space)
 pcms.Interpolator(source_space, target_space, bound).apply(source, target)
 ```
 

@@ -81,7 +81,9 @@ private:
 
 /// Presents a point-evaluator factory as one in another coordinate system:
 /// query points are mapped into the source's system and evaluated components
-/// are re-expressed at the query points.
+/// are re-expressed at the query points. Its geometry is the source's in the
+/// map's source coordinate system: binding it maps the points and binds the
+/// source's geometry to the mapped points.
 class TransformedSource final : public PointEvaluatorFactory
 {
 public:
@@ -91,10 +93,10 @@ public:
   TransformedSource(std::shared_ptr<const PointEvaluatorFactory> source,
                     std::shared_ptr<const CoordinateMap> to_source);
 
-  [[nodiscard]] const std::shared_ptr<const CoordinateSystem>&
-  GetCoordinateSystem() const override
+  [[nodiscard]] std::shared_ptr<const Geometry> GetGeometry()
+    const noexcept override
   {
-    return system_;
+    return geometry_;
   }
 
   [[nodiscard]] bool Supports(DifferentialOperator op) const noexcept override
@@ -103,12 +105,6 @@ public:
   }
 
 protected:
-  /// @brief Binds the map to the query points and the source to the mapped
-  ///        points.
-  /// @param request query points and out-of-bounds policy
-  /// @return bound source holding both bindings
-  std::shared_ptr<BoundSource> BindImpl(
-    const BindRequest& request) const override;
   PointEvaluatorVariant CreatePointEvaluatorImpl(
     Type value_type, std::shared_ptr<const BoundSource> bound,
     DifferentialOperator op) const override;
@@ -119,8 +115,7 @@ private:
     std::shared_ptr<const BoundSource> bound, DifferentialOperator op) const;
 
   std::shared_ptr<const PointEvaluatorFactory> source_;
-  std::shared_ptr<const CoordinateMap> to_source_;
-  std::shared_ptr<const CoordinateSystem> system_;
+  std::shared_ptr<const Geometry> geometry_;
 };
 
 } // namespace pcms

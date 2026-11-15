@@ -276,8 +276,10 @@ snake_case form of the C++ method (`GetDOFHolderData` is
 - `field.get_dof_holder_data()` - Field values as a `ValueView` whose array (`.get_values()`, shape `(num_dof_holders, num_components)`) is read-only and valid until the field is next modified (use `.copy()` to keep values)
 - `field.set_dof_holder_data(value_view)` - Set field values; the basis must match the field's. Scalar fields also accept a plain array, of shape `(num_dof_holders,)` when the field has one component
 - `field.set_dof_holder_data_unchecked(data)` - Set field values without checking their basis
-- `bound = factory.bind(coordinate_view, policy=...)` - Bind a `PointEvaluatorFactory` to query points (in `factory.get_coordinate_system()`); the search is done once here
-- `bound = factory.bind(space, policy=...)` - Bind to another FunctionSpace's DOF-holder coordinates
+- `geometry = factory.get_geometry()` - The `Geometry` (coordinates and point search) whose bound sources a `PointEvaluatorFactory` accepts; every space on one geometry accepts the same bound sources
+- `bound = geometry.bind(coordinate_view, policy=...)` - Localize query points (in `geometry.get_coordinate_system()`); the search is done once here
+- `bound = geometry.bind(space, policy=...)` - Localize another FunctionSpace's DOF-holder coordinates
+- `create_omega_h_geometry(mesh, system=None, divisions=0)`, `LagrangeFunctionSpace.from_geometry(geometry, order, num_components)` - Several spaces on one mesh geometry, sharing one search and one bind
 - `bound.found_points()`, `bound.missing_points()` - indices of the query points the source evaluates / does not evaluate
 - `factory.create_point_evaluator(bound, op=DifferentialOperator.Value)` - Create an evaluator at the bound points that applies `op`; `DifferentialOperator.Gradient` evaluates the gradient
 - `factory.supports(op)` - Whether `create_point_evaluator` accepts the `DifferentialOperator` `op`

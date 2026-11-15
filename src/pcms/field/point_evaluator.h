@@ -1,8 +1,9 @@
 #ifndef PCMS_POINT_EVALUATOR_H
 #define PCMS_POINT_EVALUATOR_H
 
-#include "pcms/field/bound_source.hpp"
 #include "pcms/field/differential_operator.hpp"
+#include "pcms/field/field_layout.h"
+#include "pcms/geometry/bound_source.hpp"
 #include "pcms/field/value_view.hpp"
 #include "pcms/utility/assert.h"
 #include "pcms/utility/arrays.h"

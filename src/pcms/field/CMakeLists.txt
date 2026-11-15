@@ -19,7 +19,6 @@ set(PCMS_FIELD_HEADERS
         point_evaluator.h
         point_evaluator_factory.hpp
         differential_operator.hpp
-        bound_source.hpp
         gradient_source.hpp
         transformed_source.hpp
         data/simple.h
@@ -32,9 +31,7 @@ set(PCMS_FIELD_SOURCES
         coordinate_system.cpp
         coordinate_map.cpp
         transformed_source.cpp
-        point_evaluator_factory.cpp
         function_space.cpp
-        bound_source.cpp
         gradient_source.cpp
         gid_permutation.cpp
         function_space/polynomial_reconstruction.cpp
@@ -51,13 +48,17 @@ if (PCMS_ENABLE_OMEGA_H)
             layout/omega_h_lagrange.cpp
             layout/uniform_grid.cpp
             evaluator/mls_interpolation.cpp
+            evaluator/omega_h_geometry.cpp
     )
     list(APPEND PCMS_FIELD_HEADERS
             function_space/lagrange.h
             function_space/spline.h
             layout/omega_h_entity.h
             layout/omega_h_lagrange.h
+            evaluator/omega_h_geometry.hpp
             evaluator/omega_h_lagrange.h
+            evaluator/uniform_grid_geometry.hpp
+            evaluator/point_cloud_geometry.hpp
             data/omega_h.h
             layout/uniform_grid.h
             uniform_grid_binary_field.h
@@ -124,7 +125,8 @@ target_compile_features(pcms_field PUBLIC cxx_std_20)
 target_link_libraries(pcms_field PUBLIC
         pcms::utility
         pcms::discretization
-        pcms::localization)
+        pcms::localization
+        pcms::geometry)
 
 if(PCMS_ENABLE_OMEGA_H)
     target_link_libraries(pcms_field PUBLIC Omega_h::omega_h)
