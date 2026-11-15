@@ -15,6 +15,7 @@
 #include <Kokkos_Core.hpp>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace fio::detail
@@ -100,57 +101,101 @@ inline void CheckComponents(std::string_view space, std::string_view quantity,
   }
 }
 
+/// Host views of query points, one row per point.
+using HostPoints =
+  Kokkos::View<const pcms::Real**, Kokkos::LayoutRight, pcms::HostMemorySpace>;
+
+/// Device rows on the host in row-major layout: `rows` itself where device
+/// memory is host memory and row-major, otherwise a copy.
+inline HostPoints HostRowMajor(
+  const Kokkos::View<const pcms::Real**, pcms::DeviceMemorySpace>& rows)
+{
+  using Rows = Kokkos::View<const pcms::Real**, pcms::DeviceMemorySpace>;
+  if constexpr (std::is_same_v<pcms::DeviceMemorySpace,
+                               pcms::HostMemorySpace> &&
+                std::is_same_v<Rows::array_layout, Kokkos::LayoutRight>) {
+    return rows;
+  } else {
+    HostRows copy(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing, "external_points"),
+      rows.extent(0), rows.extent(1));
+    pcms::DeepCopyMismatchLayouts(copy, rows);
+    return copy;
+  }
+}
+
 /// Bound query points of a host evaluator, with the points and FoundPoints()
-/// copied to the host once.
+/// on the host (views of the bound source's own where the host can read
+/// them, so binding copies nothing more on host-only builds).
 class HostBoundSource : public pcms::BoundSource
 {
 public:
   /// the bound points, one row per point
-  HostRows points;
+  HostPoints points;
   /// FoundPoints() on the host
   Kokkos::View<const pcms::LO*, pcms::HostMemorySpace> found;
 
 protected:
   explicit HostBoundSource(const pcms::BindRequest& request)
     : BoundSource(request),
-      points("external_points", NumPoints(), PointValues().extent(1)),
+      points(HostRowMajor(PointValues())),
       found(Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(),
                                                 FoundPoints()))
   {
-    pcms::DeepCopyMismatchLayouts(points, PointValues());
   }
 
   /// Records which points the source evaluates (BoundSource::SetFound).
+  /// Every point stays found if `is_found` holds no false.
   /// @param is_found per point, whether the source evaluates it
-  void SetFound(const std::vector<char>& is_found)
+  void SetFound(Kokkos::View<const bool*, pcms::HostMemorySpace> is_found)
   {
-    Kokkos::View<bool*, pcms::HostMemorySpace> host("external_found",
-                                                    is_found.size());
-    for (size_t i = 0; i < is_found.size(); ++i) {
-      host(i) = is_found[i] != 0;
+    bool all_found = true;
+    for (size_t i = 0; i < is_found.extent(0) && all_found; ++i) {
+      all_found = is_found(i);
+    }
+    if (all_found) {
+      return;
     }
     BoundSource::SetFound(
-      Kokkos::create_mirror_view_and_copy(pcms::DeviceMemorySpace(), host));
+      Kokkos::create_mirror_view_and_copy(pcms::DeviceMemorySpace(), is_found));
     found = Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(),
                                                 FoundPoints());
   }
 };
 
-/// Host output rows shaped like the evaluator output `out`.
+/// Whether an evaluator output is host memory in row-major layout, so that
+/// host evaluators can write its rows directly.
+template <typename Output>
+inline constexpr bool HostWritable =
+  std::is_same_v<typename Output::accessor_type::memory_space,
+                 pcms::HostMemorySpace> &&
+  std::is_same_v<typename Output::layout_type, Kokkos::layout_right>;
+
+/// Host output rows shaped like the evaluator output `out`: a view of `out`
+/// itself where the host can write it (HostWritable), otherwise scratch rows
+/// for CopyToOutput.
 template <typename Output>
 HostRows HostRowsLike(const Output& out)
 {
-  return HostRows("external_values", out.extent(0), out.extent(1));
+  if constexpr (HostWritable<Output>) {
+    // unmanaged: out's owner keeps the memory
+    return HostRows(out.data_handle(), out.extent(0), out.extent(1));
+  } else {
+    return HostRows("external_values", out.extent(0), out.extent(1));
+  }
 }
 
-/// Copies host rows to the evaluator output `out`.
+/// Copies host rows from HostRowsLike(out) to the evaluator output `out`;
+/// nothing to do if they are `out` itself.
 template <typename Output>
 void CopyToOutput(const HostRows& rows, const Output& out)
 {
-  Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> device(
-    "external_values", rows.extent(0), rows.extent(1));
-  pcms::DeepCopyMismatchLayouts(device, rows);
-  pcms::CopyDeviceRank2ViewToRank2View(out, pcms::MakeConstRank2View(device));
+  if constexpr (!HostWritable<Output>) {
+    Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> device(
+      "external_values", rows.extent(0), rows.extent(1));
+    pcms::DeepCopyMismatchLayouts(device, rows);
+    pcms::CopyDeviceRank2ViewToRank2View(out, pcms::MakeConstRank2View(device));
+  }
 }
 
 } // namespace fio::detail
