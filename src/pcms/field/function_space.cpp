@@ -21,8 +21,10 @@ PointEvaluatorVariant FunctionSpace::CreatePointEvaluatorImpl(
   }
   return apply_to_type(value_type, [&](auto type) -> PointEvaluatorVariant {
     using T = typename decltype(type)::type;
-    return evaluator_->CreatePointEvaluator<T>(std::move(bound),
-                                               derivative_order);
+    auto evaluator =
+      evaluator_->CreatePointEvaluator<T>(std::move(bound), derivative_order);
+    evaluator->space_layout_ = GetLayout();
+    return evaluator;
   });
 }
 

@@ -16,6 +16,7 @@ namespace pcms
 
 template <typename T>
 class Field;
+class FunctionSpace;
 
 namespace detail
 {
@@ -63,10 +64,15 @@ public:
   /// @throws std::invalid_argument if `values` is not shaped
   ///         [NumPoints()][number of output components]
   /// @throws pcms_error if `values` does not claim the basis this evaluator
-  ///         writes for the field
+  ///         writes for the field, or if the evaluator was created by a
+  ///         function space and `field` is not one of its fields
   void Evaluate(const Field<T>& field,
                 ValueView<T, DeviceMemorySpace, LayoutPolicy> values) const
   {
+    if (space_layout_ != nullptr && &field.GetLayout() != space_layout_.get()) {
+      throw pcms_error("PointEvaluator::Evaluate: the field is not a field of "
+                       "the function space this evaluator was created from");
+    }
     CheckOutputShape(field, values);
     detail::CheckWrittenValueBasis(
       "PointEvaluator::Evaluate", values.GetBasis(),
@@ -159,6 +165,10 @@ private:
 
   std::shared_ptr<const BoundSource> bound_;
   int derivative_order_;
+  // layout of the fields Evaluate accepts, set by the function space that
+  // created this evaluator; null accepts any field
+  friend class FunctionSpace;
+  std::shared_ptr<const FieldLayout> space_layout_;
 };
 
 // Variant types using default layout for device memory space

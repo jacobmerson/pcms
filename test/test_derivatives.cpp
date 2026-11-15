@@ -80,6 +80,36 @@ TEST_CASE("Spline gradients")
                       ContainsSubstring("derivative order 2"));
 }
 
+TEST_CASE("Evaluators reject fields of another function space")
+{
+  // Two spaces over the same grid still have distinct layouts.
+  auto space = MakeSplineSpace();
+  auto other = MakeSplineSpace();
+  auto f = space->CreateFunction<Real>("f");
+  auto g = other->CreateFunction<Real>("g");
+  pcms::test::SetField(
+    f, OMEGA_H_LAMBDA(Real x, Real y) { return Cubic(x, y); });
+  pcms::test::SetField(
+    g, OMEGA_H_LAMBDA(Real x, Real y) { return Cubic(x, y); });
+
+  const std::vector<Real> pts = {0.3, -0.7, 1.1, 0.2};
+  auto coords =
+    pcms::test::CreateDeviceCoordinateView(pts, space->GetCoordinateSystem());
+  const auto bound = space->Bind(coords.coordinate_view);
+  auto values = space->CreatePointEvaluator<Real>(bound);
+  auto gradient = pcms::Gradient(space)->CreatePointEvaluator<Real>(bound);
+
+  const auto value_basis = f.GetData().GetValueBasis();
+  const auto gradient_basis = gradient->OutputBasis(value_basis);
+  REQUIRE_NOTHROW(pcms::test::EvaluateToHost(*values, f, value_basis));
+  REQUIRE_NOTHROW(pcms::test::EvaluateToHost(*gradient, f, gradient_basis, 2));
+  REQUIRE_THROWS_WITH(pcms::test::EvaluateToHost(*values, g, value_basis),
+                      ContainsSubstring("not a field of the function space"));
+  REQUIRE_THROWS_WITH(
+    pcms::test::EvaluateToHost(*gradient, g, gradient_basis, 2),
+    ContainsSubstring("not a field of the function space"));
+}
+
 TEST_CASE("Gradients fill the out-of-bounds rows")
 {
   auto space = MakeSplineSpace();
