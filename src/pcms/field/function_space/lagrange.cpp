@@ -137,7 +137,7 @@ std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromGeometry(
                                                : std::array<int, 4>{1, 1, 0, 0};
     auto mesh_layout = std::make_shared<MeshFieldsAdapterLayout>(
       mesh, nodes_per_dim, num_components, coordinate_system,
-      std::move(global_id_name), GeometryDiscretization(*geometry));
+      GeometryDiscretization(*geometry), std::move(global_id_name));
     mesh_layout->SetName(layout_name);
     auto eval_factory =
       std::make_shared<MeshFieldsEvaluatorFactory<Real>>(geometry, mesh_layout);
@@ -166,8 +166,8 @@ std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromGeometry(
 #endif
   }
   auto layout = std::make_shared<OmegaHLagrangeLayout>(
-    mesh, order, num_components, coordinate_system, std::move(global_id_name),
-    GeometryDiscretization(*geometry));
+    mesh, order, num_components, coordinate_system,
+    GeometryDiscretization(*geometry), std::move(global_id_name));
   layout->SetName(std::move(layout_name));
   auto eval_factory = std::make_shared<OmegaHLagrangeEvaluatorFactory<Real>>(
     std::move(geometry), layout);
@@ -197,7 +197,7 @@ std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromGeometry(
   const auto& coordinate_system = geometry->GetCoordinateSystem();
   auto layout = std::make_shared<OmegaHLagrangeLayout>(
     mesh, order, num_components, coordinate_system, std::move(owned_mask),
-    std::move(global_id_name), GeometryDiscretization(*geometry));
+    GeometryDiscretization(*geometry), std::move(global_id_name));
   layout->SetName(std::move(layout_name));
   auto eval_factory = std::make_shared<OmegaHLagrangeEvaluatorFactory<Real>>(
     std::move(geometry), layout);

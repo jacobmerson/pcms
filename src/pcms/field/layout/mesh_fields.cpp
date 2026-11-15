@@ -203,8 +203,8 @@ struct CopyClassInfoFunctor
 MeshFieldsAdapterLayout::MeshFieldsAdapterLayout(
   Omega_h::Mesh& mesh, std::array<int, 4> nodes_per_dim, int num_components,
   std::shared_ptr<const CoordinateSystem> coordinate_system,
-  std::string global_id_name,
-  std::shared_ptr<const OmegaHDiscretization> discretization)
+  std::shared_ptr<const OmegaHDiscretization> discretization,
+  std::string global_id_name)
   : mesh_(mesh),
     global_id_name_(global_id_name),
     num_components_(num_components),
@@ -249,7 +249,7 @@ MeshFieldsAdapterLayout::MeshFieldsAdapterLayout(
   }
   BuildOwnedViews();
 
-  discretization_ = detail::ShareOrCreateDiscretization(
+  discretization_ = detail::CheckDiscretizationOf(
     mesh_, std::move(discretization), "MeshFieldsAdapterLayout");
   BuildOwnedClassification();
 }

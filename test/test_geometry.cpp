@@ -174,7 +174,7 @@ TEST_CASE("Spaces on a geometry share its discretization")
   auto other_mesh = BuildSquareMesh(lib, 2);
   REQUIRE_THROWS_WITH(
     pcms::OmegaHLagrangeLayout(
-      other_mesh, 1, 1, pcms::csys::Cartesian::Create(2), "global",
+      other_mesh, 1, 1, pcms::csys::Cartesian::Create(2),
       std::static_pointer_cast<const pcms::OmegaHDiscretization>(
         discretization)),
     ContainsSubstring("OmegaHLagrangeLayout: the discretization is of another "

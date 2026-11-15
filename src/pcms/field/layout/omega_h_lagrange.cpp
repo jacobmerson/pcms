@@ -77,8 +77,8 @@ Kokkos::View<bool*, DeviceMemorySpace> BuildOwned(
 OmegaHLagrangeLayout::OmegaHLagrangeLayout(
   Omega_h::Mesh& mesh, int order, int num_components,
   std::shared_ptr<const CoordinateSystem> coordinate_system,
-  std::string global_id_name,
-  std::shared_ptr<const OmegaHDiscretization> discretization)
+  std::shared_ptr<const OmegaHDiscretization> discretization,
+  std::string global_id_name)
   : OmegaHLagrangeLayout(
       mesh, order, num_components, std::move(coordinate_system),
       std::move(global_id_name), std::move(discretization), std::nullopt)
@@ -88,8 +88,9 @@ OmegaHLagrangeLayout::OmegaHLagrangeLayout(
 OmegaHLagrangeLayout::OmegaHLagrangeLayout(
   Omega_h::Mesh& mesh, int order, int num_components,
   std::shared_ptr<const CoordinateSystem> coordinate_system,
-  Omega_h::Read<Omega_h::I8> owned_mask, std::string global_id_name,
-  std::shared_ptr<const OmegaHDiscretization> discretization)
+  Omega_h::Read<Omega_h::I8> owned_mask,
+  std::shared_ptr<const OmegaHDiscretization> discretization,
+  std::string global_id_name)
   : OmegaHLagrangeLayout(mesh, order, num_components,
                          std::move(coordinate_system),
                          std::move(global_id_name), std::move(discretization),
@@ -129,7 +130,7 @@ OmegaHLagrangeLayout::OmegaHLagrangeLayout(
   class_dims_ = Omega_h::Read<Omega_h::I8>(
     mesh_.get_array<Omega_h::I8>(entity_dim, "class_dim"));
 
-  discretization_ = detail::ShareOrCreateDiscretization(
+  discretization_ = detail::CheckDiscretizationOf(
     mesh_, std::move(discretization), "OmegaHLagrangeLayout");
   BuildOwnedClassification();
 

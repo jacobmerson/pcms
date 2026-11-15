@@ -47,11 +47,11 @@ namespace detail
 
 /// @brief The discretization a layout of `mesh` holds.
 /// @param mesh the layout's mesh
-/// @param discretization discretization to share, or null
+/// @param discretization discretization to share; asserted not null
 /// @param caller name of the layout, for the message
-/// @return `discretization`, or a new discretization of `mesh` if it is null
+/// @return `discretization`
 /// @throws pcms_error if `discretization` is of another mesh
-std::shared_ptr<const OmegaHDiscretization> ShareOrCreateDiscretization(
+std::shared_ptr<const OmegaHDiscretization> CheckDiscretizationOf(
   Omega_h::Mesh& mesh,
   std::shared_ptr<const OmegaHDiscretization> discretization,
   const char* caller);

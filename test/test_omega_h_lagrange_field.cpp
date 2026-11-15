@@ -31,8 +31,9 @@ TEST_CASE("OmegaHLagrangeLayout order-1 properties")
 {
   auto lib = Omega_h::Library{};
   auto mesh = MakeBox2D(lib.world());
-  pcms::OmegaHLagrangeLayout layout(mesh, 1, 2,
-                                    pcms::csys::Cartesian::Deferred());
+  pcms::OmegaHLagrangeLayout layout(
+    mesh, 1, 2, pcms::csys::Cartesian::Deferred(),
+    std::make_shared<pcms::OmegaHDiscretization>(mesh));
 
   REQUIRE(layout.GetOrder() == 1);
   REQUIRE(layout.GetNumComponents() == 2);
@@ -65,8 +66,9 @@ TEST_CASE("OmegaHLagrangeLayout order-0 properties")
 {
   auto lib = Omega_h::Library{};
   auto mesh = MakeBox2D(lib.world());
-  pcms::OmegaHLagrangeLayout layout(mesh, 0, 1,
-                                    pcms::csys::Cartesian::Deferred());
+  pcms::OmegaHLagrangeLayout layout(
+    mesh, 0, 1, pcms::csys::Cartesian::Deferred(),
+    std::make_shared<pcms::OmegaHDiscretization>(mesh));
 
   REQUIRE(layout.GetOrder() == 0);
   REQUIRE(layout.GetNumComponents() == 1);
@@ -99,12 +101,14 @@ TEST_CASE("OmegaHLagrangeLayout invalid order throws")
 {
   auto lib = Omega_h::Library{};
   auto mesh = MakeBox2D(lib.world());
-  REQUIRE_THROWS_AS(
-    pcms::OmegaHLagrangeLayout(mesh, 2, 1, pcms::csys::Cartesian::Deferred()),
-    std::invalid_argument);
-  REQUIRE_THROWS_AS(
-    pcms::OmegaHLagrangeLayout(mesh, -1, 1, pcms::csys::Cartesian::Deferred()),
-    std::invalid_argument);
+  REQUIRE_THROWS_AS(pcms::OmegaHLagrangeLayout(
+                      mesh, 2, 1, pcms::csys::Cartesian::Deferred(),
+                      std::make_shared<pcms::OmegaHDiscretization>(mesh)),
+                    std::invalid_argument);
+  REQUIRE_THROWS_AS(pcms::OmegaHLagrangeLayout(
+                      mesh, -1, 1, pcms::csys::Cartesian::Deferred(),
+                      std::make_shared<pcms::OmegaHDiscretization>(mesh)),
+                    std::invalid_argument);
 }
 
 TEST_CASE("OmegaHLagrangeLayout layout sharing")

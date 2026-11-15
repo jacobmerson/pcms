@@ -27,14 +27,12 @@ OmegaHDiscretization::OmegaHDiscretization(Omega_h::Mesh& mesh) : mesh_(mesh)
   }
 }
 
-std::shared_ptr<const OmegaHDiscretization> detail::ShareOrCreateDiscretization(
+std::shared_ptr<const OmegaHDiscretization> detail::CheckDiscretizationOf(
   Omega_h::Mesh& mesh,
   std::shared_ptr<const OmegaHDiscretization> discretization,
   const char* caller)
 {
-  if (discretization == nullptr) {
-    return std::make_shared<OmegaHDiscretization>(mesh);
-  }
+  PCMS_ALWAYS_ASSERT(discretization != nullptr);
   if (&discretization->GetMesh() != &mesh) {
     throw pcms_error(std::string(caller) +
                      ": the discretization is of another mesh than the "
