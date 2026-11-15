@@ -26,13 +26,6 @@ struct SearchOptions
   Real tolerance = 1e-12;
 };
 
-/// @brief How a geometry is laid out over MPI ranks.
-enum class Distribution
-{
-  Replicated, ///< every rank holds the whole geometry
-  Partitioned ///< each rank holds a part; a point may be owned elsewhere
-};
-
 /// @brief Options of Geometry::Neighbourhood.
 struct NeighbourhoodOptions
 {
@@ -89,12 +82,6 @@ public:
   /// @return the native coordinate system: Bind takes points in it
   [[nodiscard]] virtual const std::shared_ptr<const CoordinateSystem>&
   GetCoordinateSystem() const noexcept = 0;
-
-  /// @return how the geometry is laid out over MPI ranks
-  [[nodiscard]] virtual Distribution GetDistribution() const noexcept
-  {
-    return Distribution::Replicated;
-  }
 
   /// @return whether Bind accepts OutOfBoundsMode::NEAREST_BOUNDARY
   [[nodiscard]] virtual bool SupportsNearestBoundary() const noexcept

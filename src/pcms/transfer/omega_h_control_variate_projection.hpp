@@ -9,7 +9,6 @@
 #include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/transfer/interpolator.h"
 #include "pcms/transfer/mass_matrix_type.hpp"
-#include "pcms/transfer/monte_carlo_sampling.hpp"
 #include "pcms/transfer/transfer_operator.hpp"
 #include <Kokkos_Core.hpp>
 #include <cstdint>
@@ -44,7 +43,6 @@ public:
   /// @param source source evaluated at the target's DOF holders and samples
   /// @param target_space order-1 Omega_h Lagrange space receiving the result
   /// @param samples_per_element Monte Carlo samples per target element
-  /// @param sampling how the samples are drawn
   /// @param seed seed of the sampling
   /// @param mass_matrix_type consistent or lumped mass matrix
   /// @param to_source map from the target's coordinate system to the source
@@ -53,8 +51,7 @@ public:
   /// @throws pcms_error if the source has no geometry
   OmegaHControlVariateProjection(
     const PointEvaluatorFactory& source, const FunctionSpace& target_space,
-    int samples_per_element, MonteCarloSampling sampling,
-    uint64_t seed = 8675309,
+    int samples_per_element, uint64_t seed = 8675309,
     MassMatrixType mass_matrix_type = MassMatrixType::Consistent,
     std::shared_ptr<const CoordinateMap> to_source = nullptr);
 

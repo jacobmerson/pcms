@@ -155,11 +155,6 @@ protected:
   /// @throws pcms_error in OutOfBoundsMode::ERROR if a point is not found
   void SetFound(Kokkos::View<const bool*, DeviceMemorySpace> found);
 
-  /// @brief Takes the found and missing points of a bound source over the
-  ///        same number of points.
-  /// @param same_points bound source whose points correspond to these
-  void SetFound(const BoundSource& same_points);
-
 private:
   std::shared_ptr<const Geometry> geometry_;
   OutOfBoundsPolicy policy_;

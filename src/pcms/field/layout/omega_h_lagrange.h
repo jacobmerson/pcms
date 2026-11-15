@@ -2,6 +2,7 @@
 #define PCMS_ADAPTER_OMEGA_H_LAGRANGE_LAYOUT_H
 
 #include <Omega_h_mesh.hpp>
+#include <optional>
 #include "pcms/utility/arrays.h"
 #include "pcms/discretization/discretization/omega_h.hpp"
 #include "pcms/field/field_layout.h"
@@ -70,6 +71,13 @@ public:
   Omega_h::Mesh& GetMesh() const;
 
 private:
+  OmegaHLagrangeLayout(
+    Omega_h::Mesh& mesh, int order, int num_components,
+    std::shared_ptr<const CoordinateSystem> coordinate_system,
+    std::string global_id_name,
+    std::shared_ptr<const OmegaHDiscretization> discretization,
+    std::optional<Omega_h::Read<Omega_h::I8>> owned_mask);
+
   Omega_h::Mesh& mesh_;
   int order_;
   int num_components_;

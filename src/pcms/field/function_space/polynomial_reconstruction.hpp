@@ -59,7 +59,7 @@ public:
   ///        holders. Spaces on one geometry accept each other's bound
   ///        sources; the supports come from the geometry's search options.
   /// @param options the reconstruction
-  /// @throws pcms_error if `geometry` is null
+  /// @param geometry the geometry; must not be null
   [[nodiscard]] static std::shared_ptr<PolynomialReconstructionFunctionSpace>
   FromGeometry(std::shared_ptr<const PointCloudGeometry> geometry,
                MLSOptions options = {});

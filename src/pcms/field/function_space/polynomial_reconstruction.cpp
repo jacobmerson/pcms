@@ -65,10 +65,7 @@ std::shared_ptr<PolynomialReconstructionFunctionSpace>
 PolynomialReconstructionFunctionSpace::FromGeometry(
   std::shared_ptr<const PointCloudGeometry> geometry, MLSOptions options)
 {
-  if (geometry == nullptr) {
-    throw pcms_error("PolynomialReconstructionFunctionSpace::FromGeometry: "
-                     "geometry must not be null");
-  }
+  PCMS_ALWAYS_ASSERT(geometry != nullptr);
   auto layout = geometry->GetSiteLayout();
   auto eval_factory = std::make_shared<PointCloudEvaluatorFactory>(
     std::move(geometry), layout, options);

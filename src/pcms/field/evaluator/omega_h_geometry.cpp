@@ -83,12 +83,6 @@ std::shared_ptr<OmegaHGeometry> OmegaHGeometry::Create(
   return std::make_shared<OmegaHGeometry>(mesh, std::move(system), options);
 }
 
-Distribution OmegaHGeometry::GetDistribution() const noexcept
-{
-  return mesh_.comm()->size() > 1 ? Distribution::Partitioned
-                                  : Distribution::Replicated;
-}
-
 std::shared_ptr<BoundSource> OmegaHGeometry::BindImpl(
   const BindRequest& request) const
 {

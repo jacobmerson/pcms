@@ -97,11 +97,4 @@ void BoundSource::SetFound(Kokkos::View<const bool*, DeviceMemorySpace> found)
   missing_ = missing_points;
 }
 
-void BoundSource::SetFound(const BoundSource& same_points)
-{
-  PCMS_ALWAYS_ASSERT(same_points.NumPoints() == NumPoints());
-  found_ = same_points.found_;
-  missing_ = same_points.missing_;
-}
-
 } // namespace pcms

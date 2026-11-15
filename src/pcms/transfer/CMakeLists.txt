@@ -6,7 +6,6 @@ set(PCMS_FIELD_TRANSFER_HEADERS
     copy.h
     transfer_operator.hpp
     mass_matrix_type.hpp
-    monte_carlo_sampling.hpp
 )
 
 
@@ -30,7 +29,6 @@ if(PCMS_ENABLE_PETSC AND PCMS_ENABLE_MESHFIELDS)
       omega_h_mass_integrator.hpp
       omega_h_mc_rhs_integrator.hpp
       omega_h_control_variate_projection.hpp
-      coo_assembly_utils.hpp
       petsc_utils.hpp
       omega_h_form_integrator_utils.hpp)
   list(APPEND PCMS_FIELD_TRANSFER_SOURCES
@@ -40,8 +38,7 @@ if(PCMS_ENABLE_PETSC AND PCMS_ENABLE_MESHFIELDS)
       omega_h_mass_integrator.cpp
       omega_h_mc_rhs_integrator.cpp
       omega_h_control_variate_projection.cpp
-      petsc_utils.cpp
-      coo_assembly_utils.cpp)
+      petsc_utils.cpp)
 endif()
 
 add_library(pcms_transfer ${PCMS_FIELD_TRANSFER_SOURCES})

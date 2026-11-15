@@ -29,10 +29,7 @@ std::shared_ptr<SplineFunctionSpace> SplineFunctionSpace::FromUniformGrid(
 std::shared_ptr<SplineFunctionSpace> SplineFunctionSpace::FromGeometry(
   std::shared_ptr<const UniformGridGeometry<2>> geometry)
 {
-  if (geometry == nullptr) {
-    throw pcms_error("SplineFunctionSpace::FromGeometry: geometry must not "
-                     "be null");
-  }
+  PCMS_ALWAYS_ASSERT(geometry != nullptr);
   auto layout = std::make_shared<UniformGridFieldLayout<2>>(
     geometry->GetGrid(), 1, geometry->GetCoordinateSystem(), 1);
   auto evaluator_factory =

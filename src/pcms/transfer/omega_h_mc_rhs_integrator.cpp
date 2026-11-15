@@ -145,8 +145,7 @@ void ScaleByElementMeasure(
 } // namespace
 
 OmegaHMonteCarloRHSIntegrator::OmegaHMonteCarloRHSIntegrator(
-  const FunctionSpace& target_space, int samples_per_element,
-  MonteCarloSampling sampling, uint64_t seed)
+  const FunctionSpace& target_space, int samples_per_element, uint64_t seed)
   : OmegaHMonteCarloRHSIntegrator(
       [&target_space] {
         auto layout = std::dynamic_pointer_cast<const OmegaHLagrangeLayout>(
@@ -159,14 +158,14 @@ OmegaHMonteCarloRHSIntegrator::OmegaHMonteCarloRHSIntegrator(
       }(),
       std::dynamic_pointer_cast<const OmegaHLagrangeLayout>(
         target_space.GetLayout()),
-      samples_per_element, sampling, seed)
+      samples_per_element, seed)
 {
 }
 
 OmegaHMonteCarloRHSIntegrator::OmegaHMonteCarloRHSIntegrator(
   std::shared_ptr<const OmegaHGeometry> target_geometry,
   std::shared_ptr<const OmegaHLagrangeLayout> target_layout,
-  int samples_per_element, MonteCarloSampling /*sampling*/, uint64_t seed)
+  int samples_per_element, uint64_t seed)
   : geometry_(std::move(target_geometry))
 {
   if (samples_per_element <= 0) {

@@ -125,10 +125,7 @@ std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromGeometry(
   std::shared_ptr<const OmegaHGeometry> geometry, int order, int num_components,
   std::string global_id_name, Backend backend, std::string layout_name)
 {
-  if (geometry == nullptr) {
-    throw pcms_error(
-      "LagrangeFunctionSpace::FromGeometry: geometry must not be null");
-  }
+  PCMS_ALWAYS_ASSERT(geometry != nullptr);
   backend =
     CheckOrderAndBackend("FromGeometry", order, backend, /*owned_mask=*/false);
   Omega_h::Mesh& mesh = geometry->GetMesh();
@@ -194,10 +191,7 @@ std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromGeometry(
   Omega_h::Read<Omega_h::I8> owned_mask, std::string global_id_name,
   Backend backend, std::string layout_name)
 {
-  if (geometry == nullptr) {
-    throw pcms_error(
-      "LagrangeFunctionSpace::FromGeometry: geometry must not be null");
-  }
+  PCMS_ALWAYS_ASSERT(geometry != nullptr);
   CheckOrderAndBackend("FromGeometry", order, backend, /*owned_mask=*/true);
   Omega_h::Mesh& mesh = geometry->GetMesh();
   const auto& coordinate_system = geometry->GetCoordinateSystem();
@@ -240,10 +234,7 @@ std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromGeometry(
   std::shared_ptr<const UniformGridGeometry<2>> geometry, int order,
   int num_components, std::string layout_name)
 {
-  if (geometry == nullptr) {
-    throw pcms_error(
-      "LagrangeFunctionSpace::FromGeometry: geometry must not be null");
-  }
+  PCMS_ALWAYS_ASSERT(geometry != nullptr);
   if (order != 0 && order != 1) {
     throw std::invalid_argument("LagrangeFunctionSpace::FromGeometry: only "
                                 "orders 0 and 1 are supported");
@@ -287,10 +278,7 @@ std::shared_ptr<LagrangeFunctionSpace> LagrangeFunctionSpace::FromGeometry(
   std::shared_ptr<const UniformGridGeometry<3>> geometry, int order,
   int num_components, std::string layout_name)
 {
-  if (geometry == nullptr) {
-    throw pcms_error(
-      "LagrangeFunctionSpace::FromGeometry: geometry must not be null");
-  }
+  PCMS_ALWAYS_ASSERT(geometry != nullptr);
   if (order != 0 && order != 1) {
     throw std::invalid_argument("LagrangeFunctionSpace::FromGeometry: only "
                                 "orders 0 and 1 are supported");

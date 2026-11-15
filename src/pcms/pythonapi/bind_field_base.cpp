@@ -167,11 +167,8 @@ void bind_create_field_module(py::module& m)
     m, "Geometry",
     "A discretization's coordinates and point search; function spaces are "
     "created on it")
-    .def("get_discretization",
-         [](const Geometry& g) { return ToPyHolder(g.GetDiscretization()); })
     .def("get_coordinate_system",
          [](const Geometry& g) { return ToPyHolder(g.GetCoordinateSystem()); })
-    .def("supports_nearest_boundary", &Geometry::SupportsNearestBoundary)
     .def(
       "bind",
       [](const Geometry& g, const PyCoordinateView& coords,

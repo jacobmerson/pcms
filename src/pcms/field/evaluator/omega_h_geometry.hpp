@@ -119,9 +119,6 @@ public:
     return system_;
   }
 
-  /// Partitioned if the mesh's communicator has more than one rank.
-  [[nodiscard]] Distribution GetDistribution() const noexcept override;
-
   [[nodiscard]] Omega_h::Mesh& GetMesh() const noexcept { return mesh_; }
 
   /// Supports among the mesh vertices, by the mesh-adjacency search from the

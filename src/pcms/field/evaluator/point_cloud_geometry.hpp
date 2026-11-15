@@ -82,12 +82,6 @@ public:
     return site_layout_;
   }
 
-  [[nodiscard]] const NeighbourhoodOptions& GetNeighbourhoodOptions()
-    const noexcept
-  {
-    return options_;
-  }
-
   /// The mesh-adjacency search for the sites of a mesh (its vertices or its
   /// element centroids) when `owners` gives the cell or vertex of the mesh at
   /// each point, and for mesh-vertex sites, which otherwise locate the points
