@@ -25,7 +25,8 @@ PolynomialReconstructionFunctionSpace::PolynomialReconstructionFunctionSpace(
 
 std::shared_ptr<PolynomialReconstructionFunctionSpace>
 PolynomialReconstructionFunctionSpace::Create(
-  CoordinateView<HostMemorySpace> coords, MLSOptions options)
+  CoordinateView<HostMemorySpace> coords, MLSOptions options,
+  NeighbourhoodOptions neighbourhood)
 {
   const auto values = coords.GetValues();
   const int dim = static_cast<int>(values.extent(1));
@@ -36,13 +37,15 @@ PolynomialReconstructionFunctionSpace::Create(
   DeepCopyMismatchLayouts(device_view, host_view);
   auto pc_layout = std::make_shared<PointCloudLayout>(
     dim, device_view, coords.GetCoordinateSystem());
-  return FromGeometry(PointCloudGeometry::Create(pc_layout, options), options);
+  return FromGeometry(
+    PointCloudGeometry::Create(pc_layout, std::move(neighbourhood)), options);
 }
 
 std::shared_ptr<PolynomialReconstructionFunctionSpace>
 PolynomialReconstructionFunctionSpace::FromMesh(
   Omega_h::Mesh& mesh, int source_entity_dim,
-  std::shared_ptr<const CoordinateSystem> coordinate_system, MLSOptions options)
+  std::shared_ptr<const CoordinateSystem> coordinate_system, MLSOptions options,
+  NeighbourhoodOptions neighbourhood)
 {
   if (source_entity_dim < 0 || source_entity_dim > mesh.dim()) {
     throw pcms_error(
@@ -52,9 +55,10 @@ PolynomialReconstructionFunctionSpace::FromMesh(
 
   auto mesh_layout = std::make_shared<OmegaHEntityLayout>(
     mesh, source_entity_dim, 1, std::move(coordinate_system));
-  return FromGeometry(
-    PointCloudGeometry::Create(mesh_layout, mesh, source_entity_dim, options),
-    options);
+  return FromGeometry(PointCloudGeometry::Create(mesh_layout, mesh,
+                                                 source_entity_dim,
+                                                 std::move(neighbourhood)),
+                      options);
 }
 
 std::shared_ptr<PolynomialReconstructionFunctionSpace>

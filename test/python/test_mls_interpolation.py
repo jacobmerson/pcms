@@ -54,13 +54,15 @@ class TestMLSInterpolation:
         for interp_degree in range(1, 4):
             opts = pcms.MLSOptions()
             opts.degree = interp_degree
-            opts.radius = 1.5
-            opts.adapt_radius = False
             opts.basis = pcms.RadialBasisFunction.NO_OP
+            neighbourhood = pcms.NeighbourhoodOptions()
+            neighbourhood.radius = 1.5
+            neighbourhood.adapt_radius = False
 
             factory = pcms.PolynomialReconstructionFunctionSpace.create(
                 pcms.CoordinateView(source_xy),
                 opts,
+                neighbourhood,
             )
             field = factory.create_function()
             evaluator = factory.create_point_evaluator(

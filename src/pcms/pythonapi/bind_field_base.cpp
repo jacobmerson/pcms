@@ -405,40 +405,50 @@ void bind_create_field_module(py::module& m)
   // Configuration for PolynomialReconstructionFunctionSpace MLS evaluation.
   py::class_<MLSOptions>(m, "MLSOptions")
     .def(py::init<>(), "Default MLSOptions")
-    .def_readwrite("radius", &MLSOptions::radius)
-    .def_readwrite("min_req_supports", &MLSOptions::min_req_supports)
     .def_readwrite("degree", &MLSOptions::degree)
-    .def_readwrite("adapt_radius", &MLSOptions::adapt_radius)
     .def_readwrite("lambda_reg", &MLSOptions::lambda)
     .def_readwrite("tol", &MLSOptions::tol)
     .def_readwrite("decay_factor", &MLSOptions::decay_factor)
     .def_readwrite("basis", &MLSOptions::basis);
+
+  py::class_<NeighbourhoodOptions>(
+    m, "NeighbourhoodOptions",
+    "Support search of a PolynomialReconstructionFunctionSpace's geometry")
+    .def(py::init<>(), "Default NeighbourhoodOptions")
+    .def_readwrite("radius", &NeighbourhoodOptions::radius)
+    .def_readwrite("min_supports", &NeighbourhoodOptions::min_supports)
+    .def_readwrite("adapt_radius", &NeighbourhoodOptions::adapt_radius);
 
   py::class_<PolynomialReconstructionFunctionSpace, FunctionSpace,
              std::shared_ptr<PolynomialReconstructionFunctionSpace>>(
     m, "PolynomialReconstructionFunctionSpace")
     .def_static(
       "create",
-      [](const PyCoordinateView& coords, MLSOptions options) {
+      [](const PyCoordinateView& coords, MLSOptions options,
+         NeighbourhoodOptions neighbourhood) {
         auto values = NumpyInput<Real>::ensure(coords.values);
         return PolynomialReconstructionFunctionSpace::Create(
           CoordinateView<HostMemorySpace>(coords.system,
                                           NumpyToHostView<2, Real>(values)),
-          options);
+          options, std::move(neighbourhood));
       },
       py::arg("coords"), py::arg("options") = MLSOptions{},
+      py::arg("neighbourhood") = NeighbourhoodOptions{},
       "Create a PolynomialReconstructionFunctionSpace over the source points "
       "of a CoordinateView")
     .def_static(
       "from_mesh",
       [](Omega_h::Mesh& mesh, int source_entity_dim,
-         const SystemHolder& coordinate_system, MLSOptions options) {
+         const SystemHolder& coordinate_system, MLSOptions options,
+         NeighbourhoodOptions neighbourhood) {
         return PolynomialReconstructionFunctionSpace::FromMesh(
-          mesh, source_entity_dim, CartesianIfNone(coordinate_system), options);
+          mesh, source_entity_dim, CartesianIfNone(coordinate_system), options,
+          std::move(neighbourhood));
       },
       py::arg("mesh"), py::arg("source_entity_dim"),
       py::arg("coordinate_system") = py::none(),
-      py::arg("options") = MLSOptions{}, py::keep_alive<0, 1>(),
+      py::arg("options") = MLSOptions{},
+      py::arg("neighbourhood") = NeighbourhoodOptions{}, py::keep_alive<0, 1>(),
       "Create a PolynomialReconstructionFunctionSpace from mesh entity "
       "coordinates.");
 

@@ -268,7 +268,7 @@ snake_case form of the C++ method (`GetDOFHolderData` is
 - `create_omega_h_geometry(mesh, system=None)` - the geometry of an Omega_h mesh (coordinate system and point search), shared by the spaces on it
 - `LagrangeFunctionSpace.from_geometry(geometry, order, num_components)` - create an Omega_h-backed FunctionSpace
 - `LagrangeFunctionSpace.from_uniform_grid(grid, num_components, mesh_coordinate_system, order=1)` - create a uniform-grid-backed FunctionSpace
-- `PolynomialReconstructionFunctionSpace.create(coordinate_view, options)` - MLS reconstruction over a point cloud
+- `PolynomialReconstructionFunctionSpace.create(coordinate_view, options, neighbourhood)` - MLS reconstruction (`MLSOptions`) over a point cloud, on supports found with `NeighbourhoodOptions`
 
 ### Field Operations
 - `space.create_function(name="", variance=values.Scalar, system=None, scaling=None)` - Create a real-valued `Function`; vector and tensor values are in `system`'s basis (default: the space's)

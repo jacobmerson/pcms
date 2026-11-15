@@ -61,38 +61,12 @@ std::vector<Real> MakeGrid3D(int N)
   return pts;
 }
 
-// MLSOptions tuned for a 7x7 source grid on [0,1]^2.
-pcms::MLSOptions DefaultTestOptions()
-{
-  pcms::MLSOptions opts;
-  opts.radius = 0.35;
-  opts.min_req_supports = 6;
-  opts.degree = 1;
-  opts.adapt_radius = true;
-  return opts;
-}
-
-pcms::MLSOptions DefaultTestOptions3D()
-{
-  pcms::MLSOptions opts;
-  opts.radius = 0.8;
-  opts.min_req_supports = 10;
-  opts.degree = 1;
-  opts.adapt_radius = true;
-  return opts;
-}
-
-pcms::MLSOptions SweepTestOptions(unsigned degree,
-                                  pcms::RadialBasisFunction basis)
-{
-  pcms::MLSOptions opts;
-  opts.radius = 0.45;
-  opts.min_req_supports = (degree < 2u) ? 8u : 16u;
-  opts.degree = degree;
-  opts.adapt_radius = true;
-  opts.basis = basis;
-  return opts;
-}
+// Linear MLS on supports tuned for a 7x7 source grid on [0,1]^2.
+constexpr pcms::MLSOptions Linear{.degree = 1};
+const pcms::NeighbourhoodOptions GridSupports{.radius = 0.35,
+                                              .min_supports = 6};
+const pcms::NeighbourhoodOptions GridSupports3D{.radius = 0.8,
+                                                .min_supports = 10};
 
 const char* BasisName(pcms::RadialBasisFunction basis)
 {
@@ -119,7 +93,9 @@ void CheckPolynomialReproduction(unsigned degree,
   auto fs = pcms::PolynomialReconstructionFunctionSpace::Create(
     pcms::CoordinateView<HostMemorySpace>(pcms::csys::Cartesian::Deferred(),
                                           coords_view),
-    SweepTestOptions(degree, basis));
+    pcms::MLSOptions{.degree = degree, .basis = basis},
+    pcms::NeighbourhoodOptions{.radius = 0.45,
+                               .min_supports = degree < 2u ? 8 : 16});
   auto field = fs->CreateFunction<Real>();
   pcms::test::SetField(field, func);
 
@@ -174,7 +150,7 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: same PointEvaluator "
   auto fs = pcms::PolynomialReconstructionFunctionSpace::Create(
     pcms::CoordinateView<HostMemorySpace>(pcms::csys::Cartesian::Deferred(),
                                           coords_view),
-    DefaultTestOptions());
+    Linear, GridSupports);
   auto field_a = fs->CreateFunction<Real>();
   auto field_b = fs->CreateFunction<Real>();
 
@@ -271,7 +247,7 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: CreatePointEvaluator "
   auto fs = pcms::PolynomialReconstructionFunctionSpace::Create(
     pcms::CoordinateView<HostMemorySpace>(pcms::csys::CylindricalRZ::Create(),
                                           coords_view),
-    DefaultTestOptions());
+    Linear, GridSupports);
 
   auto pts = pcms::test::StandardEvalCoords2D();
   auto device_coords = pcms::test::CreateDeviceCoordinateView(
@@ -294,7 +270,7 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: accepts the (R, Z) "
   auto fs = pcms::PolynomialReconstructionFunctionSpace::Create(
     pcms::CoordinateView<HostMemorySpace>(pcms::csys::CylindricalRZ::Create(),
                                           coords_view),
-    DefaultTestOptions());
+    Linear, GridSupports);
 
   // A linear field in (R, Z), which a degree-1 MLS must reproduce.
   auto linear_rz = [](Real r, Real z) { return 2.0 + 3.0 * r - 1.5 * z; };
@@ -338,7 +314,7 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: rejects coordinates "
     pcms::PolynomialReconstructionFunctionSpace::Create(
       pcms::CoordinateView<HostMemorySpace>(
         pcms::csys::CylindricalRThetaZ::Create(), coords_view),
-      DefaultTestOptions3D()),
+      Linear, GridSupports3D),
     Catch::Matchers::ContainsSubstring("whose metric is the identity"));
 }
 
@@ -351,17 +327,14 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: spaces of two degrees "
   auto first = pcms::PolynomialReconstructionFunctionSpace::Create(
     pcms::CoordinateView<HostMemorySpace>(pcms::csys::Cartesian::Create(2),
                                           coords_view),
-    DefaultTestOptions());
+    Linear, GridSupports);
   auto geometry = std::dynamic_pointer_cast<const pcms::PointCloudGeometry>(
     first->GetGeometry());
   REQUIRE(geometry != nullptr);
-  auto options = DefaultTestOptions();
-  options.degree = 1;
-  auto linear = pcms::PolynomialReconstructionFunctionSpace::FromGeometry(
-    geometry, options);
-  options.degree = 2;
+  auto linear =
+    pcms::PolynomialReconstructionFunctionSpace::FromGeometry(geometry, Linear);
   auto quadratic = pcms::PolynomialReconstructionFunctionSpace::FromGeometry(
-    geometry, options);
+    geometry, pcms::MLSOptions{.degree = 2});
   REQUIRE(linear->GetGeometry() == quadratic->GetGeometry());
 
   // a quadratic field: degree 2 reproduces it, degree 1 does not
@@ -409,17 +382,13 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: radius option is "
   std::vector<Real> src{0.0, 0.0, 0.6, 0.0};
   Rank2View<Real, HostMemorySpace> coords_view(src.data(), 2, 2);
 
-  pcms::MLSOptions opts;
-  opts.radius = 0.5;
-  opts.min_req_supports = 1;
-  opts.degree = 0;
-  opts.adapt_radius = false;
-  opts.basis = pcms::RadialBasisFunction::RBF_CONST;
-
   auto fs = pcms::PolynomialReconstructionFunctionSpace::Create(
     pcms::CoordinateView<HostMemorySpace>(pcms::csys::Cartesian::Deferred(),
                                           coords_view),
-    opts);
+    pcms::MLSOptions{.degree = 0,
+                     .basis = pcms::RadialBasisFunction::RBF_CONST},
+    pcms::NeighbourhoodOptions{
+      .radius = 0.5, .min_supports = 1, .adapt_radius = false});
   auto field = fs->CreateFunction<Real>();
   std::vector<Real> dof_values{1.0, 5.0};
   field.SetDOFHolderDataHost(
@@ -451,7 +420,7 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: 3D point clouds preserve "
   auto fs = pcms::PolynomialReconstructionFunctionSpace::Create(
     pcms::CoordinateView<HostMemorySpace>(pcms::csys::Cartesian::Deferred(),
                                           coords_view),
-    DefaultTestOptions3D());
+    Linear, GridSupports3D);
   auto layout_coords_device =
     fs->GetLayout()->GetDOFHolderCoordinates().GetValues();
   auto layout_coords = pcms::test::CopyCoordinatesToHost(layout_coords_device);

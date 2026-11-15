@@ -2,7 +2,6 @@
 #define PCMS_FIELD_EVALUATOR_POINT_CLOUD_GEOMETRY_HPP
 
 #include "pcms/field/coordinate_system.hpp"
-#include "pcms/field/evaluator/mls_options.h"
 #include "pcms/field/evaluator/mls_point_cloud.h"
 #include "pcms/field/field_layout.h"
 #include "pcms/geometry/geometry.hpp"
@@ -24,15 +23,15 @@ namespace pcms
 /// Geometry of a set of sites (the DOF holders of a layout: a point cloud or
 /// the entities of one dimension of a mesh): the identity map, located by the
 /// MLS supports of each query point. Bind finds the supports with
-/// Neighbourhood, using the Localization() of the MLS options the geometry
-/// was created with.
+/// Neighbourhood, using the options the geometry was created with.
 /// @throws pcms_error on construction if the sites' coordinate system does not
 ///         have the identity metric
 class PointCloudGeometry final : public Geometry
 {
 public:
   [[nodiscard]] static std::shared_ptr<PointCloudGeometry> Create(
-    std::shared_ptr<const FieldLayout> site_layout, MLSOptions options = {})
+    std::shared_ptr<const FieldLayout> site_layout,
+    NeighbourhoodOptions options = {})
   {
     return std::make_shared<PointCloudGeometry>(std::move(site_layout),
                                                 options);
@@ -40,7 +39,7 @@ public:
 
   [[nodiscard]] static std::shared_ptr<PointCloudGeometry> Create(
     std::shared_ptr<const FieldLayout> site_layout, Omega_h::Mesh& mesh,
-    int site_entity_dim, MLSOptions options = {})
+    int site_entity_dim, NeighbourhoodOptions options = {})
   {
     return std::make_shared<PointCloudGeometry>(std::move(site_layout), mesh,
                                                 site_entity_dim, options);
@@ -48,16 +47,17 @@ public:
 
   /// Use Create or std::make_shared: Bind uses shared_from_this().
   PointCloudGeometry(std::shared_ptr<const FieldLayout> site_layout,
-                     MLSOptions options)
-    : PointCloudGeometry(std::move(site_layout), nullptr, -1, options)
+                     NeighbourhoodOptions options)
+    : PointCloudGeometry(std::move(site_layout), nullptr, -1,
+                         std::move(options))
   {
   }
 
   PointCloudGeometry(std::shared_ptr<const FieldLayout> site_layout,
                      Omega_h::Mesh& mesh, int site_entity_dim,
-                     MLSOptions options)
+                     NeighbourhoodOptions options)
     : PointCloudGeometry(std::move(site_layout), &mesh, site_entity_dim,
-                         options)
+                         std::move(options))
   {
   }
 
@@ -150,11 +150,11 @@ protected:
 private:
   PointCloudGeometry(std::shared_ptr<const FieldLayout> site_layout,
                      Omega_h::Mesh* mesh, int site_entity_dim,
-                     MLSOptions options)
+                     NeighbourhoodOptions options)
     : site_layout_(std::move(site_layout)),
       mesh_(mesh),
       site_entity_dim_(site_entity_dim),
-      options_(options.Localization())
+      options_(std::move(options))
   {
     // MLS distances are based on the unweighted Euclidean measure, which is
     // valid only with the identity metric; this almost certainly should be

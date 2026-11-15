@@ -8,7 +8,6 @@
 #include <pcms/configuration.h>
 #include <pcms/field/coordinate_systems/cartesian.hpp>
 #include <pcms/field/coordinate_systems/cylindrical.hpp>
-#include <pcms/field/evaluator/mls_options.h>
 #include <pcms/field/evaluator/omega_h_geometry.hpp>
 #include <pcms/field/evaluator/point_cloud_geometry.hpp>
 #include <pcms/field/evaluator/uniform_grid_geometry.hpp>
@@ -437,12 +436,7 @@ TEST_CASE("Neighbourhood returns vertex supports")
   auto geometry = MakeGeometry(mesh);
   auto coords = pcms::test::CreateDeviceCoordinateView(
     pcms::test::StandardEvalCoords2D(), geometry->GetCoordinateSystem());
-  pcms::MLSOptions mls;
-  mls.radius = 0.3;
-  mls.min_req_supports = 6;
-  // the search MLSOptions asks for: radius, 6 to 18 supports
-  pcms::NeighbourhoodOptions options = mls.Localization();
-  REQUIRE(options.max_supports == 18);
+  pcms::NeighbourhoodOptions options{.radius = 0.3, .min_supports = 6};
   const pcms::SupportResults actual =
     geometry->Neighbourhood(coords.coordinate_view, options);
   Omega_h::Real radius_sq = 0.09;
@@ -467,7 +461,7 @@ TEST_CASE("Neighbourhood returns vertex supports")
   auto cylindrical = pcms::test::CreateDeviceCoordinateView(
     pcms::test::StandardEvalCoords2D(), pcms::csys::CylindricalRZ::Create());
   REQUIRE_THROWS_WITH(
-    geometry->Neighbourhood(cylindrical.coordinate_view, mls.Localization()),
+    geometry->Neighbourhood(cylindrical.coordinate_view, {}),
     ContainsSubstring("is not the geometry's coordinate system"));
 }
 
@@ -484,9 +478,7 @@ TEST_CASE("PointCloudGeometry::Neighbourhood takes the search of its sites")
   auto cloud = std::make_shared<pcms::PointCloudLayout>(
     2, pcms::ConvertCoordsTo2D(centroids, mesh.nfaces(), 2), system);
   const auto query = vertices->GetDOFHolderCoordinates();
-  pcms::NeighbourhoodOptions options;
-  options.radius = 0.25;
-  options.min_supports = 8;
+  pcms::NeighbourhoodOptions options{.radius = 0.25, .min_supports = 8};
   Omega_h::Real radius_sq = options.radius * options.radius;
   const auto distance_search = pcms::BuildPointCloudSupports(
     centroids, mesh.coords(), 2, options.radius, 8, true);
