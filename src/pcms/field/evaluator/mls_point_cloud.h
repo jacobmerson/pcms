@@ -1,6 +1,7 @@
 #ifndef PCMS_FIELD_EVALUATOR_MLS_POINT_CLOUD_H
 #define PCMS_FIELD_EVALUATOR_MLS_POINT_CLOUD_H
 
+#include "pcms/field/field.h"
 #include "pcms/field/point_evaluator.h"
 #include "pcms/field/field_data.h"
 #include "pcms/field/evaluator/mls_options.h"

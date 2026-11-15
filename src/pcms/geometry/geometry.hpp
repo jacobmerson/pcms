@@ -153,8 +153,9 @@ public:
 
   /// @brief Support sets of query points among this geometry's sites, for
   ///        reconstruction spaces.
-  /// @throws pcms_error unless the kind overrides it, or if
-  ///         `options.max_supports` is neither 0 nor
+  /// @throws pcms_error unless the kind overrides it, or if the coordinate
+  ///         system does not have the identity metric (the distances are
+  ///         Euclidean), or `options.max_supports` is neither 0 nor
   ///         3 * `options.min_supports` (other bounds are not honoured yet)
   [[nodiscard]] virtual SupportResults Neighbourhood(
     CoordinateView<DeviceMemorySpace> coords,
@@ -193,9 +194,9 @@ namespace detail
 /// @param coords the query points
 /// @param options the search options
 /// @param caller name of the calling function, for the message
-/// @throws pcms_error if `coords` is not in the geometry's coordinate system
-///         or `options.max_supports` is neither 0 nor
-///         3 * `options.min_supports`
+/// @throws pcms_error if `coords` is not in the geometry's coordinate system,
+///         that system does not have the identity metric, or
+///         `options.max_supports` is neither 0 nor 3 * `options.min_supports`
 void CheckNeighbourhoodArguments(
   const Geometry& geometry, const CoordinateView<DeviceMemorySpace>& coords,
   const NeighbourhoodOptions& options, const std::string& caller);

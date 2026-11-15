@@ -6,10 +6,10 @@
 #include "pcms/field/evaluator/mls_point_cloud.h"
 #include "pcms/field/field_layout.h"
 #include "pcms/geometry/geometry.hpp"
-#include "pcms/localization/localization_path_selection.h"
-#include "pcms/localization/mesh_localization.h"
+#include "pcms/localization/adj_search.hpp"
 #include "pcms/localization/mls_support_helpers.h"
 #include "pcms/utility/assert.h"
+#include "pcms/utility/entity_types.h"
 #include "pcms/utility/omega_h_array_utils.h"
 #include "pcms/utility/profile.h"
 
@@ -85,36 +85,39 @@ public:
     return options_;
   }
 
-  /// The mesh-adjacency search for mesh-entity sites, the distance search
-  /// for a point cloud. When `options.query_layout` holds the vertices of the
-  /// sites' mesh and the sites are its element centroids, the supports are
-  /// found from the mesh adjacency alone and `coords` is taken to be those
-  /// vertices (it is not read).
+  /// The mesh-adjacency search for mesh-vertex sites, the distance search
+  /// otherwise. When the sites are the element centroids of a 2D mesh and
+  /// `options.query_layout` holds all the vertices of that mesh on this rank
+  /// (one DOF holder per vertex, no ghosts), the supports are found from the
+  /// mesh adjacency alone and `coords` is taken to be those vertices (it is
+  /// not read).
   [[nodiscard]] SupportResults Neighbourhood(
     CoordinateView<DeviceMemorySpace> coords,
     const NeighbourhoodOptions& options) const override
   {
     detail::CheckNeighbourhoodArguments(*this, coords, options,
                                         "PointCloudGeometry::Neighbourhood");
-    const MLSOptions search = MLSOptions::FromLocalization(options);
-    if (mesh_ != nullptr) {
-      AdjacencyLocalizationFactory adjacency(*mesh_, site_entity_dim_, search);
-      if (options.query_layout != nullptr &&
-          detail::SelectLocalizationPath(*site_layout_,
-                                         options.query_layout.get()) ==
-            detail::LocalizationPath::CentroidToVertexAdjacencySearch) {
-        return adjacency.BuildSameMeshCentroidToVertex();
-      }
-      return adjacency.Build(std::move(coords));
+    Omega_h::Real radius_sq = options.radius * options.radius;
+    const FieldLayout* query = options.query_layout.get();
+    if (site_entity_dim_ == Face && mesh_->dim() == 2 && query != nullptr &&
+        query->GetDOFHolderEntityDim() == Vertex && !query->HasGhosts() &&
+        query->GetDiscretization() != nullptr &&
+        GetDiscretization()->SameEntities(*query->GetDiscretization())) {
+      return searchNeighbors(*mesh_, radius_sq, options.min_supports,
+                             options.adapt_radius);
+    }
+    const auto points = coords.GetValues();
+    const auto flat_points = flatten_to_omega_h_reals(points, "tgt_coords");
+    if (site_entity_dim_ == Vertex) {
+      return searchNeighbors(
+        *mesh_, flat_points, static_cast<LO>(points.extent(0)), radius_sq,
+        options.min_supports, 3 * options.min_supports, options.adapt_radius);
     }
     const auto sites = site_layout_->GetDOFHolderCoordinates().GetValues();
-    const int dim = static_cast<int>(sites.extent(1));
-    const auto query = coords.GetValues();
-    PCMS_ALWAYS_ASSERT(static_cast<int>(query.extent(1)) == dim);
     return BuildPointCloudSupports(
-      flatten_to_omega_h_reals(sites, "src_coords"),
-      flatten_to_omega_h_reals(query, "tgt_coords"), dim, search.radius,
-      search.min_req_supports, search.adapt_radius);
+      flatten_to_omega_h_reals(sites, "src_coords"), flat_points,
+      static_cast<int>(sites.extent(1)), options.radius, options.min_supports,
+      options.adapt_radius);
   }
 
 protected:

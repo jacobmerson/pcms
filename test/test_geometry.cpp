@@ -10,12 +10,17 @@
 #include <pcms/field/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/evaluator/mls_options.h>
 #include <pcms/field/evaluator/omega_h_geometry.hpp>
+#include <pcms/field/evaluator/point_cloud_geometry.hpp>
 #include <pcms/field/evaluator/uniform_grid_geometry.hpp>
 #include <pcms/field/function_space/lagrange.h>
+#include <pcms/field/layout/omega_h_entity.h>
 #include <pcms/field/layout/omega_h_lagrange.h>
+#include <pcms/field/layout/point_cloud.h>
 #include <pcms/geometry/geometry.hpp>
 #include <pcms/localization/adj_search.hpp>
-#include <pcms/localization/mesh_localization.h>
+#include <pcms/localization/mls_support_helpers.h>
+#include <pcms/utility/mesh_geometry.h>
+#include <pcms/utility/omega_h_array_utils.h>
 #include "field_test_utils.h"
 #include <memory>
 #include <string>
@@ -440,9 +445,11 @@ TEST_CASE("Neighbourhood returns vertex supports")
   REQUIRE(options.max_supports == 18);
   const pcms::SupportResults actual =
     geometry->Neighbourhood(coords.coordinate_view, options);
-  const pcms::SupportResults expected =
-    pcms::AdjacencyLocalizationFactory(mesh, 0, mls)
-      .Build(coords.coordinate_view);
+  Omega_h::Real radius_sq = 0.09;
+  const pcms::SupportResults expected = pcms::searchNeighbors(
+    mesh, pcms::flatten_to_omega_h_reals(coords.coordinate_view.GetValues()),
+    static_cast<LO>(coords.coordinate_view.GetValues().extent(0)), radius_sq, 6,
+    18);
   pcms::test::CheckSupportResultsEquivalent(actual, expected);
   // the options matter: the defaults give other supports
   const pcms::SupportResults defaults = geometry->Neighbourhood(
@@ -462,6 +469,48 @@ TEST_CASE("Neighbourhood returns vertex supports")
   REQUIRE_THROWS_WITH(
     geometry->Neighbourhood(cylindrical.coordinate_view, mls.Localization()),
     ContainsSubstring("is not the geometry's coordinate system"));
+}
+
+TEST_CASE("PointCloudGeometry::Neighbourhood takes the search of its sites")
+{
+  auto lib = Omega_h::Library{};
+  auto mesh = BuildSquareMesh(lib, 8);
+  const auto system = pcms::csys::Cartesian::Create(2);
+  auto vertices =
+    std::make_shared<pcms::OmegaHEntityLayout>(mesh, pcms::Vertex, 1, system);
+  auto faces =
+    std::make_shared<pcms::OmegaHEntityLayout>(mesh, pcms::Face, 1, system);
+  const auto centroids = pcms::get_entity_centroids(mesh, pcms::Face);
+  auto cloud = std::make_shared<pcms::PointCloudLayout>(
+    2, pcms::ConvertCoordsTo2D(centroids, mesh.nfaces(), 2), system);
+  const auto query = vertices->GetDOFHolderCoordinates();
+  pcms::NeighbourhoodOptions options;
+  options.radius = 0.25;
+  options.min_supports = 8;
+  Omega_h::Real radius_sq = options.radius * options.radius;
+  const auto distance_search = pcms::BuildPointCloudSupports(
+    centroids, mesh.coords(), 2, options.radius, 8, true);
+
+  // a point cloud, and element centroids queried at arbitrary points: the
+  // distance search
+  pcms::test::CheckSupportResultsEquivalent(
+    pcms::PointCloudGeometry::Create(cloud)->Neighbourhood(query, options),
+    distance_search);
+  const auto centroid_sites =
+    pcms::PointCloudGeometry::Create(faces, mesh, pcms::Face);
+  pcms::test::CheckSupportResultsEquivalent(
+    centroid_sites->Neighbourhood(query, options), distance_search);
+  // element centroids queried at the vertices of their mesh: the adjacency
+  options.query_layout = vertices;
+  pcms::test::CheckSupportResultsEquivalent(
+    centroid_sites->Neighbourhood(query, options),
+    pcms::searchNeighbors(mesh, radius_sq, 8));
+  // vertices: the adjacency search from the element of each query point
+  pcms::test::CheckSupportResultsEquivalent(
+    pcms::PointCloudGeometry::Create(vertices, mesh, pcms::Vertex)
+      ->Neighbourhood(query, options),
+    pcms::searchNeighbors(mesh, mesh.coords(), mesh.nverts(), radius_sq, 8,
+                          24));
 }
 
 #ifdef PCMS_ENABLE_MESHFIELDS

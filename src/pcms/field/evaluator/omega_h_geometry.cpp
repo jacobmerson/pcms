@@ -1,9 +1,8 @@
 #include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/coordinate_system.hpp"
-#include "pcms/field/evaluator/mls_options.h"
 #include "pcms/localization/adj_search.hpp"
-#include "pcms/localization/mesh_localization.h"
 #include "pcms/utility/assert.h"
+#include "pcms/utility/omega_h_array_utils.h"
 #include "pcms/utility/profile.h"
 #include "pcms/utility/uniform_grid.h"
 #include <stdexcept>
@@ -189,9 +188,12 @@ SupportResults OmegaHGeometry::Neighbourhood(
   detail::CheckNeighbourhoodArguments(*this, coords, options,
                                       "OmegaHGeometry::Neighbourhood");
   // the sites are the mesh vertices, so the search is the adjacency BFS
-  return AdjacencyLocalizationFactory(mesh_, /*source_entity_dim=*/0,
-                                      MLSOptions::FromLocalization(options))
-    .Build(std::move(coords));
+  const auto points = coords.GetValues();
+  Omega_h::Real radius_sq = options.radius * options.radius;
+  return searchNeighbors(mesh_, flatten_to_omega_h_reals(points, "tgt_coords"),
+                         static_cast<LO>(points.extent(0)), radius_sq,
+                         options.min_supports, 3 * options.min_supports,
+                         options.adapt_radius);
 }
 
 namespace
