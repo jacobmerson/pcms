@@ -23,6 +23,7 @@
 #include "field_test_utils.h"
 #include <memory>
 #include <string>
+#include <variant>
 #include <vector>
 
 using Catch::Matchers::ContainsSubstring;
@@ -47,6 +48,16 @@ std::shared_ptr<pcms::OmegaHGeometry> MakeGeometry(
 {
   return pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Create(2),
                                       options);
+}
+
+/// The element the grid search of `mesh` finds for each point: where the
+/// adjacency search of the point starts.
+Kokkos::View<LO*> StartElements(Omega_h::Mesh& mesh,
+                                Kokkos::View<const Real**> points)
+{
+  return std::visit(
+    [&](const auto& s) { return pcms::FindOwningElements(s, points).second; },
+    pcms::MakeGridSearch(mesh, {}));
 }
 
 std::shared_ptr<LagrangeFunctionSpace> MakeSpace(
@@ -442,9 +453,13 @@ TEST_CASE("Neighbourhood returns vertex supports")
   Omega_h::Real radius_sq = 0.09;
   const pcms::SupportResults expected = pcms::searchNeighbors(
     mesh, pcms::flatten_to_omega_h_reals(coords.coordinate_view.GetValues()),
-    static_cast<LO>(coords.coordinate_view.GetValues().extent(0)), radius_sq, 6,
-    18);
+    StartElements(mesh, coords.view), radius_sq, 6, 18);
   pcms::test::CheckSupportResultsEquivalent(actual, expected);
+  // a point outside the mesh starts from the element nearest it
+  auto outside = pcms::test::CreateDeviceCoordinateView(
+    {1.05, 0.5}, geometry->GetCoordinateSystem());
+  REQUIRE(geometry->Neighbourhood(outside.coordinate_view, options)
+            .supports_idx.size() >= 6);
   // the options matter: the defaults give other supports
   const pcms::SupportResults defaults = geometry->Neighbourhood(
     coords.coordinate_view, pcms::NeighbourhoodOptions{});
@@ -501,8 +516,11 @@ TEST_CASE("PointCloudGeometry::Neighbourhood takes the search of its sites")
   pcms::test::CheckSupportResultsEquivalent(
     pcms::PointCloudGeometry::Create(vertices, mesh, pcms::Vertex)
       ->Neighbourhood(query, options),
-    pcms::searchNeighbors(mesh, mesh.coords(), mesh.nverts(), radius_sq, 8,
-                          24));
+    pcms::searchNeighbors(
+      mesh, mesh.coords(),
+      StartElements(mesh,
+                    pcms::ConvertCoordsTo2D(mesh.coords(), mesh.nverts(), 2)),
+      radius_sq, 8, 24));
 }
 
 #ifdef PCMS_ENABLE_MESHFIELDS

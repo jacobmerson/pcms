@@ -132,7 +132,10 @@ public:
   [[nodiscard]] Kokkos::View<Real**, DeviceMemorySpace> MapToPhysical(
     const ParametricPoints& points) const;
 
-  /// Supports among the mesh vertices, by the mesh-adjacency search.
+  /// Supports among the mesh vertices, by the mesh-adjacency search from the
+  /// element Bind's search finds for each point. A point outside the mesh
+  /// starts from the element nearest it, so it gets supports near the
+  /// boundary; a point whose search cell holds no element gets none.
   /// `options.query_layout` is not used: the same-mesh search from element
   /// centroids does not apply to vertex sites.
   [[nodiscard]] SupportResults Neighbourhood(

@@ -4,7 +4,9 @@
 
 #include "interpolation_base.h"
 #include "interpolation_helpers.h"
+#include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/utility/mesh_geometry.h"
+#include "pcms/utility/omega_h_array_utils.h"
 
 namespace pcms
 {
@@ -433,10 +435,15 @@ void MLSMeshInterpolation::find_supports(const unsigned min_req_supports,
   if (single_mesh_) {
     supports_ =
       searchNeighbors(source_mesh_, radius_, min_req_supports, adapt_radius_);
-  } else { // two mesh : vert to vert
+  } else { // two mesh : vert to vert, from the target vertices' elements
+    const auto targets =
+      ConvertCoordsTo2D(target_coords_, target_mesh_.nverts(), 2);
+    const auto start_elements = std::visit(
+      [&](const auto& s) { return FindOwningElements(s, targets).second; },
+      MakeGridSearch(source_mesh_, {}));
     supports_ =
-      searchNeighbors(source_mesh_, target_mesh_, radius_, min_req_supports,
-                      max_allowed_supports, adapt_radius_);
+      searchNeighbors(source_mesh_, target_coords_, start_elements, radius_,
+                      min_req_supports, max_allowed_supports, adapt_radius_);
   }
 
 #ifndef NDEBUG

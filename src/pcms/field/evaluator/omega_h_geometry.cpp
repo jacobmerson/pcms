@@ -187,11 +187,17 @@ SupportResults OmegaHGeometry::Neighbourhood(
 {
   detail::CheckNeighbourhoodArguments(*this, coords, options,
                                       "OmegaHGeometry::Neighbourhood");
-  // the sites are the mesh vertices, so the search is the adjacency BFS
-  const auto points = coords.GetValues();
+  // the sites are the mesh vertices: the adjacency BFS from the element the
+  // bind's search finds for each point (for a point outside the mesh, the
+  // element nearest it; -1, and so no supports, if its grid cell has none)
+  const auto flat_points = flatten_to_omega_h_reals(coords.GetValues());
+  const auto points =
+    ConvertCoordsTo2D(flat_points, coords.GetValues().extent(0), mesh_.dim());
+  const auto start_elements = std::visit(
+    [&](const auto& s) { return FindOwningElements(s, points).second; },
+    search_);
   Omega_h::Real radius_sq = options.radius * options.radius;
-  return searchNeighbors(mesh_, flatten_to_omega_h_reals(points, "tgt_coords"),
-                         static_cast<LO>(points.extent(0)), radius_sq,
+  return searchNeighbors(mesh_, flat_points, start_elements, radius_sq,
                          options.min_supports, 3 * options.min_supports,
                          options.adapt_radius);
 }

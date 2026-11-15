@@ -3,6 +3,7 @@
 
 #include "pcms/field/coordinate_system.hpp"
 #include "pcms/field/evaluator/mls_point_cloud.h"
+#include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/field_layout.h"
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/localization/adj_search.hpp"
@@ -23,7 +24,9 @@ namespace pcms
 /// Geometry of a set of sites (the DOF holders of a layout: a point cloud or
 /// the entities of one dimension of a mesh): the identity map, located by the
 /// MLS supports of each query point. Bind finds the supports with
-/// Neighbourhood, using the options the geometry was created with.
+/// Neighbourhood, using the options the geometry was created with. For the
+/// vertices of a mesh, construction builds the mesh's OmegaHGeometry, whose
+/// search starts the adjacency search of each point.
 /// @throws pcms_error on construction if the sites' coordinate system does not
 ///         have the identity metric
 class PointCloudGeometry final : public Geometry
@@ -97,25 +100,21 @@ public:
   {
     detail::CheckNeighbourhoodArguments(*this, coords, options,
                                         "PointCloudGeometry::Neighbourhood");
-    Omega_h::Real radius_sq = options.radius * options.radius;
     const FieldLayout* query = options.query_layout.get();
     if (site_entity_dim_ == Face && mesh_->dim() == 2 && query != nullptr &&
         query->GetDOFHolderEntityDim() == Vertex && !query->HasGhosts() &&
         query->GetDiscretization() != nullptr &&
         GetDiscretization()->SameEntities(*query->GetDiscretization())) {
-      return searchNeighbors(*mesh_, radius_sq, options.min_supports,
-                             options.adapt_radius);
+      return searchNeighbors(*mesh_, options.radius * options.radius,
+                             options.min_supports, options.adapt_radius);
     }
-    const auto points = coords.GetValues();
-    const auto flat_points = flatten_to_omega_h_reals(points, "tgt_coords");
-    if (site_entity_dim_ == Vertex) {
-      return searchNeighbors(
-        *mesh_, flat_points, static_cast<LO>(points.extent(0)), radius_sq,
-        options.min_supports, 3 * options.min_supports, options.adapt_radius);
+    if (vertex_geometry_ != nullptr) {
+      return vertex_geometry_->Neighbourhood(std::move(coords), options);
     }
     const auto sites = site_layout_->GetDOFHolderCoordinates().GetValues();
     return BuildPointCloudSupports(
-      flatten_to_omega_h_reals(sites, "src_coords"), flat_points,
+      flatten_to_omega_h_reals(sites, "src_coords"),
+      flatten_to_omega_h_reals(coords.GetValues(), "tgt_coords"),
       static_cast<int>(sites.extent(1)), options.radius, options.min_supports,
       options.adapt_radius);
   }
@@ -154,7 +153,11 @@ private:
     : site_layout_(std::move(site_layout)),
       mesh_(mesh),
       site_entity_dim_(site_entity_dim),
-      options_(std::move(options))
+      options_(std::move(options)),
+      vertex_geometry_(
+        site_entity_dim == Vertex
+          ? OmegaHGeometry::Create(*mesh, site_layout_->GetCoordinateSystem())
+          : nullptr)
   {
     // MLS distances are based on the unweighted Euclidean measure, which is
     // valid only with the identity metric; this almost certainly should be
@@ -171,6 +174,9 @@ private:
   Omega_h::Mesh* mesh_;
   int site_entity_dim_;
   NeighbourhoodOptions options_;
+  // for mesh-vertex sites, the mesh's geometry: its Neighbourhood is the
+  // adjacency search from the element its search finds for each point
+  std::shared_ptr<const OmegaHGeometry> vertex_geometry_;
 };
 
 } // namespace pcms
