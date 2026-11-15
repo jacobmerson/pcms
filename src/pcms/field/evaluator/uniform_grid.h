@@ -99,7 +99,8 @@ public:
   UniformGridPointEvaluator(
     std::shared_ptr<const UniformGridFieldLayout<Dim>> layout,
     std::shared_ptr<const UniformGridBinding<Dim>> binding)
-    : PointEvaluator<Real, LayoutPolicy>(binding),
+    : PointEvaluator<Real, LayoutPolicy>(binding, DifferentialOperator::Value,
+                                         layout),
       layout_(std::move(layout)),
       grid_(layout_->GetGrid()),
       binding_(std::move(binding))
@@ -251,7 +252,8 @@ protected:
   }
 
   std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
-    std::shared_ptr<const Bound> bound, int /*derivative_order*/) const override
+    std::shared_ptr<const Bound> bound,
+    DifferentialOperator /*op*/) const override
   {
     return std::make_unique<UniformGridPointEvaluator<Dim>>(layout_,
                                                             std::move(bound));

@@ -18,6 +18,7 @@ set(PCMS_FIELD_HEADERS
         function_space.h
         point_evaluator.h
         point_evaluator_factory.hpp
+        differential_operator.hpp
         bound_source.hpp
         gradient_source.hpp
         transformed_source.hpp

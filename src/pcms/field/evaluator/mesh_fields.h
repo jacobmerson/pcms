@@ -90,7 +90,8 @@ public:
   MeshFieldsPointEvaluator(
     std::shared_ptr<const MeshFieldsAdapterLayout> layout,
     std::shared_ptr<const MeshFieldsBinding> binding)
-    : PointEvaluator<T, LayoutPolicy>(binding),
+    : PointEvaluator<T, LayoutPolicy>(binding, DifferentialOperator::Value,
+                                      layout),
       layout_(std::move(layout)),
       binding_(std::move(binding))
   {
@@ -161,7 +162,8 @@ protected:
   }
 
   std::unique_ptr<PointEvaluator<T>> CreateEvaluator(
-    std::shared_ptr<const Bound> bound, int /*derivative_order*/) const override
+    std::shared_ptr<const Bound> bound,
+    DifferentialOperator /*op*/) const override
   {
     return std::make_unique<MeshFieldsPointEvaluator<T>>(layout_,
                                                          std::move(bound));

@@ -2,6 +2,7 @@
 #define PCMS_POINT_EVALUATOR_H
 
 #include "pcms/field/bound_source.hpp"
+#include "pcms/field/differential_operator.hpp"
 #include "pcms/field/value_view.hpp"
 #include "pcms/utility/assert.h"
 #include "pcms/utility/arrays.h"
@@ -16,7 +17,6 @@ namespace pcms
 
 template <typename T>
 class Field;
-class FunctionSpace;
 
 namespace detail
 {
@@ -46,10 +46,10 @@ void FillRows(Rank2View<T, DeviceMemorySpace, LayoutPolicy> values,
 /// @brief Evaluates fields at the points of a bound source.
 ///
 /// Created by PointEvaluatorFactory::CreatePointEvaluator. Evaluate writes
-/// OutputBasis(stored basis of the field): the stored basis for values, with
-/// one covariant index added per derivative order. The output has one row per
-/// query point and the field's number of components times the coordinate
-/// dimension per added index as columns. EvaluateImpl writes the rows of the
+/// OutputBasis(stored basis of the field): the basis `OutputBasis` gives for
+/// the evaluator's operator. The output has one row per query point and the
+/// field's number of components times the coordinate dimension per added
+/// index as columns. EvaluateImpl writes the rows of the
 /// bound source's FoundPoints(); in OutOfBoundsMode::FILL, Evaluate then sets
 /// the rows of MissingPoints() to the fill value.
 /// @tparam T field value type
@@ -64,12 +64,13 @@ public:
   /// @throws std::invalid_argument if `values` is not shaped
   ///         [NumPoints()][number of output components]
   /// @throws pcms_error if `values` does not claim the basis this evaluator
-  ///         writes for the field, or if the evaluator was created by a
-  ///         function space and `field` is not one of its fields
+  ///         writes for the field, or if the evaluator accepts the fields of
+  ///         one layout and `field` is not one of them
   void Evaluate(const Field<T>& field,
                 ValueView<T, DeviceMemorySpace, LayoutPolicy> values) const
   {
-    if (space_layout_ != nullptr && &field.GetLayout() != space_layout_.get()) {
+    if (accepted_layout_ != nullptr &&
+        &field.GetLayout() != accepted_layout_.get()) {
       throw pcms_error("PointEvaluator::Evaluate: the field is not a field of "
                        "the function space this evaluator was created from");
     }
@@ -89,16 +90,28 @@ public:
   [[nodiscard]] LO NumPoints() const noexcept { return bound_->NumPoints(); }
 
   /// @param stored value basis of the evaluated field
-  /// @return value basis this evaluator writes: `stored`, with a covariant
-  ///         index in the bound points' coordinate system for derivative
-  ///         order 1
+  /// @return value basis this evaluator writes for `stored`
+  /// @throws pcms_error if the operator is not supported for `stored`
   [[nodiscard]] virtual ValueBasis OutputBasis(const ValueBasis& stored) const
   {
-    if (derivative_order_ == 0) {
-      return stored;
+    switch (op_) {
+      case DifferentialOperator::Value: return stored;
+      case DifferentialOperator::Gradient:
+        return GradientBasis(stored, bound_->GetCoordinateSystem());
+      default:
+        throw pcms_error(std::string("PointEvaluator::OutputBasis: ") +
+                         std::string(ToString(op_)) + " is not implemented");
     }
-    PCMS_ALWAYS_ASSERT(derivative_order_ == 1);
-    return FirstDerivativeBasis(stored, bound_->GetCoordinateSystem());
+  }
+
+  /// @return the operator this evaluator applies
+  [[nodiscard]] DifferentialOperator Operator() const noexcept { return op_; }
+
+  /// @return the layout whose fields Evaluate accepts, or null for any
+  [[nodiscard]] const std::shared_ptr<const FieldLayout>& AcceptedLayout()
+    const noexcept
+  {
+    return accepted_layout_;
   }
 
   /// @return indices of the query points whose rows Evaluate sets to the fill
@@ -116,21 +129,21 @@ public:
 
 protected:
   /// @param bound bound source of the query points; not null
-  /// @param derivative_order 0 for values, 1 for first derivatives
-  explicit PointEvaluator(std::shared_ptr<const BoundSource> bound,
-                          int derivative_order = 0)
-    : bound_(std::move(bound)), derivative_order_(derivative_order)
+  /// @param op the operator this evaluator applies
+  /// @param accepted_layout the layout whose fields EvaluateImpl can read, or
+  ///        null to accept any field (layout-agnostic evaluators)
+  explicit PointEvaluator(
+    std::shared_ptr<const BoundSource> bound,
+    DifferentialOperator op = DifferentialOperator::Value,
+    std::shared_ptr<const FieldLayout> accepted_layout = nullptr)
+    : bound_(std::move(bound)),
+      op_(op),
+      accepted_layout_(std::move(accepted_layout))
   {
   }
 
   /// @return the bound source of the query points
   [[nodiscard]] const BoundSource& Bound() const noexcept { return *bound_; }
-
-  /// @return 0 for values, 1 for first derivatives
-  [[nodiscard]] int DerivativeOrder() const noexcept
-  {
-    return derivative_order_;
-  }
 
   /// @brief Writes the field's values at the bound source's FoundPoints().
   /// @param field field to evaluate; its output shape and basis are checked
@@ -140,12 +153,16 @@ protected:
     ValueView<T, DeviceMemorySpace, LayoutPolicy> values) const = 0;
 
 private:
+  /// @brief Checks that `values` has one row per query point and one column
+  ///        per component of the basis OutputBasis gives for the field.
+  /// @throws std::invalid_argument otherwise
   void CheckOutputShape(
     const Field<T>& field,
     const ValueView<T, DeviceMemorySpace, LayoutPolicy>& values) const
   {
     const auto num_points = static_cast<size_t>(NumPoints());
     // the field's components times the dimension per index OutputBasis adds
+    // for the evaluator's operator
     const ValueBasis stored = field.GetData().GetValueBasis();
     const ValueBasis written = OutputBasis(stored);
     auto num_components =
@@ -164,11 +181,9 @@ private:
   }
 
   std::shared_ptr<const BoundSource> bound_;
-  int derivative_order_;
-  // layout of the fields Evaluate accepts, set by the function space that
-  // created this evaluator; null accepts any field
-  friend class FunctionSpace;
-  std::shared_ptr<const FieldLayout> space_layout_;
+  DifferentialOperator op_;
+  // layout of the fields Evaluate accepts; null accepts any field
+  std::shared_ptr<const FieldLayout> accepted_layout_;
 };
 
 // Variant types using default layout for device memory space

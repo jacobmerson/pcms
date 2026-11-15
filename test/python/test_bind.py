@@ -67,10 +67,14 @@ def test_bound_source_belongs_to_its_source(mesh, space):
 
 def test_derivatives_need_a_source_that_has_them(space):
     bound = space.bind(pcms.CoordinateView([[0.5, 0.5]]))
-    with pytest.raises(RuntimeError, match="derivative order 1"):
-        space.create_point_evaluator(bound, derivative_order=1)
-    with pytest.raises(RuntimeError, match="derivative order 1"):
-        pcms.gradient(space).create_point_evaluator(bound)
+    assert space.supports(pcms.DifferentialOperator.Value)
+    assert not space.supports(pcms.DifferentialOperator.Curl)
+    with pytest.raises(RuntimeError, match="Gradient is not supported"):
+        space.create_point_evaluator(bound, pcms.DifferentialOperator.Gradient)
+    with pytest.raises(RuntimeError,
+                       match="Apply: Gradient is not supported by the "
+                             "wrapped source"):
+        pcms.gradient(space)
 
 
 def test_interpolator_reuses_a_bound_source(mesh, space, field):

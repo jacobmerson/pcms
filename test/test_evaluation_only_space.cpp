@@ -55,8 +55,10 @@ public:
 class MockEvaluator final : public pcms::PointEvaluator<Real>
 {
 public:
-  explicit MockEvaluator(std::shared_ptr<const pcms::BoundSource> bound)
-    : PointEvaluator(std::move(bound))
+  MockEvaluator(std::shared_ptr<const pcms::BoundSource> bound,
+                std::shared_ptr<const pcms::FieldLayout> layout)
+    : PointEvaluator(std::move(bound), pcms::DifferentialOperator::Value,
+                     std::move(layout))
   {
   }
 
@@ -94,6 +96,11 @@ public:
     return layout_;
   }
 
+  bool Supports(pcms::DifferentialOperator op) const noexcept override
+  {
+    return op == pcms::DifferentialOperator::Value;
+  }
+
 protected:
   pcms::FieldVariant CreateFieldImpl(pcms::Type, ValueBasis) const override
   {
@@ -117,13 +124,10 @@ protected:
 
   pcms::PointEvaluatorVariant CreatePointEvaluatorImpl(
     pcms::Type, std::shared_ptr<const pcms::BoundSource> bound,
-    int derivative_order) const override
+    pcms::DifferentialOperator /*op*/) const override
   {
-    if (derivative_order != 0) {
-      throw pcms::pcms_error("MockSpace: derivatives are not supported");
-    }
     return std::unique_ptr<pcms::PointEvaluator<Real>>(
-      std::make_unique<MockEvaluator>(std::move(bound)));
+      std::make_unique<MockEvaluator>(std::move(bound), layout_));
   }
 
 private:

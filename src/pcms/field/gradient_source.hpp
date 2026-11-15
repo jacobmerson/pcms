@@ -1,18 +1,35 @@
 #ifndef PCMS_FIELD_GRADIENT_SOURCE_HPP
 #define PCMS_FIELD_GRADIENT_SOURCE_HPP
 
+#include "pcms/field/differential_operator.hpp"
 #include "pcms/field/point_evaluator_factory.hpp"
 #include <memory>
 
 namespace pcms
 {
 
-/// @brief Wraps a source so that its evaluators write the gradient of a field.
-/// @param source source to differentiate; must support derivative order 1
-/// @return source whose evaluators write FirstDerivativeBasis of the field's
-///         stored basis, and that binds through `source`
-/// @throws pcms_error if `source` is null
+/// @brief Source whose evaluators apply `op` to the fields of `source`.
+///
+/// Binds through `source`. Only Value is supported on the returned source.
+/// @param op operator to apply; not Value
+/// @param source source whose evaluators compute `op`; not null
+/// @return source whose evaluators write the basis `op` gives for the field's
+///         stored basis
+/// @throws pcms_error if `source` is null, `op` is Value, or `source` does
+///         not support `op`
+[[nodiscard]] std::shared_ptr<const PointEvaluatorFactory> Apply(
+  DifferentialOperator op, std::shared_ptr<const PointEvaluatorFactory> source);
+
+/// @brief Apply(DifferentialOperator::Gradient, source).
 [[nodiscard]] std::shared_ptr<const PointEvaluatorFactory> Gradient(
+  std::shared_ptr<const PointEvaluatorFactory> source);
+
+/// @brief Apply(DifferentialOperator::Divergence, source).
+[[nodiscard]] std::shared_ptr<const PointEvaluatorFactory> Divergence(
+  std::shared_ptr<const PointEvaluatorFactory> source);
+
+/// @brief Apply(DifferentialOperator::Curl, source).
+[[nodiscard]] std::shared_ptr<const PointEvaluatorFactory> Curl(
   std::shared_ptr<const PointEvaluatorFactory> source);
 
 } // namespace pcms

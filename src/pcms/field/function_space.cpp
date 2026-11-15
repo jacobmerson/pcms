@@ -11,9 +11,14 @@ const PointEvaluatorFactory& FunctionSpace::BindingSource() const noexcept
   return detail::BindingSourceOf(*evaluator_);
 }
 
+bool FunctionSpace::Supports(DifferentialOperator op) const noexcept
+{
+  return evaluator_ != nullptr && evaluator_->Supports(op);
+}
+
 PointEvaluatorVariant FunctionSpace::CreatePointEvaluatorImpl(
   Type value_type, std::shared_ptr<const BoundSource> bound,
-  int derivative_order) const
+  DifferentialOperator op) const
 {
   if (evaluator_ == nullptr) {
     throw pcms_error("CreatePointEvaluator: this function space does not "
@@ -21,10 +26,7 @@ PointEvaluatorVariant FunctionSpace::CreatePointEvaluatorImpl(
   }
   return apply_to_type(value_type, [&](auto type) -> PointEvaluatorVariant {
     using T = typename decltype(type)::type;
-    auto evaluator =
-      evaluator_->CreatePointEvaluator<T>(std::move(bound), derivative_order);
-    evaluator->space_layout_ = GetLayout();
-    return evaluator;
+    return evaluator_->CreatePointEvaluator<T>(std::move(bound), op);
   });
 }
 

@@ -52,6 +52,10 @@ public:
     return GetLayout()->GetCoordinateSystem();
   }
 
+  /// @return whether the space's backend source supports `op`; false for a
+  ///         space without one unless it overrides this
+  [[nodiscard]] bool Supports(DifferentialOperator op) const noexcept override;
+
   virtual ~FunctionSpace() noexcept = default;
 
   template <typename T>
@@ -80,7 +84,7 @@ protected:
 
   /// @param evaluator backend source over this space's layout that binds and
   ///        creates the evaluators, or null for a space that implements
-  ///        BindImpl and CreatePointEvaluatorImpl itself
+  ///        BindImpl, Supports and CreatePointEvaluatorImpl itself
   explicit FunctionSpace(
     std::shared_ptr<const PointEvaluatorFactory> evaluator = nullptr) noexcept
     : evaluator_(std::move(evaluator))
@@ -91,7 +95,7 @@ protected:
   /// @throws pcms_error if the space has no backend source
   PointEvaluatorVariant CreatePointEvaluatorImpl(
     Type value_type, std::shared_ptr<const BoundSource> bound,
-    int derivative_order) const override;
+    DifferentialOperator op) const override;
 
   template <typename T>
   static Field<T> WrapField(std::shared_ptr<const FieldLayout> layout,

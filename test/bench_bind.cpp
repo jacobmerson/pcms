@@ -171,7 +171,8 @@ TEST_CASE("Bind benchmarks: spline", "[!benchmark]")
 
   const auto bound = space->Bind(coords.coordinate_view);
   const auto values = space->CreatePointEvaluator<Real>(bound);
-  const auto gradient = space->CreatePointEvaluator<Real>(bound, 1);
+  const auto gradient = space->CreatePointEvaluator<Real>(
+    bound, pcms::DifferentialOperator::Gradient);
   const auto value_basis = f.GetData().GetValueBasis();
   const auto gradient_basis = gradient->OutputBasis(value_basis);
   Kokkos::View<Real**, DeviceMemorySpace> value_out("value", NumPoints, 1);

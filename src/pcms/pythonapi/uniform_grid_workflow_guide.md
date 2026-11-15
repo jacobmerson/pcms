@@ -279,8 +279,9 @@ snake_case form of the C++ method (`GetDOFHolderData` is
 - `bound = factory.bind(coordinate_view, policy=...)` - Bind a `PointEvaluatorFactory` to query points (in `factory.get_coordinate_system()`); the search is done once here
 - `bound = factory.bind(space, policy=...)` - Bind to another FunctionSpace's DOF-holder coordinates
 - `bound.found_points()`, `bound.missing_points()` - indices of the query points the source evaluates / does not evaluate
-- `factory.create_point_evaluator(bound, derivative_order=0)` - Create an evaluator at the bound points; `derivative_order=1` evaluates the gradient
-- `gradient(source)` - A source whose evaluators write the gradient of the field they are given
+- `factory.create_point_evaluator(bound, op=DifferentialOperator.Value)` - Create an evaluator at the bound points that applies `op`; `DifferentialOperator.Gradient` evaluates the gradient
+- `factory.supports(op)` - Whether `create_point_evaluator` accepts the `DifferentialOperator` `op`
+- `gradient(source)`, `divergence(source)`, `curl(source)` - A source whose evaluators write the gradient (divergence, curl) of the field they are given
 - `evaluator.evaluate(field, output)` - Evaluate into a `ValueView` tagged `evaluator.output_basis(field.get_data().get_value_basis())` (a plain array for scalar fields, of shape `(num_points,)` when the output has one component); the output array must be writeable, C-contiguous float64
 - `Interpolator(source, target_space)` - Create an interpolator from a `PointEvaluatorFactory` (cached localization)
 - `Interpolator(source, target_space, bound)` - Create an interpolator that reuses a bound source, e.g. to interpolate a field and `gradient(source)` over one localization

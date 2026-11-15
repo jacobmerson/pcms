@@ -53,7 +53,7 @@ inline void GatherPoints(Kokkos::View<const Real**, DeviceMemorySpace> points,
 } // namespace detail
 
 /// @brief Evaluates the bicubic spline of a field's grid values, or its
-///        gradient (df/dx, df/dy) for derivative order 1.
+///        gradient (df/dx, df/dy) for DifferentialOperator::Gradient.
 template <typename LayoutPolicy =
             detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
 class UniformGridSplinePointEvaluator2D
@@ -62,12 +62,12 @@ class UniformGridSplinePointEvaluator2D
 public:
   /// @param layout order-1 single-component uniform-grid layout
   /// @param binding cells of the query points
-  /// @param derivative_order 0 for values, 1 for the gradient
+  /// @param op Value or Gradient
   UniformGridSplinePointEvaluator2D(
     std::shared_ptr<const UniformGridFieldLayout<2>> layout,
     std::shared_ptr<const UniformGridBinding<2>> binding,
-    int derivative_order = 0)
-    : PointEvaluator<Real, LayoutPolicy>(binding, derivative_order),
+    DifferentialOperator op = DifferentialOperator::Value)
+    : PointEvaluator<Real, LayoutPolicy>(binding, op, layout),
       grid_(layout->GetGrid()),
       x_coords_("uniform_grid_spline_x", grid_.divisions[0] + 1),
       y_coords_("uniform_grid_spline_y", grid_.divisions[1] + 1),
@@ -75,7 +75,7 @@ public:
       eval_x_("uniform_grid_spline_eval_x", found_.extent(0)),
       eval_y_("uniform_grid_spline_eval_y", found_.extent(0)),
       spline_output_("uniform_grid_spline_output", found_.extent(0),
-                     derivative_order == 0 ? 1 : 2),
+                     op == DifferentialOperator::Value ? 1 : 2),
       select_("uniform_grid_spline_select", 6),
       empty_bc_("uniform_grid_spline_empty_bc", 0)
   {
@@ -95,7 +95,8 @@ public:
     // The selector picks f, df/dx, df/dy, d2f/dx2, d2f/dy2, d2f/dxdy.
     auto select = Kokkos::create_mirror_view(select_);
     for (int k = 0; k < 6; ++k) {
-      select(k) = derivative_order == 0 ? (k == 0) : (k == 1 || k == 2);
+      select(k) =
+        op == DifferentialOperator::Value ? (k == 0) : (k == 1 || k == 2);
     }
     Kokkos::deep_copy(select_, select);
   }
@@ -186,7 +187,7 @@ public:
   explicit UniformGridSplineEvaluatorFactory2D(
     std::shared_ptr<const UniformGridFieldLayout<2>> layout)
     : TypedPointEvaluatorFactory<Real, Bound>(layout->GetCoordinateSystem(),
-                                              /*max_derivative_order=*/1),
+                                              {DifferentialOperator::Gradient}),
       layout_(std::move(layout)),
       grid_(layout_->GetGrid())
   {
@@ -210,10 +211,10 @@ protected:
   }
 
   std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
-    std::shared_ptr<const Bound> bound, int derivative_order) const override
+    std::shared_ptr<const Bound> bound, DifferentialOperator op) const override
   {
     return std::make_unique<UniformGridSplinePointEvaluator2D<>>(
-      layout_, std::move(bound), derivative_order);
+      layout_, std::move(bound), op);
   }
 
 private:

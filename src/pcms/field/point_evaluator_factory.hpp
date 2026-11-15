@@ -4,13 +4,16 @@
 #include "pcms/field/bound_source.hpp"
 #include "pcms/field/coordinate_system.hpp"
 #include "pcms/field/coordinate_view.hpp"
+#include "pcms/field/differential_operator.hpp"
 #include "pcms/field/field_factory.h"
 #include "pcms/field/out_of_bounds_policy.h"
 #include "pcms/field/point_evaluator.h"
 #include "pcms/utility/assert.h"
 #include "pcms/utility/memory_spaces.h"
 #include "pcms/utility/types.h"
+#include <initializer_list>
 #include <memory>
+#include <set>
 #include <string>
 #include <variant>
 
@@ -32,8 +35,8 @@ namespace detail
 /// @brief Source of point evaluators.
 ///
 /// Bind computes the per-point data for a set of query points once;
-/// CreatePointEvaluator creates evaluators of any value type and derivative
-/// order from the result.
+/// CreatePointEvaluator creates evaluators of any value type and supported
+/// operator from the result.
 class PointEvaluatorFactory
 {
 public:
@@ -62,13 +65,18 @@ public:
   /// @brief Creates an evaluator at the points of a bound source.
   /// @tparam T field value type
   /// @param bound result of Bind on this source
-  /// @param derivative_order 0 for values, 1 for first derivatives
+  /// @param op the operator the evaluator applies
   /// @return evaluator that writes OutputBasis of the field's stored basis
   /// @throws pcms_error if `bound` is null or was bound by another source, or
-  ///         the source cannot evaluate `derivative_order`
+  ///         the source does not support `op`
   template <typename T>
   [[nodiscard]] std::unique_ptr<PointEvaluator<T>> CreatePointEvaluator(
-    std::shared_ptr<const BoundSource> bound, int derivative_order = 0) const;
+    std::shared_ptr<const BoundSource> bound,
+    DifferentialOperator op = DifferentialOperator::Value) const;
+
+  /// @return whether CreatePointEvaluator accepts `op`
+  [[nodiscard]] virtual bool Supports(
+    DifferentialOperator op) const noexcept = 0;
 
   virtual ~PointEvaluatorFactory() noexcept = default;
 
@@ -93,12 +101,12 @@ protected:
   /// @brief Creates an evaluator from a bound source.
   /// @param value_type field value type
   /// @param bound result of BindImpl on this source
-  /// @param derivative_order 0 for values, 1 for first derivatives
+  /// @param op the operator the evaluator applies; Supports(op) is true
   /// @return evaluator for `value_type`
-  /// @throws pcms_error for an unsupported value type or derivative order
+  /// @throws pcms_error for an unsupported value type
   virtual PointEvaluatorVariant CreatePointEvaluatorImpl(
     Type value_type, std::shared_ptr<const BoundSource> bound,
-    int derivative_order) const = 0;
+    DifferentialOperator op) const = 0;
 
 private:
   friend const PointEvaluatorFactory& detail::BindingSourceOf(
@@ -114,9 +122,9 @@ private:
 ///
 /// Implements BindImpl and CreatePointEvaluatorImpl: BindImpl checks the
 /// out-of-bounds mode against SupportsNearestBoundary(), and
-/// CreatePointEvaluatorImpl checks the value type and derivative order and
-/// passes the bound source on as a `Bound` (CreatePointEvaluator accepts only
-/// bound sources this source created).
+/// CreatePointEvaluatorImpl checks the value type and passes the bound source
+/// on as a `Bound` (CreatePointEvaluator accepts only bound sources this
+/// source created). Supports reports the operators given to the constructor.
 /// @tparam T value type of the evaluated fields
 /// @tparam Bound bound-source type BindPoints creates
 template <typename T, typename Bound>
@@ -129,6 +137,11 @@ public:
     return system_;
   }
 
+  [[nodiscard]] bool Supports(DifferentialOperator op) const noexcept final
+  {
+    return supported_.count(op) != 0;
+  }
+
 protected:
   /// @return whether BindPoints supports OutOfBoundsMode::NEAREST_BOUNDARY;
   ///         BindImpl rejects that mode otherwise
@@ -138,13 +151,14 @@ protected:
   }
 
   /// @param system coordinate system of the query points
-  /// @param max_derivative_order highest derivative order CreateEvaluator
-  ///        supports
+  /// @param supported operators CreateEvaluator implements; Value is always
+  ///        included
   explicit TypedPointEvaluatorFactory(
     std::shared_ptr<const CoordinateSystem> system,
-    int max_derivative_order = 0)
-    : system_(std::move(system)), max_derivative_order_(max_derivative_order)
+    std::initializer_list<DifferentialOperator> supported = {})
+    : system_(std::move(system)), supported_{DifferentialOperator::Value}
   {
+    supported_.insert(supported.begin(), supported.end());
   }
 
   /// @brief Computes the per-point data for a request.
@@ -156,10 +170,10 @@ protected:
 
   /// @brief Creates an evaluator from a bound source of this source.
   /// @param bound result of BindPoints on this source
-  /// @param derivative_order at most the constructor's max_derivative_order
+  /// @param op one of the operators given to the constructor
   /// @return the evaluator
   virtual std::unique_ptr<PointEvaluator<T>> CreateEvaluator(
-    std::shared_ptr<const Bound> bound, int derivative_order) const = 0;
+    std::shared_ptr<const Bound> bound, DifferentialOperator op) const = 0;
 
 private:
   std::shared_ptr<BoundSource> BindImpl(const BindRequest& request) const final
@@ -174,28 +188,22 @@ private:
 
   PointEvaluatorVariant CreatePointEvaluatorImpl(
     Type value_type, std::shared_ptr<const BoundSource> bound,
-    int derivative_order) const final
+    DifferentialOperator op) const final
   {
     if (value_type != TypeEnumFromType<T>()) {
       throw pcms_error("CreatePointEvaluator: this source only supports "
                        "fields of its own value type");
     }
-    if (derivative_order > max_derivative_order_) {
-      throw pcms_error("CreatePointEvaluator: derivative order " +
-                       std::to_string(derivative_order) +
-                       " is not supported by this source");
-    }
-    return CreateEvaluator(std::static_pointer_cast<const Bound>(bound),
-                           derivative_order);
+    return CreateEvaluator(std::static_pointer_cast<const Bound>(bound), op);
   }
 
   std::shared_ptr<const CoordinateSystem> system_;
-  int max_derivative_order_;
+  std::set<DifferentialOperator> supported_;
 };
 
 template <typename T>
 std::unique_ptr<PointEvaluator<T>> PointEvaluatorFactory::CreatePointEvaluator(
-  std::shared_ptr<const BoundSource> bound, int derivative_order) const
+  std::shared_ptr<const BoundSource> bound, DifferentialOperator op) const
 {
   static_assert(is_supported_field_type_v<T>,
                 "T is not a supported field type");
@@ -203,13 +211,12 @@ std::unique_ptr<PointEvaluator<T>> PointEvaluatorFactory::CreatePointEvaluator(
     throw pcms_error("CreatePointEvaluator: bound source must not be null");
   }
   CheckBoundByThis(*bound);
-  if (derivative_order < 0) {
-    throw pcms_error("CreatePointEvaluator: derivative order must be "
-                     "non-negative, got " +
-                     std::to_string(derivative_order));
+  if (!Supports(op)) {
+    throw pcms_error("CreatePointEvaluator: " + std::string(ToString(op)) +
+                     " is not supported by this source");
   }
-  return std::get<std::unique_ptr<PointEvaluator<T>>>(CreatePointEvaluatorImpl(
-    TypeEnumFromType<T>(), std::move(bound), derivative_order));
+  return std::get<std::unique_ptr<PointEvaluator<T>>>(
+    CreatePointEvaluatorImpl(TypeEnumFromType<T>(), std::move(bound), op));
 }
 
 } // namespace pcms

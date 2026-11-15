@@ -89,8 +89,9 @@ TEST_CASE("A bound source is accepted only by the factory that bound it")
                       ContainsSubstring("bound by another factory"));
   REQUIRE_THROWS_WITH(space->CreatePointEvaluator<Real>(nullptr),
                       ContainsSubstring("must not be null"));
-  REQUIRE_THROWS_WITH(space->CreatePointEvaluator<Real>(bound, -1),
-                      ContainsSubstring("non-negative"));
+  REQUIRE_THROWS_WITH(space->CreatePointEvaluator<Real>(
+                        bound, pcms::DifferentialOperator::Divergence),
+                      ContainsSubstring("Divergence is not supported"));
 }
 
 TEST_CASE("Binding checks the query coordinate system")
@@ -104,7 +105,7 @@ TEST_CASE("Binding checks the query coordinate system")
                       ContainsSubstring("is not the factory's coordinate"));
 }
 
-TEST_CASE("Sources without derivatives reject a derivative order")
+TEST_CASE("Sources without derivatives reject the gradient")
 {
   auto lib = Omega_h::Library{};
   auto mesh = BuildSquare(lib);
@@ -112,8 +113,10 @@ TEST_CASE("Sources without derivatives reject a derivative order")
   auto coords = pcms::test::CreateDeviceCoordinateView(
     pcms::test::StandardEvalCoords2D(), space->GetCoordinateSystem());
   auto bound = space->Bind(coords.coordinate_view);
-  REQUIRE_THROWS_WITH(space->CreatePointEvaluator<Real>(bound, 1),
-                      ContainsSubstring("derivative"));
+  REQUIRE_FALSE(space->Supports(pcms::DifferentialOperator::Gradient));
+  REQUIRE_THROWS_WITH(space->CreatePointEvaluator<Real>(
+                        bound, pcms::DifferentialOperator::Gradient),
+                      ContainsSubstring("Gradient is not supported"));
 }
 
 TEST_CASE("Binding splits found and missing points and applies the policy")

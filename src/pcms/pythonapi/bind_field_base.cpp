@@ -11,6 +11,7 @@
 #include "pcms/field/coordinate_systems/cartesian.hpp"
 #include "pcms/field/coordinate_view.hpp"
 #include "pcms/field/bound_source.hpp"
+#include "pcms/field/differential_operator.hpp"
 #include "pcms/field/evaluator/mls_options.h"
 #include "pcms/field/field.h"
 #include "pcms/field/field_data.h"
@@ -165,6 +166,14 @@ void bind_create_field_module(py::module& m)
       },
       "Indices of the query points the source does not evaluate, read-only");
 
+  py::enum_<DifferentialOperator>(m, "DifferentialOperator",
+                                  "The quantity a point evaluator computes")
+    .value("Value", DifferentialOperator::Value)
+    .value("Gradient", DifferentialOperator::Gradient)
+    .value("Divergence", DifferentialOperator::Divergence)
+    .value("Curl", DifferentialOperator::Curl)
+    .value("Hessian", DifferentialOperator::Hessian);
+
   py::class_<PointEvaluatorFactory, std::shared_ptr<PointEvaluatorFactory>>(
     m, "PointEvaluatorFactory", "Creates evaluators bound to query points")
     .def(
@@ -195,12 +204,17 @@ void bind_create_field_module(py::module& m)
     .def(
       "create_point_evaluator",
       [](const PointEvaluatorFactory& self,
-         const std::shared_ptr<BoundSource>& bound, int derivative_order) {
-        return self.CreatePointEvaluator<Real>(bound, derivative_order);
+         const std::shared_ptr<BoundSource>& bound, DifferentialOperator op) {
+        return self.CreatePointEvaluator<Real>(bound, op);
       },
-      py::arg("bound"), py::arg("derivative_order") = 0, py::keep_alive<0, 1>(),
+      py::arg("bound"), py::arg("op") = DifferentialOperator::Value,
+      py::keep_alive<0, 1>(),
       "Create an evaluator at the points of `bound` (a result of bind() on "
-      "this source): values for derivative_order 0, the gradient for 1");
+      "this source) that applies `op`: the values for "
+      "DifferentialOperator.Value, the gradient for "
+      "DifferentialOperator.Gradient")
+    .def("supports", &PointEvaluatorFactory::Supports, py::arg("op"),
+         "Whether create_point_evaluator accepts `op`");
 
   m.def(
     "gradient",
@@ -211,6 +225,26 @@ void bind_create_field_module(py::module& m)
     py::arg("source"),
     "A source whose evaluators write the gradient of the field they are given; "
     "it binds through `source`");
+
+  m.def(
+    "divergence",
+    [](std::shared_ptr<PointEvaluatorFactory> source) {
+      return std::const_pointer_cast<PointEvaluatorFactory>(
+        Divergence(std::move(source)));
+    },
+    py::arg("source"),
+    "A source whose evaluators write the divergence of the field they are "
+    "given; it binds through `source`");
+
+  m.def(
+    "curl",
+    [](std::shared_ptr<PointEvaluatorFactory> source) {
+      return std::const_pointer_cast<PointEvaluatorFactory>(
+        Curl(std::move(source)));
+    },
+    py::arg("source"),
+    "A source whose evaluators write the curl of the field they are given; it "
+    "binds through `source`");
 
   py::class_<FunctionSpace, PointEvaluatorFactory,
              std::shared_ptr<FunctionSpace>>(m, "FunctionSpace")

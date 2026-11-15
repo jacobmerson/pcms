@@ -30,11 +30,12 @@ class TransformedPointEvaluator final : public PointEvaluator<T>
 public:
   /// @param bound bound source of the query points
   /// @param map map bound to the query points
-  /// @param inner evaluator bound to `map`'s mapped points
+  /// @param inner evaluator bound to `map`'s mapped points; not null
   TransformedPointEvaluator(std::shared_ptr<const BoundSource> bound,
                             std::shared_ptr<const BoundCoordinateMap> map,
                             std::unique_ptr<PointEvaluator<T>> inner)
-    : PointEvaluator<T>(std::move(bound)),
+    : PointEvaluator<T>(std::move(bound), inner->Operator(),
+                        inner->AcceptedLayout()),
       map_(std::move(map)),
       inner_(std::move(inner))
   {
@@ -96,6 +97,11 @@ public:
     return system_;
   }
 
+  [[nodiscard]] bool Supports(DifferentialOperator op) const noexcept override
+  {
+    return source_->Supports(op);
+  }
+
 protected:
   /// @brief Binds the map to the query points and the source to the mapped
   ///        points.
@@ -105,12 +111,12 @@ protected:
     const BindRequest& request) const override;
   PointEvaluatorVariant CreatePointEvaluatorImpl(
     Type value_type, std::shared_ptr<const BoundSource> bound,
-    int derivative_order) const override;
+    DifferentialOperator op) const override;
 
 private:
   template <typename T>
   std::unique_ptr<PointEvaluator<T>> Create(
-    std::shared_ptr<const BoundSource> bound, int derivative_order) const;
+    std::shared_ptr<const BoundSource> bound, DifferentialOperator op) const;
 
   std::shared_ptr<const PointEvaluatorFactory> source_;
   std::shared_ptr<const CoordinateMap> to_source_;

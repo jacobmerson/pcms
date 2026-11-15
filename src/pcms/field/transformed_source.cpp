@@ -73,22 +73,21 @@ std::shared_ptr<BoundSource> TransformedSource::BindImpl(
 
 template <typename T>
 std::unique_ptr<PointEvaluator<T>> TransformedSource::Create(
-  std::shared_ptr<const BoundSource> bound, int derivative_order) const
+  std::shared_ptr<const BoundSource> bound, DifferentialOperator op) const
 {
   // CreatePointEvaluator accepts only bound sources this source created
   const auto& transformed = static_cast<const TransformedBoundSource&>(*bound);
-  auto inner =
-    source_->CreatePointEvaluator<T>(transformed.Inner(), derivative_order);
+  auto inner = source_->CreatePointEvaluator<T>(transformed.Inner(), op);
   return std::make_unique<TransformedPointEvaluator<T>>(
     std::move(bound), transformed.Map(), std::move(inner));
 }
 
 PointEvaluatorVariant TransformedSource::CreatePointEvaluatorImpl(
   Type value_type, std::shared_ptr<const BoundSource> bound,
-  int derivative_order) const
+  DifferentialOperator op) const
 {
   return apply_to_type(value_type, [&](auto type) -> PointEvaluatorVariant {
-    return Create<typename decltype(type)::type>(bound, derivative_order);
+    return Create<typename decltype(type)::type>(bound, op);
   });
 }
 

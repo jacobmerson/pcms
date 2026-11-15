@@ -3,6 +3,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <Kokkos_Core.hpp>
 #include <pcms/field/coordinate_systems/cartesian.hpp>
+#include <pcms/field/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/function_space/lagrange.h>
 #include <pcms/field/function_space/spline.h>
 #include <pcms/field/gradient_source.hpp>
@@ -51,7 +52,8 @@ TEST_CASE("Spline gradients")
     pcms::test::CreateDeviceCoordinateView(pts, space->GetCoordinateSystem());
   const auto bound = space->Bind(coords.coordinate_view);
   auto values = space->CreatePointEvaluator<Real>(bound);
-  auto gradient = space->CreatePointEvaluator<Real>(bound, 1);
+  auto gradient = space->CreatePointEvaluator<Real>(
+    bound, pcms::DifferentialOperator::Gradient);
 
   // The gradient is a physical covector on the space's coordinate system.
   const ValueBasis basis = gradient->OutputBasis(f.GetData().GetValueBasis());
@@ -76,8 +78,9 @@ TEST_CASE("Spline gradients")
   Kokkos::View<Real**, DeviceMemorySpace> wrong("wrong", n, 2);
   REQUIRE_THROWS_WITH(gradient->Evaluate(f, pcms::test::TagLike(f, wrong)),
                       ContainsSubstring("does not match the basis"));
-  REQUIRE_THROWS_WITH(space->CreatePointEvaluator<Real>(bound, 2),
-                      ContainsSubstring("derivative order 2"));
+  REQUIRE_THROWS_WITH(space->CreatePointEvaluator<Real>(
+                        bound, pcms::DifferentialOperator::Hessian),
+                      ContainsSubstring("Hessian is not supported"));
 }
 
 TEST_CASE("Evaluators reject fields of another function space")
@@ -122,7 +125,8 @@ TEST_CASE("Gradients fill the out-of-bounds rows")
   const auto bound =
     space->Bind(coords.coordinate_view,
                 pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::FILL, -7.0});
-  auto gradient = space->CreatePointEvaluator<Real>(bound, 1);
+  auto gradient = space->CreatePointEvaluator<Real>(
+    bound, pcms::DifferentialOperator::Gradient);
   const auto grad = pcms::test::EvaluateToHost(
     *gradient, f, gradient->OutputBasis(f.GetData().GetValueBasis()), 2);
   REQUIRE_THAT(grad(0, 0),
@@ -191,6 +195,47 @@ TEST_CASE("Interpolating a field and its gradient over one localization")
                       ContainsSubstring("target's DOF-holder sites"));
   // Second derivatives are not available from the spline yet.
   REQUIRE_THROWS_WITH(
-    pcms::Gradient(grad_source)->CreatePointEvaluator<Real>(bound),
-    ContainsSubstring("derivative order 2"));
+    pcms::Gradient(grad_source),
+    ContainsSubstring(
+      "Apply: Gradient is not supported by the wrapped source"));
+}
+
+TEST_CASE("Unsupported operators are refused by name")
+{
+  auto space = MakeSplineSpace();
+  auto coords = pcms::test::CreateDeviceCoordinateView(
+    {0.3, -0.7}, space->GetCoordinateSystem());
+  const auto bound = space->Bind(coords.coordinate_view);
+  REQUIRE_FALSE(space->Supports(pcms::DifferentialOperator::Curl));
+  REQUIRE_THROWS_WITH(
+    space->CreatePointEvaluator<Real>(bound, pcms::DifferentialOperator::Curl),
+    ContainsSubstring("Curl is not supported"));
+  // an operator source only supports Value
+  auto grad = pcms::Gradient(space);
+  REQUIRE(grad->Supports(pcms::DifferentialOperator::Value));
+  REQUIRE_FALSE(grad->Supports(pcms::DifferentialOperator::Gradient));
+  // an operator the wrapped source lacks is refused by name when applied
+  REQUIRE_THROWS_WITH(
+    pcms::Curl(space),
+    ContainsSubstring("Apply: Curl is not supported by the wrapped source"));
+}
+
+TEST_CASE("Gradients of vectors need Cartesian coordinates")
+{
+  // GradientBasis directly: rank-1 stored basis
+  auto cyl = pcms::csys::CylindricalRThetaZ::Create();
+  pcms::ValueBasis v{cyl, pcms::ComponentScaling::Physical,
+                     pcms::values::Vector};
+  REQUIRE_THROWS_WITH(pcms::GradientBasis(v, cyl),
+                      ContainsSubstring("connection"));
+  auto cart = pcms::csys::Cartesian::Create(3);
+  pcms::ValueBasis w{cart, pcms::ComponentScaling::Physical,
+                     pcms::values::Vector};
+  REQUIRE(pcms::GradientBasis(w, cart).Rank() == 2);
+  // the parity of the stored basis is kept
+  w.parity = pcms::Parity::Odd;
+  REQUIRE(pcms::GradientBasis(w, cart).parity == pcms::Parity::Odd);
+  pcms::ValueBasis s{cart, pcms::ComponentScaling::Physical,
+                     pcms::values::Scalar, pcms::Parity::Odd};
+  REQUIRE(pcms::GradientBasis(s, cart).parity == pcms::Parity::Odd);
 }

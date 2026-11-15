@@ -173,7 +173,8 @@ public:
   OmegaHLagrangePointEvaluator(
     std::shared_ptr<const OmegaHLagrangeLayout> layout,
     std::shared_ptr<const OmegaHLagrangeBinding> binding)
-    : PointEvaluator<T, LayoutPolicy>(binding),
+    : PointEvaluator<T, LayoutPolicy>(binding, DifferentialOperator::Value,
+                                      layout),
       layout_(std::move(layout)),
       binding_(std::move(binding))
   {
@@ -281,7 +282,8 @@ protected:
   }
 
   std::unique_ptr<PointEvaluator<T>> CreateEvaluator(
-    std::shared_ptr<const Bound> bound, int /*derivative_order*/) const override
+    std::shared_ptr<const Bound> bound,
+    DifferentialOperator /*op*/) const override
   {
     return std::make_unique<OmegaHLagrangePointEvaluator<T>>(layout_,
                                                              std::move(bound));

@@ -66,9 +66,12 @@ public:
   /// @param binding MLS supports of the query points
   /// @param dim spatial dimension
   /// @param options MLS options
+  /// @param layout layout of the evaluated fields
   MLSPointEvaluator(std::shared_ptr<const MLSBinding> binding, int dim,
-                    MLSOptions options)
-    : PointEvaluator<Real, LayoutPolicy>(binding),
+                    MLSOptions options,
+                    std::shared_ptr<const FieldLayout> layout)
+    : PointEvaluator<Real, LayoutPolicy>(binding, DifferentialOperator::Value,
+                                         std::move(layout)),
       binding_(std::move(binding)),
       dim_(dim),
       options_(options)

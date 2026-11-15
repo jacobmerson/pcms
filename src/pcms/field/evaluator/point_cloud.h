@@ -76,10 +76,11 @@ protected:
   }
 
   std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
-    std::shared_ptr<const Bound> bound, int /*derivative_order*/) const override
+    std::shared_ptr<const Bound> bound,
+    DifferentialOperator /*op*/) const override
   {
     return std::make_unique<MLSPointEvaluator<>>(
-      std::move(bound), layout_->GetDimension(), options_);
+      std::move(bound), layout_->GetDimension(), options_, layout_);
   }
 
 private:
