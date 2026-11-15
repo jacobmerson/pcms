@@ -1,4 +1,5 @@
 #include "point_search.h"
+#include "pcms/utility/memory_spaces.h"
 #include <Omega_h_mesh.hpp>
 #include <bitset>
 #include <cmath>
@@ -562,8 +563,9 @@ OMEGA_H_INLINE double myreduce(const Omega_h::Vector<n>& x,
 Kokkos::View<GridPointSearch2D::Result*> GridPointSearch2D::operator()(
   Kokkos::View<const Real* [DIM]> points) const
 {
-  Kokkos::View<GridPointSearch2D::Result*> results("point search result",
-                                                   points.extent(0));
+  Kokkos::View<GridPointSearch2D::Result*> results(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "point search result"),
+    points.extent(0));
   auto num_rows = candidate_map_.numRows();
   // needed so that we don't capture this ptr which will be memory error on cuda
   auto grid = grid_;
@@ -574,8 +576,9 @@ Kokkos::View<GridPointSearch2D::Result*> GridPointSearch2D::operator()(
   auto edges2verts_adj = edges2verts_adj_;
   auto coords = coords_;
   auto tolerances = tolerances_;
-  Kokkos::parallel_for(
-    points.extent(0), KOKKOS_LAMBDA(int p) {
+  ForEach(
+    "GridPointSearch", static_cast<LO>(points.extent(0)),
+    KOKKOS_LAMBDA(const LO p) {
       Omega_h::Vector<2> point(
         std::initializer_list<double>{points(p, 0), points(p, 1)});
       auto cell_id = grid(0).ClosestCellID(point);
@@ -772,8 +775,9 @@ GridPointSearch2D::GridPointSearch2D(Omega_h::Mesh& mesh, LO Nx, LO Ny,
 Kokkos::View<GridPointSearch3D::Result*> GridPointSearch3D::operator()(
   Kokkos::View<const Real* [DIM]> points) const
 {
-  Kokkos::View<GridPointSearch3D::Result*> results("point search result",
-                                                   points.extent(0));
+  Kokkos::View<GridPointSearch3D::Result*> results(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "point search result"),
+    points.extent(0));
   auto num_rows = candidate_map_.numRows();
   // needed so that we don't capture this ptr which will be memory error on cuda
   auto grid = grid_;
@@ -781,8 +785,9 @@ Kokkos::View<GridPointSearch3D::Result*> GridPointSearch3D::operator()(
   auto tris2verts = tris2verts_;
   auto coords = coords_;
   auto tolerances = tolerances_;
-  Kokkos::parallel_for(
-    points.extent(0), KOKKOS_LAMBDA(int p) {
+  ForEach(
+    "GridPointSearch", static_cast<LO>(points.extent(0)),
+    KOKKOS_LAMBDA(const LO p) {
       using Dimensionality = GridPointSearch3D::Result::Dimensionality;
       Omega_h::Vector<DIM> point;
       for (int i = 0; i < DIM; ++i) {
