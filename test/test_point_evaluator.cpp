@@ -1,7 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <Omega_h_build.hpp>
 #include <Omega_h_mesh.hpp>
+#include <cmath>
+#include <random>
 #include <stdexcept>
+#include <tuple>
 
 #include "pcms/field/function_space/lagrange.h"
 #include "pcms/field/function_space/polynomial_reconstruction.hpp"
@@ -269,6 +272,68 @@ TEST_CASE("PointEvaluator: UniformGrid order-1 linear evaluation")
     *evaluator, field_data, pts,
     OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); },
     1e-8);
+}
+
+TEST_CASE("PointEvaluator: UniformGrid order-1 reproduces linear functions")
+{
+  // Different division counts, edge lengths and origin per axis, so a mixed-up
+  // axis or vertex numbering shows up.
+  std::mt19937 generator(7);
+  auto random_points = [&](const auto& grid, int n) {
+    constexpr int dim = std::tuple_size_v<decltype(grid.divisions)>;
+    std::vector<Real> pts;
+    for (int i = 0; i < n; ++i) {
+      for (int d = 0; d < dim; ++d) {
+        std::uniform_real_distribution<Real> coordinate(
+          grid.bot_left[d], grid.bot_left[d] + grid.edge_length[d]);
+        pts.push_back(coordinate(generator));
+      }
+    }
+    return pts;
+  };
+  auto check = [&](const auto& grid, auto func) {
+    constexpr int dim = std::tuple_size_v<decltype(grid.divisions)>;
+    auto space = pcms::LagrangeFunctionSpace::FromUniformGrid(
+      grid, 1, pcms::csys::Cartesian::Deferred(), 1);
+    auto field = space->template CreateFunction<Real>();
+    pcms::test::SetField(field, func);
+    const int n = 200;
+    auto pts = random_points(grid, n);
+    auto device_coords = pcms::test::CreateDeviceCoordinateView(
+      pts, pcms::csys::Cartesian::Deferred(), dim);
+    auto evaluator = space->template CreatePointEvaluator<Real>(
+      space->Bind(device_coords.coordinate_view));
+    Kokkos::View<Real**, pcms::DeviceMemorySpace> out("out", n, 1);
+    evaluator->Evaluate(field, pcms::test::TagLike(field, out));
+    auto host =
+      Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(), out);
+    for (int i = 0; i < n; ++i) {
+      Real expected = 0;
+      if constexpr (dim == 2) {
+        expected = func(pts[2 * i], pts[2 * i + 1]);
+      } else {
+        expected = func(pts[3 * i], pts[3 * i + 1], pts[3 * i + 2]);
+      }
+      INFO("point " << i);
+      REQUIRE(std::abs(host(i, 0) - expected) < 1e-12);
+    }
+  };
+
+  pcms::UniformGrid<2> grid2;
+  grid2.bot_left = {-1.0, 0.5};
+  grid2.edge_length = {3.0, 2.0};
+  grid2.divisions = {7, 4};
+  check(
+    grid2, OMEGA_H_LAMBDA(Real x, Real y) { return 1.5 + 2.0 * x - 3.0 * y; });
+
+  pcms::UniformGrid<3> grid3;
+  grid3.bot_left = {-1.0, 0.5, 2.0};
+  grid3.edge_length = {3.0, 2.0, 1.5};
+  grid3.divisions = {5, 3, 4};
+  check(
+    grid3, OMEGA_H_LAMBDA(Real x, Real y, Real z) {
+      return 1.5 + 2.0 * x - 3.0 * y + 0.75 * z;
+    });
 }
 
 TEST_CASE("PointEvaluator: SplineFunctionSpace uniform-grid evaluation")

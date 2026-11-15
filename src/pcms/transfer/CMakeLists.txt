@@ -1,6 +1,4 @@
 set(PCMS_FIELD_TRANSFER_HEADERS
-    linear_interpolant.hpp
-    multidimarray.hpp
     interpolation_base.h
     interpolation_helpers.h
     mesh_intersection.hpp
