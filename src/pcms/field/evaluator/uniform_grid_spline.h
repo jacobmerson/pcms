@@ -79,10 +79,6 @@ public:
       select_("uniform_grid_spline_select", 6),
       empty_bc_("uniform_grid_spline_empty_bc", 0)
   {
-    if (binding->NumPoints() > 0 && !binding->HasPointValues()) {
-      throw pcms_error("UniformGridSplinePointEvaluator2D: parametric binds "
-                       "are not supported yet");
-    }
     Real dx = grid_.edge_length[0] / grid_.divisions[0];
     Real dy = grid_.edge_length[1] / grid_.divisions[1];
     Kokkos::parallel_for(

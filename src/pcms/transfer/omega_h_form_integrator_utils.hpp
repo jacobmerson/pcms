@@ -118,8 +118,6 @@ inline Kokkos::View<Real*, DeviceMemorySpace> ElementMeasuresAtPoints(
   const Real reference_measure = dim == 3 ? 1.0 / 6.0 : 0.5;
   const auto determinant = differential.determinant;
   const bool per_element = differential.per_element;
-  // a single per-element row is the differential of every element
-  const bool uniform = per_element && determinant.extent(0) == 1;
   const LO n = bound.NumPoints();
   Kokkos::View<Real*, DeviceMemorySpace> measures(
     Kokkos::view_alloc(Kokkos::WithoutInitializing, "element_measures"), n);
@@ -129,7 +127,7 @@ inline Kokkos::View<Real*, DeviceMemorySpace> ElementMeasuresAtPoints(
     KOKKOS_LAMBDA(const LO i) {
       // a parametric bind finds every point, so row i of a per-point
       // differential is point i
-      const LO row = uniform ? 0 : per_element ? element_ids(i) : i;
+      const LO row = per_element ? element_ids(i) : i;
       measures(i) = Kokkos::fabs(determinant(row)) * reference_measure;
     });
   return measures;

@@ -66,51 +66,14 @@ public:
     cell_indices_ = cells;
   }
 
-  /// Takes the cell of each point and its position there, in [0, 1] per axis
-  /// in coordinate order, as given.
-  UniformGridBinding(std::shared_ptr<const Geometry> geometry,
-                     const ParametricPoints& points, OutOfBoundsPolicy policy,
-                     const UniformGrid<Dim>& grid)
-    : BoundSource(std::move(geometry), points, policy),
-      cell_indices_(Kokkos::view_alloc(Kokkos::WithoutInitializing,
-                                       "uniform_grid_cell_indices"),
-                    points.ids.extent(0)),
-      cell_coords_(Kokkos::view_alloc(Kokkos::WithoutInitializing,
-                                      "uniform_grid_cell_coords"),
-                   points.ids.extent(0), Dim)
-  {
-    if (points.NumPoints() == 0) {
-      return;
-    }
-    if (points.coords.extent(1) != Dim) {
-      throw pcms_error("UniformGridBinding: parametric coordinates of a " +
-                       std::to_string(Dim) + "D grid need " +
-                       std::to_string(Dim) + " columns, got " +
-                       std::to_string(points.coords.extent(1)));
-    }
-    detail::CheckParametricIds(points, grid.GetNumCells(), "UniformGridBinding",
-                               "cell");
-    Kokkos::deep_copy(cell_indices_, points.ids);
-    Kokkos::deep_copy(cell_coords_, points.coords);
-  }
-
   [[nodiscard]] Kokkos::View<const LO*, DeviceMemorySpace> CellIndices()
     const noexcept
   {
     return cell_indices_;
   }
 
-  /// Position of each point in its cell for a parametric bind; empty
-  /// otherwise (the position follows from LocatedPointValues()).
-  [[nodiscard]] Kokkos::View<const Real**, DeviceMemorySpace> CellCoordinates()
-    const noexcept
-  {
-    return cell_coords_;
-  }
-
 private:
   Kokkos::View<LO*, DeviceMemorySpace> cell_indices_;
-  Kokkos::View<Real**, DeviceMemorySpace> cell_coords_;
 };
 
 /// Geometry of a uniform grid: an affine map of the unit cells, located in
@@ -156,33 +119,6 @@ public:
     return grid_;
   }
 
-  /// The cell Jacobian diag(edge_length / divisions) is the same for every
-  /// cell, so the view has one row (row 0) with per_element = true.
-  [[nodiscard]] DifferentialView Differential(
-    const BoundSource& bound) const override
-  {
-    if (bound.GetGeometry().get() != this) {
-      throw pcms_error(
-        "Differential: the bound source belongs to another geometry");
-    }
-    Kokkos::View<Real***, DeviceMemorySpace> jacobian("uniform_grid_jacobian",
-                                                      1, Dim, Dim);
-    Kokkos::View<Real*, DeviceMemorySpace> determinant(
-      "uniform_grid_jacobian_det", 1);
-    auto jacobian_host = Kokkos::create_mirror_view(jacobian);
-    auto determinant_host = Kokkos::create_mirror_view(determinant);
-    Real det = 1;
-    for (unsigned d = 0; d < Dim; ++d) {
-      const Real h = grid_.edge_length[d] / grid_.divisions[d];
-      jacobian_host(0, d, d) = h;
-      det *= h;
-    }
-    determinant_host(0) = det;
-    Kokkos::deep_copy(jacobian, jacobian_host);
-    Kokkos::deep_copy(determinant, determinant_host);
-    return DifferentialView{jacobian, determinant, /*per_element=*/true};
-  }
-
 protected:
   [[nodiscard]] std::shared_ptr<BoundSource> BindImpl(
     const BindRequest& request) const override
@@ -193,10 +129,10 @@ protected:
   }
 
   [[nodiscard]] std::shared_ptr<BoundSource> BindParametricImpl(
-    const ParametricPoints& points, OutOfBoundsPolicy policy) const override
+    const ParametricPoints& /*points*/,
+    OutOfBoundsPolicy /*policy*/) const override
   {
-    return std::make_shared<UniformGridBinding<Dim>>(shared_from_this(), points,
-                                                     policy, grid_);
+    throw pcms_error("UniformGridGeometry: parametric binds are not supported");
   }
 
 private:

@@ -250,7 +250,7 @@ TEST_CASE("Parametric binds skip the search")
 #endif
 }
 
-TEST_CASE("Parametric binds on a uniform grid check the cells")
+TEST_CASE("Uniform grids refuse parametric binds")
 {
   pcms::UniformGrid<2> grid;
   grid.bot_left = {0.0, 0.0};
@@ -258,88 +258,12 @@ TEST_CASE("Parametric binds on a uniform grid check the cells")
   grid.divisions = {4, 3};
   auto geometry = pcms::UniformGridGeometry<2>::Create(
     grid, pcms::csys::Cartesian::Create(2));
-  auto space = LagrangeFunctionSpace::FromGeometry(geometry, 1, 1);
-  auto f = space->CreateFunction<Real>("f");
-
-  Kokkos::View<LO*, DeviceMemorySpace> ids("ids", 2);
-  Kokkos::View<Real**, DeviceMemorySpace> coords("coords", 2, 2);
-  Kokkos::deep_copy(Kokkos::subview(ids, 1), 12);
-  REQUIRE_THROWS_WITH(geometry->Bind(pcms::ParametricPoints{ids, coords}),
-                      ContainsSubstring("cell ids span [0, 12], outside [0, "
-                                        "12)"));
-  Kokkos::deep_copy(Kokkos::subview(ids, 1), 11);
-  REQUIRE(geometry->Bind(pcms::ParametricPoints{ids, coords})->NumPoints() ==
-          2);
-
-  const auto empty = geometry->Bind(pcms::ParametricPoints{});
-  REQUIRE(empty->NumPoints() == 0);
-  const auto nothing = pcms::test::EvaluateToHost(
-    *space->CreatePointEvaluator<Real>(empty), f, f.GetData().GetValueBasis());
-  REQUIRE(nothing.extent(0) == 0);
-}
-
-TEST_CASE("Parametric binds on a uniform grid evaluate at the given positions")
-{
-  pcms::UniformGrid<2> grid;
-  grid.bot_left = {-1.0, 0.5};
-  grid.edge_length = {2.0, 1.5};
-  grid.divisions = {4, 3};
-  auto geometry = pcms::UniformGridGeometry<2>::Create(
-    grid, pcms::csys::Cartesian::Create(2));
-  auto space = LagrangeFunctionSpace::FromGeometry(geometry, 1, 1);
-  auto f = space->CreateFunction<Real>("f");
-  // bilinear, so the multilinear interpolation reproduces it exactly
-  pcms::test::SetField(
-    f, OMEGA_H_LAMBDA(Real x, Real y) { return 1.0 + 2.0 * x - y + x * y; });
-
-  // every cell at its centre and at an off-centre position (0.25, 0.75),
-  // which tells the axes apart
-  const LO ncells = grid.GetNumCells();
-  const Real positions[2][2] = {{0.5, 0.5}, {0.25, 0.75}};
-  const LO n = 2 * ncells;
-  Kokkos::View<LO*, DeviceMemorySpace> ids("ids", n);
-  Kokkos::View<Real**, DeviceMemorySpace> coords("coords", n, 2);
-  auto ids_host = Kokkos::create_mirror_view(ids);
-  auto coords_host = Kokkos::create_mirror_view(coords);
-  std::vector<Real> physical;
-  for (LO k = 0; k < n; ++k) {
-    const LO cell = k % ncells;
-    const auto* position = positions[k / ncells];
-    ids_host(k) = cell;
-    const auto bbox = grid.GetCellBBOX(cell);
-    for (int d = 0; d < 2; ++d) {
-      coords_host(k, d) = position[d];
-      physical.push_back(bbox.center[d] - bbox.half_width[d] +
-                         2.0 * bbox.half_width[d] * position[d]);
-    }
-  }
-  Kokkos::deep_copy(ids, ids_host);
-  Kokkos::deep_copy(coords, coords_host);
-
-  const auto bound = geometry->Bind(pcms::ParametricPoints{ids, coords});
-  REQUIRE_FALSE(bound->HasPointValues());
-  const auto values = pcms::test::EvaluateToHost(
-    *space->CreatePointEvaluator<Real>(bound), f, f.GetData().GetValueBasis());
-  // the same points bound by their coordinates
-  auto query = pcms::test::CreateDeviceCoordinateView(
-    physical, geometry->GetCoordinateSystem());
-  const auto located = pcms::test::EvaluateToHost(
-    *space->CreatePointEvaluator<Real>(geometry->Bind(query.coordinate_view)),
-    f, f.GetData().GetValueBasis());
-  for (LO k = 0; k < n; ++k) {
-    const Real x = physical[2 * k];
-    const Real y = physical[2 * k + 1];
-    CAPTURE(k, x, y);
-    REQUIRE_THAT(values(k, 0),
-                 WithinAbs(1.0 + 2.0 * x - y + x * y, pcms::test::ExactTol));
-    REQUIRE_THAT(values(k, 0), WithinAbs(located(k, 0), pcms::test::ExactTol));
-  }
-
-  // positions in a 2D cell have two columns
-  Kokkos::View<Real**, DeviceMemorySpace> three_columns("three", n, 3);
+  Kokkos::View<LO*, DeviceMemorySpace> ids("ids", 1);
+  Kokkos::View<Real**, DeviceMemorySpace> coords("coords", 1, 2);
   REQUIRE_THROWS_WITH(
-    geometry->Bind(pcms::ParametricPoints{ids, three_columns}),
-    ContainsSubstring("2D grid need 2 columns, got 3"));
+    geometry->Bind(pcms::ParametricPoints{ids, coords}),
+    ContainsSubstring("UniformGridGeometry: parametric binds are not "
+                      "supported"));
 }
 
 TEST_CASE("MapToPhysical gives the coordinates of parametric points")
