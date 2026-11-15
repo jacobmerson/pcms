@@ -13,6 +13,7 @@ namespace pcms
 
 class Geometry;
 class BoundCoordinateMap;
+class CoordinateMap;
 
 /// @brief Entities of a geometry the query points are known to lie in, so a
 ///        bind or neighbourhood search can start from them instead of
@@ -59,6 +60,8 @@ struct BindRequest
   std::shared_ptr<const BoundCoordinateMap> map;
   /// the query points as given to Bind; `coords` itself without a map
   CoordinateView<DeviceMemorySpace> query_coords;
+  /// the coordinate map `map` is a binding of, or null
+  std::shared_ptr<const CoordinateMap> coordinate_map;
 };
 
 /// @brief A set of query points localized on a geometry.
@@ -87,8 +90,8 @@ public:
     return policy_;
   }
 
-  /// @return coordinate system of PointValues(): the query system, which is
-  ///         the geometry's system unless the bind used a coordinate map
+  /// @return coordinate system of the query points: the geometry's system
+  ///         unless the bind used a coordinate map
   [[nodiscard]] const std::shared_ptr<const CoordinateSystem>&
   GetCoordinateSystem() const noexcept
   {
@@ -104,18 +107,17 @@ public:
     return map_;
   }
 
-  /// @return the coordinates of the bound query points in
-  ///         GetCoordinateSystem() (a copy owned by this object), one row per
-  ///         point
-  [[nodiscard]] Kokkos::View<const Real**, DeviceMemorySpace> PointValues()
+  /// @return the coordinate map the bind was given, or null
+  [[nodiscard]] const std::shared_ptr<const CoordinateMap>& GetCoordinateMap()
     const noexcept
   {
-    return points_;
+    return coordinate_map_;
   }
 
   /// @return the bound points in the geometry's coordinate system, where they
-  ///         were located: PointValues() mapped by GetBoundMap(), or
-  ///         PointValues() itself if the bind had no map
+  ///         were located, one row per point: the query points mapped by
+  ///         GetBoundMap(), or a copy of the query points if the bind had no
+  ///         map
   [[nodiscard]] Kokkos::View<const Real**, DeviceMemorySpace>
   LocatedPointValues() const noexcept
   {
@@ -159,10 +161,10 @@ private:
   std::shared_ptr<const Geometry> geometry_;
   OutOfBoundsPolicy policy_;
   std::shared_ptr<const BoundCoordinateMap> map_;
+  std::shared_ptr<const CoordinateMap> coordinate_map_;
   std::shared_ptr<const CoordinateSystem> system_;
   LO num_points_;
-  Kokkos::View<Real**, DeviceMemorySpace> points_;
-  Kokkos::View<Real**, DeviceMemorySpace> located_;
+  Kokkos::View<const Real**, DeviceMemorySpace> located_;
   Kokkos::View<LO*, DeviceMemorySpace> found_;
   Kokkos::View<LO*, DeviceMemorySpace> missing_;
 };

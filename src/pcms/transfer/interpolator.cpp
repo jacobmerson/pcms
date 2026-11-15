@@ -1,4 +1,5 @@
 #include "pcms/transfer/interpolator.h"
+#include "pcms/field/coordinate_map.hpp"
 
 namespace pcms
 {
@@ -13,20 +14,24 @@ bool SameDOFHolderSites(const BoundSource& bound, const FieldLayout& layout)
                             sites.GetCoordinateSystem())) {
     return false;
   }
-  const auto va = bound.PointValues();
-  const auto vb = sites.GetValues();
-  if (va.extent(0) != vb.extent(0) || va.extent(1) != vb.extent(1)) {
+  const auto vs = sites.GetValues();
+  const auto num_points = static_cast<LO>(vs.extent(0));
+  if (bound.NumPoints() != num_points) {
     return false;
   }
+  // a bind with a map located the mapped points
+  const auto va = bound.LocatedPointValues();
+  const bool mapped = bound.GetCoordinateMap() != nullptr;
+  const auto vb = mapped ? bound.GetCoordinateMap()->Bind(sites)->Mapped()
+                         : Kokkos::View<const Real**, DeviceMemorySpace>();
   const auto num_dims = static_cast<int>(va.extent(1));
   LO num_different = 0;
   Kokkos::parallel_reduce(
     "same_dof_holder_sites",
-    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(
-      0, static_cast<LO>(va.extent(0))),
+    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, num_points),
     KOKKOS_LAMBDA(const LO i, LO& count) {
       for (int d = 0; d < num_dims; ++d) {
-        if (va(i, d) != vb(i, d)) {
+        if (va(i, d) != (mapped ? vb(i, d) : vs(i, d))) {
           ++count;
           return;
         }

@@ -97,7 +97,7 @@ public:
   ///        or null; the points are located at their images, and evaluators
   ///        created from the result re-express their values through it
   /// @return bound source for the evaluator sources on this geometry; its
-  ///         PointValues() are the query points
+  ///         LocatedPointValues() are the query points (or their images)
   /// @throws pcms_error if the query coordinate system is not
   ///         GetCoordinateSystem() (without a map) or the map does not take it
   ///         to GetCoordinateSystem(), or the policy is NEAREST_BOUNDARY and

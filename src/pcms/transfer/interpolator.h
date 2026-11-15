@@ -21,9 +21,11 @@ namespace pcms
 namespace detail
 {
 
-/// @brief Whether the query points of `bound` are the DOF-holder coordinates
-///        of `layout`, in the same order and coordinate system.
-/// @return true if they are
+/// @brief Whether `bound` was bound to the DOF-holder coordinates of `layout`,
+///        in the same order and coordinate system: its located points are
+///        those coordinates, mapped by the bind's coordinate map if it had
+///        one.
+/// @return true if it was
 bool SameDOFHolderSites(const BoundSource& bound, const FieldLayout& layout);
 
 } // namespace detail

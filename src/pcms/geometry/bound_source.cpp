@@ -1,5 +1,6 @@
 #include "pcms/geometry/bound_source.hpp"
 #include "pcms/geometry/geometry.hpp"
+#include "pcms/field/coordinate_map.hpp"
 #include "pcms/utility/arrays.h"
 #include "pcms/utility/assert.h"
 #include <string>
@@ -66,11 +67,12 @@ BoundSource::BoundSource(std::shared_ptr<const Geometry> geometry,
   : geometry_(std::move(geometry)),
     policy_(request.policy),
     map_(request.map),
+    coordinate_map_(request.coordinate_map),
     system_(request.query_coords.GetCoordinateSystem()),
     num_points_(static_cast<LO>(request.query_coords.GetValues().extent(0))),
-    points_(CopyPoints(request.query_coords.GetValues())),
-    located_(map_ != nullptr ? CopyPoints(request.coords.GetValues())
-                             : points_),
+    located_(map_ != nullptr ? map_->Mapped()
+                             : Kokkos::View<const Real**, DeviceMemorySpace>(
+                                 CopyPoints(request.coords.GetValues()))),
     found_(AllPoints(num_points_))
 {
   PCMS_ALWAYS_ASSERT(static_cast<LO>(request.coords.GetValues().extent(0)) ==

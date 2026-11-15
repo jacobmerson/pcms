@@ -54,8 +54,8 @@ std::shared_ptr<const BoundSource> Geometry::Bind(
   if (map != nullptr) {
     std::shared_ptr<const BoundCoordinateMap> bound_map = map->Bind(coords);
     const CoordinateView<DeviceMemorySpace> mapped = bound_map->MappedPoints();
-    bound =
-      BindImpl(BindRequest{mapped, policy, hint, std::move(bound_map), coords});
+    bound = BindImpl(
+      BindRequest{mapped, policy, hint, std::move(bound_map), coords, map});
   } else {
     bound = BindImpl(BindRequest{coords, policy, hint, nullptr, coords});
   }

@@ -9,6 +9,7 @@
 #include <pcms/field/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/evaluator/omega_h_geometry.hpp>
 #include <pcms/field/function_space/lagrange.h>
+#include <pcms/field/evaluator/uniform_grid_geometry.hpp>
 #include <pcms/transfer/interpolator.h>
 #include "field_test_utils.h"
 #include <cmath>
@@ -102,18 +103,15 @@ TEST_CASE("Bind with a map: scalar evaluation maps the query points")
   const int n = static_cast<int>(pts.GetValues().extent(0));
   const auto bound =
     src->GetGeometry()->Bind(pts, OutOfBoundsPolicy{}, CartToCyl());
-  // the bound source keeps the query points; the evaluators read the mapped
+  // the bound source keeps the mapped points, which the evaluators read
   REQUIRE(bound->GetBoundMap() != nullptr);
   REQUIRE(pcms::SameCoordinateSystem(bound->GetCoordinateSystem(),
                                      tgt->GetCoordinateSystem()));
-  REQUIRE(static_cast<int>(bound->PointValues().extent(0)) == n);
   REQUIRE(static_cast<int>(bound->LocatedPointValues().extent(0)) == n);
   auto evaluator = src->CreatePointEvaluator<Real>(bound);
   REQUIRE(SameValueBasis(evaluator->OutputBasis(ValueBasis{}), ValueBasis{}));
 
   const auto coords = pcms::test::CopyCoordinatesToHost(pts.GetValues());
-  const auto query = pcms::test::CopyCoordinatesToHost(
-    pcms::MakeConstRank2View(bound->PointValues()));
   const auto located = pcms::test::CopyCoordinatesToHost(
     pcms::MakeConstRank2View(bound->LocatedPointValues()));
   const auto result =
@@ -121,9 +119,6 @@ TEST_CASE("Bind with a map: scalar evaluation maps the query points")
   for (int i = 0; i < n; ++i) {
     const Real x = coords(i, 0), y = coords(i, 1), z = coords(i, 2);
     CAPTURE(i);
-    REQUIRE(query(i, 0) == x);
-    REQUIRE(query(i, 1) == y);
-    REQUIRE(query(i, 2) == z);
     REQUIRE_THAT(located(i, 0),
                  WithinAbs(std::sqrt(x * x + y * y), pcms::test::EvalTol));
     REQUIRE_THAT(located(i, 1),
@@ -351,8 +346,10 @@ TEST_CASE("Bind with a map: NEAREST_BOUNDARY follows the geometry")
     grid.bot_left = {0.1, -3.2, 0.0};
     grid.edge_length = {1.5, 6.4, 1.0};
     grid.divisions = {6, 16, 4};
-    auto src = LagrangeFunctionSpace::FromUniformGrid(
-      grid, 1, pcms::csys::CylindricalRThetaZ::Create());
+    auto src = LagrangeFunctionSpace::FromGeometry(
+      pcms::UniformGridGeometry<3>::Create(
+        grid, pcms::csys::CylindricalRThetaZ::Create()),
+      1, 1);
     auto bound =
       src->GetGeometry()->Bind(query.coordinate_view, nearest, cart_to_cyl);
     REQUIRE(bound->MissingPoints().extent(0) == 0);
@@ -520,6 +517,19 @@ TEST_CASE("Interpolator over a mapped bind transfers across systems")
       ComponentScaling::Physical);
     REQUIRE_THROWS_WITH(op.Apply(b_src, wrong),
                         ContainsSubstring("target's declared basis"));
+  }
+
+  SECTION("the bound source must be of the target's DOF holders")
+  {
+    // as many DOF holders as the target, at other coordinates
+    Omega_h::Mesh other_mesh(&lib);
+    auto other = BuildCartesianTarget(lib, other_mesh, 3, 0.9);
+    REQUIRE(other->GetLayout()->GetNumDofHolder() ==
+            tgt->GetLayout()->GetNumDofHolder());
+    REQUIRE_THROWS_WITH(
+      pcms::Interpolator<Real>(*src, *other,
+                               BindTargetSites(*src, *tgt, CartToCyl())),
+      ContainsSubstring("target's DOF-holder sites"));
   }
 
   SECTION("a plain Interpolator refuses to bridge coordinate systems")

@@ -30,6 +30,13 @@ public:
   /// Query points expressed in the map's target coordinate system.
   [[nodiscard]] CoordinateView<DeviceMemorySpace> MappedPoints() const;
 
+  /// @return the mapped points, shared, not copied
+  [[nodiscard]] Kokkos::View<const Real**, DeviceMemorySpace> Mapped()
+    const noexcept
+  {
+    return mapped_;
+  }
+
   [[nodiscard]] LO NumPoints() const noexcept
   {
     return static_cast<LO>(mapped_.extent(0));
