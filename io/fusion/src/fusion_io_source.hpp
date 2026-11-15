@@ -7,6 +7,7 @@
 #include "fusion_io/fusion_io.hpp"
 #include <fusion_io.h>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace fio::detail
@@ -54,6 +55,13 @@ public:
   /// whether a point is inside the source's domain. Read on first use.
   [[nodiscard]] fio_field& DomainProbe() const;
 
+  /// For M3D-C1 sources, the mesh DomainProbe() is evaluated on: a point is
+  /// inside the domain if m3dc1_mesh::in_element finds it, the search the
+  /// probe's evaluation starts with. Null for other formats and for
+  /// stellarator meshes (whose fields map the coordinates first). Read on
+  /// first use; the source owns it.
+  [[nodiscard]] m3dc1_mesh* DomainMesh() const;
+
   /// Search hints for `num_points` query points: sizeof_search_hint() bytes
   /// per point. Consecutive bindings to the same number of points share them,
   /// so point i starts where point i of the previous binding was found (the
@@ -66,6 +74,7 @@ private:
   FusionIOSourcePtr source_;
   std::vector<Quantity> quantities_;
   mutable FusionIOFieldPtr probe_;
+  mutable std::optional<m3dc1_mesh*> domain_mesh_;
   mutable std::shared_ptr<std::vector<char>> hints_;
 };
 
