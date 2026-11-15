@@ -116,8 +116,8 @@ void BenchmarkFio(const std::string& name, fio::Quantity quantity,
 /// squares; its vertices are the grid points.
 Omega_h::Mesh RectangleMesh(Omega_h::Library& lib)
 {
-  auto mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, R1 - R0,
-                                 Z1 - Z0, 0, Divisions, Divisions, 0, false);
+  auto mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, R1 - R0, Z1 - Z0,
+                                 0, Divisions, Divisions, 0, false);
   const Omega_h::HostRead<Omega_h::Real> unit(mesh.coords());
   Omega_h::HostWrite<Omega_h::Real> moved(unit.size());
   for (int i = 0; i < unit.size(); ++i) {
@@ -151,8 +151,7 @@ TEST_CASE("Transfer benchmarks: M3D-C1 poloidal flux onto a P1 mesh",
     mesh, 1, 1, pcms::csys::CylindricalRZ::Create(), "global",
     pcms::LagrangeFunctionSpace::Backend::OmegaH);
   const pcms::TransformedSource on_plane(
-    psi.GetSpacePtr(),
-    std::make_shared<pcms::PoloidalPlaneEmbedding>(0.0));
+    psi.GetSpacePtr(), std::make_shared<pcms::PoloidalPlaneEmbedding>(0.0));
   const pcms::OutOfBoundsPolicy fill{pcms::OutOfBoundsMode::FILL,
                                      std::numeric_limits<Real>::quiet_NaN()};
   REQUIRE(target->GetLayout()->GetNumDofHolder() ==
@@ -168,5 +167,24 @@ TEST_CASE("Transfer benchmarks: M3D-C1 poloidal flux onto a P1 mesh",
     interpolator.Apply(psi, psi_t);
     Kokkos::fence();
     return &psi_t;
+  };
+}
+
+TEST_CASE("Transfer benchmarks: fixed cost of one M3D-C1 point", "[!benchmark]")
+{
+  // One point per call, as in a tracer following a single field line: the
+  // per-call cost of each step.
+  const std::vector<Real> point = {1.75, 0.0, 0.05};
+  BenchmarkFusionIO("1 point, B", FIO_MAGNETIC_FIELD, point);
+  BenchmarkFio("1 point, B", fio::Quantity::MagneticField, point);
+  const auto source = fio::Open(fio::Format::M3DC1, M3DC1File);
+  const auto b = source->CreateFunction(fio::Quantity::MagneticField);
+  const auto& space = b.GetSpace();
+  const auto coords = fio::test::CreateDeviceCoordinateView(
+    point, space.GetCoordinateSystem(), 3);
+  const auto bound = space.Bind(coords.coordinate_view);
+  BENCHMARK("1 point, B: fio create evaluator")
+  {
+    return space.CreatePointEvaluator<Real>(bound);
   };
 }

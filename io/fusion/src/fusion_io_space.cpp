@@ -137,13 +137,14 @@ public:
 private:
   void FindPointsInDomain(fio_field& probe)
   {
-    std::vector<char> inside(points.extent(0), 1);
+    Kokkos::View<bool*, HostMemorySpace> inside(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing, "fusion_io_inside"),
+      points.extent(0));
     std::vector<Real> values(static_cast<size_t>(probe.dimension()));
     for (size_t i = 0; i < points.extent(0); ++i) {
       const int status = probe.eval(&points(i, 0), values.data(), Hint(i));
-      if (status == FIO_OUT_OF_BOUNDS) {
-        inside[i] = 0;
-      } else if (status != FIO_SUCCESS) {
+      inside(i) = status != FIO_OUT_OF_BOUNDS;
+      if (status != FIO_SUCCESS && status != FIO_OUT_OF_BOUNDS) {
         throw pcms_error("FusionIOFunctionSpace: locating query point " +
                          std::to_string(i) + " failed (Fusion-IO error " +
                          std::to_string(status) + ")");
