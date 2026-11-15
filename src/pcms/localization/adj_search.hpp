@@ -1,6 +1,7 @@
 #ifndef PCMS_LOCALIZATION_ADJ_SEARCH_HPP
 #define PCMS_LOCALIZATION_ADJ_SEARCH_HPP
 
+#include <pcms/geometry/supports.hpp>
 #include <pcms/localization/mls_support_helpers.h>
 #include <pcms/utility/memory_spaces.h>
 #include <pcms/utility/mesh_geometry.h>
@@ -12,13 +13,6 @@
 
 namespace pcms
 {
-
-struct SupportResults
-{
-  Omega_h::LOs supports_ptr;
-  Omega_h::LOs supports_idx;
-  Omega_h::Write<Omega_h::Real> radii2;
-};
 
 /// @brief Supports of query points among the vertices of `source_mesh`: a
 ///        breadth-first search over the vertex adjacency from the vertices of

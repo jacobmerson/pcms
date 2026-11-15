@@ -3,6 +3,7 @@ set(
         geometry.hpp
         bound_source.hpp
         parametric_points.hpp
+        supports.hpp
 )
 
 set(
@@ -28,8 +29,7 @@ target_link_libraries(
         Kokkos::kokkos
         pcms::utility
         pcms::discretization
-        # SupportResults, the result of Geometry::Neighbourhood
-        pcms::localization
+        Omega_h::omega_h
 )
 target_compile_features(pcms_geometry PUBLIC cxx_std_20)
 

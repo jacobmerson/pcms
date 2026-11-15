@@ -7,6 +7,7 @@
 #include "pcms/field/out_of_bounds_policy.h"
 #include "pcms/geometry/bound_source.hpp"
 #include "pcms/geometry/parametric_points.hpp"
+#include "pcms/geometry/supports.hpp"
 #include "pcms/utility/memory_spaces.h"
 #include "pcms/utility/types.h"
 #include <Kokkos_Core.hpp>
@@ -16,8 +17,7 @@
 namespace pcms
 {
 
-struct SupportResults; // pcms/localization/adj_search.hpp
-class CoordinateMap;   // pcms/field/coordinate_map.hpp
+class CoordinateMap; // pcms/field/coordinate_map.hpp
 
 /// @brief Options of the containing-cell search a geometry builds.
 struct SearchOptions

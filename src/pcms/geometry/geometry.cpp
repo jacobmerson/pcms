@@ -1,6 +1,5 @@
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/field/coordinate_map.hpp"
-#include "pcms/localization/adj_search.hpp" // SupportResults
 #include "pcms/utility/assert.h"
 #include <string>
 
