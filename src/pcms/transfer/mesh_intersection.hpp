@@ -185,6 +185,9 @@ public:
  *
  * @param source_mesh The source Omega_h mesh.
  * @param target_mesh The target Omega_h mesh.
+ * @param source_search containing-element search over `source_mesh` (e.g.
+ * the search of its OmegaHGeometry), of the mesh's dimension
+ * @param use_prefilter if true, skip degenerate clips
  * @return An IntersectionResults struct containing target-to-source mapping
  * data.
  *
@@ -192,12 +195,6 @@ public:
  * from r3d. Only valid (non-degenerate) polygonal intersections are included.
  *
  * @see FindIntersections::adjBasedIntersectSearch
- */
-IntersectionResults intersectTargets(Omega_h::Mesh& source_mesh,
-                                     Omega_h::Mesh& target_mesh,
-                                     bool use_prefilter = true);
-
-/**
  */
 IntersectionResults intersectTargets(
   Omega_h::Mesh& source_mesh, Omega_h::Mesh& target_mesh,

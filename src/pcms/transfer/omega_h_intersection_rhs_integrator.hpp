@@ -22,10 +22,9 @@ namespace pcms
 // Construction validates both spaces (scalar Cartesian Lagrange on simplex
 // meshes of the same dimension), computes mesh intersections, and runs a
 // two-pass device kernel (count then fill) to build the quadrature data and
-// allocate the owned RHS vector sized to the target DOF count. When built from
-// function spaces and the source is an Omega_h Lagrange space, the intersection
-// reuses the point search that space already owns; the layout constructor has
-// no space to borrow from and builds its own.
+// allocate the owned RHS vector sized to the target DOF count. The source space
+// must be on the Omega_h geometry of its layout's mesh: the intersection reuses
+// that geometry's point search.
 //
 // The integration points are given in the source mesh's parametric
 // coordinates (source element and barycentric coordinates), so the source is
@@ -43,11 +42,6 @@ class OmegaHIntersectionRHSIntegrator : public LinearFormIntegrator
 public:
   OmegaHIntersectionRHSIntegrator(const FunctionSpace& source_space,
                                   const FunctionSpace& target_space);
-  OmegaHIntersectionRHSIntegrator(
-    std::shared_ptr<const OmegaHLagrangeLayout> source_layout,
-    std::shared_ptr<const CoordinateSystem> source_coordinate_system,
-    std::shared_ptr<const OmegaHLagrangeLayout> target_layout,
-    std::shared_ptr<const CoordinateSystem> target_coordinate_system);
   ~OmegaHIntersectionRHSIntegrator();
 
   Vec GetVector() const noexcept override;
@@ -62,15 +56,6 @@ public:
     Rank2View<const Real, DeviceMemorySpace> sampled_values) override;
 
 private:
-  // Both public constructors delegate here; `source_search` may be null, in
-  // which case the intersection builds its own search over the source mesh.
-  OmegaHIntersectionRHSIntegrator(
-    std::shared_ptr<const OmegaHLagrangeLayout> source_layout,
-    std::shared_ptr<const CoordinateSystem> source_coordinate_system,
-    std::shared_ptr<const OmegaHLagrangeLayout> target_layout,
-    std::shared_ptr<const CoordinateSystem> target_coordinate_system,
-    const GridPointSearchVariant* source_search);
-
   Vec vec_ = nullptr;
   // source element of each integration point
   Kokkos::View<LO*, DeviceMemorySpace> source_elements_;

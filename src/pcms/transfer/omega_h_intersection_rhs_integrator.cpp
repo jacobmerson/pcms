@@ -31,29 +31,28 @@ struct Data
 template <int Dim, int TgtOrder>
 Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
                    const OmegaHLagrangeLayout& target_layout, int quad_order,
-                   const GridPointSearchVariant* source_search);
+                   const GridPointSearchVariant& source_search);
 
-// The point search of the source space's geometry, if it is an Omega_h
-// geometry whose search the intersection can reuse; null otherwise.
-const GridPointSearchVariant* SourceSearchFromSpace(const FunctionSpace& space)
+Data BuildData(const FunctionSpace& source_space,
+               const FunctionSpace& target_space)
 {
-  const auto* geometry =
-    dynamic_cast<const OmegaHGeometry*>(space.GetGeometry().get());
-  return geometry ? &geometry->GetSearch() : nullptr;
-}
-
-Data BuildData(const std::shared_ptr<const OmegaHLagrangeLayout>& source_layout,
-               std::shared_ptr<const CoordinateSystem> source_coordinate_system,
-               const std::shared_ptr<const OmegaHLagrangeLayout>& target_layout,
-               std::shared_ptr<const CoordinateSystem> target_coordinate_system,
-               const GridPointSearchVariant* source_search)
-{
+  const auto source_layout =
+    std::dynamic_pointer_cast<const OmegaHLagrangeLayout>(
+      source_space.GetLayout());
+  const auto target_layout =
+    std::dynamic_pointer_cast<const OmegaHLagrangeLayout>(
+      target_space.GetLayout());
   detail::CheckOmegaHScalarLagrangeLayout(
-    source_coordinate_system, source_layout, "OmegaHIntersectionRHSIntegrator",
-    "source");
+    source_space.GetCoordinateSystem(), source_layout,
+    "OmegaHIntersectionRHSIntegrator", "source");
   detail::CheckOmegaHScalarLagrangeLayout(
-    target_coordinate_system, target_layout, "OmegaHIntersectionRHSIntegrator",
-    "target");
+    target_space.GetCoordinateSystem(), target_layout,
+    "OmegaHIntersectionRHSIntegrator", "target");
+  // the intersection locates the target centroids with the source geometry's
+  // search
+  const auto source_geometry = detail::OmegaHGeometryOf(
+    source_space, *source_layout, "OmegaHIntersectionRHSIntegrator", "source");
+  const GridPointSearchVariant& source_search = source_geometry->GetSearch();
 
   const int dim = target_layout->GetMesh().dim();
   if (source_layout->GetMesh().dim() != dim) {
@@ -81,7 +80,7 @@ Data BuildData(const std::shared_ptr<const OmegaHLagrangeLayout>& source_layout,
 template <int Dim, int TgtOrder>
 Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
                    const OmegaHLagrangeLayout& target_layout, int quad_order,
-                   const GridPointSearchVariant* source_search)
+                   const GridPointSearchVariant& source_search)
 {
   using Basis = detail::TargetSimplexBasis<Dim, TgtOrder>;
   constexpr int ndof = Basis::ndof;
@@ -94,8 +93,7 @@ Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
   Omega_h::Mesh& target_mesh = target_layout.GetMesh();
 
   const auto intersections =
-    source_search ? intersectTargets(source_mesh, target_mesh, *source_search)
-                  : intersectTargets(source_mesh, target_mesh);
+    intersectTargets(source_mesh, target_mesh, source_search);
 
   const auto& tgt_coords = target_mesh.coords();
   const auto& tgt_elems2nodes = target_mesh.ask_down(Dim, Omega_h::VERT).ab2b;
@@ -225,36 +223,8 @@ Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
 
 OmegaHIntersectionRHSIntegrator::OmegaHIntersectionRHSIntegrator(
   const FunctionSpace& source_space, const FunctionSpace& target_space)
-  : OmegaHIntersectionRHSIntegrator(
-      std::dynamic_pointer_cast<const OmegaHLagrangeLayout>(
-        source_space.GetLayout()),
-      source_space.GetCoordinateSystem(),
-      std::dynamic_pointer_cast<const OmegaHLagrangeLayout>(
-        target_space.GetLayout()),
-      target_space.GetCoordinateSystem(), SourceSearchFromSpace(source_space))
 {
-}
-
-OmegaHIntersectionRHSIntegrator::OmegaHIntersectionRHSIntegrator(
-  std::shared_ptr<const OmegaHLagrangeLayout> source_layout,
-  std::shared_ptr<const CoordinateSystem> source_coordinate_system,
-  std::shared_ptr<const OmegaHLagrangeLayout> target_layout,
-  std::shared_ptr<const CoordinateSystem> target_coordinate_system)
-  : OmegaHIntersectionRHSIntegrator(
-      std::move(source_layout), std::move(source_coordinate_system),
-      std::move(target_layout), std::move(target_coordinate_system), nullptr)
-{
-}
-
-OmegaHIntersectionRHSIntegrator::OmegaHIntersectionRHSIntegrator(
-  std::shared_ptr<const OmegaHLagrangeLayout> source_layout,
-  std::shared_ptr<const CoordinateSystem> source_coordinate_system,
-  std::shared_ptr<const OmegaHLagrangeLayout> target_layout,
-  std::shared_ptr<const CoordinateSystem> target_coordinate_system,
-  const GridPointSearchVariant* source_search)
-{
-  Data data = BuildData(source_layout, source_coordinate_system, target_layout,
-                        target_coordinate_system, source_search);
+  Data data = BuildData(source_space, target_space);
   source_elements_ = std::move(data.source_elements);
   source_barycentric_ = std::move(data.source_barycentric);
   node_gids_ = std::move(data.node_gids);

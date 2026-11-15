@@ -7,19 +7,6 @@ namespace pcms
 {
 namespace
 {
-// Construct the source-mesh containing-element search appropriate to the
-// spatial dimension: a background grid sized so cells hold ~1 element.
-template <int Dim>
-auto MakeGridPointSearch(Omega_h::Mesh& source_mesh)
-{
-  const auto n = pcms::DivisionsPerAxisForMesh<Dim>(source_mesh.nelems());
-  if constexpr (Dim == 3) {
-    return pcms::GridPointSearch3D(source_mesh, n, n, n);
-  } else {
-    return pcms::GridPointSearch2D(source_mesh, n, n);
-  }
-}
-
 // For each target element, the source element containing its centroid: where
 // the BFS over the source dual graph starts.
 template <int Dim>
@@ -235,21 +222,6 @@ const PointLocalizationSearch<Dim>& RequireSearchDimension(
   return *search;
 }
 } // namespace
-
-IntersectionResults intersectTargets(Omega_h::Mesh& source_mesh,
-                                     Omega_h::Mesh& target_mesh,
-                                     bool use_prefilter)
-{
-  OMEGA_H_CHECK(source_mesh.dim() == target_mesh.dim());
-  if (source_mesh.dim() == 3) {
-    const auto search = MakeGridPointSearch<3>(source_mesh);
-    return intersectTargetsImpl<3>(source_mesh, target_mesh, search,
-                                   use_prefilter);
-  }
-  const auto search = MakeGridPointSearch<2>(source_mesh);
-  return intersectTargetsImpl<2>(source_mesh, target_mesh, search,
-                                 use_prefilter);
-}
 
 IntersectionResults intersectTargets(
   Omega_h::Mesh& source_mesh, Omega_h::Mesh& target_mesh,
