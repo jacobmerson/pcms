@@ -21,21 +21,16 @@
 namespace pcms
 {
 
-/// @brief Geometry of a set of sites (a point cloud or mesh entities): the
-///        identity map, located by the MLS supports of each query point.
-///
-/// Bind finds the supports with Neighbourhood, using the search options the
-/// geometry was created with. Spaces on one geometry share its binds.
+/// Geometry of a set of sites (the DOF holders of a layout: a point cloud or
+/// the entities of one dimension of a mesh): the identity map, located by the
+/// MLS supports of each query point. Bind finds the supports with
+/// Neighbourhood, using the Localization() of the MLS options the geometry
+/// was created with.
+/// @throws pcms_error on construction if the sites' coordinate system does not
+///         have the identity metric
 class PointCloudGeometry final : public Geometry
 {
 public:
-  /// @brief Creates the geometry of a point cloud owned by a std::shared_ptr,
-  ///        as Bind needs.
-  /// @param site_layout layout whose DOF holders are the sites
-  /// @param options MLS options; their Localization() is the support search
-  ///        of Bind
-  /// @throws pcms_error if the sites' coordinate system does not have the
-  ///         identity metric
   [[nodiscard]] static std::shared_ptr<PointCloudGeometry> Create(
     std::shared_ptr<const FieldLayout> site_layout, MLSOptions options = {})
   {
@@ -43,15 +38,6 @@ public:
                                                 options);
   }
 
-  /// @brief Creates the geometry of the entities of one dimension of a mesh,
-  ///        owned by a std::shared_ptr, as Bind needs.
-  /// @param site_layout layout whose DOF holders are the entities
-  /// @param mesh the mesh; must outlive the geometry
-  /// @param site_entity_dim dimension of the entities
-  /// @param options MLS options; their Localization() is the support search
-  ///        of Bind
-  /// @throws pcms_error if the sites' coordinate system does not have the
-  ///         identity metric
   [[nodiscard]] static std::shared_ptr<PointCloudGeometry> Create(
     std::shared_ptr<const FieldLayout> site_layout, Omega_h::Mesh& mesh,
     int site_entity_dim, MLSOptions options = {})
@@ -60,16 +46,13 @@ public:
                                                 site_entity_dim, options);
   }
 
-  /// @brief A point cloud; create it with Create or std::make_shared: Bind
-  ///        uses shared_from_this().
+  /// Use Create or std::make_shared: Bind uses shared_from_this().
   PointCloudGeometry(std::shared_ptr<const FieldLayout> site_layout,
                      MLSOptions options)
     : PointCloudGeometry(std::move(site_layout), nullptr, -1, options)
   {
   }
 
-  /// @brief Mesh entities; create it with Create or std::make_shared: Bind
-  ///        uses shared_from_this().
   PointCloudGeometry(std::shared_ptr<const FieldLayout> site_layout,
                      Omega_h::Mesh& mesh, int site_entity_dim,
                      MLSOptions options)
@@ -90,29 +73,23 @@ public:
     return site_layout_->GetCoordinateSystem();
   }
 
-  /// @return the layout whose DOF holders are the sites
   [[nodiscard]] const std::shared_ptr<const FieldLayout>& GetSiteLayout()
     const noexcept
   {
     return site_layout_;
   }
 
-  /// @return the support search Bind uses
   [[nodiscard]] const NeighbourhoodOptions& GetNeighbourhoodOptions()
     const noexcept
   {
     return options_;
   }
 
-  /// @brief MLS supports of the query points among the sites: the
-  ///        mesh-adjacency search for mesh-entity sites, the distance search
-  ///        for a point cloud. When `options.query_layout` holds the vertices
-  ///        of the sites' mesh and the sites are its element centroids, the
-  ///        supports are found from the mesh adjacency alone and `coords` is
-  ///        taken to be those vertices (it is not read).
-  /// @throws pcms_error if `coords` is not in GetCoordinateSystem() or
-  ///         `options.max_supports` is neither 0 nor
-  ///         3 * `options.min_supports`
+  /// The mesh-adjacency search for mesh-entity sites, the distance search
+  /// for a point cloud. When `options.query_layout` holds the vertices of the
+  /// sites' mesh and the sites are its element centroids, the supports are
+  /// found from the mesh adjacency alone and `coords` is taken to be those
+  /// vertices (it is not read).
   [[nodiscard]] SupportResults Neighbourhood(
     CoordinateView<DeviceMemorySpace> coords,
     const NeighbourhoodOptions& options) const override

@@ -19,14 +19,8 @@ namespace pcms
 namespace detail
 {
 
-/// @brief Barycentric coordinates of points in their owning elements.
-/// @tparam Dim mesh dimension
-/// @param mesh simplex mesh
-/// @param points query points, one row per point
-/// @param rows points to compute, as indices into `points`
-/// @param owning_ids owning element of each point
-/// @return owning element and barycentric coordinates ([row][vertex]) of each
-///         row
+/// Owning element and barycentric coordinates ([row][vertex]) of the points
+/// `rows` of `points`, given the owning element of each point.
 template <int Dim>
 std::pair<Kokkos::View<LO*, DeviceMemorySpace>,
           Kokkos::View<Real**, DeviceMemorySpace>>
@@ -67,41 +61,28 @@ BarycentricInElements(Omega_h::Mesh& mesh,
 
 } // namespace detail
 
-/// @brief Bound source of an Omega_h simplex mesh: element and barycentric
-///        coordinates of each found point.
+/// Bound source of an Omega_h simplex mesh: element and barycentric
+/// coordinates of each found point, in FoundPoints() order.
 class OmegaHMeshBinding final : public BoundSource
 {
 public:
-  /// @brief Locates `request.coords` with `search`.
-  /// @param geometry geometry the points are localized on
-  /// @param request query points and out-of-bounds policy
-  /// @param search containing-element search over `mesh`
-  /// @param mesh simplex mesh of the geometry
+  /// Locates `request.coords` with `search`.
   OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
                     const BindRequest& request,
                     const GridPointSearchVariant& search, Omega_h::Mesh& mesh);
 
-  /// @brief Takes element ids and barycentric coordinates as given.
-  /// @param geometry geometry the points are localized on
-  /// @param points element of each point and its barycentric coordinates
-  ///        (dim + 1 columns); no points gives an empty bound source
-  /// @param policy out-of-bounds policy of the evaluators
-  /// @param mesh simplex mesh of the geometry
-  /// @throws pcms_error if there are points and `points.coords` does not have
-  ///         dim + 1 columns or an id is not an element of `mesh`
+  /// Takes element ids and barycentric coordinates as given.
   OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
                     const ParametricPoints& points, OutOfBoundsPolicy policy,
                     Omega_h::Mesh& mesh);
 
-  /// @return element of each found point, in FoundPoints() order
   [[nodiscard]] Kokkos::View<const LO*, DeviceMemorySpace> ElementIds()
     const noexcept
   {
     return elem_ids_;
   }
 
-  /// @return barycentric coordinates of each found point in its element
-  ///         ([found point][vertex]), in FoundPoints() order
+  /// [found point][vertex]
   [[nodiscard]] Kokkos::View<const Real**, DeviceMemorySpace> Barycentric()
     const noexcept
   {
@@ -113,25 +94,18 @@ private:
   Kokkos::View<Real**, DeviceMemorySpace> bary_;
 };
 
-/// @brief Geometry of an Omega_h simplex mesh with straight-sided elements.
+/// Geometry of a 2D or 3D Omega_h simplex mesh (with classification) with
+/// straight-sided elements. Construction builds the containing-element search
+/// over the mesh, which costs about as much as a bind: create one geometry per
+/// mesh and share it.
 class OmegaHGeometry final : public Geometry
 {
 public:
-  /// @brief Creates the geometry owned by a std::shared_ptr, as Bind needs.
-  /// @param mesh 2D or 3D simplex mesh with classification; must outlive the
-  ///        geometry
-  /// @param system coordinate system of the mesh coordinates
-  /// @param options search options
   [[nodiscard]] static std::shared_ptr<OmegaHGeometry> Create(
     Omega_h::Mesh& mesh, std::shared_ptr<const CoordinateSystem> system,
     SearchOptions options = {});
 
-  /// @brief Create it with Create or std::make_shared: Bind uses
-  ///        shared_from_this().
-  /// @param mesh 2D or 3D simplex mesh with classification; must outlive the
-  ///        geometry
-  /// @param system coordinate system of the mesh coordinates
-  /// @param options search options
+  /// Use Create or std::make_shared: Bind uses shared_from_this().
   OmegaHGeometry(Omega_h::Mesh& mesh,
                  std::shared_ptr<const CoordinateSystem> system,
                  SearchOptions options = {});
@@ -148,43 +122,30 @@ public:
     return system_;
   }
 
-  /// @return Partitioned if the mesh's communicator has more than one rank
+  /// Partitioned if the mesh's communicator has more than one rank.
   [[nodiscard]] Distribution GetDistribution() const noexcept override;
 
-  /// @return the mesh of this geometry
   [[nodiscard]] Omega_h::Mesh& GetMesh() const noexcept { return mesh_; }
 
-  /// @return the containing-element search over the mesh
   [[nodiscard]] const GridPointSearchVariant& GetSearch() const noexcept
   {
     return search_;
   }
 
-  /// @brief Coordinates, in GetCoordinateSystem(), of points given by element
-  ///        and barycentric coordinates: x = sum_v lambda_v x_v.
-  /// @param points element of each point and its barycentric coordinates
-  ///        (dim + 1 columns)
-  /// @return one row of dim coordinates per point
-  /// @throws pcms_error if `points.ids` and `points.coords` differ in length,
-  ///         or there are points and `points.coords` does not have dim + 1
-  ///         columns or an id is not an element of the mesh
+  /// x = sum_v lambda_v x_v for each point given by element and barycentric
+  /// coordinates; throws on the same malformed points as Bind.
   [[nodiscard]] Kokkos::View<Real**, DeviceMemorySpace> MapToPhysical(
     const ParametricPoints& points) const;
 
-  /// @brief MLS supports of the query points among the mesh vertices, by
-  ///        the mesh-adjacency search. `options.query_layout` is not used:
-  ///        the same-mesh search from element centroids does not apply to
-  ///        vertex sites.
-  /// @throws pcms_error if `coords` is not in GetCoordinateSystem() or
-  ///         `options.max_supports` is neither 0 nor
-  ///         3 * `options.min_supports`
+  /// Supports among the mesh vertices, by the mesh-adjacency search.
+  /// `options.query_layout` is not used: the same-mesh search from element
+  /// centroids does not apply to vertex sites.
   [[nodiscard]] SupportResults Neighbourhood(
     CoordinateView<DeviceMemorySpace> coords,
     const NeighbourhoodOptions& options) const override;
 
-  /// @brief Per-element constant Jacobian of the affine simplex map and its
-  ///        determinant; computed on first call.
-  /// @throws pcms_error if `bound` belongs to another geometry
+  /// The per-element constant Jacobian of the affine simplex map, computed
+  /// for all elements on the first call.
   [[nodiscard]] DifferentialView Differential(
     const BoundSource& bound) const override;
 
@@ -205,8 +166,8 @@ private:
   mutable DifferentialView differential_;
 };
 
-/// @brief The grid search over a mesh, with options.divisions divisions per
-///        axis when nonzero and DivisionsPerAxisForMesh otherwise.
+/// The grid search over a mesh, with options.divisions divisions per axis when
+/// nonzero and DivisionsPerAxisForMesh otherwise.
 /// @throws std::invalid_argument unless the mesh is 2D or 3D
 GridPointSearchVariant MakeGridSearch(Omega_h::Mesh& mesh,
                                       const SearchOptions& options);
