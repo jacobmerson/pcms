@@ -7,6 +7,7 @@
 #include <pybind11/stl.h>
 
 #include "pcms/discretization/discretization/omega_h.hpp"
+#include "pcms/field/coordinate_map.hpp"
 #include "pcms/field/coordinate_system.hpp"
 #include "pcms/field/coordinate_systems/cartesian.hpp"
 #include "pcms/field/coordinate_view.hpp"
@@ -174,26 +175,30 @@ void bind_create_field_module(py::module& m)
     .def(
       "bind",
       [](const Geometry& g, const PyCoordinateView& coords,
-         OutOfBoundsPolicy policy) {
+         OutOfBoundsPolicy policy, std::shared_ptr<CoordinateMap> map) {
         // the bound source copies the points
         auto device = CopyCoordinatesToDevice(coords);
         return std::const_pointer_cast<BoundSource>(
-          g.Bind(device.view, policy));
+          g.Bind(device.view, policy, std::move(map)));
       },
       py::arg("coordinates"), py::arg("policy") = OutOfBoundsPolicy{},
-      py::keep_alive<0, 1>(),
-      "Localize the points of a CoordinateView (in get_coordinate_system()); "
-      "the search is done once here")
+      py::arg("map") = py::none(), py::keep_alive<0, 1>(),
+      "Localize the points of a CoordinateView (in get_coordinate_system(), "
+      "or in the source system of `map`, a CoordinateMap to "
+      "get_coordinate_system(): the points are then located at their images "
+      "and evaluated values re-expressed through it); the search is done "
+      "once here")
     .def(
       "bind",
       [](const Geometry& g, const FunctionSpace& space,
-         OutOfBoundsPolicy policy) {
+         OutOfBoundsPolicy policy, std::shared_ptr<CoordinateMap> map) {
         auto layout = space.GetLayout();
-        return std::const_pointer_cast<BoundSource>(
-          g.Bind(layout->GetDOFHolderCoordinates(), layout, policy));
+        return std::const_pointer_cast<BoundSource>(g.Bind(
+          layout->GetDOFHolderCoordinates(), layout, policy, std::move(map)));
       },
       py::arg("space"), py::arg("policy") = OutOfBoundsPolicy{},
-      py::keep_alive<0, 1>(), "Bind the DOF-holder coordinates of `space`");
+      py::arg("map") = py::none(), py::keep_alive<0, 1>(),
+      "Bind the DOF-holder coordinates of `space`, through `map` if given");
 
   py::class_<OmegaHGeometry, Geometry, std::shared_ptr<OmegaHGeometry>>(
     m, "OmegaHGeometry", "The geometry of an Omega_h simplex mesh");

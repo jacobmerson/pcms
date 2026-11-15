@@ -23,10 +23,10 @@ OmegaHMeshBinding::OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
   std::visit(
     [&](const auto& s) {
       constexpr int Dim = std::decay_t<decltype(s)>::DIM;
-      auto [found, owning_ids] = FindOwningElements(s, PointValues());
+      auto [found, owning_ids] = FindOwningElements(s, LocatedPointValues());
       SetFound(found);
       std::tie(elem_ids_, bary_) = detail::BarycentricInElements<Dim>(
-        mesh, PointValues(), FoundPoints(), owning_ids);
+        mesh, LocatedPointValues(), FoundPoints(), owning_ids);
     },
     search);
 }

@@ -9,21 +9,40 @@
 namespace pcms
 {
 
+namespace
+{
+
+const Geometry& SourceGeometry(const PointEvaluatorFactory& source)
+{
+  const auto geometry = source.GetGeometry();
+  if (geometry == nullptr) {
+    throw pcms_error(
+      "OmegaHControlVariateProjection: the source has no geometry");
+  }
+  return *geometry;
+}
+
+} // namespace
+
 OmegaHControlVariateProjection::OmegaHControlVariateProjection(
   const PointEvaluatorFactory& source, const FunctionSpace& target_space,
   int samples_per_element, MonteCarloSampling sampling, uint64_t seed,
-  MassMatrixType mass_matrix_type)
+  MassMatrixType mass_matrix_type,
+  std::shared_ptr<const CoordinateMap> to_source)
   : target_layout_(std::dynamic_pointer_cast<const OmegaHLagrangeLayout>(
       target_space.GetLayout())),
     rhs_integrator_(std::make_unique<OmegaHMonteCarloRHSIntegrator>(
       target_layout_, target_space.GetCoordinateSystem(), samples_per_element,
       sampling, seed)),
-    interpolator_(source, target_space),
+    interpolator_(source, target_space,
+                  SourceGeometry(source).Bind(
+                    target_space.GetLayout()->GetDOFHolderCoordinates(),
+                    target_space.GetLayout(), OutOfBoundsPolicy{}, to_source)),
     control_variate_(target_space.CreateFunction<Real>())
 {
   const auto sample_coords = rhs_integrator_->GetIntegrationPoints();
   source_at_samples_ = source.CreatePointEvaluator<Real>(
-    source.GetGeometry()->Bind(sample_coords));
+    SourceGeometry(source).Bind(sample_coords, OutOfBoundsPolicy{}, to_source));
   control_variate_at_samples_ = target_space.CreatePointEvaluator<Real>(
     target_space.GetGeometry()->Bind(sample_coords));
 

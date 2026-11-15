@@ -38,8 +38,8 @@ protected:
   {
     PCMS_ALWAYS_ASSERT(op == DifferentialOperator::Value); // Supports gated it
     return apply_to_type(value_type, [&](auto type) -> PointEvaluatorVariant {
-      return source_->CreatePointEvaluator<typename decltype(type)::type>(
-        std::move(bound), op_);
+      return CreateUntransformedPointEvaluator<typename decltype(type)::type>(
+        *source_, std::move(bound), op_);
     });
   }
 

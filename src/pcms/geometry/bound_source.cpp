@@ -66,11 +66,16 @@ BoundSource::BoundSource(std::shared_ptr<const Geometry> geometry,
   : geometry_(std::move(geometry)),
     policy_(request.policy),
     query_layout_(request.query_layout),
-    system_(request.coords.GetCoordinateSystem()),
-    num_points_(static_cast<LO>(request.coords.GetValues().extent(0))),
-    points_(CopyPoints(request.coords.GetValues())),
+    map_(request.map),
+    system_(request.query_coords.GetCoordinateSystem()),
+    num_points_(static_cast<LO>(request.query_coords.GetValues().extent(0))),
+    points_(CopyPoints(request.query_coords.GetValues())),
+    located_(map_ != nullptr ? CopyPoints(request.coords.GetValues())
+                             : points_),
     found_(AllPoints(num_points_))
 {
+  PCMS_ALWAYS_ASSERT(static_cast<LO>(request.coords.GetValues().extent(0)) ==
+                     num_points_);
 }
 
 BoundSource::BoundSource(std::shared_ptr<const Geometry> geometry,

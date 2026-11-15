@@ -14,7 +14,6 @@
 #include <pcms/field/coordinate_systems/cartesian.hpp>
 #include <pcms/field/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/function_space/lagrange.h>
-#include <pcms/field/transformed_source.hpp>
 #include <pcms/transfer/interpolator.h>
 #include <cmath>
 #include <cstdio>
@@ -146,9 +145,12 @@ void CaseB(Omega_h::Library& lib)
 
   // The values are already in the target's basis, so the map passes them
   // through and only the points are mapped.
-  TransformedSource src_as_cartesian(
-    src, std::make_shared<CartesianToCylindrical>());
-  Interpolator<Real> op(src_as_cartesian, *tgt);
+  const auto layout = tgt->GetLayout();
+  Interpolator<Real> op(
+    *src, *tgt,
+    src->GetGeometry()->Bind(layout->GetDOFHolderCoordinates(), layout,
+                             OutOfBoundsPolicy{},
+                             std::make_shared<CartesianToCylindrical>()));
   op.Apply(b_src, b_tgt);
   // Not exact: B's Cartesian components are not linear in (r, theta, z), so
   // the P1 source field only approximates them.
@@ -175,12 +177,15 @@ void CaseC(Omega_h::Library& lib)
   });
   auto b_tgt = tgt->CreateFunction<Real>("b", values::Vector);
 
-  // `to_source` must end in the source's system: it carries the target's
-  // Cartesian points to (r, theta, z), and the source's cylindrical
-  // components back to Cartesian.
-  TransformedSource src_as_cartesian(
-    src, std::make_shared<CartesianToCylindrical>());
-  Interpolator<Real> op(src_as_cartesian, *tgt);
+  // The map given to the bind must end in the source's system: it carries
+  // the target's Cartesian points to (r, theta, z), and the source's
+  // cylindrical components back to Cartesian.
+  const auto layout = tgt->GetLayout();
+  Interpolator<Real> op(
+    *src, *tgt,
+    src->GetGeometry()->Bind(layout->GetDOFHolderCoordinates(), layout,
+                             OutOfBoundsPolicy{},
+                             std::make_shared<CartesianToCylindrical>()));
   op.Apply(b_src, b_tgt);
   std::printf("    max |B - (x,y,z)| = %.2e\n", MaxErrorFromXYZ(b_tgt));
 }

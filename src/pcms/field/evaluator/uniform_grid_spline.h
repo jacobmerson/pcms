@@ -95,7 +95,8 @@ public:
       Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(
         0, grid_.divisions[1] + 1),
       detail::InitCoordsFunctor{y_coords_, grid_.bot_left[1], dy});
-    detail::GatherPoints(binding->PointValues(), found_, eval_x_, eval_y_);
+    detail::GatherPoints(binding->LocatedPointValues(), found_, eval_x_,
+                         eval_y_);
     // The selector picks f, df/dx, df/dy, d2f/dx2, d2f/dy2, d2f/dxdy.
     auto select = Kokkos::create_mirror_view(select_);
     for (int k = 0; k < 6; ++k) {

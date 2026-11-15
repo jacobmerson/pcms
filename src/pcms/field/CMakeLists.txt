@@ -20,7 +20,7 @@ set(PCMS_FIELD_HEADERS
         point_evaluator_factory.hpp
         differential_operator.hpp
         gradient_source.hpp
-        transformed_source.hpp
+        transformed_point_evaluator.hpp
         data/simple.h
         function_space/polynomial_reconstruction.hpp
         layout/point_cloud.h
@@ -29,8 +29,6 @@ set(PCMS_FIELD_HEADERS
 set(PCMS_FIELD_SOURCES
         field_layout.cpp
         coordinate_system.cpp
-        coordinate_map.cpp
-        transformed_source.cpp
         function_space.cpp
         gradient_source.cpp
         gid_permutation.cpp

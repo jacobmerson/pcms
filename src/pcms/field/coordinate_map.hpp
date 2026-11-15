@@ -120,7 +120,7 @@ protected:
 
 // Places points of a poloidal (R, Z) plane at a fixed toroidal angle:
 // (R, Z) -> (R, theta0, Z). This lets a 2D CylindricalRZ target query a 3D
-// CylindricalRThetaZ source through a TransformedSource.
+// CylindricalRThetaZ source: pass it as the map of the source geometry's Bind.
 //
 // Only scalar values (including multi-component scalars) are currently
 // supported.

@@ -30,7 +30,7 @@ public:
     : BoundSource(std::move(geometry), request),
       source_coords_(std::move(source_coords)),
       target_coords_(
-        flatten_to_omega_h_reals(PointValues(), "mls_target_coords")),
+        flatten_to_omega_h_reals(LocatedPointValues(), "mls_target_coords")),
       supports_(std::move(supports))
   {
   }
@@ -41,7 +41,8 @@ public:
     return source_coords_;
   }
 
-  /// @return flattened coordinates of the query points
+  /// @return flattened coordinates of the query points in the geometry's
+  ///         coordinate system (LocatedPointValues())
   [[nodiscard]] const Omega_h::Reals& TargetCoordinates() const noexcept
   {
     return target_coords_;

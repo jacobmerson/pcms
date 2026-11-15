@@ -10,7 +10,6 @@
 #include <pcms/field/function_space.h>
 #include <pcms/field/function_space/lagrange.h>
 #include <pcms/field/layout/empty.h>
-#include <pcms/field/transformed_source.hpp>
 #include <pcms/geometry/geometry.hpp>
 #include <pcms/transfer/interpolator.h>
 #include "field_test_utils.h"
@@ -117,7 +116,7 @@ public:
       throw pcms::pcms_error("MockEvaluator: not a field of this source");
     }
     const auto out = values.GetValues();
-    const auto points = Bound().PointValues();
+    const auto points = Bound().LocatedPointValues();
     Kokkos::parallel_for(
       Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(
         0, static_cast<LO>(points.extent(0))),
@@ -200,9 +199,12 @@ TEST_CASE("Evaluation-only space interpolates onto a poloidal plane")
   auto source = MockSpace::Create(num_components);
   auto target = MakePoloidalTarget(mesh, num_components);
   const Real theta0 = -0.3;
-  pcms::TransformedSource on_plane(
-    source, std::make_shared<pcms::PoloidalPlaneEmbedding>(theta0));
-  pcms::Interpolator<Real> interpolator(on_plane, *target);
+  const auto target_layout = target->GetLayout();
+  const auto on_plane = source->GetGeometry()->Bind(
+    target_layout->GetDOFHolderCoordinates(), target_layout,
+    pcms::OutOfBoundsPolicy{},
+    std::make_shared<pcms::PoloidalPlaneEmbedding>(theta0));
+  pcms::Interpolator<Real> interpolator(*source, *target, on_plane);
 
   auto f = source->CreateFunction<Real>("f", std::make_unique<MockData>());
   auto g = target->CreateFunction<Real>("g");
@@ -221,10 +223,7 @@ TEST_CASE("Evaluation-only space interpolates onto a poloidal plane")
   }
 
   // The embedding maps points only, so vector values cannot pass through it.
-  const auto target_layout = target->GetLayout();
-  auto evaluator =
-    on_plane.CreatePointEvaluator<Real>(on_plane.GetGeometry()->Bind(
-      target_layout->GetDOFHolderCoordinates(), target_layout));
+  auto evaluator = source->CreatePointEvaluator<Real>(on_plane);
   REQUIRE_THROWS_WITH(
     evaluator->OutputBasis(ValueBasis{pcms::csys::CylindricalRThetaZ::Create(),
                                       pcms::ComponentScaling::Physical,

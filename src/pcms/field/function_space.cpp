@@ -20,7 +20,8 @@ PointEvaluatorVariant FunctionSpace::CreatePointEvaluatorImpl(
   }
   return apply_to_type(value_type, [&](auto type) -> PointEvaluatorVariant {
     using T = typename decltype(type)::type;
-    return evaluator_->CreatePointEvaluator<T>(std::move(bound), op);
+    return CreateUntransformedPointEvaluator<T>(*evaluator_, std::move(bound),
+                                                op);
   });
 }
 

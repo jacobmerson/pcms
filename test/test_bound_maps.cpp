@@ -7,8 +7,8 @@
 #include <pcms/field/coordinate_map.hpp>
 #include <pcms/field/coordinate_systems/cartesian.hpp>
 #include <pcms/field/coordinate_systems/cylindrical.hpp>
+#include <pcms/field/evaluator/omega_h_geometry.hpp>
 #include <pcms/field/function_space/lagrange.h>
-#include <pcms/field/transformed_source.hpp>
 #include <pcms/transfer/interpolator.h>
 #include "field_test_utils.h"
 #include <cmath>
@@ -18,6 +18,7 @@
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
 using pcms::ComponentScaling;
+using pcms::CoordinateMap;
 using pcms::DeviceMemorySpace;
 using pcms::GO;
 using pcms::HostMemorySpace;
@@ -26,15 +27,12 @@ using pcms::OutOfBoundsMode;
 using pcms::OutOfBoundsPolicy;
 using pcms::Real;
 using pcms::SameValueBasis;
-using pcms::TransformedSource;
 using pcms::ValueBasis;
 using pcms::ValueView;
 namespace values = pcms::values;
 
 namespace
 {
-
-constexpr double kTol = 1e-10;
 
 std::shared_ptr<LagrangeFunctionSpace> BuildCylindricalSource(
   Omega_h::Library& lib, Omega_h::Mesh& mesh, int num_components)
@@ -69,9 +67,25 @@ ValueBasis CartesianVector()
                     ComponentScaling::Physical, values::Vector};
 }
 
+std::shared_ptr<const CoordinateMap> CartToCyl()
+{
+  return std::make_shared<pcms::CartesianToCylindrical>();
+}
+
+/// Binds the DOF holders of `target` on the geometry of `source` through
+/// `map`, as an Interpolator across coordinate systems needs.
+std::shared_ptr<const pcms::BoundSource> BindTargetSites(
+  const pcms::FunctionSpace& source, const pcms::FunctionSpace& target,
+  std::shared_ptr<const CoordinateMap> map, OutOfBoundsPolicy policy = {})
+{
+  const auto layout = target.GetLayout();
+  return source.GetGeometry()->Bind(layout->GetDOFHolderCoordinates(), layout,
+                                    policy, std::move(map));
+}
+
 } // namespace
 
-TEST_CASE("TransformedSource: scalar evaluation maps the query points")
+TEST_CASE("Bind with a map: scalar evaluation maps the query points")
 {
   auto lib = Omega_h::Library{};
   Omega_h::Mesh src_mesh(&lib), tgt_mesh(&lib);
@@ -83,31 +97,43 @@ TEST_CASE("TransformedSource: scalar evaluation maps the query points")
       return 2.0 * r + 3.0 * theta - z;
     });
 
-  TransformedSource src_as_cartesian(
-    src, std::make_shared<pcms::CartesianToCylindrical>());
-  REQUIRE(pcms::SameCoordinateSystem(
-    src_as_cartesian.GetGeometry()->GetCoordinateSystem(),
-    tgt->GetCoordinateSystem()));
-
   const auto pts = tgt->GetLayout()->GetDOFHolderCoordinates();
   const int n = static_cast<int>(pts.GetValues().extent(0));
-  auto evaluator = src_as_cartesian.CreatePointEvaluator<Real>(
-    src_as_cartesian.GetGeometry()->Bind(pts));
+  const auto bound =
+    src->GetGeometry()->Bind(pts, OutOfBoundsPolicy{}, CartToCyl());
+  // the bound source keeps the query points; the evaluators read the mapped
+  REQUIRE(bound->GetBoundMap() != nullptr);
+  REQUIRE(pcms::SameCoordinateSystem(bound->GetCoordinateSystem(),
+                                     tgt->GetCoordinateSystem()));
+  REQUIRE(static_cast<int>(bound->PointValues().extent(0)) == n);
+  REQUIRE(static_cast<int>(bound->LocatedPointValues().extent(0)) == n);
+  auto evaluator = src->CreatePointEvaluator<Real>(bound);
   REQUIRE(SameValueBasis(evaluator->OutputBasis(ValueBasis{}), ValueBasis{}));
 
   const auto coords = pcms::test::CopyCoordinatesToHost(pts.GetValues());
+  const auto query = pcms::test::CopyCoordinatesToHost(
+    pcms::MakeConstRank2View(bound->PointValues()));
+  const auto located = pcms::test::CopyCoordinatesToHost(
+    pcms::MakeConstRank2View(bound->LocatedPointValues()));
   const auto result =
     pcms::test::EvaluateToHost(*evaluator, f, ValueBasis{}, 1);
   for (int i = 0; i < n; ++i) {
     const Real x = coords(i, 0), y = coords(i, 1), z = coords(i, 2);
     CAPTURE(i);
+    REQUIRE(query(i, 0) == x);
+    REQUIRE(query(i, 1) == y);
+    REQUIRE(query(i, 2) == z);
+    REQUIRE_THAT(located(i, 0),
+                 WithinAbs(std::sqrt(x * x + y * y), pcms::test::EvalTol));
+    REQUIRE_THAT(located(i, 1),
+                 WithinAbs(std::atan2(y, x), pcms::test::EvalTol));
     REQUIRE_THAT(result(i, 0), WithinAbs(2.0 * std::sqrt(x * x + y * y) +
                                            3.0 * std::atan2(y, x) - z,
-                                         kTol));
+                                         pcms::test::EvalTol));
   }
 }
 
-TEST_CASE("TransformedSource: vector evaluation rotates into the target basis")
+TEST_CASE("Bind with a map: vector evaluation rotates into the target basis")
 {
   auto lib = Omega_h::Library{};
   Omega_h::Mesh src_mesh(&lib), tgt_mesh(&lib);
@@ -121,12 +147,10 @@ TEST_CASE("TransformedSource: vector evaluation rotates into the target basis")
     out[2] = z;
   });
 
-  TransformedSource src_as_cartesian(
-    src, std::make_shared<pcms::CartesianToCylindrical>());
   const auto pts = tgt->GetLayout()->GetDOFHolderCoordinates();
   const int n = static_cast<int>(pts.GetValues().extent(0));
-  auto evaluator = src_as_cartesian.CreatePointEvaluator<Real>(
-    src_as_cartesian.GetGeometry()->Bind(pts));
+  auto evaluator = src->CreatePointEvaluator<Real>(
+    src->GetGeometry()->Bind(pts, OutOfBoundsPolicy{}, CartToCyl()));
   REQUIRE(SameValueBasis(evaluator->OutputBasis(CylindricalVector()),
                          CartesianVector()));
   REQUIRE(SameValueBasis(evaluator->OutputBasis(CartesianVector()),
@@ -142,9 +166,9 @@ TEST_CASE("TransformedSource: vector evaluation rotates into the target basis")
     pcms::test::EvaluateToHost(*evaluator, b, CartesianVector(), 3);
   for (int i = 0; i < n; ++i) {
     CAPTURE(i);
-    REQUIRE_THAT(result(i, 0), WithinAbs(coords(i, 0), kTol));
-    REQUIRE_THAT(result(i, 1), WithinAbs(coords(i, 1), kTol));
-    REQUIRE_THAT(result(i, 2), WithinAbs(coords(i, 2), kTol));
+    REQUIRE_THAT(result(i, 0), WithinAbs(coords(i, 0), pcms::test::EvalTol));
+    REQUIRE_THAT(result(i, 1), WithinAbs(coords(i, 1), pcms::test::EvalTol));
+    REQUIRE_THAT(result(i, 2), WithinAbs(coords(i, 2), pcms::test::EvalTol));
   }
 
   SECTION("evaluate gates the field's stored basis and the output tag")
@@ -174,7 +198,7 @@ TEST_CASE("TransformedSource: vector evaluation rotates into the target basis")
   }
 }
 
-TEST_CASE("TransformedSource: FILL rows survive the rotation untouched")
+TEST_CASE("Bind with a map: FILL rows survive the rotation untouched")
 {
   auto lib = Omega_h::Library{};
   Omega_h::Mesh src_mesh(&lib), tgt_mesh(&lib);
@@ -189,13 +213,10 @@ TEST_CASE("TransformedSource: FILL rows survive the rotation untouched")
   });
 
   const Real fill = -7.0;
-  TransformedSource src_as_cartesian(
-    src, std::make_shared<pcms::CartesianToCylindrical>());
   const auto pts = tgt->GetLayout()->GetDOFHolderCoordinates();
   const int n = static_cast<int>(pts.GetValues().extent(0));
-  auto evaluator = src_as_cartesian.CreatePointEvaluator<Real>(
-    src_as_cartesian.GetGeometry()->Bind(
-      pts, OutOfBoundsPolicy{OutOfBoundsMode::FILL, fill}));
+  auto evaluator = src->CreatePointEvaluator<Real>(src->GetGeometry()->Bind(
+    pts, OutOfBoundsPolicy{OutOfBoundsMode::FILL, fill}, CartToCyl()));
 
   const auto coords = pcms::test::CopyCoordinatesToHost(pts.GetValues());
   const auto result =
@@ -210,16 +231,16 @@ TEST_CASE("TransformedSource: FILL rows survive the rotation untouched")
       REQUIRE(result(i, 1) == fill);
       REQUIRE(result(i, 2) == fill);
     } else {
-      REQUIRE_THAT(result(i, 0), WithinAbs(x, kTol));
-      REQUIRE_THAT(result(i, 1), WithinAbs(y, kTol));
-      REQUIRE_THAT(result(i, 2), WithinAbs(coords(i, 2), kTol));
+      REQUIRE_THAT(result(i, 0), WithinAbs(x, pcms::test::EvalTol));
+      REQUIRE_THAT(result(i, 1), WithinAbs(y, pcms::test::EvalTol));
+      REQUIRE_THAT(result(i, 2), WithinAbs(coords(i, 2), pcms::test::EvalTol));
     }
   }
   REQUIRE(num_filled > 0);
   REQUIRE(static_cast<int>(evaluator->FilledPoints().extent(0)) == num_filled);
 }
 
-TEST_CASE("TransformedSource: in-bounds values equal to the fill value are "
+TEST_CASE("Bind with a map: in-bounds values equal to the fill value are "
           "still rotated")
 {
   auto lib = Omega_h::Library{};
@@ -235,13 +256,10 @@ TEST_CASE("TransformedSource: in-bounds values equal to the fill value are "
     out[2] = fill;
   });
 
-  TransformedSource src_as_cartesian(
-    src, std::make_shared<pcms::CartesianToCylindrical>());
   const auto pts = tgt->GetLayout()->GetDOFHolderCoordinates();
   const int n = static_cast<int>(pts.GetValues().extent(0));
-  auto evaluator = src_as_cartesian.CreatePointEvaluator<Real>(
-    src_as_cartesian.GetGeometry()->Bind(
-      pts, OutOfBoundsPolicy{OutOfBoundsMode::FILL, fill}));
+  auto evaluator = src->CreatePointEvaluator<Real>(src->GetGeometry()->Bind(
+    pts, OutOfBoundsPolicy{OutOfBoundsMode::FILL, fill}, CartToCyl()));
 
   const auto coords = pcms::test::CopyCoordinatesToHost(pts.GetValues());
   const auto result =
@@ -256,64 +274,70 @@ TEST_CASE("TransformedSource: in-bounds values equal to the fill value are "
       REQUIRE(result(i, 1) == fill);
     } else if (r > 0.0) {
       const Real c = x / r, s = y / r;
-      REQUIRE_THAT(result(i, 0), WithinAbs(fill * (c - s), kTol));
-      REQUIRE_THAT(result(i, 1), WithinAbs(fill * (s + c), kTol));
+      REQUIRE_THAT(result(i, 0),
+                   WithinAbs(fill * (c - s), pcms::test::EvalTol));
+      REQUIRE_THAT(result(i, 1),
+                   WithinAbs(fill * (s + c), pcms::test::EvalTol));
       ++num_rotated;
     }
-    REQUIRE_THAT(result(i, 2), WithinAbs(fill, kTol));
+    REQUIRE_THAT(result(i, 2), WithinAbs(fill, pcms::test::EvalTol));
   }
   REQUIRE(num_rotated > 0);
 }
 
-TEST_CASE("TransformedSource: construction errors")
+TEST_CASE("Bind with a map: the map must take the query system to the "
+          "geometry's")
 {
   auto lib = Omega_h::Library{};
   Omega_h::Mesh src_mesh(&lib);
   auto src = BuildCylindricalSource(lib, src_mesh, 3);
+  const std::vector<Real> pts = {0.5, 0.5, 0.5, 0.2, 0.9, 0.1};
+  auto cart_query = pcms::test::CreateDeviceCoordinateView(
+    pts, pcms::csys::Cartesian::Create(3), 3);
+  auto cyl_query = pcms::test::CreateDeviceCoordinateView(
+    pts, pcms::csys::CylindricalRThetaZ::Create(), 3);
+  const auto& geometry = *src->GetGeometry();
 
-  REQUIRE_THROWS_WITH(TransformedSource(src, nullptr),
-                      ContainsSubstring("must not be null"));
+  // a map ending in another system than the geometry's
   REQUIRE_THROWS_WITH(
-    TransformedSource(src, std::make_shared<pcms::CylindricalToCartesian>()),
-    ContainsSubstring("source's coordinate system"));
+    geometry.Bind(cart_query.coordinate_view, OutOfBoundsPolicy{},
+                  std::make_shared<pcms::CylindricalToCartesian>()),
+    ContainsSubstring("it must take the query coordinate system to the "
+                      "geometry's 'cylindrical_rthetaz'"));
+  // query points in another system than the map's source
+  REQUIRE_THROWS_WITH(
+    geometry.Bind(cyl_query.coordinate_view, OutOfBoundsPolicy{}, CartToCyl()),
+    ContainsSubstring("the query points are in 'cylindrical_rthetaz'"));
+  // no map: the query points must be in the geometry's system
+  REQUIRE_THROWS_WITH(geometry.Bind(cart_query.coordinate_view),
+                      ContainsSubstring("as Bind's map argument"));
+  // a null map is no map
+  REQUIRE(
+    geometry.Bind(cyl_query.coordinate_view, OutOfBoundsPolicy{}, nullptr)
+      ->GetBoundMap() == nullptr);
 }
 
-TEST_CASE("TransformedSource: evaluator creation and evaluation errors")
+TEST_CASE("Bind with a map: evaluator creation errors")
 {
   auto lib = Omega_h::Library{};
   Omega_h::Mesh src_mesh(&lib);
   auto src = BuildCylindricalSource(lib, src_mesh, 3);
-  auto cart_to_cyl = std::make_shared<pcms::CartesianToCylindrical>();
   const std::vector<Real> cart_pts = {0.5, 0.5, 0.5, 0.2, 0.9, 0.1};
   auto query = pcms::test::CreateDeviceCoordinateView(
     cart_pts, pcms::csys::Cartesian::Create(3), 3);
-  TransformedSource src_as_cartesian(src, cart_to_cyl);
 
-  SECTION("query points must be in the transformed system")
-  {
-    auto cyl_query = pcms::test::CreateDeviceCoordinateView(
-      cart_pts, pcms::csys::CylindricalRThetaZ::Create(), 3);
-    REQUIRE_THROWS_WITH(
-      src_as_cartesian.CreatePointEvaluator<Real>(
-        src_as_cartesian.GetGeometry()->Bind(cyl_query.coordinate_view)),
-      ContainsSubstring("not the geometry's coordinate system"));
-  }
-
-  SECTION("non-Real evaluation surfaces the source backend's own limit")
-  {
-    // No in-tree backend evaluates integer fields at points, so a
-    // TransformedSource simply forwards the inner factory's refusal; the
-    // T != Real guard in TransformedPointEvaluator::Evaluate is defensive.
-    REQUIRE_THROWS_WITH(
-      src_as_cartesian.CreatePointEvaluator<GO>(
-        src_as_cartesian.GetGeometry()->Bind(query.coordinate_view)),
-      ContainsSubstring("only supports fields of its own value type"));
-  }
+  // No in-tree backend evaluates integer fields at points, so a mapped bind
+  // surfaces the backend's refusal; the T != Real guard in
+  // TransformedPointEvaluator::Evaluate is defensive.
+  REQUIRE_THROWS_WITH(
+    src->CreatePointEvaluator<GO>(src->GetGeometry()->Bind(
+      query.coordinate_view, OutOfBoundsPolicy{}, CartToCyl())),
+    ContainsSubstring("only supports fields of its own value type"));
 }
 
-TEST_CASE("TransformedSource: NEAREST_BOUNDARY follows the wrapped source")
+TEST_CASE("Bind with a map: NEAREST_BOUNDARY follows the geometry")
 {
-  auto cart_to_cyl = std::make_shared<pcms::CartesianToCylindrical>();
+  auto cart_to_cyl = CartToCyl();
   // (2, 0, 0.5) has r = 2, beyond the grid's r range
   const std::vector<Real> cart_pts = {0.5, 0.5, 0.5, 2.0, 0.0, 0.5};
   auto query = pcms::test::CreateDeviceCoordinateView(
@@ -328,9 +352,8 @@ TEST_CASE("TransformedSource: NEAREST_BOUNDARY follows the wrapped source")
     grid.divisions = {6, 16, 4};
     auto src = LagrangeFunctionSpace::FromUniformGrid(
       grid, 1, pcms::csys::CylindricalRThetaZ::Create());
-    TransformedSource src_as_cartesian(src, cart_to_cyl);
     auto bound =
-      src_as_cartesian.GetGeometry()->Bind(query.coordinate_view, nearest);
+      src->GetGeometry()->Bind(query.coordinate_view, nearest, cart_to_cyl);
     REQUIRE(bound->MissingPoints().extent(0) == 0);
   }
 
@@ -338,15 +361,14 @@ TEST_CASE("TransformedSource: NEAREST_BOUNDARY follows the wrapped source")
   {
     auto lib = Omega_h::Library{};
     Omega_h::Mesh src_mesh(&lib);
-    TransformedSource src_as_cartesian(BuildCylindricalSource(lib, src_mesh, 1),
-                                       cart_to_cyl);
+    auto src = BuildCylindricalSource(lib, src_mesh, 1);
     REQUIRE_THROWS_WITH(
-      src_as_cartesian.GetGeometry()->Bind(query.coordinate_view, nearest),
+      src->GetGeometry()->Bind(query.coordinate_view, nearest, cart_to_cyl),
       ContainsSubstring("NEAREST_BOUNDARY"));
   }
 }
 
-TEST_CASE("TransformedSource: one source view serves many fields and targets")
+TEST_CASE("Bind with a map: one map serves many fields, spaces and targets")
 {
   auto lib = Omega_h::Library{};
   Omega_h::Mesh src_mesh(&lib), tgt_a_mesh(&lib), tgt_b_mesh(&lib);
@@ -368,12 +390,13 @@ TEST_CASE("TransformedSource: one source view serves many fields and targets")
     out[2] = -z;
   });
 
-  // Built from the source and the map alone, so it is reused for
-  // every field on that space and every target space.
-  TransformedSource src_as_cartesian(
-    src, std::make_shared<pcms::CartesianToCylindrical>());
-  pcms::Interpolator<Real> to_a(src_as_cartesian, *tgt_a);
-  pcms::Interpolator<Real> to_b(src_as_cartesian, *tgt_b);
+  // One map object for every target; one bind per target serves every field
+  // on the source space.
+  const auto map = CartToCyl();
+  pcms::Interpolator<Real> to_a(*src, *tgt_a,
+                                BindTargetSites(*src, *tgt_a, map));
+  pcms::Interpolator<Real> to_b(*src, *tgt_b,
+                                BindTargetSites(*src, *tgt_b, map));
 
   auto b_a = tgt_a->CreateFunction<Real>("b", values::Vector);
   auto e_a = tgt_a->CreateFunction<Real>("e", values::Vector);
@@ -388,14 +411,40 @@ TEST_CASE("TransformedSource: one source view serves many fields and targets")
   const auto re = e_a.GetDOFHolderDataHost().GetValues();
   for (int i = 0; i < static_cast<int>(coords.extent(0)); ++i) {
     CAPTURE(i);
-    REQUIRE_THAT(rb(i, 0), WithinAbs(coords(i, 0), kTol));
-    REQUIRE_THAT(re(i, 0), WithinAbs(2.0 * coords(i, 0), kTol));
-    REQUIRE_THAT(re(i, 2), WithinAbs(-coords(i, 2), kTol));
+    REQUIRE_THAT(rb(i, 0), WithinAbs(coords(i, 0), pcms::test::EvalTol));
+    REQUIRE_THAT(re(i, 0), WithinAbs(2.0 * coords(i, 0), pcms::test::EvalTol));
+    REQUIRE_THAT(re(i, 2), WithinAbs(-coords(i, 2), pcms::test::EvalTol));
+  }
+
+  SECTION("a mapped bind serves every space on the source geometry")
+  {
+    auto scalars = LagrangeFunctionSpace::FromGeometry(
+      std::dynamic_pointer_cast<const pcms::OmegaHGeometry>(src->GetGeometry()),
+      1, 1, "global", LagrangeFunctionSpace::Backend::OmegaH);
+    auto f = scalars->CreateFunction<Real>("f");
+    pcms::test::SetField(
+      f, OMEGA_H_LAMBDA(Real r, Real, Real z) { return r + z; });
+    const auto bound = BindTargetSites(*src, *tgt_a, map);
+    const auto vectors = pcms::test::EvaluateToHost(
+      *src->CreatePointEvaluator<Real>(bound), b, CartesianVector(), 3);
+    const auto sums = pcms::test::EvaluateToHost(
+      *scalars->CreatePointEvaluator<Real>(bound), f, ValueBasis{}, 1);
+    for (int i = 0; i < static_cast<int>(coords.extent(0)); ++i) {
+      const Real x = coords(i, 0), y = coords(i, 1), z = coords(i, 2);
+      CAPTURE(i);
+      REQUIRE_THAT(vectors(i, 1), WithinAbs(y, pcms::test::EvalTol));
+      REQUIRE_THAT(sums(i, 0), WithinAbs(std::sqrt(x * x + y * y) + z,
+                                         pcms::test::EvalTol));
+    }
   }
 }
 
-TEST_CASE("TransformedSource: nesting composes maps and rotations")
+TEST_CASE("Bind with a map: maps compose as separate binds")
 {
+  // Formerly a nested view (cylindrical -> Cartesian -> cylindrical): the
+  // cylindrical query points are mapped to Cartesian ones by one bind, those
+  // are bound on the source geometry through the second map, and the first
+  // bound map takes the Cartesian values back to cylindrical components.
   auto lib = Omega_h::Library{};
   Omega_h::Mesh src_mesh(&lib);
   auto src = BuildCylindricalSource(lib, src_mesh, 3);
@@ -407,30 +456,33 @@ TEST_CASE("TransformedSource: nesting composes maps and rotations")
     out[2] = z;
   });
 
-  auto src_as_cartesian = std::make_shared<TransformedSource>(
-    src, std::make_shared<pcms::CartesianToCylindrical>());
-  TransformedSource src_as_cylindrical(
-    src_as_cartesian, std::make_shared<pcms::CylindricalToCartesian>());
-
   const std::vector<Real> cyl_pts = {0.7, 0.3, 0.4, 1.0, 0.9,
                                      0.9, 1.5, 1.2, 0.2};
   auto query = pcms::test::CreateDeviceCoordinateView(
     cyl_pts, pcms::csys::CylindricalRThetaZ::Create(), 3);
   const int n = 3;
-  auto evaluator = src_as_cylindrical.CreatePointEvaluator<Real>(
-    src_as_cylindrical.GetGeometry()->Bind(query.coordinate_view));
-  const auto result =
-    pcms::test::EvaluateToHost(*evaluator, b, CylindricalVector(), 3);
+  const auto to_cartesian =
+    pcms::CylindricalToCartesian().Bind(query.coordinate_view);
+  auto evaluator = src->CreatePointEvaluator<Real>(src->GetGeometry()->Bind(
+    to_cartesian->MappedPoints(), OutOfBoundsPolicy{}, CartToCyl()));
+  Kokkos::View<Real**, DeviceMemorySpace> out("out", n, 3);
+  evaluator->Evaluate(b, ValueView<Real, DeviceMemorySpace>(
+                           CartesianVector(), pcms::MakeRank2View(out)));
+  const auto cylindrical =
+    to_cartesian->TransformValues(ValueView<Real, DeviceMemorySpace>(
+      CartesianVector(), pcms::MakeRank2View(out)));
+  REQUIRE(SameValueBasis(cylindrical.GetBasis(), CylindricalVector()));
+  auto result = Kokkos::create_mirror_view_and_copy(HostMemorySpace{}, out);
   for (int i = 0; i < n; ++i) {
     CAPTURE(i);
     const auto k = 3 * static_cast<size_t>(i);
-    REQUIRE_THAT(result(i, 0), WithinAbs(cyl_pts[k], kTol));
-    REQUIRE_THAT(result(i, 1), WithinAbs(0.0, kTol));
-    REQUIRE_THAT(result(i, 2), WithinAbs(cyl_pts[k + 2], kTol));
+    REQUIRE_THAT(result(i, 0), WithinAbs(cyl_pts[k], pcms::test::EvalTol));
+    REQUIRE_THAT(result(i, 1), WithinAbs(0.0, pcms::test::EvalTol));
+    REQUIRE_THAT(result(i, 2), WithinAbs(cyl_pts[k + 2], pcms::test::EvalTol));
   }
 }
 
-TEST_CASE("Interpolator over a TransformedSource transfers across systems")
+TEST_CASE("Interpolator over a mapped bind transfers across systems")
 {
   auto lib = Omega_h::Library{};
   Omega_h::Mesh src_mesh(&lib), tgt_mesh(&lib);
@@ -445,9 +497,8 @@ TEST_CASE("Interpolator over a TransformedSource transfers across systems")
     out[2] = z;
   });
 
-  TransformedSource src_as_cartesian(
-    src, std::make_shared<pcms::CartesianToCylindrical>());
-  pcms::Interpolator<Real> op(src_as_cartesian, *tgt);
+  pcms::Interpolator<Real> op(*src, *tgt,
+                              BindTargetSites(*src, *tgt, CartToCyl()));
   op.Apply(b_src, b_tgt);
 
   const auto coords = pcms::test::CopyCoordinatesToHost(
@@ -456,9 +507,9 @@ TEST_CASE("Interpolator over a TransformedSource transfers across systems")
   const int n = static_cast<int>(coords.extent(0));
   for (int i = 0; i < n; ++i) {
     CAPTURE(i);
-    REQUIRE_THAT(result(i, 0), WithinAbs(coords(i, 0), kTol));
-    REQUIRE_THAT(result(i, 1), WithinAbs(coords(i, 1), kTol));
-    REQUIRE_THAT(result(i, 2), WithinAbs(coords(i, 2), kTol));
+    REQUIRE_THAT(result(i, 0), WithinAbs(coords(i, 0), pcms::test::EvalTol));
+    REQUIRE_THAT(result(i, 1), WithinAbs(coords(i, 1), pcms::test::EvalTol));
+    REQUIRE_THAT(result(i, 2), WithinAbs(coords(i, 2), pcms::test::EvalTol));
   }
 
   SECTION("the target must declare the basis the evaluator writes")
@@ -477,8 +528,8 @@ TEST_CASE("Interpolator over a TransformedSource transfers across systems")
   }
 }
 
-TEST_CASE("Interpolator over a TransformedSource passes through values already "
-          "in the target basis")
+TEST_CASE("Interpolator over a mapped bind passes through values already in "
+          "the target basis")
 {
   auto lib = Omega_h::Library{};
   Omega_h::Mesh src_mesh(&lib), tgt_mesh(&lib);
@@ -496,9 +547,8 @@ TEST_CASE("Interpolator over a TransformedSource passes through values already "
                                    out[2] = z;
                                  });
 
-  TransformedSource src_as_cartesian(
-    src, std::make_shared<pcms::CartesianToCylindrical>());
-  pcms::Interpolator<Real> op(src_as_cartesian, *tgt);
+  pcms::Interpolator<Real> op(*src, *tgt,
+                              BindTargetSites(*src, *tgt, CartToCyl()));
   op.Apply(b_src, b_tgt);
 
   const auto coords = pcms::test::CopyCoordinatesToHost(
@@ -507,8 +557,10 @@ TEST_CASE("Interpolator over a TransformedSource passes through values already "
   for (int i = 0; i < static_cast<int>(coords.extent(0)); ++i) {
     const Real x = coords(i, 0), y = coords(i, 1);
     CAPTURE(i);
-    REQUIRE_THAT(result(i, 0), WithinAbs(std::sqrt(x * x + y * y), kTol));
-    REQUIRE_THAT(result(i, 1), WithinAbs(std::atan2(y, x), kTol));
-    REQUIRE_THAT(result(i, 2), WithinAbs(coords(i, 2), kTol));
+    REQUIRE_THAT(result(i, 0),
+                 WithinAbs(std::sqrt(x * x + y * y), pcms::test::EvalTol));
+    REQUIRE_THAT(result(i, 1),
+                 WithinAbs(std::atan2(y, x), pcms::test::EvalTol));
+    REQUIRE_THAT(result(i, 2), WithinAbs(coords(i, 2), pcms::test::EvalTol));
   }
 }

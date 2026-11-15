@@ -14,18 +14,24 @@ namespace pcms
 
 class Geometry;
 class FieldLayout;
+class BoundCoordinateMap;
 
 /// @brief What Geometry::Bind hands to BindImpl.
 struct BindRequest
 {
-  /// query points in the geometry's coordinate system; may be released after
-  /// BindImpl returns
+  /// points to locate, in the geometry's coordinate system: the query points,
+  /// or their images under `map`; may be released after BindImpl returns
   CoordinateView<DeviceMemorySpace> coords;
-  /// layout whose DOF-holder coordinates `coords` are, or null (used by
+  /// layout whose DOF-holder coordinates `query_coords` are, or null (used by
   /// localization path selection until S5 removes it)
   std::shared_ptr<const FieldLayout> query_layout;
   /// out-of-bounds policy of the evaluators created from the bound source
   OutOfBoundsPolicy policy;
+  /// the coordinate map bound to `query_coords`, or null if the query points
+  /// are in the geometry's coordinate system
+  std::shared_ptr<const BoundCoordinateMap> map;
+  /// the query points as given to Bind; `coords` itself without a map
+  CoordinateView<DeviceMemorySpace> query_coords;
 };
 
 /// @brief A set of query points localized on a geometry.
@@ -69,6 +75,15 @@ public:
     return system_;
   }
 
+  /// @return the coordinate map bound to the query points, or null if the
+  ///         bind had no map. Evaluators created from this source evaluate at
+  ///         the mapped points and re-express their values through it.
+  [[nodiscard]] const std::shared_ptr<const BoundCoordinateMap>& GetBoundMap()
+    const noexcept
+  {
+    return map_;
+  }
+
   /// @return whether the bind had physical query points; false for a
   ///         parametric bind, whose PointValues() is empty
   [[nodiscard]] bool HasPointValues() const noexcept
@@ -76,12 +91,23 @@ public:
     return points_.extent(0) > 0;
   }
 
-  /// @return the coordinates of the bound query points (a copy owned by this
-  ///         object), one row per point; empty for a parametric bind
+  /// @return the coordinates of the bound query points in
+  ///         GetCoordinateSystem() (a copy owned by this object), one row per
+  ///         point; empty for a parametric bind
   [[nodiscard]] Kokkos::View<const Real**, DeviceMemorySpace> PointValues()
     const noexcept
   {
     return points_;
+  }
+
+  /// @return the bound points in the geometry's coordinate system, where they
+  ///         were located: PointValues() mapped by GetBoundMap(), or
+  ///         PointValues() itself if the bind had no map; empty for a
+  ///         parametric bind
+  [[nodiscard]] Kokkos::View<const Real**, DeviceMemorySpace>
+  LocatedPointValues() const noexcept
+  {
+    return located_;
   }
 
   /// @return indices of the query points the source evaluates, ascending
@@ -105,10 +131,10 @@ public:
   BoundSource& operator=(const BoundSource&) = delete;
 
 protected:
-  /// @brief Copies the request's points; every point counts as found until
-  ///        SetFound is called.
+  /// @brief Copies the request's query points (and, with a map, the mapped
+  ///        points); every point counts as found until SetFound is called.
   /// @param geometry geometry the points are localized on
-  /// @param request bound query points and out-of-bounds policy
+  /// @param request bound query points, map and out-of-bounds policy
   BoundSource(std::shared_ptr<const Geometry> geometry,
               const BindRequest& request);
 
@@ -135,9 +161,11 @@ private:
   std::shared_ptr<const Geometry> geometry_;
   OutOfBoundsPolicy policy_;
   std::shared_ptr<const FieldLayout> query_layout_;
+  std::shared_ptr<const BoundCoordinateMap> map_;
   std::shared_ptr<const CoordinateSystem> system_;
   LO num_points_;
   Kokkos::View<Real**, DeviceMemorySpace> points_;
+  Kokkos::View<Real**, DeviceMemorySpace> located_;
   Kokkos::View<LO*, DeviceMemorySpace> found_;
   Kokkos::View<LO*, DeviceMemorySpace> missing_;
 };

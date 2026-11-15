@@ -91,9 +91,8 @@ def case_b(world):
 
     # The values are already in the target's basis, so the map passes them
     # through and only the points are mapped.
-    src_as_cartesian = pcms.TransformedSource(src,
-                                              pcms.CartesianToCylindrical())
-    pcms.Interpolator(src_as_cartesian, tgt).apply(b_src, b_tgt)
+    bound = src.get_geometry().bind(tgt, map=pcms.CartesianToCylindrical())
+    pcms.Interpolator(src, tgt, bound).apply(b_src, b_tgt)
     # B's Cartesian components are not linear in (r, theta, z), so
     # the P1 source field only approximates them.
     err = max_error_from_xyz(b_tgt)
@@ -114,12 +113,11 @@ def case_c(world):
         [p[:, 0], np.zeros(len(p)), p[:, 2]], axis=1))
     b_tgt = tgt.create_function("b", pcms.values.Vector)
 
-    # `to_source` carries the target's
-    # Cartesian points to (r, theta, z), and the source's cylindrical
-    # components back to Cartesian.
-    src_as_cartesian = pcms.TransformedSource(src,
-                                              pcms.CartesianToCylindrical())
-    pcms.Interpolator(src_as_cartesian, tgt).apply(b_src, b_tgt)
+    # The map given to the bind must end in the source's system: it carries
+    # the target's Cartesian points to (r, theta, z), and the source's
+    # cylindrical components back to Cartesian.
+    bound = src.get_geometry().bind(tgt, map=pcms.CartesianToCylindrical())
+    pcms.Interpolator(src, tgt, bound).apply(b_src, b_tgt)
     err = max_error_from_xyz(b_tgt)
     print("    max |B - (x,y,z)| = %.2e" % err)
     return err

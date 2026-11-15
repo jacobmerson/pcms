@@ -16,6 +16,7 @@ namespace pcms
 {
 
 struct SupportResults; // pcms/localization/adj_search.hpp
+class CoordinateMap;   // pcms/field/coordinate_map.hpp
 
 /// @brief Options of the containing-cell search a geometry builds.
 struct SearchOptions
@@ -95,15 +96,22 @@ public:
   }
 
   /// @brief Localizes physical query points.
-  /// @param coords points in GetCoordinateSystem(); may be released after
+  /// @param coords query points, in GetCoordinateSystem() or, with `map`, in
+  ///        its source coordinate system; may be released after
   /// @param policy what to do with points outside the geometry
-  /// @return bound source for the evaluator sources on this geometry
-  /// @throws pcms_error if the coordinate system differs, or the policy is
-  ///         NEAREST_BOUNDARY and SupportsNearestBoundary() is false, or the
-  ///         policy is ERROR and a point is outside
+  /// @param map map from the query coordinate system to GetCoordinateSystem(),
+  ///        or null; the points are located at their images, and evaluators
+  ///        created from the result re-express their values through it
+  /// @return bound source for the evaluator sources on this geometry; its
+  ///         PointValues() are the query points
+  /// @throws pcms_error if the query coordinate system is not
+  ///         GetCoordinateSystem() (without a map) or the map does not take it
+  ///         to GetCoordinateSystem(), or the policy is NEAREST_BOUNDARY and
+  ///         SupportsNearestBoundary() is false, or the policy is ERROR and a
+  ///         point is outside
   [[nodiscard]] std::shared_ptr<const BoundSource> Bind(
-    CoordinateView<DeviceMemorySpace> coords,
-    OutOfBoundsPolicy policy = {}) const;
+    CoordinateView<DeviceMemorySpace> coords, OutOfBoundsPolicy policy = {},
+    std::shared_ptr<const CoordinateMap> map = nullptr) const;
 
   /// @brief Bind for the DOF-holder coordinates of a layout; records the
   ///        layout on the bound source as QueryLayout(). The layout is an
@@ -112,10 +120,13 @@ public:
   /// @param dof_holder_coords DOF-holder coordinates of `query_layout`
   /// @param query_layout layout whose DOF holders are the query points
   /// @param policy what to do with points outside the geometry
+  /// @param map map from the query coordinate system to GetCoordinateSystem(),
+  ///        or null, as for the coordinates overload
   [[nodiscard]] std::shared_ptr<const BoundSource> Bind(
     CoordinateView<DeviceMemorySpace> dof_holder_coords,
     std::shared_ptr<const FieldLayout> query_layout,
-    OutOfBoundsPolicy policy = {}) const;
+    OutOfBoundsPolicy policy = {},
+    std::shared_ptr<const CoordinateMap> map = nullptr) const;
 
   /// @brief Binds points given in parametric coordinates; no search.
   /// @param points parametric points of this geometry's kind
@@ -147,7 +158,9 @@ public:
 protected:
   Geometry() = default;
 
-  /// @param request points already checked to be in GetCoordinateSystem()
+  /// @param request points to locate, already checked to be in
+  ///        GetCoordinateSystem() (mapped there if the bind had a map), and the
+  ///        query points the bound source keeps
   /// @return the bound source of the kind
   [[nodiscard]] virtual std::shared_ptr<BoundSource> BindImpl(
     const BindRequest& request) const = 0;

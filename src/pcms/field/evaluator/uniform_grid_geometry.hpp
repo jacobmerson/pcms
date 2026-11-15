@@ -67,8 +67,9 @@ public:
                      const BindRequest& request, const UniformGrid<Dim>& grid)
     : BoundSource(std::move(geometry), request)
   {
-    auto [found, cells] = detail::LocateInGrid(
-      grid, PointValues(), Policy().mode == OutOfBoundsMode::NEAREST_BOUNDARY);
+    auto [found, cells] =
+      detail::LocateInGrid(grid, LocatedPointValues(),
+                           Policy().mode == OutOfBoundsMode::NEAREST_BOUNDARY);
     SetFound(found);
     cell_indices_ = cells;
   }

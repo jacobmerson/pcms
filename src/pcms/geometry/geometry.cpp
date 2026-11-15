@@ -1,4 +1,5 @@
 #include "pcms/geometry/geometry.hpp"
+#include "pcms/field/coordinate_map.hpp"
 #include "pcms/localization/adj_search.hpp" // SupportResults
 #include "pcms/utility/assert.h"
 #include <string>
@@ -7,33 +8,53 @@ namespace pcms
 {
 
 std::shared_ptr<const BoundSource> Geometry::Bind(
-  CoordinateView<DeviceMemorySpace> coords, OutOfBoundsPolicy policy) const
+  CoordinateView<DeviceMemorySpace> coords, OutOfBoundsPolicy policy,
+  std::shared_ptr<const CoordinateMap> map) const
 {
-  return Bind(std::move(coords), nullptr, policy);
+  return Bind(std::move(coords), nullptr, policy, std::move(map));
 }
 
 std::shared_ptr<const BoundSource> Geometry::Bind(
   CoordinateView<DeviceMemorySpace> coords,
-  std::shared_ptr<const FieldLayout> query_layout,
-  OutOfBoundsPolicy policy) const
+  std::shared_ptr<const FieldLayout> query_layout, OutOfBoundsPolicy policy,
+  std::shared_ptr<const CoordinateMap> map) const
 {
-  if (!SameCoordinateSystem(coords.GetCoordinateSystem(),
-                            GetCoordinateSystem())) {
-    throw pcms_error(
-      "Geometry::Bind: query coordinate system '" +
-      std::string(coords.GetCoordinateSystem()->Kind()) +
-      "' is not the geometry's coordinate system '" +
-      std::string(GetCoordinateSystem()->Kind()) +
-      "'; map the points with a CoordinateMap (evaluate through a "
-      "TransformedSource until maps can be given to Bind)");
+  const auto& query_system = coords.GetCoordinateSystem();
+  if (map != nullptr) {
+    if (!SameCoordinateSystem(query_system, map->GetSourceCoordinateSystem()) ||
+        !SameCoordinateSystem(map->GetTargetCoordinateSystem(),
+                              GetCoordinateSystem())) {
+      throw pcms_error(
+        "Geometry::Bind: the query points are in '" +
+        std::string(query_system->Kind()) + "' and the map takes '" +
+        std::string(map->GetSourceCoordinateSystem()->Kind()) + "' to '" +
+        std::string(map->GetTargetCoordinateSystem()->Kind()) +
+        "'; it must take the query coordinate system to the geometry's '" +
+        std::string(GetCoordinateSystem()->Kind()) + "'");
+    }
+  } else if (!SameCoordinateSystem(query_system, GetCoordinateSystem())) {
+    throw pcms_error("Geometry::Bind: query coordinate system '" +
+                     std::string(query_system->Kind()) +
+                     "' is not the geometry's coordinate system '" +
+                     std::string(GetCoordinateSystem()->Kind()) +
+                     "'; pass a CoordinateMap from one to the other as "
+                     "Bind's map argument");
   }
   if (policy.mode == OutOfBoundsMode::NEAREST_BOUNDARY &&
       !SupportsNearestBoundary()) {
     throw pcms_error("Geometry::Bind: this geometry does not support "
                      "OutOfBoundsMode::NEAREST_BOUNDARY");
   }
-  std::shared_ptr<BoundSource> bound =
-    BindImpl(BindRequest{std::move(coords), std::move(query_layout), policy});
+  std::shared_ptr<BoundSource> bound;
+  if (map != nullptr) {
+    std::shared_ptr<const BoundCoordinateMap> bound_map = map->Bind(coords);
+    const CoordinateView<DeviceMemorySpace> mapped = bound_map->MappedPoints();
+    bound = BindImpl(BindRequest{mapped, std::move(query_layout), policy,
+                                 std::move(bound_map), coords});
+  } else {
+    bound = BindImpl(
+      BindRequest{coords, std::move(query_layout), policy, nullptr, coords});
+  }
   PCMS_ALWAYS_ASSERT(bound != nullptr);
   return bound;
 }

@@ -295,7 +295,7 @@ snake_case form of the C++ method (`GetDOFHolderData` is
 - `CartesianToCylindrical()`, `CylindricalToCartesian()` - `CoordinateMap`s; points map source to target, values are re-expressed the other way
 - `bound = coordinate_map.bind(coordinate_view)` - per-point work for points in the map's source system
 - `bound.mapped_points()`, `bound.output_basis(basis)`, `bound.transform_values(value_view)` - mapped points, and in-place re-expression of values
-- `TransformedSource(source, to_source)` - presents a `PointEvaluatorFactory` in another coordinate system; use it as an `Interpolator` source
+- `geometry.bind(coordinate_view, policy, map)` / `geometry.bind(space, policy, map)` - bind points given in another coordinate system: `map` takes them to `geometry.get_coordinate_system()`, the points are located at their images, and evaluators created from the result re-express their values through the bound map; pass the result to `Interpolator(source, target_space, bound)` to transfer across coordinate systems
 
 ### Out-of-Bounds Modes
 - `OutOfBoundsMode.ERROR` - Raise error when points are outside mesh

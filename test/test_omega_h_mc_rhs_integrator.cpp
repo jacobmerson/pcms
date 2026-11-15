@@ -8,7 +8,6 @@
 #include <pcms/field/coordinate_map.hpp>
 #include <pcms/field/coordinate_systems/cartesian.hpp>
 #include <pcms/field/layout/omega_h_lagrange.h>
-#include <pcms/field/transformed_source.hpp>
 #include <pcms/transfer/conservative_projection_solver.hpp>
 #include <pcms/transfer/omega_h_conservative_projection.hpp>
 #include <pcms/transfer/omega_h_control_variate_projection.hpp>
@@ -337,7 +336,7 @@ protected:
 
 } // namespace
 
-TEST_CASE("OmegaHControlVariateProjection over a TransformedSource maps the "
+TEST_CASE("OmegaHControlVariateProjection through a coordinate map maps the "
           "sample points",
           "[mc_rhs_integrator][control_variate]")
 {
@@ -353,11 +352,10 @@ TEST_CASE("OmegaHControlVariateProjection over a TransformedSource maps the "
     source_field,
     OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) { return 3.0 * x - y + 0.25; });
 
-  pcms::TransformedSource src_as_swapped(source_space,
-                                         std::make_shared<SwapXY>());
   pcms::OmegaHControlVariateProjection projection(
-    src_as_swapped, *target_space, /*samples_per_element=*/4,
-    pcms::MonteCarloSampling::UniformRandom);
+    *source_space, *target_space, /*samples_per_element=*/4,
+    pcms::MonteCarloSampling::UniformRandom, /*seed=*/8675309,
+    pcms::MassMatrixType::Consistent, std::make_shared<SwapXY>());
   projection.Apply(source_field, target_field);
 
   const auto values =

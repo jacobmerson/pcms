@@ -449,7 +449,7 @@ if(Catch2_FOUND)
       test_omega_h_lagrange_field.cpp
       test_point_evaluator.cpp
       test_tagged_outputs.cpp
-      test_transformed_source.cpp
+      test_bound_maps.cpp
       test_evaluation_only_space.cpp
       test_bound_source.cpp
       test_geometry.cpp

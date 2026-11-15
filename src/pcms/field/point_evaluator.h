@@ -4,6 +4,7 @@
 #include "pcms/field/differential_operator.hpp"
 #include "pcms/field/field_layout.h"
 #include "pcms/geometry/bound_source.hpp"
+#include "pcms/geometry/geometry.hpp"
 #include "pcms/field/value_view.hpp"
 #include "pcms/utility/assert.h"
 #include "pcms/utility/arrays.h"
@@ -98,7 +99,10 @@ public:
     switch (op_) {
       case DifferentialOperator::Value: return stored;
       case DifferentialOperator::Gradient:
-        return GradientBasis(stored, bound_->GetCoordinateSystem());
+        // the partials are taken where the points were located, in the
+        // geometry's system; a bound map re-expresses them afterwards
+        return GradientBasis(stored,
+                             bound_->GetGeometry()->GetCoordinateSystem());
       default:
         throw pcms_error(std::string("PointEvaluator::OutputBasis: ") +
                          std::string(ToString(op_)) + " is not implemented");

@@ -67,7 +67,7 @@ public:
     // Every point has a (closest) cell, so all rows are computed; Evaluate
     // overwrites the rows of points outside the grid in FILL mode.
     auto cell_indices = binding_->CellIndices();
-    auto coordinates = binding_->PointValues();
+    auto coordinates = binding_->LocatedPointValues();
 
     if (layout_->GetOrder() == 0) {
       Kokkos::parallel_for(
