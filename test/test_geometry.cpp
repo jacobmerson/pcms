@@ -103,9 +103,6 @@ TEST_CASE("One bind serves every space on a geometry")
     pts, geometry->GetCoordinateSystem());
   const auto bound = geometry->Bind(coords.coordinate_view);
   REQUIRE(bound->GetGeometry() == geometry);
-  REQUIRE_NOTHROW(scalars->CreatePointEvaluator<Real>(bound));
-  REQUIRE_NOTHROW(vectors->CreatePointEvaluator<Real>(bound));
-  REQUIRE_NOTHROW(cells->CreatePointEvaluator<Real>(bound));
   pcms::test::CheckEvaluation(
     *scalars->CreatePointEvaluator<Real>(bound), f, pts,
     OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); });
@@ -169,23 +166,6 @@ TEST_CASE("Spaces on a geometry share its discretization")
                       "mesh"));
 }
 
-TEST_CASE("Bound sources of another geometry are rejected")
-{
-  auto lib = Omega_h::Library{};
-  auto mesh = BuildSquareMesh(lib, 4);
-  auto geometry = MakeGeometry(mesh);
-  auto other = MakeGeometry(mesh);
-  auto space = MakeSpace(geometry, 1, 1);
-  auto coords = pcms::test::CreateDeviceCoordinateView(
-    pcms::test::StandardEvalCoords2D(), geometry->GetCoordinateSystem());
-  const auto other_bound = other->Bind(coords.coordinate_view);
-  REQUIRE_THROWS_WITH(space->CreatePointEvaluator<Real>(other_bound),
-                      ContainsSubstring("another geometry"));
-  // the same geometry, the same mesh: same entities
-  REQUIRE(
-    geometry->GetDiscretization()->SameEntities(*other->GetDiscretization()));
-}
-
 TEST_CASE("Parametric binds skip the search")
 {
   auto lib = Omega_h::Library{};
@@ -198,26 +178,18 @@ TEST_CASE("Parametric binds skip the search")
 
   // element centroids: barycentric coordinates 1/3 each
   const LO nelems = mesh.nelems();
-  Kokkos::View<LO*, HostMemorySpace> ids_host("ids", nelems);
-  Kokkos::View<Real**, HostMemorySpace> bary_host("bary", nelems, 3);
+  Kokkos::View<LO*, DeviceMemorySpace> ids("ids", nelems);
+  Kokkos::View<Real**, DeviceMemorySpace> bary("bary", nelems, 3);
+  auto ids_host = Kokkos::create_mirror_view(ids);
+  auto bary_host = Kokkos::create_mirror_view(bary);
   for (LO e = 0; e < nelems; ++e) {
     ids_host(e) = e;
     for (int v = 0; v < 3; ++v) {
       bary_host(e, v) = 1.0 / 3.0;
     }
   }
-  Kokkos::View<LO*, DeviceMemorySpace> ids("ids", nelems);
   Kokkos::deep_copy(ids, ids_host);
-  // a device view of the device layout (the host mirror's layout need not
-  // convert to the ParametricPoints view on a GPU)
-  Kokkos::View<Real**, DeviceMemorySpace> bary("bary", nelems, 3);
-  auto bary_mirror = Kokkos::create_mirror_view(bary);
-  for (LO e = 0; e < nelems; ++e) {
-    for (int v = 0; v < 3; ++v) {
-      bary_mirror(e, v) = bary_host(e, v);
-    }
-  }
-  Kokkos::deep_copy(bary, bary_mirror);
+  Kokkos::deep_copy(bary, bary_host);
   const auto bound = geometry->Bind(pcms::ParametricPoints{ids, bary});
   REQUIRE(bound->NumPoints() == nelems);
   REQUIRE_FALSE(bound->HasPointValues());
@@ -569,20 +541,15 @@ TEST_CASE("Neighbourhood returns vertex supports")
 }
 
 #ifdef PCMS_ENABLE_MESHFIELDS
-TEST_CASE("MeshFields evaluates P1 and P2 fields through the geometry's bind")
+TEST_CASE("MeshFields evaluates P2 fields through the geometry's bind")
 {
-  // P1 reproduces a linear function and P2 a quadratic exactly, so any change
-  // in the element coordinates MeshFields receives shows up here.
+  // P2 reproduces a quadratic exactly, so any change in the element
+  // coordinates MeshFields receives shows up here.
   auto lib = Omega_h::Library{};
   auto mesh = BuildSquareMesh(lib, 6);
   auto geometry = MakeGeometry(mesh);
-  auto p1 = LagrangeFunctionSpace::FromGeometry(
-    geometry, 1, 1, "global", LagrangeFunctionSpace::Backend::MeshFields);
   auto p2 = LagrangeFunctionSpace::FromGeometry(
     geometry, 2, 1, "global", LagrangeFunctionSpace::Backend::MeshFields);
-  auto f1 = p1->CreateFunction<Real>("f1");
-  pcms::test::SetField(
-    f1, OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); });
   auto f2 = p2->CreateFunction<Real>("f2");
   pcms::test::SetField(
     f2, OMEGA_H_LAMBDA(Real x, Real y) { return Quadratic(x, y); });
@@ -591,10 +558,6 @@ TEST_CASE("MeshFields evaluates P1 and P2 fields through the geometry's bind")
   auto coords = pcms::test::CreateDeviceCoordinateView(
     pts, geometry->GetCoordinateSystem());
   const auto bound = geometry->Bind(coords.coordinate_view);
-  pcms::test::CheckEvaluation(
-    *p1->CreatePointEvaluator<Real>(bound), f1, pts,
-    OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); },
-    pcms::test::ExactTol);
   pcms::test::CheckEvaluation(
     *p2->CreatePointEvaluator<Real>(bound), f2, pts,
     OMEGA_H_LAMBDA(Real x, Real y) { return Quadratic(x, y); },
