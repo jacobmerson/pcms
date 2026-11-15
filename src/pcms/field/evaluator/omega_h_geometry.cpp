@@ -19,90 +19,26 @@ OmegaHMeshBinding::OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
                                      Omega_h::Mesh& mesh)
   : BoundSource(std::move(geometry), request)
 {
+  const bool hinted = request.owners.entity_dim == mesh.dim() &&
+                      request.owners.entities.extent(0) > 0;
+  if (hinted) {
+    detail::CheckEntityIds(request.owners.entities, mesh.nelems(),
+                           "OmegaHMeshBinding", "element");
+  }
   std::visit(
     [&](const auto& s) {
       constexpr int Dim = std::decay_t<decltype(s)>::DIM;
-      auto [found, owning_ids] = FindOwningElements(s, LocatedPointValues());
-      SetFound(found);
+      Kokkos::View<const LO*, DeviceMemorySpace> owning_ids =
+        request.owners.entities;
+      if (!hinted) {
+        auto [found, located] = FindOwningElements(s, LocatedPointValues());
+        SetFound(found);
+        owning_ids = located;
+      }
       std::tie(elem_ids_, bary_) = detail::BarycentricInElements<Dim>(
         mesh, LocatedPointValues(), FoundPoints(), owning_ids);
     },
     search);
-}
-
-namespace
-{
-
-/// Throws unless there are no points or every point has dim + 1 barycentric
-/// coordinates and an element of `mesh`.
-void CheckBarycentricPoints(const ParametricPoints& points, Omega_h::Mesh& mesh,
-                            const std::string& caller)
-{
-  if (points.NumPoints() == 0) {
-    return;
-  }
-  const int dim = mesh.dim();
-  if (static_cast<int>(points.coords.extent(1)) != dim + 1) {
-    throw pcms_error(caller + ": parametric coordinates of a " +
-                     std::to_string(dim) + "D mesh need " +
-                     std::to_string(dim + 1) + " barycentric columns, got " +
-                     std::to_string(points.coords.extent(1)));
-  }
-  detail::CheckParametricIds(points, mesh.nelems(), caller, "element");
-}
-
-template <int Dim>
-Kokkos::View<Real**, DeviceMemorySpace> PhysicalFromBarycentric(
-  Omega_h::Mesh& mesh, const ParametricPoints& points)
-{
-  const LO n = points.NumPoints();
-  Kokkos::View<Real**, DeviceMemorySpace> physical(
-    Kokkos::view_alloc(Kokkos::WithoutInitializing, "omega_h_physical_points"),
-    n, Dim);
-  const auto elem_verts = mesh.ask_elem_verts();
-  const auto coords = mesh.coords();
-  const auto ids = points.ids;
-  const auto bary = points.coords;
-  Kokkos::parallel_for(
-    "OmegaHGeometry::MapToPhysical",
-    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
-    KOKKOS_LAMBDA(const LO i) {
-      const LO elem = ids(i);
-      Real x[Dim] = {};
-      for (int v = 0; v < Dim + 1; ++v) {
-        const LO vert = elem_verts[elem * (Dim + 1) + v];
-        for (int d = 0; d < Dim; ++d) {
-          x[d] += bary(i, v) * coords[vert * Dim + d];
-        }
-      }
-      for (int d = 0; d < Dim; ++d) {
-        physical(i, d) = x[d];
-      }
-    });
-  return physical;
-}
-
-} // namespace
-
-OmegaHMeshBinding::OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
-                                     const ParametricPoints& points,
-                                     OutOfBoundsPolicy policy,
-                                     Omega_h::Mesh& mesh)
-  : BoundSource(std::move(geometry), points, policy)
-{
-  const int dim = mesh.dim();
-  const LO n = points.NumPoints();
-  elem_ids_ = Kokkos::View<LO*, DeviceMemorySpace>(
-    Kokkos::view_alloc(Kokkos::WithoutInitializing, "omega_h_elem_ids"), n);
-  bary_ = Kokkos::View<Real**, DeviceMemorySpace>(
-    Kokkos::view_alloc(Kokkos::WithoutInitializing, "omega_h_bary"), n,
-    dim + 1);
-  if (n == 0) {
-    return;
-  }
-  CheckBarycentricPoints(points, mesh, "OmegaHMeshBinding");
-  Kokkos::deep_copy(elem_ids_, points.ids);
-  Kokkos::deep_copy(bary_, points.coords);
 }
 
 GridPointSearchVariant MakeGridSearch(Omega_h::Mesh& mesh,
@@ -159,26 +95,6 @@ std::shared_ptr<BoundSource> OmegaHGeometry::BindImpl(
   PCMS_FUNCTION_TIMER;
   return std::make_shared<OmegaHMeshBinding>(shared_from_this(), request,
                                              search_, mesh_);
-}
-
-std::shared_ptr<BoundSource> OmegaHGeometry::BindParametricImpl(
-  const ParametricPoints& points, OutOfBoundsPolicy policy) const
-{
-  return std::make_shared<OmegaHMeshBinding>(shared_from_this(), points, policy,
-                                             mesh_);
-}
-
-Kokkos::View<Real**, DeviceMemorySpace> OmegaHGeometry::MapToPhysical(
-  const ParametricPoints& points) const
-{
-  if (points.coords.extent(0) != points.ids.extent(0)) {
-    throw pcms_error(
-      "OmegaHGeometry::MapToPhysical: parametric ids and coords differ in "
-      "length");
-  }
-  CheckBarycentricPoints(points, mesh_, "OmegaHGeometry::MapToPhysical");
-  return mesh_.dim() == 2 ? PhysicalFromBarycentric<2>(mesh_, points)
-                          : PhysicalFromBarycentric<3>(mesh_, points);
 }
 
 SupportResults OmegaHGeometry::Neighbourhood(

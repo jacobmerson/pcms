@@ -39,15 +39,15 @@ OmegaHControlVariateProjection::OmegaHControlVariateProjection(
                     target_space.GetLayout(), OutOfBoundsPolicy{}, to_source)),
     control_variate_(target_space.CreateFunction<Real>())
 {
-  // The source lives on another mesh, so it is bound to the samples'
-  // coordinates; the target space is bound to them in its own elements,
-  // without a search.
+  // The source lives on another mesh, so it searches for the samples; the
+  // target space is bound to them in their own elements, without a search.
   source_at_samples_ =
     source.CreatePointEvaluator<Real>(SourceGeometry(source).Bind(
-      rhs_integrator_->GetIntegrationPointCoordinates(), OutOfBoundsPolicy{},
-      to_source));
-  control_variate_at_samples_ = target_space.CreatePointEvaluator<Real>(
-    target_space.GetGeometry()->Bind(rhs_integrator_->GetIntegrationPoints()));
+      rhs_integrator_->GetIntegrationPoints(), OutOfBoundsPolicy{}, to_source));
+  control_variate_at_samples_ =
+    target_space.CreatePointEvaluator<Real>(target_space.GetGeometry()->Bind(
+      rhs_integrator_->GetIntegrationPoints(),
+      rhs_integrator_->IntegrationPointOwners()));
 
   // Mass integrator is only needed to build the solver; PETSc reference-counts
   // the matrix so it remains alive inside the KSP after this scope ends.
@@ -59,7 +59,7 @@ OmegaHControlVariateProjection::OmegaHControlVariateProjection(
     "cv_target_values", target_layout_->GetNumDofHolder(),
     target_layout_->GetNumComponents());
   const auto num_samples =
-    static_cast<std::size_t>(rhs_integrator_->NumIntegrationPoints());
+    rhs_integrator_->GetIntegrationPoints().GetValues().extent(0);
   f_samples_ =
     Kokkos::View<Real**, DeviceMemorySpace>("cv_f_samples", num_samples, 1);
   residual_ =

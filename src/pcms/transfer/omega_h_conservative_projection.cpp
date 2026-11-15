@@ -47,10 +47,12 @@ OmegaHConservativeProjection::OmegaHConservativeProjection(
   rhs_integrator_ = std::make_unique<OmegaHIntersectionRHSIntegrator>(
     source_space, target_space);
 
-  // The integration points are given in the source elements, so binding them
+  // The integration points are generated in source elements, so binding them
   // needs no search.
-  evaluator_ = source_space.CreatePointEvaluator<Real>(
-    source_space.GetGeometry()->Bind(rhs_integrator_->GetIntegrationPoints()));
+  evaluator_ =
+    source_space.CreatePointEvaluator<Real>(source_space.GetGeometry()->Bind(
+      rhs_integrator_->GetIntegrationPoints(),
+      rhs_integrator_->IntegrationPointOwners()));
 
   // Mass integrator is only needed to build the solver; PETSc reference-counts
   // the matrix so it remains alive inside the KSP after this scope ends.

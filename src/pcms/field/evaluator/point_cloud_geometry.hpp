@@ -138,14 +138,6 @@ protected:
                                         std::move(supports));
   }
 
-  std::shared_ptr<BoundSource> BindParametricImpl(
-    const ParametricPoints& /*points*/,
-    OutOfBoundsPolicy /*policy*/) const override
-  {
-    throw pcms_error(
-      "PointCloudGeometry::Bind: a point cloud has no parametric coordinates");
-  }
-
 private:
   PointCloudGeometry(std::shared_ptr<const FieldLayout> site_layout,
                      Omega_h::Mesh* mesh, int site_entity_dim,

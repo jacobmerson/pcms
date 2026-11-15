@@ -78,17 +78,6 @@ BoundSource::BoundSource(std::shared_ptr<const Geometry> geometry,
                      num_points_);
 }
 
-BoundSource::BoundSource(std::shared_ptr<const Geometry> geometry,
-                         const ParametricPoints& points,
-                         OutOfBoundsPolicy policy)
-  : geometry_(std::move(geometry)),
-    policy_(policy),
-    system_(geometry_->GetCoordinateSystem()),
-    num_points_(points.NumPoints()),
-    found_(AllPoints(num_points_))
-{
-}
-
 void BoundSource::SetFound(Kokkos::View<const bool*, DeviceMemorySpace> found)
 {
   PCMS_ALWAYS_ASSERT(static_cast<LO>(found.extent(0)) == NumPoints());

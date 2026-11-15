@@ -3,7 +3,6 @@
 
 #include "pcms/field/coordinate_view.hpp"
 #include "pcms/field/out_of_bounds_policy.h"
-#include "pcms/geometry/parametric_points.hpp"
 #include "pcms/utility/memory_spaces.h"
 #include "pcms/utility/types.h"
 #include <Kokkos_Core.hpp>
@@ -15,6 +14,35 @@ namespace pcms
 class Geometry;
 class FieldLayout;
 class BoundCoordinateMap;
+
+/// @brief Entities of a geometry the query points are known to lie in, so a
+///        bind or neighbourhood search can start from them instead of
+///        searching.
+///
+/// A hint is trusted: the caller guarantees that each point lies in its
+/// entity. The ids are checked to be entities of the geometry, but a stale
+/// hint within range is not detected; the point is then evaluated by
+/// extrapolation from the given entity (OutOfBoundsMode::ERROR does not
+/// throw and FILL does not fill for it).
+struct KnownOwners
+{
+  /// geometry whose entities `entities` are; a hint for another geometry is
+  /// ignored
+  std::shared_ptr<const Geometry> geometry;
+  /// the geometry's top dimension for "point i is in cell entities(i)", 0 for
+  /// "point i is at vertex entities(i)"
+  int entity_dim = -1;
+  /// one entity per query point; empty means no hint
+  Kokkos::View<const LO*, DeviceMemorySpace> entities;
+
+  /// @return whether this is a hint for each of `num_points` points on
+  ///         `on`
+  [[nodiscard]] bool Hints(const Geometry& on, LO num_points) const noexcept
+  {
+    return geometry.get() == &on && num_points > 0 &&
+           static_cast<LO>(entities.extent(0)) == num_points;
+  }
+};
 
 /// @brief What Geometry::Bind hands to BindImpl.
 struct BindRequest
@@ -28,6 +56,9 @@ struct BindRequest
   std::shared_ptr<const FieldLayout> query_layout;
   /// out-of-bounds policy of the evaluators created from the bound source
   OutOfBoundsPolicy policy;
+  /// the owner of each point, from the caller, when they are owners on this
+  /// geometry; otherwise empty, and the kind searches
+  KnownOwners owners;
   /// the coordinate map bound to `query_coords`, or null if the query points
   /// are in the geometry's coordinate system
   std::shared_ptr<const BoundCoordinateMap> map;
@@ -85,16 +116,9 @@ public:
     return map_;
   }
 
-  /// @return whether the bind had physical query points; false for a
-  ///         parametric bind, whose PointValues() is empty
-  [[nodiscard]] bool HasPointValues() const noexcept
-  {
-    return points_.extent(0) > 0;
-  }
-
   /// @return the coordinates of the bound query points in
   ///         GetCoordinateSystem() (a copy owned by this object), one row per
-  ///         point; empty for a parametric bind
+  ///         point
   [[nodiscard]] Kokkos::View<const Real**, DeviceMemorySpace> PointValues()
     const noexcept
   {
@@ -103,8 +127,7 @@ public:
 
   /// @return the bound points in the geometry's coordinate system, where they
   ///         were located: PointValues() mapped by GetBoundMap(), or
-  ///         PointValues() itself if the bind had no map; empty for a
-  ///         parametric bind
+  ///         PointValues() itself if the bind had no map
   [[nodiscard]] Kokkos::View<const Real**, DeviceMemorySpace>
   LocatedPointValues() const noexcept
   {
@@ -138,15 +161,6 @@ protected:
   /// @param request bound query points, map and out-of-bounds policy
   BoundSource(std::shared_ptr<const Geometry> geometry,
               const BindRequest& request);
-
-  /// @brief Points given in parametric coordinates: no physical coordinates,
-  ///        every point found.
-  /// @param geometry geometry the points are localized on
-  /// @param points parametric points
-  /// @param policy out-of-bounds policy of the evaluators created from this
-  ///        source
-  BoundSource(std::shared_ptr<const Geometry> geometry,
-              const ParametricPoints& points, OutOfBoundsPolicy policy);
 
   /// @brief Records which query points the source evaluates.
   /// @param found per query point, whether the source evaluates it

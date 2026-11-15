@@ -6,7 +6,6 @@
 #include "pcms/field/coordinate_view.hpp"
 #include "pcms/field/out_of_bounds_policy.h"
 #include "pcms/geometry/bound_source.hpp"
-#include "pcms/geometry/parametric_points.hpp"
 #include "pcms/geometry/supports.hpp"
 #include "pcms/utility/memory_spaces.h"
 #include "pcms/utility/types.h"
@@ -140,16 +139,23 @@ public:
     OutOfBoundsPolicy policy = {},
     std::shared_ptr<const CoordinateMap> map = nullptr) const;
 
-  /// @brief Binds points given in parametric coordinates; no search.
-  /// @param points parametric points of this geometry's kind
-  /// @param policy out-of-bounds policy of the evaluators created from the
-  ///        result
-  /// @throws pcms_error if `points.ids` and `points.coords` differ in length,
-  ///         or the kind has no parametric coordinates, or there are points
-  ///         and an id or the number of coordinate columns does not fit the
-  ///         kind (no points give an empty bound source)
+  /// @brief Bind for points whose owners are known, e.g. points generated in
+  ///        the elements of this geometry.
+  /// @param coords query points, as for the coordinates overload
+  /// @param owners the owner of each query point; used, instead of the
+  ///        search, by the kinds that can (a cell hint on a mesh), and
+  ///        ignored if it is for another geometry, not one entity per point,
+  ///        or given with a map (it describes the unmapped points). The hint
+  ///        is trusted, see KnownOwners: hinted points count as found.
+  /// @throws pcms_error as the coordinates overload, or if a used hint names
+  ///         an entity the geometry does not have
+  /// @param policy what to do with points outside the geometry
+  /// @param map map from the query coordinate system to GetCoordinateSystem(),
+  ///        or null, as for the coordinates overload
   [[nodiscard]] std::shared_ptr<const BoundSource> Bind(
-    const ParametricPoints& points, OutOfBoundsPolicy policy = {}) const;
+    CoordinateView<DeviceMemorySpace> coords, const KnownOwners& owners,
+    OutOfBoundsPolicy policy = {},
+    std::shared_ptr<const CoordinateMap> map = nullptr) const;
 
   /// @brief Support sets of query points among this geometry's sites, for
   ///        reconstruction spaces.
@@ -179,11 +185,11 @@ protected:
   [[nodiscard]] virtual std::shared_ptr<BoundSource> BindImpl(
     const BindRequest& request) const = 0;
 
-  /// @param points parametric points with ids and coords of one length
-  /// @param policy out-of-bounds policy of the evaluators
-  /// @return the bound source of the kind
-  [[nodiscard]] virtual std::shared_ptr<BoundSource> BindParametricImpl(
-    const ParametricPoints& points, OutOfBoundsPolicy policy) const = 0;
+private:
+  [[nodiscard]] std::shared_ptr<const BoundSource> Bind(
+    CoordinateView<DeviceMemorySpace> coords,
+    std::shared_ptr<const FieldLayout> query_layout, const KnownOwners& owners,
+    OutOfBoundsPolicy policy, std::shared_ptr<const CoordinateMap> map) const;
 };
 
 namespace detail
@@ -200,6 +206,17 @@ namespace detail
 void CheckNeighbourhoodArguments(
   const Geometry& geometry, const CoordinateView<DeviceMemorySpace>& coords,
   const NeighbourhoodOptions& options, const std::string& caller);
+
+/// @brief Checks that every id of a hint is one of `num_entities` entities.
+/// @param ids entity ids, e.g. KnownOwners::entities
+/// @param num_entities number of entities the ids index
+/// @param caller name of the checking function, for the message
+/// @param entity what the ids index, e.g. "element", for the message
+/// @throws pcms_error naming the range of the ids if one is outside
+///         [0, num_entities)
+void CheckEntityIds(Kokkos::View<const LO*, DeviceMemorySpace> ids,
+                    LO num_entities, const std::string& caller,
+                    const std::string& entity);
 
 } // namespace detail
 

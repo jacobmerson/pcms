@@ -24,10 +24,9 @@ namespace pcms
 //   b_j ~= (|T| / N) * sum_i phi_j(x_i) f(x_i)
 // Unit-square samples (pseudo-random) are mapped to each triangle
 // with the area-preserving sqrt parametrization. Sample locations are fixed
-// at construction and exposed as parametric points of the target geometry
-// (GetIntegrationPoints(), for binding the target space without a search) and
-// as coordinates in the target's coordinate system
-// (GetIntegrationPointCoordinates(), for binding a source on another mesh);
+// at construction and exposed through GetIntegrationPoints(), with the target
+// element each lies in (IntegrationPointOwners(), for binding the target space
+// without a search);
 // |T| comes from the target geometry's differential. Assemble() consumes
 // source-field values sampled there, exactly like
 // OmegaHIntersectionRHSIntegrator, so this drops into
@@ -49,16 +48,11 @@ public:
 
   Vec GetVector() const noexcept override;
 
-  /// @return the samples as the target element each lies in and its
-  ///        barycentric coordinates there, in Assemble's order
-  [[nodiscard]] ParametricPoints GetIntegrationPoints() const noexcept;
+  CoordinateView<DeviceMemorySpace> GetIntegrationPoints()
+    const noexcept override;
 
-  /// @return the samples' coordinates in the target geometry's coordinate
-  ///         system, in Assemble's order
-  [[nodiscard]] CoordinateView<DeviceMemorySpace>
-  GetIntegrationPointCoordinates() const noexcept;
-
-  [[nodiscard]] LO NumIntegrationPoints() const noexcept override;
+  /// @return the target element each sample lies in
+  [[nodiscard]] KnownOwners IntegrationPointOwners() const;
 
   void Assemble(
     Rank2View<const Real, DeviceMemorySpace> sampled_values) override;
@@ -72,8 +66,6 @@ private:
   Vec vec_ = nullptr;
   std::shared_ptr<const OmegaHGeometry> geometry_;
   Kokkos::View<LO*, DeviceMemorySpace> elements_; // target element per sample
-  Kokkos::View<Real**, DeviceMemorySpace>
-    barycentric_; // [num_pts][dim + 1] barycentric coordinates there
   Kokkos::View<Real**, DeviceMemorySpace>
     coords_; // [num_pts][dim] sample coordinates
   Kokkos::View<PetscInt*, DeviceMemorySpace> node_gids_; // COO indices

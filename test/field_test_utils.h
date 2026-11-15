@@ -638,55 +638,20 @@ void CheckEvaluationWithFill(const Factory& factory, const Field<Real>& field,
 }
 
 #if defined(PCMS_ENABLE_PETSC) && defined(PCMS_ENABLE_MESHFIELDS)
-// Evaluates source_field at the points of `bound` (the integrator's points,
-// bound on the source space's geometry) and assembles the load vector.
+// Evaluates source_field at the integrator's points, searched on the source
+// space's geometry, and assembles the load vector.
 inline void EvaluateAndAssemble(
   LinearFormIntegrator& integrator,
   const std::shared_ptr<const FunctionSpace>& source_space,
-  const Field<Real>& source_field, std::shared_ptr<const BoundSource> bound)
+  const Field<Real>& source_field)
 {
-  const std::size_t npts = integrator.NumIntegrationPoints();
-  auto evaluator = source_space->CreatePointEvaluator<Real>(std::move(bound));
+  const auto pts = integrator.GetIntegrationPoints();
+  const std::size_t npts = pts.GetValues().extent(0);
+  auto evaluator = source_space->CreatePointEvaluator<Real>(
+    source_space->GetGeometry()->Bind(pts));
   Kokkos::View<Real**, DeviceMemorySpace> sampled("sampled", npts, 1);
   evaluator->Evaluate(source_field, TagLike(source_field, sampled));
   integrator.Assemble(MakeConstRank2View(sampled));
-}
-
-// The intersection's points are given in the source elements.
-inline void EvaluateAndAssemble(
-  OmegaHIntersectionRHSIntegrator& integrator,
-  const std::shared_ptr<const FunctionSpace>& source_space,
-  const Field<Real>& source_field)
-{
-  EvaluateAndAssemble(
-    integrator, source_space, source_field,
-    source_space->GetGeometry()->Bind(integrator.GetIntegrationPoints()));
-}
-
-// The Monte Carlo samples are bound on the source by their coordinates.
-inline void EvaluateAndAssemble(
-  OmegaHMonteCarloRHSIntegrator& integrator,
-  const std::shared_ptr<const FunctionSpace>& source_space,
-  const Field<Real>& source_field)
-{
-  EvaluateAndAssemble(integrator, source_space, source_field,
-                      source_space->GetGeometry()->Bind(
-                        integrator.GetIntegrationPointCoordinates()));
-}
-
-// Coordinates of parametric points of the Omega_h geometry of `space`, on the
-// host.
-inline Kokkos::View<Real**, HostMemorySpace> PhysicalPointsOnHost(
-  const FunctionSpace& space, const ParametricPoints& points)
-{
-  const auto geometry =
-    std::dynamic_pointer_cast<const OmegaHGeometry>(space.GetGeometry());
-  PCMS_ALWAYS_ASSERT(geometry != nullptr);
-  const auto physical = geometry->MapToPhysical(points);
-  Kokkos::View<Real**, HostMemorySpace> host(
-    "physical_points_host", physical.extent(0), physical.extent(1));
-  DeepCopyMismatchLayouts(host, physical);
-  return host;
 }
 #endif // PCMS_ENABLE_PETSC && PCMS_ENABLE_MESHFIELDS
 

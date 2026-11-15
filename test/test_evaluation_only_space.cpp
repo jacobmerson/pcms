@@ -87,12 +87,6 @@ protected:
     return std::make_shared<MockBound>(shared_from_this(), request);
   }
 
-  std::shared_ptr<pcms::BoundSource> BindParametricImpl(
-    const pcms::ParametricPoints&, pcms::OutOfBoundsPolicy) const override
-  {
-    throw pcms::pcms_error("AnalyticGeometry: no parametric coordinates");
-  }
-
 private:
   std::shared_ptr<const pcms::Discretization> discretization_;
   std::shared_ptr<const pcms::CoordinateSystem> system_;

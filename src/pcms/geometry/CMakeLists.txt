@@ -2,7 +2,6 @@ set(
         PCMS_GEOMETRY_HEADERS
         geometry.hpp
         bound_source.hpp
-        parametric_points.hpp
         supports.hpp
 )
 

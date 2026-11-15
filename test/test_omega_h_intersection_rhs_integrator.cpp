@@ -66,7 +66,7 @@ std::unordered_map<pcms::GO, pcms::Real> ExpectedLoadByGid(
 // per global DOF id, against the supplied expected values.
 void CheckAssembledLoadMatches(
   const std::shared_ptr<const pcms::FunctionSpace>& source_space,
-  pcms::OmegaHIntersectionRHSIntegrator& integrator,
+  pcms::LinearFormIntegrator& integrator,
   const pcms::Field<pcms::Real>& source_field,
   const std::unordered_map<pcms::GO, pcms::Real>& expected)
 {
@@ -104,9 +104,8 @@ TEST_CASE("OmegaHIntersectionRHSIntegrator: integration points lie inside "
   auto integrator =
     pcms::BuildOmegaHConservativeRHSIntegrator(*source_space, *target_space);
 
-  // the points are given in the source elements
-  auto raw_coords_host = pcms::test::PhysicalPointsOnHost(
-    *source_space, integrator->GetIntegrationPoints());
+  auto raw_coords_host = pcms::test::CopyCoordinatesToHost(
+    integrator->GetIntegrationPoints().GetValues());
   const std::size_t n = raw_coords_host.extent(0);
 
   REQUIRE(n > 0);
@@ -306,8 +305,8 @@ TEST_CASE("OmegaHIntersectionRHSIntegrator (3D): constant load sums to c times "
   auto integrator =
     pcms::BuildOmegaHConservativeRHSIntegrator(*source_space, *target_space);
 
-  auto coords_h = pcms::test::PhysicalPointsOnHost(
-    *source_space, integrator->GetIntegrationPoints());
+  auto coords_h = pcms::test::CopyCoordinatesToHost(
+    integrator->GetIntegrationPoints().GetValues());
   REQUIRE(coords_h.extent(0) > 0);
   REQUIRE(coords_h.extent(1) == 3);
   for (std::size_t i = 0; i < coords_h.extent(0); ++i) {
@@ -369,8 +368,8 @@ TEST_CASE("OmegaHIntersectionRHSIntegrator (3D): dual tets overlap is an "
   auto integrator =
     pcms::BuildOmegaHConservativeRHSIntegrator(*source_space, *target_space);
 
-  auto coords_h = pcms::test::PhysicalPointsOnHost(
-    *source_space, integrator->GetIntegrationPoints());
+  auto coords_h = pcms::test::CopyCoordinatesToHost(
+    integrator->GetIntegrationPoints().GetValues());
   REQUIRE(coords_h.extent(0) > 0);
   for (std::size_t i = 0; i < coords_h.extent(0); ++i) {
     const double s = std::abs(coords_h(i, 0)) + std::abs(coords_h(i, 1)) +

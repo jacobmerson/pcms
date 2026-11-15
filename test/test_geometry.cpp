@@ -10,7 +10,6 @@
 #include <pcms/field/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/evaluator/omega_h_geometry.hpp>
 #include <pcms/field/evaluator/point_cloud_geometry.hpp>
-#include <pcms/field/evaluator/uniform_grid_geometry.hpp>
 #include <pcms/field/function_space/lagrange.h>
 #include <pcms/field/layout/omega_h_entity.h>
 #include <pcms/field/layout/omega_h_lagrange.h>
@@ -181,7 +180,7 @@ TEST_CASE("Spaces on a geometry share its discretization")
                       "mesh"));
 }
 
-TEST_CASE("Parametric binds skip the search")
+TEST_CASE("Known owners skip the search")
 {
   auto lib = Omega_h::Library{};
   auto mesh = BuildSquareMesh(lib, 4);
@@ -191,142 +190,56 @@ TEST_CASE("Parametric binds skip the search")
   pcms::test::SetField(
     f, OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); });
 
-  // element centroids: barycentric coordinates 1/3 each
+  // the element centroids, with their elements as owners
   const LO nelems = mesh.nelems();
-  Kokkos::View<LO*, DeviceMemorySpace> ids("ids", nelems);
-  Kokkos::View<Real**, DeviceMemorySpace> bary("bary", nelems, 3);
-  auto ids_host = Kokkos::create_mirror_view(ids);
-  auto bary_host = Kokkos::create_mirror_view(bary);
+  const auto centroids =
+    pcms::ConvertCoordsTo2D(pcms::get_entity_centroids(mesh, 2), nelems, 2);
+  const auto coords =
+    pcms::test::MakeCoords(centroids, geometry->GetCoordinateSystem());
+  Kokkos::View<LO*, DeviceMemorySpace> elements("elements", nelems);
+  pcms::iota_view<LO>(elements);
+  const auto searched = geometry->Bind(coords);
+  const auto hinted =
+    geometry->Bind(coords, pcms::KnownOwners{geometry, 2, elements});
+  REQUIRE(hinted->FoundPoints().extent(0) == static_cast<size_t>(nelems));
+  const auto element_ids = [](const auto& bound) {
+    return Kokkos::create_mirror_view_and_copy(
+      HostMemorySpace(),
+      dynamic_cast<const pcms::OmegaHMeshBinding&>(*bound).ElementIds());
+  };
+  // inside the mesh, the hint gives what the search finds
+  const auto searched_ids = element_ids(searched);
+  const auto hinted_ids = element_ids(hinted);
+  const auto searched_values =
+    pcms::test::EvaluateToHost(*space->CreatePointEvaluator<Real>(searched), f,
+                               f.GetData().GetValueBasis());
+  const auto hinted_values = pcms::test::EvaluateToHost(
+    *space->CreatePointEvaluator<Real>(hinted), f, f.GetData().GetValueBasis());
   for (LO e = 0; e < nelems; ++e) {
-    ids_host(e) = e;
-    for (int v = 0; v < 3; ++v) {
-      bary_host(e, v) = 1.0 / 3.0;
-    }
-  }
-  Kokkos::deep_copy(ids, ids_host);
-  Kokkos::deep_copy(bary, bary_host);
-  const auto bound = geometry->Bind(pcms::ParametricPoints{ids, bary});
-  REQUIRE(bound->NumPoints() == nelems);
-  REQUIRE_FALSE(bound->HasPointValues());
-  REQUIRE(bound->FoundPoints().extent(0) == static_cast<size_t>(nelems));
-  REQUIRE(bound->MissingPoints().extent(0) == 0);
-
-  const auto values = pcms::test::EvaluateToHost(
-    *space->CreatePointEvaluator<Real>(bound), f, f.GetData().GetValueBasis());
-  const auto elem_verts = Omega_h::HostRead<Omega_h::LO>(mesh.ask_elem_verts());
-  const auto mesh_coords = Omega_h::HostRead<Omega_h::Real>(mesh.coords());
-  for (LO e = 0; e < nelems; ++e) {
-    Real x = 0, y = 0;
-    for (int v = 0; v < 3; ++v) {
-      const LO vert = elem_verts[3 * e + v];
-      x += mesh_coords[2 * vert] / 3.0;
-      y += mesh_coords[2 * vert + 1] / 3.0;
-    }
-    CAPTURE(e, x, y);
-    REQUIRE_THAT(values(e, 0),
-                 WithinAbs(pcms::test::linear_f(x, y), pcms::test::ExactTol));
+    CAPTURE(e);
+    REQUIRE(searched_ids(e) == e);
+    REQUIRE(hinted_ids(e) == e);
+    REQUIRE_THAT(hinted_values(e, 0),
+                 WithinAbs(searched_values(e, 0), pcms::test::ExactTol));
   }
 
-  // barycentric coordinates of a triangle have three columns
-  Kokkos::View<Real**, DeviceMemorySpace> two_columns("two_columns", nelems, 2);
-  REQUIRE_THROWS_WITH(geometry->Bind(pcms::ParametricPoints{ids, two_columns}),
-                      ContainsSubstring("3 barycentric columns"));
-  Kokkos::View<Real**, DeviceMemorySpace> short_coords("short", nelems - 1, 3);
-  REQUIRE_THROWS_WITH(geometry->Bind(pcms::ParametricPoints{ids, short_coords}),
-                      ContainsSubstring("differ in length"));
-
-  // ids must be elements of the mesh
-  Kokkos::View<LO*, DeviceMemorySpace> bad_ids("bad_ids", nelems);
-  Kokkos::deep_copy(bad_ids, ids);
-  Kokkos::deep_copy(Kokkos::subview(bad_ids, nelems - 1), nelems);
+  // ids must be entities of the geometry
+  Kokkos::View<LO*, DeviceMemorySpace> beyond("beyond", nelems);
+  Kokkos::deep_copy(beyond, elements);
+  Kokkos::deep_copy(Kokkos::subview(beyond, nelems - 1), nelems);
   REQUIRE_THROWS_WITH(
-    geometry->Bind(pcms::ParametricPoints{bad_ids, bary}),
+    geometry->Bind(coords, pcms::KnownOwners{geometry, 2, beyond}),
     ContainsSubstring("element ids span [0, " + std::to_string(nelems) +
                       "], outside [0, " + std::to_string(nelems) + ")"));
-  Kokkos::deep_copy(Kokkos::subview(bad_ids, 0), -1);
-  REQUIRE_THROWS_WITH(geometry->Bind(pcms::ParametricPoints{bad_ids, bary}),
-                      ContainsSubstring("ids span [-1, "));
 
-  // no points: an empty bound source that evaluates to nothing
-  const auto empty = geometry->Bind(pcms::ParametricPoints{});
-  REQUIRE(empty->NumPoints() == 0);
-  REQUIRE(empty->FoundPoints().extent(0) == 0);
-  REQUIRE(empty->MissingPoints().extent(0) == 0);
-  const auto nothing = pcms::test::EvaluateToHost(
-    *space->CreatePointEvaluator<Real>(empty), f, f.GetData().GetValueBasis());
-  REQUIRE(nothing.extent(0) == 0);
-#ifdef PCMS_ENABLE_MESHFIELDS
-  auto p1 = LagrangeFunctionSpace::FromGeometry(
-    geometry, 1, 1, "global", LagrangeFunctionSpace::Backend::MeshFields);
-  auto h = p1->CreateFunction<Real>("h");
-  REQUIRE(pcms::test::EvaluateToHost(*p1->CreatePointEvaluator<Real>(empty), h,
-                                     h.GetData().GetValueBasis())
-            .extent(0) == 0);
-#endif
-}
-
-TEST_CASE("Uniform grids refuse parametric binds")
-{
-  pcms::UniformGrid<2> grid;
-  grid.bot_left = {0.0, 0.0};
-  grid.edge_length = {1.0, 1.0};
-  grid.divisions = {4, 3};
-  auto geometry = pcms::UniformGridGeometry<2>::Create(
-    grid, pcms::csys::Cartesian::Create(2));
-  Kokkos::View<LO*, DeviceMemorySpace> ids("ids", 1);
-  Kokkos::View<Real**, DeviceMemorySpace> coords("coords", 1, 2);
-  REQUIRE_THROWS_WITH(
-    geometry->Bind(pcms::ParametricPoints{ids, coords}),
-    ContainsSubstring("UniformGridGeometry: parametric binds are not "
-                      "supported"));
-}
-
-TEST_CASE("MapToPhysical gives the coordinates of parametric points")
-{
-  auto lib = Omega_h::Library{};
-  auto mesh = BuildSquareMesh(lib, 3);
-  auto geometry = MakeGeometry(mesh);
-  // the centroid and the first vertex of every element
-  const LO nelems = mesh.nelems();
-  Kokkos::View<LO*, DeviceMemorySpace> ids("ids", 2 * nelems);
-  Kokkos::View<Real**, DeviceMemorySpace> bary("bary", 2 * nelems, 3);
-  auto ids_host = Kokkos::create_mirror_view(ids);
-  auto bary_host = Kokkos::create_mirror_view(bary);
+  // a hint for another geometry is ignored: the points are searched
+  Kokkos::View<LO*, DeviceMemorySpace> wrong("wrong", nelems);
+  const auto ignored =
+    geometry->Bind(coords, pcms::KnownOwners{MakeGeometry(mesh), 2, wrong});
+  const auto ignored_ids = element_ids(ignored);
   for (LO e = 0; e < nelems; ++e) {
-    ids_host(e) = e;
-    ids_host(nelems + e) = e;
-    for (int v = 0; v < 3; ++v) {
-      bary_host(e, v) = 1.0 / 3.0;
-      bary_host(nelems + e, v) = v == 0 ? 1.0 : 0.0;
-    }
+    REQUIRE(ignored_ids(e) == e);
   }
-  Kokkos::deep_copy(ids, ids_host);
-  Kokkos::deep_copy(bary, bary_host);
-  const auto physical = Kokkos::create_mirror_view_and_copy(
-    HostMemorySpace(),
-    geometry->MapToPhysical(pcms::ParametricPoints{ids, bary}));
-  REQUIRE(physical.extent(0) == static_cast<size_t>(2 * nelems));
-  REQUIRE(physical.extent(1) == 2);
-  const auto elem_verts = Omega_h::HostRead<Omega_h::LO>(mesh.ask_elem_verts());
-  const auto mesh_coords = Omega_h::HostRead<Omega_h::Real>(mesh.coords());
-  for (LO e = 0; e < nelems; ++e) {
-    for (int d = 0; d < 2; ++d) {
-      Real centroid = 0;
-      for (int v = 0; v < 3; ++v) {
-        centroid += mesh_coords[2 * elem_verts[3 * e + v] + d] / 3.0;
-      }
-      CAPTURE(e, d);
-      REQUIRE_THAT(physical(e, d), WithinAbs(centroid, pcms::test::ExactTol));
-      REQUIRE_THAT(physical(nelems + e, d),
-                   WithinAbs(mesh_coords[2 * elem_verts[3 * e] + d],
-                             pcms::test::ExactTol));
-    }
-  }
-  Kokkos::View<Real**, DeviceMemorySpace> two_columns("two", 2 * nelems, 2);
-  REQUIRE_THROWS_WITH(
-    geometry->MapToPhysical(pcms::ParametricPoints{ids, two_columns}),
-    ContainsSubstring("MapToPhysical: parametric coordinates of a 2D mesh "
-                      "need 3 barycentric columns"));
 }
 
 TEST_CASE("Differential gives the element measure")

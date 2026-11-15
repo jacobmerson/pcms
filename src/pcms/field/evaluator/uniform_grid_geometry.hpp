@@ -128,13 +128,6 @@ protected:
                                                      request, grid_);
   }
 
-  [[nodiscard]] std::shared_ptr<BoundSource> BindParametricImpl(
-    const ParametricPoints& /*points*/,
-    OutOfBoundsPolicy /*policy*/) const override
-  {
-    throw pcms_error("UniformGridGeometry: parametric binds are not supported");
-  }
-
 private:
   UniformGrid<Dim> grid_;
   std::shared_ptr<const Discretization> discretization_;

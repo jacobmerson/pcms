@@ -56,16 +56,17 @@ KOKKOS_INLINE_FUNCTION Omega_h::Vector<Dim + 1> UniformSimplexBarycentric(
   }
 }
 
-// Fills the element and barycentric coordinates, node_gids, and basis values
-// (coeffs, scaled by the element measure afterwards) of all samples of one
-// target element. unit_sample_at(s, r) fills the s-th sample's Dim
-// unit-hypercube draws.
+// Fills the coordinates and element, node_gids, and basis values (coeffs,
+// scaled by the element measure afterwards) of all samples of one target
+// element. unit_sample_at(s, r) fills the s-th sample's Dim unit-hypercube
+// draws.
 template <int Dim, typename UnitSampleAt>
 KOKKOS_INLINE_FUNCTION void FillElementSamples(
   const int elm, const int samples_per_element, const Omega_h::LOs& elems2nodes,
+  const Omega_h::Reals& mesh_coords,
   const Kokkos::View<const LO*, DeviceMemorySpace>& global_to_local,
   const Kokkos::View<LO*, DeviceMemorySpace>& elements,
-  const Kokkos::View<Real**, DeviceMemorySpace>& barycentric,
+  const Kokkos::View<Real**, DeviceMemorySpace>& coords,
   const Kokkos::View<PetscInt*, DeviceMemorySpace>& node_gids,
   const Kokkos::View<Real*, DeviceMemorySpace>& coeffs,
   const UnitSampleAt& unit_sample_at)
@@ -79,8 +80,13 @@ KOKKOS_INLINE_FUNCTION void FillElementSamples(
 
     const int i = elm * samples_per_element + s;
     elements(i) = elm;
+    for (int d = 0; d < Dim; ++d) {
+      coords(i, d) = 0;
+    }
     for (int k = 0; k < nv; ++k) {
-      barycentric(i, k) = bary[k];
+      for (int d = 0; d < Dim; ++d) {
+        coords(i, d) += bary[k] * mesh_coords[verts[k] * Dim + d];
+      }
       node_gids(i * nv + k) = static_cast<PetscInt>(global_to_local(verts[k]));
       coeffs(i * nv + k) = bary[k];
     }
@@ -88,14 +94,15 @@ KOKKOS_INLINE_FUNCTION void FillElementSamples(
 }
 
 // Samples samples_per_element from a uniform random distribution over each
-// target element, writing their elements, barycentric coordinates, node GIDs,
-// and basis values.
+// target element, writing their coordinates, elements, node GIDs, and basis
+// values.
 template <int Dim>
 void FillElementSamples(
   int nelems, int samples_per_element, const Omega_h::LOs& elems2nodes,
+  const Omega_h::Reals& mesh_coords,
   const Kokkos::View<const LO*, DeviceMemorySpace>& global_to_local,
   const Kokkos::View<LO*, DeviceMemorySpace>& elements,
-  const Kokkos::View<Real**, DeviceMemorySpace>& barycentric,
+  const Kokkos::View<Real**, DeviceMemorySpace>& coords,
   const Kokkos::View<PetscInt*, DeviceMemorySpace>& node_gids,
   const Kokkos::View<Real*, DeviceMemorySpace>& coeffs, uint64_t seed)
 {
@@ -105,8 +112,8 @@ void FillElementSamples(
     KOKKOS_LAMBDA(int elm) {
       auto gen = pool.get_state();
       FillElementSamples<Dim>(elm, samples_per_element, elems2nodes,
-                              global_to_local, elements, barycentric, node_gids,
-                              coeffs, [&](int /*s*/, Real r[Dim]) {
+                              mesh_coords, global_to_local, elements, coords,
+                              node_gids, coeffs, [&](int /*s*/, Real r[Dim]) {
                                 for (int d = 0; d < Dim; ++d) {
                                   r[d] = gen.drand();
                                 }
@@ -174,36 +181,36 @@ OmegaHMonteCarloRHSIntegrator::OmegaHMonteCarloRHSIntegrator(
   const int nelems = mesh.nelems();
   const int num_samples = nelems * samples_per_element;
   const auto elems2nodes = mesh.ask_down(dim, Omega_h::VERT).ab2b;
+  const auto mesh_coords = mesh.coords();
   const auto global_to_local = target_layout->GetGlobalToLocalPermutation();
 
   Kokkos::View<LO*, DeviceMemorySpace> elements("mc_rhs_elements", num_samples);
-  Kokkos::View<Real**, DeviceMemorySpace> barycentric("mc_rhs_barycentric",
-                                                      num_samples, nbary_);
+  Kokkos::View<Real**, DeviceMemorySpace> coords("mc_rhs_coords", num_samples,
+                                                 dim);
   Kokkos::View<PetscInt*, DeviceMemorySpace> node_gids(
     "mc_rhs_node_gids", static_cast<std::size_t>(num_samples) * nbary_);
   Kokkos::View<Real*, DeviceMemorySpace> coeffs(
     "mc_rhs_coeffs", static_cast<std::size_t>(num_samples) * nbary_);
 
   if (dim == 3) {
-    FillElementSamples<3>(nelems, samples_per_element, elems2nodes,
-                          global_to_local, elements, barycentric, node_gids,
-                          coeffs, seed);
+    FillElementSamples<3>(nelems, samples_per_element, elems2nodes, mesh_coords,
+                          global_to_local, elements, coords, node_gids, coeffs,
+                          seed);
   } else {
-    FillElementSamples<2>(nelems, samples_per_element, elems2nodes,
-                          global_to_local, elements, barycentric, node_gids,
-                          coeffs, seed);
+    FillElementSamples<2>(nelems, samples_per_element, elems2nodes, mesh_coords,
+                          global_to_local, elements, coords, node_gids, coeffs,
+                          seed);
   }
   elements_ = std::move(elements);
-  barycentric_ = std::move(barycentric);
+  coords_ = std::move(coords);
 
   // The weights |T| / N take the element measures from the geometry's
-  // differential at the samples; the source is bound to their coordinates.
-  const ParametricPoints samples = GetIntegrationPoints();
+  // differential at the samples, bound in the elements they were drawn in.
   const auto measures = detail::ElementMeasuresAtPoints(
-    *geometry_, *geometry_->Bind(samples), elements_, dim,
-    "OmegaHMonteCarloRHSIntegrator");
+    *geometry_,
+    *geometry_->Bind(GetIntegrationPoints(), IntegrationPointOwners()),
+    elements_, dim, "OmegaHMonteCarloRHSIntegrator");
   ScaleByElementMeasure(coeffs, measures, samples_per_element, nbary_);
-  coords_ = geometry_->MapToPhysical(samples);
   node_gids_ = std::move(node_gids);
   coeffs_ = std::move(coeffs);
 
@@ -231,22 +238,16 @@ OmegaHMonteCarloRHSIntegrator::~OmegaHMonteCarloRHSIntegrator()
 // OmegaHMonteCarloRHSIntegrator public interface
 // ---------------------------------------------------------------------------
 
-ParametricPoints OmegaHMonteCarloRHSIntegrator::GetIntegrationPoints()
-  const noexcept
-{
-  return ParametricPoints{elements_, barycentric_};
-}
-
 CoordinateView<DeviceMemorySpace>
-OmegaHMonteCarloRHSIntegrator::GetIntegrationPointCoordinates() const noexcept
+OmegaHMonteCarloRHSIntegrator::GetIntegrationPoints() const noexcept
 {
   return CoordinateView<DeviceMemorySpace>(geometry_->GetCoordinateSystem(),
                                            MakeConstRank2View(coords_));
 }
 
-LO OmegaHMonteCarloRHSIntegrator::NumIntegrationPoints() const noexcept
+KnownOwners OmegaHMonteCarloRHSIntegrator::IntegrationPointOwners() const
 {
-  return static_cast<LO>(elements_.extent(0));
+  return KnownOwners{geometry_, geometry_->GetMesh().dim(), elements_};
 }
 
 Vec OmegaHMonteCarloRHSIntegrator::GetVector() const noexcept

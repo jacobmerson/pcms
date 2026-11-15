@@ -66,15 +66,12 @@ BarycentricInElements(Omega_h::Mesh& mesh,
 class OmegaHMeshBinding final : public BoundSource
 {
 public:
-  /// Locates `request.coords` with `search`.
+  /// Locates `request.coords` with `search`, or, if `request.owners` gives
+  /// the element of every point, takes those elements without a search (the
+  /// points then all count as found).
   OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
                     const BindRequest& request,
                     const GridPointSearchVariant& search, Omega_h::Mesh& mesh);
-
-  /// Takes element ids and barycentric coordinates as given.
-  OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
-                    const ParametricPoints& points, OutOfBoundsPolicy policy,
-                    Omega_h::Mesh& mesh);
 
   [[nodiscard]] Kokkos::View<const LO*, DeviceMemorySpace> ElementIds()
     const noexcept
@@ -127,11 +124,6 @@ public:
 
   [[nodiscard]] Omega_h::Mesh& GetMesh() const noexcept { return mesh_; }
 
-  /// x = sum_v lambda_v x_v for each point given by element and barycentric
-  /// coordinates; throws on the same malformed points as Bind.
-  [[nodiscard]] Kokkos::View<Real**, DeviceMemorySpace> MapToPhysical(
-    const ParametricPoints& points) const;
-
   /// Supports among the mesh vertices, by the mesh-adjacency search from the
   /// element Bind's search finds for each point. A point outside the mesh
   /// starts from the element nearest it, so it gets supports near the
@@ -150,8 +142,6 @@ public:
 protected:
   [[nodiscard]] std::shared_ptr<BoundSource> BindImpl(
     const BindRequest& request) const override;
-  [[nodiscard]] std::shared_ptr<BoundSource> BindParametricImpl(
-    const ParametricPoints& points, OutOfBoundsPolicy policy) const override;
 
 private:
   Omega_h::Mesh& mesh_;

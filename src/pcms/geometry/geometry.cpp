@@ -10,13 +10,30 @@ std::shared_ptr<const BoundSource> Geometry::Bind(
   CoordinateView<DeviceMemorySpace> coords, OutOfBoundsPolicy policy,
   std::shared_ptr<const CoordinateMap> map) const
 {
-  return Bind(std::move(coords), nullptr, policy, std::move(map));
+  return Bind(std::move(coords), nullptr, KnownOwners{}, policy,
+              std::move(map));
 }
 
 std::shared_ptr<const BoundSource> Geometry::Bind(
   CoordinateView<DeviceMemorySpace> coords,
   std::shared_ptr<const FieldLayout> query_layout, OutOfBoundsPolicy policy,
   std::shared_ptr<const CoordinateMap> map) const
+{
+  return Bind(std::move(coords), std::move(query_layout), KnownOwners{}, policy,
+              std::move(map));
+}
+
+std::shared_ptr<const BoundSource> Geometry::Bind(
+  CoordinateView<DeviceMemorySpace> coords, const KnownOwners& owners,
+  OutOfBoundsPolicy policy, std::shared_ptr<const CoordinateMap> map) const
+{
+  return Bind(std::move(coords), nullptr, owners, policy, std::move(map));
+}
+
+std::shared_ptr<const BoundSource> Geometry::Bind(
+  CoordinateView<DeviceMemorySpace> coords,
+  std::shared_ptr<const FieldLayout> query_layout, const KnownOwners& owners,
+  OutOfBoundsPolicy policy, std::shared_ptr<const CoordinateMap> map) const
 {
   const auto& query_system = coords.GetCoordinateSystem();
   if (map != nullptr) {
@@ -44,28 +61,23 @@ std::shared_ptr<const BoundSource> Geometry::Bind(
     throw pcms_error("Geometry::Bind: this geometry does not support "
                      "OutOfBoundsMode::NEAREST_BOUNDARY");
   }
+  // a hint for another geometry, or not one owner per point, is not one; nor
+  // is a hint given with a map, as it describes the unmapped points
+  const KnownOwners hint =
+    map == nullptr &&
+        owners.Hints(*this, static_cast<LO>(coords.GetValues().extent(0)))
+      ? owners
+      : KnownOwners{};
   std::shared_ptr<BoundSource> bound;
   if (map != nullptr) {
     std::shared_ptr<const BoundCoordinateMap> bound_map = map->Bind(coords);
     const CoordinateView<DeviceMemorySpace> mapped = bound_map->MappedPoints();
-    bound = BindImpl(BindRequest{mapped, std::move(query_layout), policy,
+    bound = BindImpl(BindRequest{mapped, std::move(query_layout), policy, hint,
                                  std::move(bound_map), coords});
   } else {
-    bound = BindImpl(
-      BindRequest{coords, std::move(query_layout), policy, nullptr, coords});
+    bound = BindImpl(BindRequest{coords, std::move(query_layout), policy, hint,
+                                 nullptr, coords});
   }
-  PCMS_ALWAYS_ASSERT(bound != nullptr);
-  return bound;
-}
-
-std::shared_ptr<const BoundSource> Geometry::Bind(
-  const ParametricPoints& points, OutOfBoundsPolicy policy) const
-{
-  if (points.coords.extent(0) != points.ids.extent(0)) {
-    throw pcms_error(
-      "Geometry::Bind: parametric ids and coords differ in length");
-  }
-  std::shared_ptr<BoundSource> bound = BindParametricImpl(points, policy);
   PCMS_ALWAYS_ASSERT(bound != nullptr);
   return bound;
 }
@@ -110,26 +122,25 @@ void detail::CheckNeighbourhoodArguments(
   }
 }
 
-void detail::CheckParametricIds(const ParametricPoints& points, LO num_ids,
-                                const std::string& caller,
-                                const std::string& entity)
+void detail::CheckEntityIds(Kokkos::View<const LO*, DeviceMemorySpace> ids,
+                            LO num_entities, const std::string& caller,
+                            const std::string& entity)
 {
-  const auto ids = points.ids;
   LO min_id = 0;
   LO max_id = 0;
   Kokkos::parallel_reduce(
-    "CheckParametricIds",
-    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0,
-                                                            points.NumPoints()),
+    "CheckEntityIds",
+    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(
+      0, static_cast<LO>(ids.extent(0))),
     KOKKOS_LAMBDA(const LO i, LO& lo, LO& hi) {
       lo = ids(i) < lo ? ids(i) : lo;
       hi = ids(i) > hi ? ids(i) : hi;
     },
     Kokkos::Min<LO>(min_id), Kokkos::Max<LO>(max_id));
-  if (points.NumPoints() > 0 && (min_id < 0 || max_id >= num_ids)) {
-    throw pcms_error(caller + ": parametric " + entity + " ids span [" +
+  if (ids.extent(0) > 0 && (min_id < 0 || max_id >= num_entities)) {
+    throw pcms_error(caller + ": hinted " + entity + " ids span [" +
                      std::to_string(min_id) + ", " + std::to_string(max_id) +
-                     "], outside [0, " + std::to_string(num_ids) + ")");
+                     "], outside [0, " + std::to_string(num_entities) + ")");
   }
 }
 

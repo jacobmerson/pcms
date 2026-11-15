@@ -98,10 +98,10 @@ inline std::shared_ptr<const OmegaHGeometry> OmegaHGeometryOf(
   return geometry;
 }
 
-// Measure of the element of each point of a parametric bind on an affine
-// simplex geometry, |det J| / Dim!, from the geometry's differential.
-// `element_ids` holds the element of each point of `bound`, all of which are
-// found.
+// Measure of the element of each point of a bind on an affine simplex geometry,
+// |det J| / Dim!, from the geometry's differential. `element_ids` holds the
+// element of each point of `bound`, all of which are found (e.g. a bind with
+// those elements as known owners).
 inline Kokkos::View<Real*, DeviceMemorySpace> ElementMeasuresAtPoints(
   const Geometry& geometry, const BoundSource& bound,
   Kokkos::View<const LO*, DeviceMemorySpace> element_ids, int dim,
@@ -125,8 +125,7 @@ inline Kokkos::View<Real*, DeviceMemorySpace> ElementMeasuresAtPoints(
     "ElementMeasuresAtPoints",
     Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
     KOKKOS_LAMBDA(const LO i) {
-      // a parametric bind finds every point, so row i of a per-point
-      // differential is point i
+      // every point is found, so row i of a per-point differential is point i
       const LO row = per_element ? element_ids(i) : i;
       measures(i) = Kokkos::fabs(determinant(row)) * reference_measure;
     });
@@ -135,8 +134,7 @@ inline Kokkos::View<Real*, DeviceMemorySpace> ElementMeasuresAtPoints(
 
 // Map barycentric coordinates on a simplex (Dim+1 barycentric components) to
 // the global point, given the simplex's Dim+1 vertex coordinates. The
-// intersection uses it on the sub-simplices r3d produces, which are not
-// elements of a geometry (OmegaHGeometry::MapToPhysical maps element points).
+// intersection uses it on the sub-simplices r3d produces.
 template <int Dim>
 [[nodiscard]] OMEGA_H_INLINE Omega_h::Vector<Dim> GlobalFromBarycentric(
   const Omega_h::Vector<Dim + 1>& barycentric_coord,

@@ -4,7 +4,8 @@
 #include "pcms/field/coordinate_view.hpp"
 #include "pcms/field/function_space.h"
 #include "pcms/field/layout/omega_h_lagrange.h"
-#include "pcms/geometry/parametric_points.hpp"
+#include "pcms/field/evaluator/omega_h_geometry.hpp"
+#include "pcms/geometry/bound_source.hpp"
 #include "pcms/transfer/linear_form_integrator.hpp"
 #include "pcms/transfer/mesh_intersection.hpp"
 #include <Kokkos_Core.hpp>
@@ -26,10 +27,9 @@ namespace pcms
 // must be on the Omega_h geometry of its layout's mesh: the intersection reuses
 // that geometry's point search.
 //
-// The integration points are given in the source mesh's parametric
-// coordinates (source element and barycentric coordinates), so the source is
+// The integration points are generated in source elements, so the source is
 // bound to them without a search:
-// source_geometry->Bind(GetIntegrationPoints()).
+// source_geometry->Bind(GetIntegrationPoints(), IntegrationPointOwners()).
 //
 // Assemble(sampled_values):
 //   Zeros the owned vector, then for each integration point i and local target
@@ -46,21 +46,22 @@ public:
 
   Vec GetVector() const noexcept override;
 
-  /// @return the integration points as the source element each lies in and
-  ///        its barycentric coordinates there, in Assemble's order
-  [[nodiscard]] ParametricPoints GetIntegrationPoints() const noexcept;
+  CoordinateView<DeviceMemorySpace> GetIntegrationPoints()
+    const noexcept override;
 
-  [[nodiscard]] LO NumIntegrationPoints() const noexcept override;
+  /// @return the source element each integration point lies in
+  [[nodiscard]] KnownOwners IntegrationPointOwners() const;
 
   void Assemble(
     Rank2View<const Real, DeviceMemorySpace> sampled_values) override;
 
 private:
   Vec vec_ = nullptr;
+  std::shared_ptr<const OmegaHGeometry> source_geometry_;
+  Kokkos::View<Real**, DeviceMemorySpace>
+    coords_; // [num_pts][dim] integration point coordinates
   // source element of each integration point
   Kokkos::View<LO*, DeviceMemorySpace> source_elements_;
-  // [num_pts][dim + 1] barycentric coordinates in that element
-  Kokkos::View<Real**, DeviceMemorySpace> source_barycentric_;
   Kokkos::View<PetscInt*, DeviceMemorySpace>
     node_gids_;                                   // COO idx, num_pts*ndof
   Kokkos::View<Real*, DeviceMemorySpace> coeffs_; // weights, num_pts*ndof
