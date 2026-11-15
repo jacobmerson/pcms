@@ -13,6 +13,12 @@ namespace
 LO CountFound(Kokkos::View<const bool*, DeviceMemorySpace> found)
 {
   LO num_found = 0;
+  if (IsSmallHostBatch(found.extent(0))) {
+    for (size_t i = 0; i < found.extent(0); ++i) {
+      num_found += found(i) ? 1 : 0;
+    }
+    return num_found;
+  }
   Kokkos::parallel_reduce(
     "BoundSource::CountFound",
     Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(
@@ -26,6 +32,17 @@ void SplitPoints(Kokkos::View<const bool*, DeviceMemorySpace> found,
                  Kokkos::View<LO*, DeviceMemorySpace> found_points,
                  Kokkos::View<LO*, DeviceMemorySpace> missing_points)
 {
+  if (IsSmallHostBatch(found.extent(0))) {
+    LO num_found_before = 0;
+    for (LO i = 0; i < static_cast<LO>(found.extent(0)); ++i) {
+      if (found(i)) {
+        found_points(num_found_before++) = i;
+      } else {
+        missing_points(i - num_found_before) = i;
+      }
+    }
+    return;
+  }
   Kokkos::parallel_scan(
     "BoundSource::SplitPoints",
     Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(
@@ -64,13 +81,28 @@ void BoundSource::Reset(const BindRequest& request)
     detail::ReserveRows(points_, "bound_points", num_points_, coords.extent(1));
     auto points = Kokkos::subview(
       points_, Kokkos::make_pair(LO{0}, num_points_), Kokkos::ALL);
-    ConvertMismatchLayoutView2D(points, coords);
+    if (IsSmallHostBatch(num_points_)) {
+      for (LO i = 0; i < num_points_; ++i) {
+        for (size_t d = 0; d < coords.extent(1); ++d) {
+          points(i, d) = coords(i, d);
+        }
+      }
+    } else {
+      ConvertMismatchLayoutView2D(points, coords);
+    }
   }
   // every point is found until SetFound
   detail::ReserveRows(point_indices_, "bound_point_indices", num_points_);
   num_found_ = num_points_;
-  iota_view<LO>(
-    Kokkos::subview(point_indices_, Kokkos::make_pair(LO{0}, num_points_)));
+  const auto all =
+    Kokkos::subview(point_indices_, Kokkos::make_pair(LO{0}, num_points_));
+  if (IsSmallHostBatch(num_points_)) {
+    for (LO i = 0; i < num_points_; ++i) {
+      all(i) = i;
+    }
+  } else {
+    iota_view<LO>(all);
+  }
 }
 
 Kokkos::View<const Real**, DeviceMemorySpace> BoundSource::LocatedPointValues()
