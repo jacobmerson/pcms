@@ -21,17 +21,16 @@ namespace pcms
 namespace detail
 {
 
-/// Per point, whether it is in `grid` (always, if `nearest`) and its closest
-/// cell.
+/// Per point, whether it is in `grid` (always, if `nearest`); writes the
+/// closest cell of each point to `cells`, which has room for the points.
 template <unsigned Dim>
-std::pair<Kokkos::View<bool*, DeviceMemorySpace>,
-          Kokkos::View<LO*, DeviceMemorySpace>>
-LocateInGrid(const UniformGrid<Dim>& grid,
-             Kokkos::View<const Real**, DeviceMemorySpace> points, bool nearest)
+Kokkos::View<bool*, DeviceMemorySpace> LocateInGrid(
+  const UniformGrid<Dim>& grid,
+  Kokkos::View<const Real**, DeviceMemorySpace> points, bool nearest,
+  Kokkos::View<LO*, DeviceMemorySpace> cells)
 {
   const auto n = static_cast<LO>(points.extent(0));
   Kokkos::View<bool*, DeviceMemorySpace> found("uniform_grid_found", n);
-  Kokkos::View<LO*, DeviceMemorySpace> cells("uniform_grid_cell_indices", n);
   Kokkos::parallel_for(
     "LocateInGrid",
     Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
@@ -43,7 +42,7 @@ LocateInGrid(const UniformGrid<Dim>& grid,
       found(i) = nearest || grid.IsPointInBounds(point);
       cells(i) = grid.ClosestCellID(point);
     });
-  return {found, cells};
+  return found;
 }
 
 } // namespace detail
@@ -57,22 +56,37 @@ class UniformGridBinding final : public BoundSource
 public:
   UniformGridBinding(std::shared_ptr<const Geometry> geometry,
                      const BindRequest& request, const UniformGrid<Dim>& grid)
-    : BoundSource(std::move(geometry), request)
+    : BoundSource(std::move(geometry), request), grid_(grid)
   {
-    auto [found, cells] =
-      detail::LocateInGrid(grid, LocatedPointValues(),
-                           Policy().mode == OutOfBoundsMode::NEAREST_BOUNDARY);
-    SetFound(found);
-    cell_indices_ = cells;
+    Locate();
   }
 
   [[nodiscard]] Kokkos::View<const LO*, DeviceMemorySpace> CellIndices()
     const noexcept
   {
-    return cell_indices_;
+    return Kokkos::subview(cell_indices_,
+                           Kokkos::make_pair(LO{0}, NumPoints()));
+  }
+
+protected:
+  void RebindImpl() override { Locate(); }
+
+  [[nodiscard]] bool UnsharedImpl() const noexcept override
+  {
+    return cell_indices_.use_count() <= 1;
   }
 
 private:
+  void Locate()
+  {
+    detail::ReserveRows(cell_indices_, "uniform_grid_cell_indices",
+                        NumPoints());
+    SetFound(detail::LocateInGrid(
+      grid_, LocatedPointValues(),
+      Policy().mode == OutOfBoundsMode::NEAREST_BOUNDARY, cell_indices_));
+  }
+
+  UniformGrid<Dim> grid_;
   Kokkos::View<LO*, DeviceMemorySpace> cell_indices_;
 };
 

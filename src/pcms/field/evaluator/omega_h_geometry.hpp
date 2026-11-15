@@ -19,19 +19,21 @@ namespace pcms
 namespace detail
 {
 
-/// Owning element and barycentric coordinates ([row][vertex]) of the points
-/// `rows` of `points`, given the owning element of each point.
+/// Writes the owning element and barycentric coordinates ([row][vertex]) of
+/// the points `rows` of `points`, given the owning element of each point, to
+/// the first rows of `elem_ids` and `bary`, which are reallocated only when
+/// they are too small (detail::ReserveRows).
 template <int Dim>
-std::pair<Kokkos::View<LO*, DeviceMemorySpace>,
-          Kokkos::View<Real**, DeviceMemorySpace>>
-BarycentricInElements(Omega_h::Mesh& mesh,
-                      Kokkos::View<const Real**, DeviceMemorySpace> points,
-                      Kokkos::View<const LO*, DeviceMemorySpace> rows,
-                      Kokkos::View<const LO*, DeviceMemorySpace> owning_ids)
+void BarycentricInElements(
+  Omega_h::Mesh& mesh, Kokkos::View<const Real**, DeviceMemorySpace> points,
+  Kokkos::View<const LO*, DeviceMemorySpace> rows,
+  Kokkos::View<const LO*, DeviceMemorySpace> owning_ids,
+  Kokkos::View<LO*, DeviceMemorySpace>& elem_ids,
+  Kokkos::View<Real**, DeviceMemorySpace>& bary)
 {
   const auto n = static_cast<LO>(rows.extent(0));
-  Kokkos::View<LO*, DeviceMemorySpace> elem_ids("omega_h_elem_ids", n);
-  Kokkos::View<Real**, DeviceMemorySpace> bary("omega_h_bary", n, Dim + 1);
+  ReserveRows(elem_ids, "omega_h_elem_ids", n);
+  ReserveRows(bary, "omega_h_bary", n, Dim + 1);
   const auto elem_verts = mesh.ask_elem_verts();
   const auto mesh_coords = mesh.coords();
   Kokkos::parallel_for(
@@ -56,7 +58,6 @@ BarycentricInElements(Omega_h::Mesh& mesh,
         bary(k, v) = local[v];
       }
     });
-  return {elem_ids, bary};
 }
 
 } // namespace detail
@@ -68,7 +69,8 @@ class OmegaHMeshBinding final : public BoundSource
 public:
   /// Locates `request.coords` with `search`, or, if `request.owners` gives
   /// the element of every point, takes those elements without a search (the
-  /// points then all count as found).
+  /// points then all count as found). `search` and `mesh` are the geometry's;
+  /// a rebind searches with them again.
   OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
                     const BindRequest& request,
                     const GridPointSearchVariant& search, Omega_h::Mesh& mesh);
@@ -76,17 +78,37 @@ public:
   [[nodiscard]] Kokkos::View<const LO*, DeviceMemorySpace> ElementIds()
     const noexcept
   {
-    return elem_ids_;
+    return Kokkos::subview(elem_ids_, Kokkos::make_pair(LO{0}, NumFound()));
   }
 
   /// [found point][vertex]
   [[nodiscard]] Kokkos::View<const Real**, DeviceMemorySpace> Barycentric()
     const noexcept
   {
-    return bary_;
+    return Kokkos::subview(bary_, Kokkos::make_pair(LO{0}, NumFound()),
+                           Kokkos::ALL);
+  }
+
+protected:
+  void RebindImpl() override;
+
+  [[nodiscard]] bool UnsharedImpl() const noexcept override
+  {
+    return elem_ids_.use_count() <= 1 && bary_.use_count() <= 1;
   }
 
 private:
+  [[nodiscard]] LO NumFound() const noexcept
+  {
+    return static_cast<LO>(FoundPoints().extent(0));
+  }
+
+  /// Fills elem_ids_ and bary_ for the elements `owners` gives, or, if it is
+  /// empty, for the elements the search finds (and sets the found points).
+  void Locate(Kokkos::View<const LO*, DeviceMemorySpace> owners);
+
+  const GridPointSearchVariant& search_;
+  Omega_h::Mesh& mesh_;
   Kokkos::View<LO*, DeviceMemorySpace> elem_ids_;
   Kokkos::View<Real**, DeviceMemorySpace> bary_;
 };

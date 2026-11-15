@@ -146,7 +146,7 @@ protected:
 
     return std::make_shared<MLSBinding>(shared_from_this(), request,
                                         std::move(source_coords),
-                                        std::move(supports));
+                                        std::move(supports), options_);
   }
 
 private:
