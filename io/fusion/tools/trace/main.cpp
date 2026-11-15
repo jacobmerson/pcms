@@ -67,35 +67,60 @@ struct Parameters
   bool timing = false;
 };
 
-/// Values of `function` at the (R, phi, Z) points in `xyz`, row-major on the
-/// host; rows of points outside the domain are NaN.
-Kokkos::View<Real**, Kokkos::LayoutRight, pcms::HostMemorySpace> EvaluateAt(
-  const pcms::Function<Real>& function, const std::vector<Real>& xyz)
+/// Evaluates a function at batches of (R, phi, Z) points. The point and value
+/// views are kept for the next batch of the same size, so a tracer's RK4
+/// stages allocate them once.
+class BatchEvaluator
 {
-  const auto& space = function.GetSpace();
-  const size_t n = xyz.size() / 3;
-  Kokkos::View<const Real**, Kokkos::LayoutRight, pcms::HostMemorySpace,
-               Kokkos::MemoryTraits<Kokkos::Unmanaged>>
-    host_points(xyz.data(), n, 3);
-  Kokkos::View<Real**, pcms::DeviceMemorySpace> points("points", n, 3);
-  pcms::DeepCopyMismatchLayouts(points, host_points);
-  const auto bound = space.Bind(
-    pcms::CoordinateView<pcms::DeviceMemorySpace>(space.GetCoordinateSystem(),
-                                                  pcms::MakeRank2View(points)),
-    {pcms::OutOfBoundsMode::FILL, std::numeric_limits<Real>::quiet_NaN()});
-  const auto evaluator = space.CreatePointEvaluator<Real>(bound);
-  const auto num_components =
-    static_cast<size_t>(function.GetLayout().GetNumComponents());
-  Kokkos::View<Real**, pcms::DeviceMemorySpace> values("values", n,
-                                                       num_components);
-  evaluator->Evaluate(function, pcms::ValueView<Real, pcms::DeviceMemorySpace>(
-                                  function.GetData().GetValueBasis(),
-                                  pcms::MakeRank2View(values)));
-  Kokkos::View<Real**, Kokkos::LayoutRight, pcms::HostMemorySpace> result(
-    "result", n, num_components);
-  pcms::DeepCopyMismatchLayouts(result, values);
-  return result;
-}
+public:
+  using Values =
+    Kokkos::View<Real**, pcms::DeviceMemorySpace>::host_mirror_type;
+
+  explicit BatchEvaluator(const pcms::Function<Real>& function)
+    : function_(&function)
+  {
+  }
+
+  /// Values at the points in `xyz` (row-major), one row per point; rows of
+  /// points outside the domain are NaN. Valid until the next call.
+  Values operator()(const std::vector<Real>& xyz)
+  {
+    const auto& space = function_->GetSpace();
+    const size_t n = xyz.size() / 3;
+    if (points_.extent(0) != n) {
+      const auto num_components =
+        static_cast<size_t>(function_->GetLayout().GetNumComponents());
+      points_ = Kokkos::View<Real**, pcms::DeviceMemorySpace>(
+        Kokkos::view_alloc(Kokkos::WithoutInitializing, "points"), n, 3);
+      values_ = Kokkos::View<Real**, pcms::DeviceMemorySpace>(
+        Kokkos::view_alloc(Kokkos::WithoutInitializing, "values"), n,
+        num_components);
+      // the values themselves where device memory is host memory
+      result_ = Kokkos::create_mirror_view(values_);
+    }
+    Kokkos::View<const Real**, Kokkos::LayoutRight, pcms::HostMemorySpace,
+                 Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+      host_points(xyz.data(), n, 3);
+    pcms::DeepCopyMismatchLayouts(points_, host_points);
+    const auto bound = space.Bind(
+      pcms::CoordinateView<pcms::DeviceMemorySpace>(
+        space.GetCoordinateSystem(), pcms::MakeRank2View(points_)),
+      {pcms::OutOfBoundsMode::FILL, std::numeric_limits<Real>::quiet_NaN()});
+    const auto evaluator = space.CreatePointEvaluator<Real>(bound);
+    evaluator->Evaluate(
+      *function_,
+      pcms::ValueView<Real, pcms::DeviceMemorySpace>(
+        function_->GetData().GetValueBasis(), pcms::MakeRank2View(values_)));
+    Kokkos::deep_copy(result_, values_);
+    return result_;
+  }
+
+private:
+  const pcms::Function<Real>* function_;
+  Kokkos::View<Real**, pcms::DeviceMemorySpace> points_;
+  Kokkos::View<Real**, pcms::DeviceMemorySpace> values_;
+  Values result_;
+};
 
 /// Field lines integrated together in phi (trace_integrator::integrate with
 /// step_rk4, one line per seed point).
@@ -106,6 +131,12 @@ public:
              Real period)
     : sources_(sources), p_(p), period_(period)
   {
+    for (const auto& source : sources_) {
+      fields_.emplace_back(source.field);
+    }
+    if (sources_[0].psi_norm) {
+      psi_norm_.emplace(*sources_[0].psi_norm);
+    }
   }
 
   struct Line
@@ -238,8 +269,8 @@ private:
       return b;
     }
     const auto start = std::chrono::steady_clock::now();
-    for (const auto& source : sources_) {
-      const auto values = EvaluateAt(source.field, xyz);
+    for (auto& field : fields_) {
+      const auto values = field(xyz);
       for (size_t i = 0; i < index.size(); ++i) {
         for (int c = 0; c < 3; ++c) {
           b[index[i]][c] += values(i, c);
@@ -335,8 +366,8 @@ private:
       return;
     }
     std::vector<Real> psi(index.size(), 0);
-    if (sources_[0].psi_norm) {
-      const auto values = EvaluateAt(*sources_[0].psi_norm, xyz);
+    if (psi_norm_) {
+      const auto values = (*psi_norm_)(xyz);
       for (size_t i = 0; i < index.size(); ++i) {
         psi[i] = std::isnan(values(i, 0)) ? 0 : values(i, 0);
       }
@@ -352,6 +383,9 @@ private:
   const std::vector<TraceSource>& sources_;
   const Parameters& p_;
   Real period_;
+  // the sources' fields and the first source's normalized flux
+  std::vector<BatchEvaluator> fields_;
+  std::optional<BatchEvaluator> psi_norm_;
 };
 
 // trace's create_source: -m3dc1 <file> <ts> <factor> <shift>, -geqdsk <file>,
