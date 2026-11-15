@@ -22,8 +22,9 @@ struct BindRequest
   /// points to locate, in the geometry's coordinate system: the query points,
   /// or their images under `map`; may be released after BindImpl returns
   CoordinateView<DeviceMemorySpace> coords;
-  /// layout whose DOF-holder coordinates `query_coords` are, or null (used by
-  /// localization path selection until S5 removes it)
+  /// layout whose DOF-holder coordinates `query_coords` are, or null; the
+  /// bound source records it as QueryLayout() (the Interpolator's same-sites
+  /// check) and a reconstruction geometry passes it to its Neighbourhood
   std::shared_ptr<const FieldLayout> query_layout;
   /// out-of-bounds policy of the evaluators created from the bound source
   OutOfBoundsPolicy policy;

@@ -11,6 +11,7 @@
 #include "pcms/utility/types.h"
 #include <Kokkos_Core.hpp>
 #include <memory>
+#include <string>
 
 namespace pcms
 {
@@ -38,9 +39,15 @@ struct NeighbourhoodOptions
 {
   Real radius = 0.5;
   int min_supports = 10;
-  /// not honoured yet: Neighbourhood throws unless it is the default
-  int max_supports = 30;
+  /// upper bound of the supports of the mesh-adjacency search; 0 means the
+  /// kind's own bound, 3 * min_supports, which is the only one supported yet
+  /// (the kinds throw otherwise)
+  int max_supports = 0;
   bool adapt_radius = true;
+  /// layout whose DOF holders are the query points, or null; an opaque
+  /// handle here, which lets a kind take a search specific to the query's
+  /// entities (e.g. element centroids to the vertices of the same mesh)
+  std::shared_ptr<const FieldLayout> query_layout;
 };
 
 /// @brief Jacobian of the geometry map at bound points.
@@ -143,7 +150,8 @@ public:
   /// @brief Support sets of query points among this geometry's sites, for
   ///        reconstruction spaces.
   /// @throws pcms_error unless the kind overrides it, or if
-  ///         `options.max_supports` is not the default (not honoured yet)
+  ///         `options.max_supports` is neither 0 nor
+  ///         3 * `options.min_supports` (other bounds are not honoured yet)
   [[nodiscard]] virtual SupportResults Neighbourhood(
     CoordinateView<DeviceMemorySpace> coords,
     const NeighbourhoodOptions& options) const;
@@ -172,6 +180,23 @@ protected:
   [[nodiscard]] virtual std::shared_ptr<BoundSource> BindParametricImpl(
     const ParametricPoints& points, OutOfBoundsPolicy policy) const = 0;
 };
+
+namespace detail
+{
+
+/// @brief The checks every Neighbourhood makes of its arguments.
+/// @param geometry geometry whose Neighbourhood is called
+/// @param coords the query points
+/// @param options the search options
+/// @param caller name of the calling function, for the message
+/// @throws pcms_error if `coords` is not in the geometry's coordinate system
+///         or `options.max_supports` is neither 0 nor
+///         3 * `options.min_supports`
+void CheckNeighbourhoodArguments(
+  const Geometry& geometry, const CoordinateView<DeviceMemorySpace>& coords,
+  const NeighbourhoodOptions& options, const std::string& caller);
+
+} // namespace detail
 
 } // namespace pcms
 

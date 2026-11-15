@@ -8,8 +8,6 @@
 #include "pcms/utility/assert.h"
 #include "pcms/utility/common.h"
 #include "pcms/utility/mesh_geometry.h"
-#include "pcms/localization/point_cloud_localization.h"
-#include "pcms/localization/mesh_localization.h"
 
 #include <Kokkos_Core.hpp>
 #include <Omega_h_array.hpp>
@@ -38,13 +36,7 @@ PolynomialReconstructionFunctionSpace::Create(
   DeepCopyMismatchLayouts(device_view, host_view);
   auto pc_layout = std::make_shared<PointCloudLayout>(
     dim, device_view, coords.GetCoordinateSystem());
-  auto localization =
-    std::make_shared<PointCloudLocalizationFactory>(pc_layout, options);
-  auto geometry = PointCloudGeometry::Create(pc_layout, localization);
-  auto eval_factory = std::make_shared<PointCloudEvaluatorFactory>(
-    std::move(geometry), pc_layout, options);
-  return std::make_shared<PolynomialReconstructionFunctionSpace>(
-    Key{}, pc_layout, std::move(eval_factory));
+  return FromGeometry(PointCloudGeometry::Create(pc_layout, options), options);
 }
 
 std::shared_ptr<PolynomialReconstructionFunctionSpace>
@@ -60,20 +52,24 @@ PolynomialReconstructionFunctionSpace::FromMesh(
 
   auto mesh_layout = std::make_shared<OmegaHEntityLayout>(
     mesh, source_entity_dim, 1, std::move(coordinate_system));
-  // MLS assumes unweighted Euclidean in distance calculation
-  if (!HasIdentityMetric(*mesh_layout->GetCoordinateSystem())) {
-    throw pcms_error(
-      "PolynomialReconstructionFunctionSpace::FromMesh: MLS requires a "
-      "coordinate system whose metric is the identity; got '" +
-      std::string(mesh_layout->GetCoordinateSystem()->Kind()) + "'");
+  return FromGeometry(
+    PointCloudGeometry::Create(mesh_layout, mesh, source_entity_dim, options),
+    options);
+}
+
+std::shared_ptr<PolynomialReconstructionFunctionSpace>
+PolynomialReconstructionFunctionSpace::FromGeometry(
+  std::shared_ptr<const PointCloudGeometry> geometry, MLSOptions options)
+{
+  if (geometry == nullptr) {
+    throw pcms_error("PolynomialReconstructionFunctionSpace::FromGeometry: "
+                     "geometry must not be null");
   }
-  auto localization = std::make_shared<AdjacencyLocalizationFactory>(
-    mesh, source_entity_dim, options);
-  auto geometry = PointCloudGeometry::Create(mesh_layout, localization);
+  auto layout = geometry->GetSiteLayout();
   auto eval_factory = std::make_shared<PointCloudEvaluatorFactory>(
-    std::move(geometry), mesh_layout, options);
+    std::move(geometry), layout, options);
   return std::make_shared<PolynomialReconstructionFunctionSpace>(
-    Key{}, mesh_layout, std::move(eval_factory));
+    Key{}, std::move(layout), std::move(eval_factory));
 }
 
 std::shared_ptr<const FieldLayout>

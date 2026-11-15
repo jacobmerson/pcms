@@ -18,9 +18,12 @@
 namespace pcms
 {
 
+class PointCloudGeometry;
+
 class PolynomialReconstructionFunctionSpace : public FunctionSpace
 {
-  // Passkey: only members (the Create/FromMesh factories) can create a Key, so
+  // Passkey: only members (the Create/FromMesh/FromGeometry factories) can
+  // create a Key, so
   // only they can construct a space, while std::make_shared can call the ctor.
   struct Key
   {
@@ -32,13 +35,28 @@ public:
     Key, std::shared_ptr<const FieldLayout> layout,
     std::shared_ptr<const PointEvaluatorFactory> evaluator) noexcept;
 
+  /// @brief A space on a new point-cloud geometry of `coords`.
+  /// @throws pcms_error if the coordinate system does not have the identity
+  ///         metric (MLS distances are Euclidean)
   [[nodiscard]] static std::shared_ptr<PolynomialReconstructionFunctionSpace>
   Create(CoordinateView<HostMemorySpace> coords, MLSOptions options = {});
 
+  /// @brief A space on a new geometry of the mesh entities of one dimension.
+  /// @throws pcms_error if source_entity_dim is out of range or the
+  ///         coordinate system does not have the identity metric
   [[nodiscard]] static std::shared_ptr<PolynomialReconstructionFunctionSpace>
   FromMesh(Omega_h::Mesh& mesh, int source_entity_dim,
            std::shared_ptr<const CoordinateSystem> coordinate_system,
            MLSOptions options = {});
+
+  /// @brief A space on an existing geometry, whose sites are its DOF
+  ///        holders. Spaces on one geometry accept each other's bound
+  ///        sources; the supports come from the geometry's search options,
+  ///        and `options` give the reconstruction (degree, basis, ...).
+  /// @throws pcms_error if `geometry` is null
+  [[nodiscard]] static std::shared_ptr<PolynomialReconstructionFunctionSpace>
+  FromGeometry(std::shared_ptr<const PointCloudGeometry> geometry,
+               MLSOptions options = {});
 
   [[nodiscard]] std::shared_ptr<const FieldLayout> GetLayout()
     const noexcept override;

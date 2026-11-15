@@ -7,6 +7,7 @@
 #include <Omega_h_shape.hpp>
 #include <pcms/configuration.h>
 #include <pcms/field/coordinate_systems/cartesian.hpp>
+#include <pcms/field/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/evaluator/mls_options.h>
 #include <pcms/field/evaluator/omega_h_geometry.hpp>
 #include <pcms/field/evaluator/uniform_grid_geometry.hpp>
@@ -501,14 +502,14 @@ TEST_CASE("Neighbourhood returns vertex supports")
   auto geometry = MakeGeometry(mesh);
   auto coords = pcms::test::CreateDeviceCoordinateView(
     pcms::test::StandardEvalCoords2D(), geometry->GetCoordinateSystem());
-  pcms::NeighbourhoodOptions options;
-  options.radius = 0.3;
-  options.min_supports = 6;
-  const pcms::SupportResults actual =
-    geometry->Neighbourhood(coords.coordinate_view, options);
   pcms::MLSOptions mls;
   mls.radius = 0.3;
   mls.min_req_supports = 6;
+  // the search MLSOptions asks for: radius, 6 to 18 supports
+  pcms::NeighbourhoodOptions options = mls.Localization();
+  REQUIRE(options.max_supports == 18);
+  const pcms::SupportResults actual =
+    geometry->Neighbourhood(coords.coordinate_view, options);
   const pcms::SupportResults expected =
     pcms::AdjacencyLocalizationFactory(mesh, 0, mls)
       .Build(coords.coordinate_view);
@@ -518,10 +519,19 @@ TEST_CASE("Neighbourhood returns vertex supports")
     coords.coordinate_view, pcms::NeighbourhoodOptions{});
   REQUIRE(defaults.supports_idx.size() != actual.supports_idx.size());
 
-  // max_supports is not honoured yet, so it is refused
+  // other upper bounds than 3 * min_supports are not honoured yet, so they
+  // are refused
   options.max_supports = 12;
-  REQUIRE_THROWS_WITH(geometry->Neighbourhood(coords.coordinate_view, options),
-                      ContainsSubstring("max_supports is not honoured"));
+  REQUIRE_THROWS_WITH(
+    geometry->Neighbourhood(coords.coordinate_view, options),
+    ContainsSubstring(
+      "max_supports must be 0 or 3 * min_supports (18), got 12"));
+  // the query points must be in the geometry's coordinate system
+  auto cylindrical = pcms::test::CreateDeviceCoordinateView(
+    pcms::test::StandardEvalCoords2D(), pcms::csys::CylindricalRZ::Create());
+  REQUIRE_THROWS_WITH(
+    geometry->Neighbourhood(cylindrical.coordinate_view, mls.Localization()),
+    ContainsSubstring("is not the geometry's coordinate system"));
 }
 
 #ifdef PCMS_ENABLE_MESHFIELDS

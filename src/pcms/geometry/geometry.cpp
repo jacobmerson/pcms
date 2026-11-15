@@ -83,6 +83,26 @@ DifferentialView Geometry::Differential(const BoundSource&) const
   return {};
 }
 
+void detail::CheckNeighbourhoodArguments(
+  const Geometry& geometry, const CoordinateView<DeviceMemorySpace>& coords,
+  const NeighbourhoodOptions& options, const std::string& caller)
+{
+  if (!SameCoordinateSystem(coords.GetCoordinateSystem(),
+                            geometry.GetCoordinateSystem())) {
+    throw pcms_error(caller + ": query coordinate system '" +
+                     std::string(coords.GetCoordinateSystem()->Kind()) +
+                     "' is not the geometry's coordinate system '" +
+                     std::string(geometry.GetCoordinateSystem()->Kind()) + "'");
+  }
+  if (options.max_supports != 0 &&
+      options.max_supports != 3 * options.min_supports) {
+    throw pcms_error(caller + ": max_supports must be 0 or 3 * min_supports (" +
+                     std::to_string(3 * options.min_supports) + "), got " +
+                     std::to_string(options.max_supports) +
+                     "; other bounds are not honoured yet");
+  }
+}
+
 void detail::CheckParametricIds(const ParametricPoints& points, LO num_ids,
                                 const std::string& caller,
                                 const std::string& entity)

@@ -171,8 +171,13 @@ public:
   [[nodiscard]] Kokkos::View<Real**, DeviceMemorySpace> MapToPhysical(
     const ParametricPoints& points) const;
 
-  /// @brief MLS supports of the query points among the mesh vertices.
-  /// @throws pcms_error if `options.max_supports` is not the default
+  /// @brief MLS supports of the query points among the mesh vertices, by
+  ///        the mesh-adjacency search. `options.query_layout` is not used:
+  ///        the same-mesh search from element centroids does not apply to
+  ///        vertex sites.
+  /// @throws pcms_error if `coords` is not in GetCoordinateSystem() or
+  ///         `options.max_supports` is neither 0 nor
+  ///         3 * `options.min_supports`
   [[nodiscard]] SupportResults Neighbourhood(
     CoordinateView<DeviceMemorySpace> coords,
     const NeighbourhoodOptions& options) const override;

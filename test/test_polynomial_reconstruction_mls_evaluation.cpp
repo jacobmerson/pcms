@@ -1,7 +1,9 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "pcms/field/function_space/polynomial_reconstruction.hpp"
+#include "pcms/field/evaluator/point_cloud_geometry.hpp"
 #include "pcms/field/evaluator/mls_options.h"
 #include "pcms/field/value_view.hpp"
 #include "pcms/field/coordinate_view.hpp"
@@ -10,6 +12,7 @@
 #include "pcms/utility/memory_spaces.h"
 #include "field_test_utils.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <stdexcept>
@@ -322,24 +325,82 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: accepts the (R, Z) "
   REQUIRE(out_host(1, 0) == Catch::Approx(linear_rz(0.6, 0.7)).margin(5e-3));
 }
 
-TEST_CASE("PolynomialReconstructionFunctionSpace MLS: CreatePointEvaluator "
-          "rejects coordinates whose metric is not the identity")
+TEST_CASE("PolynomialReconstructionFunctionSpace MLS: rejects coordinates "
+          "whose metric is not the identity")
 {
   auto src = MakeGrid3D(3);
   Rank2View<Real, HostMemorySpace> coords_view(
     src.data(), static_cast<pcms::LO>(src.size() / 3), 3);
 
-  auto fs = pcms::PolynomialReconstructionFunctionSpace::Create(
-    pcms::CoordinateView<HostMemorySpace>(
-      pcms::csys::CylindricalRThetaZ::Create(), coords_view),
-    DefaultTestOptions3D());
-
-  auto pts = std::vector<Real>{0.3, 0.4, 0.5};
-  auto device_coords = pcms::test::CreateDeviceCoordinateView(
-    pts, pcms::csys::CylindricalRThetaZ::Create(), 3);
   // h_theta = r, so summing squared coordinate differences is not a distance.
-  REQUIRE_THROWS(fs->CreatePointEvaluator<Real>(
-    fs->GetGeometry()->Bind(device_coords.coordinate_view)));
+  // The geometry checks its sites' system once, when it is created.
+  REQUIRE_THROWS_WITH(
+    pcms::PolynomialReconstructionFunctionSpace::Create(
+      pcms::CoordinateView<HostMemorySpace>(
+        pcms::csys::CylindricalRThetaZ::Create(), coords_view),
+      DefaultTestOptions3D()),
+    Catch::Matchers::ContainsSubstring("whose metric is the identity"));
+}
+
+TEST_CASE("PolynomialReconstructionFunctionSpace MLS: spaces of two degrees "
+          "on one geometry share a bind")
+{
+  auto src = MakeGrid2D(7);
+  Rank2View<Real, HostMemorySpace> coords_view(
+    src.data(), static_cast<pcms::LO>(src.size() / 2), 2);
+  auto first = pcms::PolynomialReconstructionFunctionSpace::Create(
+    pcms::CoordinateView<HostMemorySpace>(pcms::csys::Cartesian::Create(2),
+                                          coords_view),
+    DefaultTestOptions());
+  auto geometry = std::dynamic_pointer_cast<const pcms::PointCloudGeometry>(
+    first->GetGeometry());
+  REQUIRE(geometry != nullptr);
+  auto options = DefaultTestOptions();
+  options.degree = 1;
+  auto linear = pcms::PolynomialReconstructionFunctionSpace::FromGeometry(
+    geometry, options);
+  options.degree = 2;
+  auto quadratic = pcms::PolynomialReconstructionFunctionSpace::FromGeometry(
+    geometry, options);
+  REQUIRE(linear->GetGeometry() == quadratic->GetGeometry());
+
+  // a quadratic field: degree 2 reproduces it, degree 1 does not
+  auto quad = [](Real x, Real y) {
+    return 1.0 + x - 2.0 * y + 3.0 * x * x - x * y + 0.5 * y * y;
+  };
+  std::vector<Real> dof_values;
+  for (size_t i = 0; i < src.size() / 2; ++i) {
+    dof_values.push_back(quad(src[2 * i], src[2 * i + 1]));
+  }
+  const pcms::ValueView<const Real, HostMemorySpace> dofs(
+    pcms::ValueBasis{},
+    Rank2View<const Real, HostMemorySpace>(
+      dof_values.data(), static_cast<pcms::LO>(dof_values.size()), 1));
+  auto f_linear = linear->CreateFunction<Real>();
+  f_linear.SetDOFHolderDataHost(dofs);
+  auto f_quadratic = quadratic->CreateFunction<Real>();
+  f_quadratic.SetDOFHolderDataHost(dofs);
+
+  std::vector<Real> pts{0.31, 0.42, 0.55, 0.68, 0.47, 0.23};
+  auto device_coords = pcms::test::CreateDeviceCoordinateView(
+    pts, geometry->GetCoordinateSystem());
+  const auto bound = geometry->Bind(device_coords.coordinate_view);
+  const auto quadratic_values =
+    pcms::test::EvaluateToHost(*quadratic->CreatePointEvaluator<Real>(bound),
+                               f_quadratic, pcms::ValueBasis{});
+  const auto linear_values = pcms::test::EvaluateToHost(
+    *linear->CreatePointEvaluator<Real>(bound), f_linear, pcms::ValueBasis{});
+  // the first space accepts it too
+  REQUIRE_NOTHROW(first->CreatePointEvaluator<Real>(bound));
+  Real linear_error = 0;
+  for (int i = 0; i < 3; ++i) {
+    const Real exact = quad(pts[2 * i], pts[2 * i + 1]);
+    CAPTURE(i, exact, quadratic_values(i, 0), linear_values(i, 0));
+    REQUIRE(quadratic_values(i, 0) == Catch::Approx(exact).margin(1e-8));
+    linear_error =
+      std::max(linear_error, std::abs(linear_values(i, 0) - exact));
+  }
+  REQUIRE(linear_error > 1e-4);
 }
 
 TEST_CASE("PolynomialReconstructionFunctionSpace MLS: radius option is "

@@ -6,14 +6,15 @@
 #include "pcms/field/evaluator/mls_point_cloud.h"
 #include "pcms/field/field_layout.h"
 #include "pcms/geometry/geometry.hpp"
-#include "pcms/localization/localization_factory.h"
 #include "pcms/localization/localization_path_selection.h"
 #include "pcms/localization/mesh_localization.h"
+#include "pcms/localization/mls_support_helpers.h"
 #include "pcms/utility/assert.h"
 #include "pcms/utility/omega_h_array_utils.h"
 #include "pcms/utility/profile.h"
 
 #include <Omega_h_array.hpp>
+#include <Omega_h_mesh.hpp>
 #include <memory>
 #include <string>
 
@@ -22,28 +23,58 @@ namespace pcms
 
 /// @brief Geometry of a set of sites (a point cloud or mesh entities): the
 ///        identity map, located by the MLS supports of each query point.
+///
+/// Bind finds the supports with Neighbourhood, using the search options the
+/// geometry was created with. Spaces on one geometry share its binds.
 class PointCloudGeometry final : public Geometry
 {
 public:
-  /// @brief Creates the geometry owned by a std::shared_ptr, as Bind needs.
+  /// @brief Creates the geometry of a point cloud owned by a std::shared_ptr,
+  ///        as Bind needs.
   /// @param site_layout layout whose DOF holders are the sites
-  /// @param localization search for the MLS supports of query points
+  /// @param options MLS options; their Localization() is the support search
+  ///        of Bind
+  /// @throws pcms_error if the sites' coordinate system does not have the
+  ///         identity metric
   [[nodiscard]] static std::shared_ptr<PointCloudGeometry> Create(
-    std::shared_ptr<const FieldLayout> site_layout,
-    std::shared_ptr<LocalizationFactory> localization)
+    std::shared_ptr<const FieldLayout> site_layout, MLSOptions options = {})
   {
     return std::make_shared<PointCloudGeometry>(std::move(site_layout),
-                                                std::move(localization));
+                                                options);
   }
 
-  /// @brief Create it with Create or std::make_shared: Bind uses
-  ///        shared_from_this().
-  /// @param site_layout layout whose DOF holders are the sites
-  /// @param localization search for the MLS supports of query points
+  /// @brief Creates the geometry of the entities of one dimension of a mesh,
+  ///        owned by a std::shared_ptr, as Bind needs.
+  /// @param site_layout layout whose DOF holders are the entities
+  /// @param mesh the mesh; must outlive the geometry
+  /// @param site_entity_dim dimension of the entities
+  /// @param options MLS options; their Localization() is the support search
+  ///        of Bind
+  /// @throws pcms_error if the sites' coordinate system does not have the
+  ///         identity metric
+  [[nodiscard]] static std::shared_ptr<PointCloudGeometry> Create(
+    std::shared_ptr<const FieldLayout> site_layout, Omega_h::Mesh& mesh,
+    int site_entity_dim, MLSOptions options = {})
+  {
+    return std::make_shared<PointCloudGeometry>(std::move(site_layout), mesh,
+                                                site_entity_dim, options);
+  }
+
+  /// @brief A point cloud; create it with Create or std::make_shared: Bind
+  ///        uses shared_from_this().
   PointCloudGeometry(std::shared_ptr<const FieldLayout> site_layout,
-                     std::shared_ptr<LocalizationFactory> localization)
-    : site_layout_(std::move(site_layout)),
-      localization_(std::move(localization))
+                     MLSOptions options)
+    : PointCloudGeometry(std::move(site_layout), nullptr, -1, options)
+  {
+  }
+
+  /// @brief Mesh entities; create it with Create or std::make_shared: Bind
+  ///        uses shared_from_this().
+  PointCloudGeometry(std::shared_ptr<const FieldLayout> site_layout,
+                     Omega_h::Mesh& mesh, int site_entity_dim,
+                     MLSOptions options)
+    : PointCloudGeometry(std::move(site_layout), &mesh, site_entity_dim,
+                         options)
   {
   }
 
@@ -59,38 +90,69 @@ public:
     return site_layout_->GetCoordinateSystem();
   }
 
+  /// @return the layout whose DOF holders are the sites
+  [[nodiscard]] const std::shared_ptr<const FieldLayout>& GetSiteLayout()
+    const noexcept
+  {
+    return site_layout_;
+  }
+
+  /// @return the support search Bind uses
+  [[nodiscard]] const NeighbourhoodOptions& GetNeighbourhoodOptions()
+    const noexcept
+  {
+    return options_;
+  }
+
+  /// @brief MLS supports of the query points among the sites: the
+  ///        mesh-adjacency search for mesh-entity sites, the distance search
+  ///        for a point cloud. When `options.query_layout` holds the vertices
+  ///        of the sites' mesh and the sites are its element centroids, the
+  ///        supports are found from the mesh adjacency alone and `coords` is
+  ///        taken to be those vertices (it is not read).
+  /// @throws pcms_error if `coords` is not in GetCoordinateSystem() or
+  ///         `options.max_supports` is neither 0 nor
+  ///         3 * `options.min_supports`
+  [[nodiscard]] SupportResults Neighbourhood(
+    CoordinateView<DeviceMemorySpace> coords,
+    const NeighbourhoodOptions& options) const override
+  {
+    detail::CheckNeighbourhoodArguments(*this, coords, options,
+                                        "PointCloudGeometry::Neighbourhood");
+    const MLSOptions search = MLSOptions::FromLocalization(options);
+    if (mesh_ != nullptr) {
+      AdjacencyLocalizationFactory adjacency(*mesh_, site_entity_dim_, search);
+      if (options.query_layout != nullptr &&
+          detail::SelectLocalizationPath(*site_layout_,
+                                         options.query_layout.get()) ==
+            detail::LocalizationPath::CentroidToVertexAdjacencySearch) {
+        return adjacency.BuildSameMeshCentroidToVertex();
+      }
+      return adjacency.Build(std::move(coords));
+    }
+    const auto sites = site_layout_->GetDOFHolderCoordinates().GetValues();
+    const int dim = static_cast<int>(sites.extent(1));
+    const auto query = coords.GetValues();
+    PCMS_ALWAYS_ASSERT(static_cast<int>(query.extent(1)) == dim);
+    return BuildPointCloudSupports(
+      flatten_to_omega_h_reals(sites, "src_coords"),
+      flatten_to_omega_h_reals(query, "tgt_coords"), dim, search.radius,
+      search.min_req_supports, search.adapt_radius);
+  }
+
 protected:
   std::shared_ptr<BoundSource> BindImpl(
     const BindRequest& request) const override
   {
     PCMS_FUNCTION_TIMER;
-    // MLS distances are based on the unweighted Euclidean measure
-    // this is only valid with identity metric
-    // this almost certainly should be generalized to take metric for distances
-    // for now, we just check and fail so at least the user gets a warning
-    if (!HasIdentityMetric(*site_layout_->GetCoordinateSystem())) {
-      throw pcms_error(
-        "PointCloudGeometry: MLS point-cloud evaluation requires a "
-        "coordinate system whose metric is the identity; got '" +
-        std::string(site_layout_->GetCoordinateSystem()->Kind()) + "'");
-    }
-
     // Extract source coordinates for the MLS solve.
     const auto src_view = site_layout_->GetDOFHolderCoordinates().GetValues();
     Omega_h::Reals source_coords =
       flatten_to_omega_h_reals(src_view, "src_coords");
 
-    SupportResults supports;
-    auto path =
-      detail::SelectLocalizationPath(*site_layout_, request.query_layout.get());
-    if (path == detail::LocalizationPath::CentroidToVertexAdjacencySearch) {
-      auto* adjacency =
-        dynamic_cast<const AdjacencyLocalizationFactory*>(localization_.get());
-      PCMS_ALWAYS_ASSERT(adjacency != nullptr);
-      supports = adjacency->BuildSameMeshCentroidToVertex();
-    } else {
-      supports = localization_->Build(request.coords);
-    }
+    NeighbourhoodOptions options = options_;
+    options.query_layout = request.query_layout;
+    SupportResults supports = Neighbourhood(request.coords, options);
 
     return std::make_shared<MLSBinding>(shared_from_this(), request,
                                         std::move(source_coords),
@@ -106,8 +168,29 @@ protected:
   }
 
 private:
+  PointCloudGeometry(std::shared_ptr<const FieldLayout> site_layout,
+                     Omega_h::Mesh* mesh, int site_entity_dim,
+                     MLSOptions options)
+    : site_layout_(std::move(site_layout)),
+      mesh_(mesh),
+      site_entity_dim_(site_entity_dim),
+      options_(options.Localization())
+  {
+    // MLS distances are based on the unweighted Euclidean measure, which is
+    // valid only with the identity metric; this almost certainly should be
+    // generalized to take the metric for distances
+    if (!HasIdentityMetric(*site_layout_->GetCoordinateSystem())) {
+      throw pcms_error(
+        "PointCloudGeometry: MLS point-cloud evaluation requires a "
+        "coordinate system whose metric is the identity; got '" +
+        std::string(site_layout_->GetCoordinateSystem()->Kind()) + "'");
+    }
+  }
+
   std::shared_ptr<const FieldLayout> site_layout_;
-  std::shared_ptr<LocalizationFactory> localization_;
+  Omega_h::Mesh* mesh_;
+  int site_entity_dim_;
+  NeighbourhoodOptions options_;
 };
 
 } // namespace pcms

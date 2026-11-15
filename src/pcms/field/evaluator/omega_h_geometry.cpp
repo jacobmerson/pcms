@@ -186,15 +186,11 @@ SupportResults OmegaHGeometry::Neighbourhood(
   CoordinateView<DeviceMemorySpace> coords,
   const NeighbourhoodOptions& options) const
 {
-  if (options.max_supports != NeighbourhoodOptions{}.max_supports) {
-    throw pcms_error("OmegaHGeometry::Neighbourhood: max_supports is not "
-                     "honoured yet; leave it at its default");
-  }
-  MLSOptions mls;
-  mls.radius = options.radius;
-  mls.min_req_supports = static_cast<unsigned>(options.min_supports);
-  mls.adapt_radius = options.adapt_radius;
-  return AdjacencyLocalizationFactory(mesh_, /*source_entity_dim=*/0, mls)
+  detail::CheckNeighbourhoodArguments(*this, coords, options,
+                                      "OmegaHGeometry::Neighbourhood");
+  // the sites are the mesh vertices, so the search is the adjacency BFS
+  return AdjacencyLocalizationFactory(mesh_, /*source_entity_dim=*/0,
+                                      MLSOptions::FromLocalization(options))
     .Build(std::move(coords));
 }
 
