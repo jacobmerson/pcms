@@ -160,6 +160,17 @@ public:
     return search_;
   }
 
+  /// @brief Coordinates, in GetCoordinateSystem(), of points given by element
+  ///        and barycentric coordinates: x = sum_v lambda_v x_v.
+  /// @param points element of each point and its barycentric coordinates
+  ///        (dim + 1 columns)
+  /// @return one row of dim coordinates per point
+  /// @throws pcms_error if `points.ids` and `points.coords` differ in length,
+  ///         or there are points and `points.coords` does not have dim + 1
+  ///         columns or an id is not an element of the mesh
+  [[nodiscard]] Kokkos::View<Real**, DeviceMemorySpace> MapToPhysical(
+    const ParametricPoints& points) const;
+
   /// @brief MLS supports of the query points among the mesh vertices.
   /// @throws pcms_error if `options.max_supports` is not the default
   [[nodiscard]] SupportResults Neighbourhood(

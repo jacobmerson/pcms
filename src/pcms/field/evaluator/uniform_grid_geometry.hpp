@@ -12,6 +12,7 @@
 #include <Kokkos_Core.hpp>
 #include <Omega_h_vector.hpp>
 #include <memory>
+#include <string>
 #include <utility>
 
 namespace pcms
@@ -74,28 +75,40 @@ public:
     cell_indices_ = cells;
   }
 
-  /// @brief Takes the cells of the points as given; the positions in the
-  ///        cells are not used yet.
+  /// @brief Takes the cells of the points and the positions in them as
+  ///        given.
   /// @param geometry geometry the points are localized on
-  /// @param points cell of each point and its position in the cell; no points
-  ///        gives an empty bound source
+  /// @param points cell of each point and its position in the cell, in [0, 1]
+  ///        per axis in coordinate order (Dim columns); no points gives an
+  ///        empty bound source
   /// @param policy out-of-bounds policy of the evaluators
   /// @param grid grid whose cells the ids index
-  /// @throws pcms_error if an id is not a cell of `grid`
+  /// @throws pcms_error if there are points and `points.coords` does not have
+  ///         Dim columns or an id is not a cell of `grid`
   UniformGridBinding(std::shared_ptr<const Geometry> geometry,
                      const ParametricPoints& points, OutOfBoundsPolicy policy,
                      const UniformGrid<Dim>& grid)
     : BoundSource(std::move(geometry), points, policy),
       cell_indices_(Kokkos::view_alloc(Kokkos::WithoutInitializing,
                                        "uniform_grid_cell_indices"),
-                    points.ids.extent(0))
+                    points.ids.extent(0)),
+      cell_coords_(Kokkos::view_alloc(Kokkos::WithoutInitializing,
+                                      "uniform_grid_cell_coords"),
+                   points.ids.extent(0), Dim)
   {
     if (points.NumPoints() == 0) {
       return;
     }
+    if (points.coords.extent(1) != Dim) {
+      throw pcms_error("UniformGridBinding: parametric coordinates of a " +
+                       std::to_string(Dim) + "D grid need " +
+                       std::to_string(Dim) + " columns, got " +
+                       std::to_string(points.coords.extent(1)));
+    }
     detail::CheckParametricIds(points, grid.GetNumCells(), "UniformGridBinding",
                                "cell");
     Kokkos::deep_copy(cell_indices_, points.ids);
+    Kokkos::deep_copy(cell_coords_, points.coords);
   }
 
   /// @return the cell of each query point (the closest cell if outside)
@@ -105,8 +118,18 @@ public:
     return cell_indices_;
   }
 
+  /// @return for a parametric bind, the position of each point in its cell,
+  ///         in [0, 1] per axis in coordinate order; empty otherwise (the
+  ///         position follows from LocatedPointValues())
+  [[nodiscard]] Kokkos::View<const Real**, DeviceMemorySpace> CellCoordinates()
+    const noexcept
+  {
+    return cell_coords_;
+  }
+
 private:
   Kokkos::View<LO*, DeviceMemorySpace> cell_indices_;
+  Kokkos::View<Real**, DeviceMemorySpace> cell_coords_;
 };
 
 /// @brief Geometry of a uniform grid: an affine map of the unit cells, located

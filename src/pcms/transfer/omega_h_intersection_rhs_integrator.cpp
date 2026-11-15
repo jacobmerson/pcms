@@ -9,7 +9,6 @@
 #include <Omega_h_for.hpp>
 #include <Omega_h_shape.hpp>
 #include <petscksp.h>
-#include "pcms/field/coordinate_systems/cartesian.hpp"
 
 namespace pcms
 {
@@ -21,7 +20,8 @@ namespace
 // the integrator's members.
 struct Data
 {
-  Kokkos::View<Real**, DeviceMemorySpace> coords;
+  Kokkos::View<LO*, DeviceMemorySpace> source_elements;
+  Kokkos::View<Real**, DeviceMemorySpace> source_barycentric;
   Kokkos::View<PetscInt*, DeviceMemorySpace> node_gids;
   Kokkos::View<Real*, DeviceMemorySpace> coeffs;
   int ndof_per_elem = 0;
@@ -131,9 +131,13 @@ Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
     Omega_h::Read<Omega_h::LO>(ip_counts), "rhs_ip_offsets");
   const int num_pts = static_cast<int>(ip_offsets.last());
 
-  // Pass 2: fill coords, node_gids, and coeffs on device. node_gids/coeffs hold
+  // Pass 2: fill the source element and barycentric coordinates of each
+  // integration point, node_gids, and coeffs on device. node_gids/coeffs hold
   // ndof (target DOFs per element) entries per integration point.
-  Kokkos::View<Real**, DeviceMemorySpace> coords("rhs_coords", num_pts, Dim);
+  Kokkos::View<LO*, DeviceMemorySpace> source_elements("rhs_source_elements",
+                                                       num_pts);
+  Kokkos::View<Real**, DeviceMemorySpace> source_barycentric(
+    "rhs_source_barycentric", num_pts, Dim + 1);
   Kokkos::View<PetscInt*, DeviceMemorySpace> node_gids(
     "rhs_node_gids", static_cast<std::size_t>(num_pts) * ndof);
   Kokkos::View<Real*, DeviceMemorySpace> coeffs(
@@ -158,8 +162,18 @@ Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
       detail::ForEachIntersectionSubsimplex<Dim>(
         elm, {tgt2src_offsets, tgt2src_indices}, tgt_coords, src_coords,
         tgt_elems2nodes, src_elems2nodes,
-        [&](const Omega_h::Few<Omega_h::Vector<Dim>, Dim + 1>& sub, int,
+        [&](const Omega_h::Few<Omega_h::Vector<Dim>, Dim + 1>& sub, int src_elm,
             Omega_h::Real measure) {
+          const auto src_verts =
+            Omega_h::gather_verts<Dim + 1>(src_elems2nodes, src_elm);
+          const Omega_h::Matrix<Dim, Dim + 1> src_vert_mat =
+            Omega_h::gather_vectors<Dim + 1, Dim>(src_coords, src_verts);
+          Omega_h::Few<Omega_h::Vector<Dim>, Dim + 1> src_omh;
+          for (int i = 0; i < Dim + 1; ++i) {
+            for (int d = 0; d < Dim; ++d) {
+              src_omh[i][d] = src_vert_mat[i][d];
+            }
+          }
           for (int ip_idx = 0; ip_idx < npts; ++ip_idx) {
             Omega_h::Vector<Dim + 1> bary;
             for (int d = 0; d < Dim + 1; ++d) {
@@ -171,9 +185,14 @@ Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
             Omega_h::Real basis[ndof];
             Basis::Values(pt, tgt_omh, basis);
 
+            // the point in the source element it lies in, which the source
+            // is bound to without a search
+            const auto src_bary =
+              Omega_h::barycentric_from_global<Dim, Dim>(pt, src_omh);
             const int global_ip = offset + ip_local;
-            for (int d = 0; d < Dim; ++d) {
-              coords(global_ip, d) = pt[d];
+            source_elements(global_ip) = src_elm;
+            for (int d = 0; d < Dim + 1; ++d) {
+              source_barycentric(global_ip, d) = src_bary[d];
             }
             for (int k = 0; k < ndof; ++k) {
               node_gids(global_ip * ndof + k) = static_cast<PetscInt>(
@@ -188,7 +207,8 @@ Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
   Kokkos::fence();
 
   Data d;
-  d.coords = std::move(coords);
+  d.source_elements = std::move(source_elements);
+  d.source_barycentric = std::move(source_barycentric);
   d.node_gids = std::move(node_gids);
   d.coeffs = std::move(coeffs);
   d.ndof_per_elem = ndof;
@@ -235,7 +255,8 @@ OmegaHIntersectionRHSIntegrator::OmegaHIntersectionRHSIntegrator(
 {
   Data data = BuildData(source_layout, source_coordinate_system, target_layout,
                         target_coordinate_system, source_search);
-  coords_ = std::move(data.coords);
+  source_elements_ = std::move(data.source_elements);
+  source_barycentric_ = std::move(data.source_barycentric);
   node_gids_ = std::move(data.node_gids);
   coeffs_ = std::move(data.coeffs);
   ndof_per_elem_ = data.ndof_per_elem;
@@ -264,12 +285,15 @@ OmegaHIntersectionRHSIntegrator::~OmegaHIntersectionRHSIntegrator()
 // OmegaHIntersectionRHSIntegrator public interface
 // ---------------------------------------------------------------------------
 
-CoordinateView<DeviceMemorySpace>
-OmegaHIntersectionRHSIntegrator::GetIntegrationPoints() const noexcept
+ParametricPoints OmegaHIntersectionRHSIntegrator::GetIntegrationPoints()
+  const noexcept
 {
-  return CoordinateView<DeviceMemorySpace>(
-    csys::Cartesian::Create(static_cast<int>(coords_.extent(1))),
-    MakeConstRank2View(coords_));
+  return ParametricPoints{source_elements_, source_barycentric_};
+}
+
+LO OmegaHIntersectionRHSIntegrator::NumIntegrationPoints() const noexcept
+{
+  return static_cast<LO>(source_elements_.extent(0));
 }
 
 Vec OmegaHIntersectionRHSIntegrator::GetVector() const noexcept
@@ -311,8 +335,9 @@ void OmegaHIntersectionRHSIntegrator::Assemble(
 // Builder
 // ---------------------------------------------------------------------------
 
-std::unique_ptr<LinearFormIntegrator> BuildOmegaHConservativeRHSIntegrator(
-  const FunctionSpace& source_space, const FunctionSpace& target_space)
+std::unique_ptr<OmegaHIntersectionRHSIntegrator>
+BuildOmegaHConservativeRHSIntegrator(const FunctionSpace& source_space,
+                                     const FunctionSpace& target_space)
 {
   return std::make_unique<OmegaHIntersectionRHSIntegrator>(source_space,
                                                            target_space);

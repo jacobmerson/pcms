@@ -32,14 +32,21 @@ TEST_CASE("OmegaHMonteCarloRHSIntegrator: sample points lie inside the domain",
   for (const auto sampling : {pcms::MonteCarloSampling::UniformRandom}) {
     pcms::OmegaHMonteCarloRHSIntegrator integrator(
       *target_space, samples_per_element, sampling);
-    const auto raw_coords = integrator.GetIntegrationPoints().GetValues();
+    const auto raw_coords =
+      integrator.GetIntegrationPointCoordinates().GetValues();
     auto coords_h = pcms::test::CopyCoordinatesToHost(raw_coords);
+    // the parametric samples map to the same coordinates
+    const auto mapped = pcms::test::PhysicalPointsOnHost(
+      *target_space, integrator.GetIntegrationPoints());
+    REQUIRE(mapped.extent(0) == coords_h.extent(0));
 
     REQUIRE(
       coords_h.extent(0) ==
       static_cast<std::size_t>(target_mesh.nelems() * samples_per_element));
     for (std::size_t i = 0; i < coords_h.extent(0); ++i) {
       CAPTURE(i, coords_h(i, 0), coords_h(i, 1));
+      CHECK(mapped(i, 0) == coords_h(i, 0));
+      CHECK(mapped(i, 1) == coords_h(i, 1));
       CHECK(coords_h(i, 0) >= -1e-12);
       CHECK(coords_h(i, 0) <= 1.0 + 1e-12);
       CHECK(coords_h(i, 1) >= -1e-12);
@@ -155,7 +162,8 @@ TEST_CASE("OmegaHControlVariateProjection: reduces error vs plain Monte Carlo",
     *target_space, samples_per_element, pcms::MonteCarloSampling::UniformRandom,
     seed);
   auto evaluator = source_space->CreatePointEvaluator<pcms::Real>(
-    source_space->GetGeometry()->Bind(mc_integrator.GetIntegrationPoints()));
+    source_space->GetGeometry()->Bind(
+      mc_integrator.GetIntegrationPointCoordinates()));
   pcms::OmegaHMassIntegrator mass_integrator(*target_space);
   pcms::GalerkinProjectionSolver solver(mass_integrator, mc_integrator);
   const auto mc_projected = solver.Solve(*evaluator, source_field);
@@ -198,7 +206,8 @@ TEST_CASE("OmegaHMonteCarloRHSIntegrator (3D): sample points lie inside the "
     *target_space, samples_per_element,
     pcms::MonteCarloSampling::UniformRandom);
 
-  const auto raw_coords = integrator.GetIntegrationPoints().GetValues();
+  const auto raw_coords =
+    integrator.GetIntegrationPointCoordinates().GetValues();
   REQUIRE(raw_coords.extent(1) == 3);
 
   auto coords_h = pcms::test::CopyCoordinatesToHost(raw_coords);
@@ -272,7 +281,7 @@ TEST_CASE(
   pcms::OmegaHMonteCarloRHSIntegrator mc(
     *target_space, nsample, pcms::MonteCarloSampling::UniformRandom, seed);
   auto ev = source_space->CreatePointEvaluator<pcms::Real>(
-    source_space->GetGeometry()->Bind(mc.GetIntegrationPoints()));
+    source_space->GetGeometry()->Bind(mc.GetIntegrationPointCoordinates()));
   pcms::OmegaHMassIntegrator mass(*target_space);
   pcms::GalerkinProjectionSolver solver(mass, mc);
   const auto mc_x = solver.Solve(*ev, source);

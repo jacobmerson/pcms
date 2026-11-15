@@ -32,31 +32,34 @@ OmegaHControlVariateProjection::OmegaHControlVariateProjection(
   : target_layout_(std::dynamic_pointer_cast<const OmegaHLagrangeLayout>(
       target_space.GetLayout())),
     rhs_integrator_(std::make_unique<OmegaHMonteCarloRHSIntegrator>(
-      target_layout_, target_space.GetCoordinateSystem(), samples_per_element,
-      sampling, seed)),
+      target_space, samples_per_element, sampling, seed)),
     interpolator_(source, target_space,
                   SourceGeometry(source).Bind(
                     target_space.GetLayout()->GetDOFHolderCoordinates(),
                     target_space.GetLayout(), OutOfBoundsPolicy{}, to_source)),
     control_variate_(target_space.CreateFunction<Real>())
 {
-  const auto sample_coords = rhs_integrator_->GetIntegrationPoints();
-  source_at_samples_ = source.CreatePointEvaluator<Real>(
-    SourceGeometry(source).Bind(sample_coords, OutOfBoundsPolicy{}, to_source));
+  // The source lives on another mesh, so it is bound to the samples'
+  // coordinates; the target space is bound to them in its own elements,
+  // without a search.
+  source_at_samples_ =
+    source.CreatePointEvaluator<Real>(SourceGeometry(source).Bind(
+      rhs_integrator_->GetIntegrationPointCoordinates(), OutOfBoundsPolicy{},
+      to_source));
   control_variate_at_samples_ = target_space.CreatePointEvaluator<Real>(
-    target_space.GetGeometry()->Bind(sample_coords));
+    target_space.GetGeometry()->Bind(rhs_integrator_->GetIntegrationPoints()));
 
   // Mass integrator is only needed to build the solver; PETSc reference-counts
   // the matrix so it remains alive inside the KSP after this scope ends.
-  OmegaHMassIntegrator mass_integrator(
-    target_layout_, target_space.GetCoordinateSystem(), mass_matrix_type);
+  OmegaHMassIntegrator mass_integrator(target_space, mass_matrix_type);
   solver_ = std::make_unique<GalerkinProjectionSolver>(mass_integrator,
                                                        *rhs_integrator_);
 
   target_values_ = Kokkos::View<Real**, DeviceMemorySpace>(
     "cv_target_values", target_layout_->GetNumDofHolder(),
     target_layout_->GetNumComponents());
-  const auto num_samples = sample_coords.GetValues().extent(0);
+  const auto num_samples =
+    static_cast<std::size_t>(rhs_integrator_->NumIntegrationPoints());
   f_samples_ =
     Kokkos::View<Real**, DeviceMemorySpace>("cv_f_samples", num_samples, 1);
   residual_ =

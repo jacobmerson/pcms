@@ -4,6 +4,7 @@
 #include "pcms/field/coordinate_view.hpp"
 #include "pcms/field/function_space.h"
 #include "pcms/field/layout/omega_h_lagrange.h"
+#include "pcms/geometry/parametric_points.hpp"
 #include "pcms/transfer/linear_form_integrator.hpp"
 #include "pcms/transfer/mesh_intersection.hpp"
 #include <Kokkos_Core.hpp>
@@ -18,12 +19,18 @@ namespace pcms
 // target order selects the basis and DOF layout (P0: one element-constant DOF;
 // P1: three vertex DOFs). The quadrature order is source_order + target_order.
 //
-// Construction validates both spaces, computes mesh intersections, and runs a
+// Construction validates both spaces (scalar Cartesian Lagrange on simplex
+// meshes of the same dimension), computes mesh intersections, and runs a
 // two-pass device kernel (count then fill) to build the quadrature data and
 // allocate the owned RHS vector sized to the target DOF count. When built from
 // function spaces and the source is an Omega_h Lagrange space, the intersection
 // reuses the point search that space already owns; the layout constructor has
 // no space to borrow from and builds its own.
+//
+// The integration points are given in the source mesh's parametric
+// coordinates (source element and barycentric coordinates), so the source is
+// bound to them without a search:
+// source_geometry->Bind(GetIntegrationPoints()).
 //
 // Assemble(sampled_values):
 //   Zeros the owned vector, then for each integration point i and local target
@@ -45,8 +52,11 @@ public:
 
   Vec GetVector() const noexcept override;
 
-  CoordinateView<DeviceMemorySpace> GetIntegrationPoints()
-    const noexcept override;
+  /// @return the integration points as the source element each lies in and
+  ///        its barycentric coordinates there, in Assemble's order
+  [[nodiscard]] ParametricPoints GetIntegrationPoints() const noexcept;
+
+  [[nodiscard]] LO NumIntegrationPoints() const noexcept override;
 
   void Assemble(
     Rank2View<const Real, DeviceMemorySpace> sampled_values) override;
@@ -62,8 +72,10 @@ private:
     const GridPointSearchVariant* source_search);
 
   Vec vec_ = nullptr;
-  Kokkos::View<Real**, DeviceMemorySpace>
-    coords_; // [num_pts][dim] integration point coordinates
+  // source element of each integration point
+  Kokkos::View<LO*, DeviceMemorySpace> source_elements_;
+  // [num_pts][dim + 1] barycentric coordinates in that element
+  Kokkos::View<Real**, DeviceMemorySpace> source_barycentric_;
   Kokkos::View<PetscInt*, DeviceMemorySpace>
     node_gids_;                                   // COO idx, num_pts*ndof
   Kokkos::View<Real*, DeviceMemorySpace> coeffs_; // weights, num_pts*ndof
@@ -71,10 +83,11 @@ private:
 };
 
 // Builds an OmegaHIntersectionRHSIntegrator for conservative L2 projection.
-// Both spaces must use OmegaHLagrangeLayout, scalar, Cartesian, order-0 or
-// order-1 (source and target orders may differ).
-std::unique_ptr<LinearFormIntegrator> BuildOmegaHConservativeRHSIntegrator(
-  const FunctionSpace& source_space, const FunctionSpace& target_space);
+// Both spaces must use OmegaHLagrangeLayout, scalar, order-0 or order-1 (source
+// and target orders may differ), with the same coordinate system.
+std::unique_ptr<OmegaHIntersectionRHSIntegrator>
+BuildOmegaHConservativeRHSIntegrator(const FunctionSpace& source_space,
+                                     const FunctionSpace& target_space);
 
 } // namespace pcms
 

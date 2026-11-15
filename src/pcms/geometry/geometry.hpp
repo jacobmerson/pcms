@@ -46,8 +46,9 @@ struct NeighbourhoodOptions
 /// @brief Jacobian of the geometry map at bound points.
 ///
 /// jacobian(r, i, j) = d x_j / d xi_i, determinant(r) = det. When
-/// per_element is true, r is an element id; otherwise r indexes the bound
-/// source's FoundPoints().
+/// per_element is true, r is an element id, except that a kind whose map has
+/// the same Jacobian in every element (e.g. a uniform grid) returns a single
+/// row; otherwise r indexes the bound source's FoundPoints().
 struct DifferentialView
 {
   Kokkos::View<const Real***, DeviceMemorySpace> jacobian;

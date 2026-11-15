@@ -2,6 +2,7 @@
 #define PCMS_TRANSFER_OMEGA_H_MC_RHS_INTEGRATOR_HPP
 
 #include "pcms/field/coordinate_view.hpp"
+#include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/function_space.h"
 #include "pcms/field/layout/omega_h_lagrange.h"
 #include "pcms/transfer/linear_form_integrator.hpp"
@@ -23,17 +24,24 @@ namespace pcms
 //   b_j ~= (|T| / N) * sum_i phi_j(x_i) f(x_i)
 // Unit-square samples (pseudo-random) are mapped to each triangle
 // with the area-preserving sqrt parametrization. Sample locations are fixed
-// at construction and exposed through GetIntegrationPoints(); Assemble()
-// consumes source-field values sampled there, exactly like
+// at construction and exposed as parametric points of the target geometry
+// (GetIntegrationPoints(), for binding the target space without a search) and
+// as coordinates in the target's coordinate system
+// (GetIntegrationPointCoordinates(), for binding a source on another mesh);
+// |T| comes from the target geometry's differential. Assemble() consumes
+// source-field values sampled there, exactly like
 // OmegaHIntersectionRHSIntegrator, so this drops into
 // GalerkinProjectionSolver::Solve.
 class OmegaHMonteCarloRHSIntegrator : public LinearFormIntegrator
 {
 public:
+  /// @param target_space order-1 scalar Cartesian Lagrange space on an Omega_h
+  ///        geometry
   OmegaHMonteCarloRHSIntegrator(const FunctionSpace& target_space,
                                 int samples_per_element,
                                 MonteCarloSampling sampling,
                                 uint64_t seed = 8675309);
+  /// Creates a geometry on the layout's mesh for the samples.
   OmegaHMonteCarloRHSIntegrator(
     std::shared_ptr<const OmegaHLagrangeLayout> target_layout,
     std::shared_ptr<const CoordinateSystem> target_coordinate_system,
@@ -47,14 +55,31 @@ public:
 
   Vec GetVector() const noexcept override;
 
-  CoordinateView<DeviceMemorySpace> GetIntegrationPoints()
-    const noexcept override;
+  /// @return the samples as the target element each lies in and its
+  ///        barycentric coordinates there, in Assemble's order
+  [[nodiscard]] ParametricPoints GetIntegrationPoints() const noexcept;
+
+  /// @return the samples' coordinates in the target geometry's coordinate
+  ///         system, in Assemble's order
+  [[nodiscard]] CoordinateView<DeviceMemorySpace>
+  GetIntegrationPointCoordinates() const noexcept;
+
+  [[nodiscard]] LO NumIntegrationPoints() const noexcept override;
 
   void Assemble(
     Rank2View<const Real, DeviceMemorySpace> sampled_values) override;
 
 private:
+  OmegaHMonteCarloRHSIntegrator(
+    std::shared_ptr<const OmegaHGeometry> target_geometry,
+    std::shared_ptr<const OmegaHLagrangeLayout> target_layout,
+    int samples_per_element, MonteCarloSampling sampling, uint64_t seed);
+
   Vec vec_ = nullptr;
+  std::shared_ptr<const OmegaHGeometry> geometry_;
+  Kokkos::View<LO*, DeviceMemorySpace> elements_; // target element per sample
+  Kokkos::View<Real**, DeviceMemorySpace>
+    barycentric_; // [num_pts][dim + 1] barycentric coordinates there
   Kokkos::View<Real**, DeviceMemorySpace>
     coords_; // [num_pts][dim] sample coordinates
   Kokkos::View<PetscInt*, DeviceMemorySpace> node_gids_; // COO indices

@@ -1,9 +1,11 @@
 #ifndef PCMS_TRANSFER_OMEGA_H_FORM_INTEGRATOR_UTILS_HPP
 #define PCMS_TRANSFER_OMEGA_H_FORM_INTEGRATOR_UTILS_HPP
 
+#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/function_space.h"
 #include "pcms/field/layout/omega_h_lagrange.h"
-#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/geometry/geometry.hpp"
 #include "pcms/transfer/mesh_intersection.hpp"
 #include "pcms/utility/assert.h"
 #include <MeshField_Integrate.hpp>
@@ -17,9 +19,12 @@ namespace pcms::detail
 
 // Shared checks for a scalar Cartesian Lagrange space on a simplex mesh
 // (triangles in 2D, tetrahedra in 3D), independent of order. Order is validated
-// separately by the callers below.
+// separately by the callers below. The integrators take their integrals in the
+// mesh coordinates without a metric, which is only the physical measure in
+// Cartesian coordinates; other systems are refused until the geometry's metric
+// enters the measures.
 inline void CheckOmegaHScalarSimplexLayout(
-  std::shared_ptr<const CoordinateSystem> coordinate_system,
+  const std::shared_ptr<const CoordinateSystem>& coordinate_system,
   const std::shared_ptr<const OmegaHLagrangeLayout>& layout,
   const char* context, const char* role)
 {
@@ -50,7 +55,7 @@ inline void CheckOmegaHScalarSimplexLayout(
 
 // Strict order-1 check (used where only P1 is supported, e.g. Monte-Carlo RHS).
 inline void CheckOmegaHScalarP1Layout(
-  std::shared_ptr<const CoordinateSystem> coordinate_system,
+  const std::shared_ptr<const CoordinateSystem>& coordinate_system,
   const std::shared_ptr<const OmegaHLagrangeLayout>& layout,
   const char* context, const char* role)
 {
@@ -65,7 +70,7 @@ inline void CheckOmegaHScalarP1Layout(
 // intersection integrator handles source and target orders independently, so
 // this replaces the strict P1 requirement on those paths.
 inline void CheckOmegaHScalarLagrangeLayout(
-  std::shared_ptr<const CoordinateSystem> coordinate_system,
+  const std::shared_ptr<const CoordinateSystem>& coordinate_system,
   const std::shared_ptr<const OmegaHLagrangeLayout>& layout,
   const char* context, const char* role)
 {
@@ -77,8 +82,63 @@ inline void CheckOmegaHScalarLagrangeLayout(
   }
 }
 
+// The Omega_h geometry of a space whose layout is `layout`: the geometry the
+// integrators bind parametric points on and take element measures from.
+inline std::shared_ptr<const OmegaHGeometry> OmegaHGeometryOf(
+  const FunctionSpace& space, const OmegaHLagrangeLayout& layout,
+  const char* context, const char* role)
+{
+  auto geometry =
+    std::dynamic_pointer_cast<const OmegaHGeometry>(space.GetGeometry());
+  if (geometry == nullptr || &geometry->GetMesh() != &layout.GetMesh()) {
+    throw pcms_error(std::string(context) + ": " + role +
+                     " space must be on the Omega_h geometry of its layout's "
+                     "mesh");
+  }
+  return geometry;
+}
+
+// Measure of the element of each point of a parametric bind on an affine
+// simplex geometry, |det J| / Dim!, from the geometry's differential.
+// `element_ids` holds the element of each point of `bound`, all of which are
+// found.
+inline Kokkos::View<Real*, DeviceMemorySpace> ElementMeasuresAtPoints(
+  const Geometry& geometry, const BoundSource& bound,
+  Kokkos::View<const LO*, DeviceMemorySpace> element_ids, int dim,
+  const char* context)
+{
+  const DifferentialView differential = geometry.Differential(bound);
+  if (differential.Empty()) {
+    throw pcms_error(std::string(context) +
+                     ": the geometry provides no differential to take element "
+                     "measures from");
+  }
+  PCMS_ALWAYS_ASSERT(element_ids.extent(0) ==
+                     static_cast<size_t>(bound.NumPoints()));
+  const Real reference_measure = dim == 3 ? 1.0 / 6.0 : 0.5;
+  const auto determinant = differential.determinant;
+  const bool per_element = differential.per_element;
+  // a single per-element row is the differential of every element
+  const bool uniform = per_element && determinant.extent(0) == 1;
+  const LO n = bound.NumPoints();
+  Kokkos::View<Real*, DeviceMemorySpace> measures(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "element_measures"), n);
+  Kokkos::parallel_for(
+    "ElementMeasuresAtPoints",
+    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
+    KOKKOS_LAMBDA(const LO i) {
+      // a parametric bind finds every point, so row i of a per-point
+      // differential is point i
+      const LO row = uniform ? 0 : per_element ? element_ids(i) : i;
+      measures(i) = Kokkos::fabs(determinant(row)) * reference_measure;
+    });
+  return measures;
+}
+
 // Map barycentric coordinates on a simplex (Dim+1 barycentric components) to
-// the global Cartesian point, given the simplex's Dim+1 vertex coordinates.
+// the global point, given the simplex's Dim+1 vertex coordinates. The
+// intersection uses it on the sub-simplices r3d produces, which are not
+// elements of a geometry (OmegaHGeometry::MapToPhysical maps element points).
 template <int Dim>
 [[nodiscard]] OMEGA_H_INLINE Omega_h::Vector<Dim> GlobalFromBarycentric(
   const Omega_h::Vector<Dim + 1>& barycentric_coord,

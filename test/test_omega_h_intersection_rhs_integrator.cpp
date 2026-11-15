@@ -66,7 +66,7 @@ std::unordered_map<pcms::GO, pcms::Real> ExpectedLoadByGid(
 // per global DOF id, against the supplied expected values.
 void CheckAssembledLoadMatches(
   const std::shared_ptr<const pcms::FunctionSpace>& source_space,
-  pcms::LinearFormIntegrator& integrator,
+  pcms::OmegaHIntersectionRHSIntegrator& integrator,
   const pcms::Field<pcms::Real>& source_field,
   const std::unordered_map<pcms::GO, pcms::Real>& expected)
 {
@@ -104,8 +104,9 @@ TEST_CASE("OmegaHIntersectionRHSIntegrator: integration points lie inside "
   auto integrator =
     pcms::BuildOmegaHConservativeRHSIntegrator(*source_space, *target_space);
 
-  const auto raw_coords = integrator->GetIntegrationPoints().GetValues();
-  auto raw_coords_host = pcms::test::CopyCoordinatesToHost(raw_coords);
+  // the points are given in the source elements
+  auto raw_coords_host = pcms::test::PhysicalPointsOnHost(
+    *source_space, integrator->GetIntegrationPoints());
   const std::size_t n = raw_coords_host.extent(0);
 
   REQUIRE(n > 0);
@@ -142,14 +143,21 @@ TEST_CASE("OmegaHIntersectionRHSIntegrator: space and layout constructors "
       target_space->GetLayout()),
     target_space->GetCoordinateSystem());
 
-  const auto a = from_spaces.GetIntegrationPoints().GetValues();
-  const auto b = from_layouts.GetIntegrationPoints().GetValues();
-  REQUIRE(a.extent(0) == b.extent(0));
-  REQUIRE(a.extent(1) == b.extent(1));
-  REQUIRE(a.extent(0) > 0);
-  auto a_host = pcms::test::CopyCoordinatesToHost(a);
-  auto b_host = pcms::test::CopyCoordinatesToHost(b);
+  const auto a = from_spaces.GetIntegrationPoints();
+  const auto b = from_layouts.GetIntegrationPoints();
+  REQUIRE(a.coords.extent(0) == b.coords.extent(0));
+  REQUIRE(a.coords.extent(1) == b.coords.extent(1));
+  REQUIRE(a.coords.extent(0) > 0);
+  auto a_ids =
+    Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace{}, a.ids);
+  auto b_ids =
+    Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace{}, b.ids);
+  auto a_host =
+    Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace{}, a.coords);
+  auto b_host =
+    Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace{}, b.coords);
   for (std::size_t i = 0; i < a_host.extent(0); ++i) {
+    REQUIRE(a_ids(i) == b_ids(i));
     for (std::size_t d = 0; d < a_host.extent(1); ++d) {
       REQUIRE(a_host(i, d) == b_host(i, d));
     }
@@ -339,10 +347,10 @@ TEST_CASE("OmegaHIntersectionRHSIntegrator (3D): constant load sums to c times "
   auto integrator =
     pcms::BuildOmegaHConservativeRHSIntegrator(*source_space, *target_space);
 
-  const auto raw_coords = integrator->GetIntegrationPoints().GetValues();
-  REQUIRE(raw_coords.extent(0) > 0);
-  REQUIRE(raw_coords.extent(1) == 3);
-  auto coords_h = pcms::test::CopyCoordinatesToHost(raw_coords);
+  auto coords_h = pcms::test::PhysicalPointsOnHost(
+    *source_space, integrator->GetIntegrationPoints());
+  REQUIRE(coords_h.extent(0) > 0);
+  REQUIRE(coords_h.extent(1) == 3);
   for (std::size_t i = 0; i < coords_h.extent(0); ++i) {
     const double x = coords_h(i, 0);
     const double y = coords_h(i, 1);
@@ -402,9 +410,9 @@ TEST_CASE("OmegaHIntersectionRHSIntegrator (3D): dual tets overlap is an "
   auto integrator =
     pcms::BuildOmegaHConservativeRHSIntegrator(*source_space, *target_space);
 
-  const auto raw_coords = integrator->GetIntegrationPoints().GetValues();
-  REQUIRE(raw_coords.extent(0) > 0);
-  auto coords_h = pcms::test::CopyCoordinatesToHost(raw_coords);
+  auto coords_h = pcms::test::PhysicalPointsOnHost(
+    *source_space, integrator->GetIntegrationPoints());
+  REQUIRE(coords_h.extent(0) > 0);
   for (std::size_t i = 0; i < coords_h.extent(0); ++i) {
     const double s = std::abs(coords_h(i, 0)) + std::abs(coords_h(i, 1)) +
                      std::abs(coords_h(i, 2));

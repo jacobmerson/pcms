@@ -271,6 +271,118 @@ TEST_CASE("Parametric binds on a uniform grid check the cells")
   REQUIRE(nothing.extent(0) == 0);
 }
 
+TEST_CASE("Parametric binds on a uniform grid evaluate at the given positions")
+{
+  pcms::UniformGrid<2> grid;
+  grid.bot_left = {-1.0, 0.5};
+  grid.edge_length = {2.0, 1.5};
+  grid.divisions = {4, 3};
+  auto geometry = pcms::UniformGridGeometry<2>::Create(
+    grid, pcms::csys::Cartesian::Create(2));
+  auto space = LagrangeFunctionSpace::FromGeometry(geometry, 1, 1);
+  auto f = space->CreateFunction<Real>("f");
+  // bilinear, so the multilinear interpolation reproduces it exactly
+  pcms::test::SetField(
+    f, OMEGA_H_LAMBDA(Real x, Real y) { return 1.0 + 2.0 * x - y + x * y; });
+
+  // every cell at its centre and at an off-centre position (0.25, 0.75),
+  // which tells the axes apart
+  const LO ncells = grid.GetNumCells();
+  const Real positions[2][2] = {{0.5, 0.5}, {0.25, 0.75}};
+  const LO n = 2 * ncells;
+  Kokkos::View<LO*, DeviceMemorySpace> ids("ids", n);
+  Kokkos::View<Real**, DeviceMemorySpace> coords("coords", n, 2);
+  auto ids_host = Kokkos::create_mirror_view(ids);
+  auto coords_host = Kokkos::create_mirror_view(coords);
+  std::vector<Real> physical;
+  for (LO k = 0; k < n; ++k) {
+    const LO cell = k % ncells;
+    const auto* position = positions[k / ncells];
+    ids_host(k) = cell;
+    const auto bbox = grid.GetCellBBOX(cell);
+    for (int d = 0; d < 2; ++d) {
+      coords_host(k, d) = position[d];
+      physical.push_back(bbox.center[d] - bbox.half_width[d] +
+                         2.0 * bbox.half_width[d] * position[d]);
+    }
+  }
+  Kokkos::deep_copy(ids, ids_host);
+  Kokkos::deep_copy(coords, coords_host);
+
+  const auto bound = geometry->Bind(pcms::ParametricPoints{ids, coords});
+  REQUIRE_FALSE(bound->HasPointValues());
+  const auto values = pcms::test::EvaluateToHost(
+    *space->CreatePointEvaluator<Real>(bound), f, f.GetData().GetValueBasis());
+  // the same points bound by their coordinates
+  auto query = pcms::test::CreateDeviceCoordinateView(
+    physical, geometry->GetCoordinateSystem());
+  const auto located = pcms::test::EvaluateToHost(
+    *space->CreatePointEvaluator<Real>(geometry->Bind(query.coordinate_view)),
+    f, f.GetData().GetValueBasis());
+  for (LO k = 0; k < n; ++k) {
+    const Real x = physical[2 * k];
+    const Real y = physical[2 * k + 1];
+    CAPTURE(k, x, y);
+    REQUIRE_THAT(values(k, 0),
+                 WithinAbs(1.0 + 2.0 * x - y + x * y, pcms::test::ExactTol));
+    REQUIRE_THAT(values(k, 0), WithinAbs(located(k, 0), pcms::test::ExactTol));
+  }
+
+  // positions in a 2D cell have two columns
+  Kokkos::View<Real**, DeviceMemorySpace> three_columns("three", n, 3);
+  REQUIRE_THROWS_WITH(
+    geometry->Bind(pcms::ParametricPoints{ids, three_columns}),
+    ContainsSubstring("2D grid need 2 columns, got 3"));
+}
+
+TEST_CASE("MapToPhysical gives the coordinates of parametric points")
+{
+  auto lib = Omega_h::Library{};
+  auto mesh = BuildSquareMesh(lib, 3);
+  auto geometry = MakeGeometry(mesh);
+  // the centroid and the first vertex of every element
+  const LO nelems = mesh.nelems();
+  Kokkos::View<LO*, DeviceMemorySpace> ids("ids", 2 * nelems);
+  Kokkos::View<Real**, DeviceMemorySpace> bary("bary", 2 * nelems, 3);
+  auto ids_host = Kokkos::create_mirror_view(ids);
+  auto bary_host = Kokkos::create_mirror_view(bary);
+  for (LO e = 0; e < nelems; ++e) {
+    ids_host(e) = e;
+    ids_host(nelems + e) = e;
+    for (int v = 0; v < 3; ++v) {
+      bary_host(e, v) = 1.0 / 3.0;
+      bary_host(nelems + e, v) = v == 0 ? 1.0 : 0.0;
+    }
+  }
+  Kokkos::deep_copy(ids, ids_host);
+  Kokkos::deep_copy(bary, bary_host);
+  const auto physical = Kokkos::create_mirror_view_and_copy(
+    HostMemorySpace(),
+    geometry->MapToPhysical(pcms::ParametricPoints{ids, bary}));
+  REQUIRE(physical.extent(0) == static_cast<size_t>(2 * nelems));
+  REQUIRE(physical.extent(1) == 2);
+  const auto elem_verts = Omega_h::HostRead<Omega_h::LO>(mesh.ask_elem_verts());
+  const auto mesh_coords = Omega_h::HostRead<Omega_h::Real>(mesh.coords());
+  for (LO e = 0; e < nelems; ++e) {
+    for (int d = 0; d < 2; ++d) {
+      Real centroid = 0;
+      for (int v = 0; v < 3; ++v) {
+        centroid += mesh_coords[2 * elem_verts[3 * e + v] + d] / 3.0;
+      }
+      CAPTURE(e, d);
+      REQUIRE_THAT(physical(e, d), WithinAbs(centroid, pcms::test::ExactTol));
+      REQUIRE_THAT(physical(nelems + e, d),
+                   WithinAbs(mesh_coords[2 * elem_verts[3 * e] + d],
+                             pcms::test::ExactTol));
+    }
+  }
+  Kokkos::View<Real**, DeviceMemorySpace> two_columns("two", 2 * nelems, 2);
+  REQUIRE_THROWS_WITH(
+    geometry->MapToPhysical(pcms::ParametricPoints{ids, two_columns}),
+    ContainsSubstring("MapToPhysical: parametric coordinates of a 2D mesh "
+                      "need 3 barycentric columns"));
+}
+
 TEST_CASE("Differential gives the element measure")
 {
   auto lib = Omega_h::Library{};
