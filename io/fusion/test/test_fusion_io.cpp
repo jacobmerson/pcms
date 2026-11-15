@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <Kokkos_Core.hpp>
@@ -282,6 +283,57 @@ TEST_CASE("Fusion-IO evaluation errors")
     fio::detail::OpenFusionIOSource(fio::Format::GEQDSK, GeqdskFile), 1);
   REQUIRE_THROWS_WITH(EvaluateAt(*other, psi, {1.8, 0.0, 0.1}),
                       ContainsSubstring("field is not a quantity"));
+}
+
+TEST_CASE("Fusion-IO FILL finds the points the domain probe evaluates")
+{
+  // M3D-C1 sources locate points with a mesh search instead of evaluating
+  // the probe, and geqdsk sources evaluate it: both must find the points
+  // where the probe evaluates, here on a grid across the domain boundary.
+  const auto [format, file, r0, r1, z0, z1] =
+    GENERATE(table<fio::Format, std::string, Real, Real, Real, Real>(
+      {{fio::Format::M3DC1, M3DC1File, 0.8, 2.8, -1.6, 1.6},
+       {fio::Format::GEQDSK, GeqdskFile, 0.5, 3.0, -2.0, 2.0}}));
+  CAPTURE(file);
+  auto source = fio::detail::OpenFusionIOSource(format, file);
+  auto vectors = fio::detail::FusionIOFunctionSpace::Create(source, 3);
+  auto b = vectors->CreateFunction("B", fio::Quantity::MagneticField);
+  constexpr int N = 24;
+  std::vector<Real> points;
+  for (int j = 0; j <= N; ++j) {
+    for (int i = 0; i <= N; ++i) {
+      points.insert(points.end(),
+                    {r0 + (r1 - r0) * i / N, 0.4 * j, z0 + (z1 - z0) * j / N});
+    }
+  }
+  const size_t n = points.size() / 3;
+  std::vector<pcms::LO> outside;
+  std::vector<Real> probe_values(3);
+  for (size_t i = 0; i < n; ++i) {
+    if (source->DomainProbe().eval(&points[3 * i], probe_values.data()) ==
+        FIO_OUT_OF_BOUNDS) {
+      outside.push_back(static_cast<pcms::LO>(i));
+    }
+  }
+  REQUIRE(!outside.empty());
+  REQUIRE(outside.size() < n);
+
+  constexpr Real Fill = -7.0;
+  const auto coords = fio::test::CreateDeviceCoordinateView(
+    points, vectors->GetCoordinateSystem(), 3);
+  const auto evaluator = vectors->CreatePointEvaluator<Real>(
+    vectors->Bind(coords.coordinate_view, {pcms::OutOfBoundsMode::FILL, Fill}));
+  const auto filled = Kokkos::create_mirror_view_and_copy(
+    HostMemorySpace(), evaluator->FilledPoints());
+  REQUIRE(std::vector<pcms::LO>(filled.data(),
+                                filled.data() + filled.extent(0)) == outside);
+  Kokkos::View<Real**, DeviceMemorySpace> out("out", n, 3);
+  evaluator->Evaluate(b, fio::test::TagLike(b, out));
+  const auto values =
+    Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
+  for (const pcms::LO i : outside) {
+    REQUIRE(values(i, 0) == Fill);
+  }
 }
 
 TEST_CASE("Fusion-IO gradients")
