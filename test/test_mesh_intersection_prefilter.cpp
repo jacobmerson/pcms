@@ -114,8 +114,8 @@ TEST_CASE("intersection prefilter preserves the intersection map",
     const auto geometry =
       pcms::OmegaHGeometry::Create(source, pcms::csys::Cartesian::Create(2));
     require_intersections_identical(
-      pcms::intersectTargets(source, target, geometry->GetSearch(), true),
-      pcms::intersectTargets(source, target, geometry->GetSearch(), false));
+      pcms::intersectTargets(source, target, *geometry, true),
+      pcms::intersectTargets(source, target, *geometry, false));
   }
   SECTION("2D, nested resolutions")
   {
@@ -126,8 +126,8 @@ TEST_CASE("intersection prefilter preserves the intersection map",
     const auto geometry =
       pcms::OmegaHGeometry::Create(source, pcms::csys::Cartesian::Create(2));
     require_intersections_identical(
-      pcms::intersectTargets(source, target, geometry->GetSearch(), true),
-      pcms::intersectTargets(source, target, geometry->GetSearch(), false));
+      pcms::intersectTargets(source, target, *geometry, true),
+      pcms::intersectTargets(source, target, *geometry, false));
   }
   SECTION("2D, non-nested resolutions")
   {
@@ -138,8 +138,8 @@ TEST_CASE("intersection prefilter preserves the intersection map",
     const auto geometry =
       pcms::OmegaHGeometry::Create(source, pcms::csys::Cartesian::Create(2));
     require_intersections_identical(
-      pcms::intersectTargets(source, target, geometry->GetSearch(), true),
-      pcms::intersectTargets(source, target, geometry->GetSearch(), false));
+      pcms::intersectTargets(source, target, *geometry, true),
+      pcms::intersectTargets(source, target, *geometry, false));
   }
   SECTION("3D, identical meshes")
   {
@@ -150,8 +150,8 @@ TEST_CASE("intersection prefilter preserves the intersection map",
     const auto geometry =
       pcms::OmegaHGeometry::Create(source, pcms::csys::Cartesian::Create(3));
     require_intersections_identical(
-      pcms::intersectTargets(source, target, geometry->GetSearch(), true),
-      pcms::intersectTargets(source, target, geometry->GetSearch(), false));
+      pcms::intersectTargets(source, target, *geometry, true),
+      pcms::intersectTargets(source, target, *geometry, false));
   }
   SECTION("3D, nested resolutions")
   {
@@ -162,8 +162,8 @@ TEST_CASE("intersection prefilter preserves the intersection map",
     const auto geometry =
       pcms::OmegaHGeometry::Create(source, pcms::csys::Cartesian::Create(3));
     require_intersections_identical(
-      pcms::intersectTargets(source, target, geometry->GetSearch(), true),
-      pcms::intersectTargets(source, target, geometry->GetSearch(), false));
+      pcms::intersectTargets(source, target, *geometry, true),
+      pcms::intersectTargets(source, target, *geometry, false));
   }
   SECTION("3D, non-nested resolutions")
   {
@@ -174,61 +174,48 @@ TEST_CASE("intersection prefilter preserves the intersection map",
     const auto geometry =
       pcms::OmegaHGeometry::Create(source, pcms::csys::Cartesian::Create(3));
     require_intersections_identical(
-      pcms::intersectTargets(source, target, geometry->GetSearch(), true),
-      pcms::intersectTargets(source, target, geometry->GetSearch(), false));
+      pcms::intersectTargets(source, target, *geometry, true),
+      pcms::intersectTargets(source, target, *geometry, false));
   }
 }
 
-// The conservative transfer hands the intersection the point search of the
-// source space's geometry. The set of source elements per target is a
-// property of the two meshes: which search located the target centroids, and
-// at what grid resolution, must not show in it. Row order can
+// The conservative transfer hands the intersection the source space's
+// geometry, which locates the target centroids with its own point search. The
+// set of source elements per target is a property of the two meshes: at what
+// grid resolution the geometry searches must not show in it. Row order can
 // (see require_intersections_equivalent), so this compares rows as sets.
-TEST_CASE("intersection map is independent of the supplied source search",
+TEST_CASE("intersection map is independent of the source search resolution",
           "[intersection]")
 {
   Omega_h::Library lib;
   auto world = lib.world();
 
-  SECTION("2D, coarse caller-supplied grid")
+  SECTION("2D, coarse geometry search grid")
   {
     auto source =
       Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 7, 11, 0, false);
     auto target =
       Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 5, 3, 0, false);
-    const pcms::GridPointSearchVariant search{
-      std::in_place_type<pcms::GridPointSearch2D>, source, 3, 3};
+    const auto coarse = pcms::OmegaHGeometry::Create(
+      source, pcms::csys::Cartesian::Create(2), pcms::SearchOptions{3});
     const auto geometry =
       pcms::OmegaHGeometry::Create(source, pcms::csys::Cartesian::Create(2));
     require_intersections_equivalent(
-      pcms::intersectTargets(source, target, search),
-      pcms::intersectTargets(source, target, geometry->GetSearch()));
+      pcms::intersectTargets(source, target, *coarse),
+      pcms::intersectTargets(source, target, *geometry));
   }
-  SECTION("3D, coarse caller-supplied grid")
+  SECTION("3D, coarse geometry search grid")
   {
     auto source =
       Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 5, 3, 4, false);
     auto target =
       Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 2, 4, 3, false);
-    const pcms::GridPointSearchVariant search{
-      std::in_place_type<pcms::GridPointSearch3D>, source, 2, 2, 2};
+    const auto coarse = pcms::OmegaHGeometry::Create(
+      source, pcms::csys::Cartesian::Create(3), pcms::SearchOptions{2});
     const auto geometry =
       pcms::OmegaHGeometry::Create(source, pcms::csys::Cartesian::Create(3));
     require_intersections_equivalent(
-      pcms::intersectTargets(source, target, search),
-      pcms::intersectTargets(source, target, geometry->GetSearch()));
-  }
-  SECTION("a search of the wrong dimension is rejected")
-  {
-    auto source =
-      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 2, 2, 2, false);
-    auto target =
-      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 2, 2, 2, false);
-    auto flat =
-      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 2, 2, 0, false);
-    const pcms::GridPointSearchVariant search{
-      std::in_place_type<pcms::GridPointSearch2D>, flat, 2, 2};
-    REQUIRE_THROWS_AS(pcms::intersectTargets(source, target, search),
-                      pcms::pcms_error);
+      pcms::intersectTargets(source, target, *coarse),
+      pcms::intersectTargets(source, target, *geometry));
   }
 }

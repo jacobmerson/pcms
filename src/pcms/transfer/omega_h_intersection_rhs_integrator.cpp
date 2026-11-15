@@ -31,7 +31,7 @@ struct Data
 template <int Dim, int TgtOrder>
 Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
                    const OmegaHLagrangeLayout& target_layout, int quad_order,
-                   const GridPointSearchVariant& source_search);
+                   const OmegaHGeometry& source_geometry);
 
 Data BuildData(const FunctionSpace& source_space,
                const FunctionSpace& target_space)
@@ -48,11 +48,9 @@ Data BuildData(const FunctionSpace& source_space,
   detail::CheckOmegaHScalarLagrangeLayout(
     target_space.GetCoordinateSystem(), target_layout,
     "OmegaHIntersectionRHSIntegrator", "target");
-  // the intersection locates the target centroids with the source geometry's
-  // search
+  // the intersection locates the target centroids with the source geometry
   const auto source_geometry = detail::OmegaHGeometryOf(
     source_space, *source_layout, "OmegaHIntersectionRHSIntegrator", "source");
-  const GridPointSearchVariant& source_search = source_geometry->GetSearch();
 
   const int dim = target_layout->GetMesh().dim();
   if (source_layout->GetMesh().dim() != dim) {
@@ -70,17 +68,17 @@ Data BuildData(const FunctionSpace& source_space,
     constexpr int TgtOrder = decltype(order_c)::value;
     if (dim == 3) {
       return BuildDataImpl<3, TgtOrder>(*source_layout, *target_layout,
-                                        quad_order, source_search);
+                                        quad_order, *source_geometry);
     }
     return BuildDataImpl<2, TgtOrder>(*source_layout, *target_layout,
-                                      quad_order, source_search);
+                                      quad_order, *source_geometry);
   });
 }
 
 template <int Dim, int TgtOrder>
 Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
                    const OmegaHLagrangeLayout& target_layout, int quad_order,
-                   const GridPointSearchVariant& source_search)
+                   const OmegaHGeometry& source_geometry)
 {
   using Basis = detail::TargetSimplexBasis<Dim, TgtOrder>;
   constexpr int ndof = Basis::ndof;
@@ -93,7 +91,7 @@ Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
   Omega_h::Mesh& target_mesh = target_layout.GetMesh();
 
   const auto intersections =
-    intersectTargets(source_mesh, target_mesh, source_search);
+    intersectTargets(source_mesh, target_mesh, source_geometry);
 
   const auto& tgt_coords = target_mesh.coords();
   const auto& tgt_elems2nodes = target_mesh.ask_down(Dim, Omega_h::VERT).ab2b;

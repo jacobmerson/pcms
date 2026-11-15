@@ -2,7 +2,7 @@
 #define PCMS_TRANSFER_MESH_INTERSECTION_HPP
 
 #include <pcms/configuration.h>
-#include <pcms/localization/point_search.h>
+#include <pcms/field/evaluator/omega_h_geometry.hpp>
 #include <pcms/localization/queue_visited.hpp>
 #include <Omega_h_fail.hpp>
 #include <Omega_h_int_scan.hpp>
@@ -185,8 +185,8 @@ public:
  *
  * @param source_mesh The source Omega_h mesh.
  * @param target_mesh The target Omega_h mesh.
- * @param source_search containing-element search over `source_mesh` (e.g.
- * the search of its OmegaHGeometry), of the mesh's dimension
+ * @param source_geometry geometry of `source_mesh`; its search locates the
+ * source element containing each target centroid
  * @param use_prefilter if true, skip degenerate clips
  * @return An IntersectionResults struct containing target-to-source mapping
  * data.
@@ -196,8 +196,9 @@ public:
  *
  * @see FindIntersections::adjBasedIntersectSearch
  */
-IntersectionResults intersectTargets(
-  Omega_h::Mesh& source_mesh, Omega_h::Mesh& target_mesh,
-  const GridPointSearchVariant& source_search, bool use_prefilter = true);
+IntersectionResults intersectTargets(Omega_h::Mesh& source_mesh,
+                                     Omega_h::Mesh& target_mesh,
+                                     const OmegaHGeometry& source_geometry,
+                                     bool use_prefilter = true);
 } // namespace pcms
 #endif // PCMS_TRANSFER_MESH_INTERSECTION_HPP

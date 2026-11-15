@@ -127,11 +127,6 @@ public:
 
   [[nodiscard]] Omega_h::Mesh& GetMesh() const noexcept { return mesh_; }
 
-  [[nodiscard]] const GridPointSearchVariant& GetSearch() const noexcept
-  {
-    return search_;
-  }
-
   /// x = sum_v lambda_v x_v for each point given by element and barycentric
   /// coordinates; throws on the same malformed points as Bind.
   [[nodiscard]] Kokkos::View<Real**, DeviceMemorySpace> MapToPhysical(
