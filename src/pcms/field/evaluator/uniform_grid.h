@@ -11,8 +11,6 @@
 #include "pcms/field/field_data.h"
 #include "pcms/utility/assert.h"
 #include "pcms/utility/profile.h"
-#include "pcms/transfer/linear_interpolant.hpp"
-#include "pcms/transfer/multidimarray.hpp"
 
 #include <memory>
 #include <utility>
@@ -65,84 +63,54 @@ public:
     auto cell_indices = binding_->CellIndices();
 
     if (layout_->GetOrder() == 0) {
-      Kokkos::parallel_for(
-        "evaluate_order0_device",
-        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {num_points, n_comp}),
-        KOKKOS_LAMBDA(const LO i, const int c) {
-          values(i, c) = dof_data(cell_indices(i), c);
+      ForEach(
+        "evaluate_order0_device", num_points, KOKKOS_LAMBDA(const LO i) {
+          for (int c = 0; c < n_comp; ++c) {
+            values(i, c) = dof_data(cell_indices(i), c);
+          }
         });
       return;
     }
 
-    // Order-1: multilinear interpolation
-    // Create local copy to avoid capturing reference in device lambdas in some
+    // Order-1: multilinear interpolation. Vertices are numbered with the first
+    // axis fastest (UniformGridFieldLayout), while GetDimensionedIndex()
+    // returns the cell indices in the opposite order of the coordinates, so
+    // axis d is entry Dim - 1 - d.
+    // Local copy to avoid capturing a reference in device lambdas in some
     // compilers
-    auto grid_copy = grid_;
-    Kokkos::View<LO**, DeviceMemorySpace> cell_dim_indices("cell_dim_indices",
-                                                           num_points, Dim);
-    Kokkos::parallel_for(
-      "compute_cell_dim_indices",
-      Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, num_points),
-      KOKKOS_CLASS_LAMBDA(const LO i) {
-        auto dim_idx = grid_copy.GetDimensionedIndex(cell_indices(i));
-        for (unsigned d = 0; d < Dim; ++d) {
-          cell_dim_indices(i, d) = dim_idx[d];
-        }
-      });
-
-    auto cell_divisions = grid_.divisions;
-    IntVecView dimensions_view("dimensions", Dim);
-    Kokkos::parallel_for(
-      "set_dimensions_view",
-      Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, Dim),
-      KOKKOS_LAMBDA(const unsigned d) {
-        // cell_dim_indices uses GetDimensionedIndex(), which returns indices in
-        // the opposite order of the coordinates, so we reverse the order here.
-        dimensions_view(d) = cell_divisions[Dim - 1 - d] + 1;
-      });
-
-    // the binding's coordinates are in axis order; cell_dim_indices is filled
-    // from GetDimensionedIndex(), which returns indices in the opposite order
-    RealMatView parametric_coords("parametric_coords", num_points, Dim);
+    auto grid = grid_;
+    // the binding's parametric coordinates: the point's position in its
+    // cell, per axis in [0, 1] (outside it for a NEAREST_BOUNDARY point)
     const auto parametric = binding_->Parametric();
-    Kokkos::parallel_for(
-      "compute_parametric_coords",
-      Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, num_points),
-      KOKKOS_LAMBDA(const LO i) {
+    ForEach(
+      "evaluate_order1_device", num_points, KOKKOS_LAMBDA(const LO i) {
+        const LO cell = cell_indices(i);
+        const auto cell_index = grid.GetDimensionedIndex(cell);
+        LO base = 0;
+        LO stride = 1;
+        Real t[Dim];
         for (unsigned d = 0; d < Dim; ++d) {
-          parametric_coords(i, Dim - 1 - d) = parametric(i, d);
+          t[d] = parametric(i, d);
+          base += cell_index[Dim - 1 - d] * stride;
+          stride *= grid.divisions[d] + 1;
         }
-      });
-
-    IntMatView cell_indices_interp("cell_indices_interp", num_points, Dim);
-    Kokkos::parallel_for(
-      "copy_cell_dim_indices_to_interp",
-      Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, num_points),
-      KOKKOS_LAMBDA(const LO i) {
-        for (unsigned d = 0; d < Dim; ++d)
-          cell_indices_interp(i, d) = cell_dim_indices(i, d);
-      });
-
-    RealMatView values_interp("values_interp",
-                              static_cast<size_t>(layout_->GetNumDofHolder()),
-                              static_cast<size_t>(n_comp));
-    Kokkos::parallel_for(
-      "copy_dof_data_to_values_interp",
-      Kokkos::MDRangePolicy<Kokkos::Rank<2>>(
-        {0, 0}, {static_cast<LO>(layout_->GetNumDofHolder()), n_comp}),
-      KOKKOS_LAMBDA(const LO i, const int c) {
-        values_interp(i, c) = dof_data(i, c);
-      });
-
-    auto interpolator = RegularGridInterpolator(
-      parametric_coords, values_interp, cell_indices_interp, dimensions_view);
-    auto interpolated = interpolator.linear_interpolation();
-
-    Kokkos::parallel_for(
-      "evaluate_order1_device",
-      Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {num_points, n_comp}),
-      KOKKOS_LAMBDA(const LO i, const int c) {
-        values(i, c) = interpolated(i, c);
+        for (int c = 0; c < n_comp; ++c) {
+          // Bit d of corner selects the upper vertex along axis d.
+          Real value = 0;
+          for (unsigned corner = 0; corner < (1u << Dim); ++corner) {
+            Real weight = 1;
+            LO vertex = base;
+            LO axis_stride = 1;
+            for (unsigned d = 0; d < Dim; ++d) {
+              const bool upper = (corner >> d) & 1u;
+              weight *= upper ? t[d] : 1 - t[d];
+              vertex += upper ? axis_stride : 0;
+              axis_stride *= grid.divisions[d] + 1;
+            }
+            value += weight * dof_data(vertex, c);
+          }
+          values(i, c) = value;
+        }
       });
   }
 
