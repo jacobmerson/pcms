@@ -38,16 +38,7 @@ void FillRows(Rank2View<T, DeviceMemorySpace, LayoutPolicy> values,
       values(rows(k), c) = value;
     }
   };
-  const auto n = static_cast<LO>(rows.extent(0));
-  if (IsSmallHostBatch(n)) {
-    for (LO k = 0; k < n; ++k) {
-      fill(k);
-    }
-    return;
-  }
-  Kokkos::parallel_for(
-    "PointEvaluator::FillRows",
-    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n), fill);
+  ForEach("PointEvaluator::FillRows", static_cast<LO>(rows.extent(0)), fill);
 }
 
 } // namespace detail

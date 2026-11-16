@@ -59,6 +59,23 @@ void SplitPoints(Kokkos::View<const bool*, DeviceMemorySpace> found,
     });
 }
 
+/// Copies the query coordinates into the bound source's points, whatever the
+/// layouts. (A free function: CUDA does not allow device lambdas in private
+/// member functions.)
+template <typename PointsView>
+void CopyPoints(PointsView points,
+                Rank2View<const Real, DeviceMemorySpace> coords)
+{
+  const auto dim = static_cast<int>(coords.extent(1));
+  ForEach(
+    "BoundSource::CopyPoints", static_cast<LO>(coords.extent(0)),
+    KOKKOS_LAMBDA(const LO i) {
+      for (int d = 0; d < dim; ++d) {
+        points(i, d) = coords(i, d);
+      }
+    });
+}
+
 } // namespace
 
 BoundSource::BoundSource(std::shared_ptr<const Geometry> geometry,
@@ -81,15 +98,7 @@ void BoundSource::Reset(const BindRequest& request)
     detail::ReserveRows(points_, "bound_points", num_points_, coords.extent(1));
     auto points = Kokkos::subview(
       points_, Kokkos::make_pair(LO{0}, num_points_), Kokkos::ALL);
-    if (IsSmallHostBatch(num_points_)) {
-      for (LO i = 0; i < num_points_; ++i) {
-        for (size_t d = 0; d < coords.extent(1); ++d) {
-          points(i, d) = coords(i, d);
-        }
-      }
-    } else {
-      ConvertMismatchLayoutView2D(points, coords);
-    }
+    CopyPoints(points, coords);
   }
   // every point is found until SetFound
   detail::ReserveRows(point_indices_, "bound_point_indices", num_points_);
