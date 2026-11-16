@@ -148,7 +148,8 @@ py::array map_entity_field_to_vertices_mls(
   Omega_h::Write<Omega_h::Real> radii2_write(num_vertices, 1.0);
 
   // Create SupportResults
-  SupportResults support{supports_ptr, supports_idx, radii2_write};
+  SupportResults support{supports_ptr.view(), supports_idx.view(),
+                         radii2_write.view()};
 
   // Convert entity field values to Omega_h array
   auto entity_field_omega_h = NumpyToOmegaHRead(entity_field_values);
