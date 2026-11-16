@@ -9,6 +9,7 @@
 #include "pcms/utility/arrays.h"
 #include "pcms/field/coordinate_system.hpp"
 #include "pcms/field/coordinate_view.hpp"
+#include "pcms/geometry/bound_source.hpp"
 
 namespace pcms
 {
@@ -183,6 +184,14 @@ private:
   Kokkos::View<LO*, HostMemorySpace> global_to_local_host_;
   Kokkos::View<LO*, DeviceMemorySpace> global_to_local_;
 };
+
+/// @brief The entities of `geometry` the DOF holders of `layout` are, as owner
+///        hints for binding or searching at the DOF-holder coordinates.
+/// @return the hint when the layout has one DOF holder per entity of one
+///         dimension of the geometry's discretization and no ghosts; an
+///         empty one otherwise
+[[nodiscard]] KnownOwners DOFHolderOwners(
+  const FieldLayout& layout, std::shared_ptr<const Geometry> geometry);
 
 // The geometric classification (dimension and id) of the owned DOF holders,
 // as host arrays in owned order. Converted and gathered on the device from the

@@ -1,9 +1,33 @@
 #include "pcms/field/field_layout.h"
+#include "pcms/geometry/geometry.hpp"
 #include "pcms/field/gid_permutation.hpp"
 #include "pcms/utility/assert.h"
 
 namespace pcms
 {
+
+KnownOwners DOFHolderOwners(const FieldLayout& layout,
+                            std::shared_ptr<const Geometry> geometry)
+{
+  const int entity_dim = layout.GetDOFHolderEntityDim();
+  const auto discretization = layout.GetDiscretization();
+  if (geometry == nullptr || entity_dim < 0 || layout.HasGhosts() ||
+      discretization == nullptr || geometry->GetDiscretization() == nullptr ||
+      !geometry->GetDiscretization()->SameEntities(*discretization)) {
+    return {};
+  }
+  // without ghosts, DOF holder i is the i-th DOF holder of the layout's one
+  // populated dimension, whose block starts at that dimension's offset
+  const LO n = layout.GetNumDofHolder();
+  const auto first = static_cast<LO>(layout.GetEntOffsets()[entity_dim]);
+  Kokkos::View<LO*, DeviceMemorySpace> entities(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "dof_holder_owners"), n);
+  Kokkos::parallel_for(
+    "DOFHolderOwners",
+    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
+    KOKKOS_LAMBDA(const LO i) { entities(i) = i - first; });
+  return KnownOwners{std::move(geometry), entity_dim, entities};
+}
 
 void FieldLayout::BuildGlobalToLocalPermutation(
   Kokkos::View<const GO*, DeviceMemorySpace> local_gids,

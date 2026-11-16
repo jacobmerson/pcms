@@ -1,15 +1,84 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include <pcms/localization/point_search.h>
+#include <pcms/localization/uniform_grid_search.hpp>
 #include <pcms/utility/mesh_geometry.h>
 #include <pcms/utility/uniform_grid.h>
 #include "field_test_utils.h"
+#include <pcms/field/evaluator/omega_h_geometry.hpp>
 #include <Omega_h_mesh.hpp>
 #include <Omega_h_build.hpp>
+#include <algorithm>
+#include <utility>
 #include <vector>
 
 using pcms::AABBox;
 using pcms::Uniform2DGrid;
+
+namespace
+{
+
+/// The element and barycentric coordinates ([point][vertex]) of the results,
+/// lifted as the Omega_h binding does, on the host.
+template <int Dim, typename Result>
+auto LiftOnHost(Omega_h::Mesh& mesh, Kokkos::View<Result*> results)
+{
+  auto lifted = pcms::detail::LiftResults<Dim>(
+    mesh, Kokkos::View<const Result*, pcms::DeviceMemorySpace>(results));
+  return std::make_pair(
+    Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, lifted.first),
+    Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, lifted.second));
+}
+
+/// Whether `elem` has all of `verts` among its vertices.
+bool ElementHasVertices(Omega_h::Mesh& mesh, Omega_h::LO elem,
+                        const std::vector<Omega_h::LO>& verts)
+{
+  const auto elem_verts = Omega_h::HostRead<Omega_h::LO>(mesh.ask_elem_verts());
+  for (const auto v : verts) {
+    bool found = false;
+    for (int k = 0; k <= mesh.dim(); ++k) {
+      found = found || elem_verts[elem * (mesh.dim() + 1) + k] == v;
+    }
+    if (!found) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/// The point the barycentric coordinates `bary` give in element `elem`.
+std::vector<pcms::Real> PositionInElement(
+  Omega_h::Mesh& mesh, Omega_h::LO elem,
+  Kokkos::View<const pcms::Real**, Kokkos::HostSpace> bary, int row)
+{
+  const int dim = mesh.dim();
+  const auto elem_verts = Omega_h::HostRead<Omega_h::LO>(mesh.ask_elem_verts());
+  const auto coords = Omega_h::HostRead<Omega_h::Real>(mesh.coords());
+  std::vector<pcms::Real> x(dim, 0.0);
+  for (int k = 0; k <= dim; ++k) {
+    for (int d = 0; d < dim; ++d) {
+      x[d] += bary(row, k) * coords[elem_verts[elem * (dim + 1) + k] * dim + d];
+    }
+  }
+  return x;
+}
+
+/// The lowest element adjacent to entity `entity` of dimension `entity_dim`.
+Omega_h::LO LowestAdjacentElement(Omega_h::Mesh& mesh, int entity_dim,
+                                  Omega_h::LO entity)
+{
+  const auto up = mesh.ask_up(entity_dim, mesh.dim());
+  const auto a2ab = Omega_h::HostRead<Omega_h::LO>(up.a2ab);
+  const auto ab2b = Omega_h::HostRead<Omega_h::LO>(up.ab2b);
+  Omega_h::LO lowest = ab2b[a2ab[entity]];
+  for (Omega_h::LO i = a2ab[entity]; i < a2ab[entity + 1]; ++i) {
+    lowest = std::min(lowest, ab2b[i]);
+  }
+  return lowest;
+}
+
+} // namespace
 
 TEST_CASE("global to local")
 {
@@ -284,37 +353,67 @@ TEST_CASE("uniform grid search")
   auto results = search(points);
   auto results_h = Kokkos::create_mirror_view(results);
   Kokkos::deep_copy(results_h, results);
+  auto [elems_h, bary_h] = LiftOnHost<2>(mesh, results);
+  const auto edge_verts = Omega_h::HostRead<Omega_h::LO>(
+    mesh.ask_down(Omega_h::EDGE, Omega_h::VERT).ab2b);
+  const auto mesh_coords = Omega_h::HostRead<Omega_h::Real>(mesh.coords());
   SECTION("global coordinate within mesh")
   {
     {
-      auto [dim, idx, coords] = results_h(0);
-      const auto face_idx = search.GetOwningElementId(results_h(0));
+      auto [dim, idx, parametric] = results_h(0);
+      const auto elem = elems_h(0);
 
       CAPTURE(idx);
 
       REQUIRE(dim == GridPointSearch2D::Result::Dimensionality::VERTEX);
       REQUIRE(idx == 0);
-      REQUIRE(face_idx >= 0);
-      REQUIRE(coords[0] == Catch::Approx(1));
-      REQUIRE(coords[1] == Catch::Approx(0));
-      REQUIRE(coords[2] == Catch::Approx(0));
+      // a vertex has no coordinates of its own
+      REQUIRE(parametric[0] == 0);
+      REQUIRE(parametric[1] == 0);
+      // the lift is the lowest element around the vertex, with all weight on
+      // the vertex
+      REQUIRE(elem == LowestAdjacentElement(mesh, 0, idx));
+      REQUIRE(ElementHasVertices(mesh, elem, {idx}));
+      const auto x = PositionInElement(mesh, elem, bary_h, 0);
+      REQUIRE(x[0] == Catch::Approx(0).margin(1e-14));
+      REQUIRE(x[1] == Catch::Approx(0).margin(1e-14));
     }
     {
-      auto [dim, idx, coords] = results_h(1);
-      const auto face_idx = search.GetOwningElementId(results_h(1));
+      auto [dim, idx, parametric] = results_h(1);
+      const auto elem = elems_h(1);
       REQUIRE(dim == GridPointSearch2D::Result::Dimensionality::EDGE);
       REQUIRE(idx == 156);
-      REQUIRE(face_idx >= 0);
-      REQUIRE(coords[0] == Catch::Approx(0.5));
-      REQUIRE(coords[1] == Catch::Approx(0.1));
-      REQUIRE(coords[2] == Catch::Approx(0.4));
+      // the position along the edge is that of the projection of the point
+      const auto va = edge_verts[idx * 2];
+      const auto vb = edge_verts[idx * 2 + 1];
+      const double abx = mesh_coords[vb * 2] - mesh_coords[va * 2];
+      const double aby = mesh_coords[vb * 2 + 1] - mesh_coords[va * 2 + 1];
+      const double t = ((0.55 - mesh_coords[va * 2]) * abx +
+                        (0.54 - mesh_coords[va * 2 + 1]) * aby) /
+                       (abx * abx + aby * aby);
+      REQUIRE(parametric[0] == Catch::Approx(t));
+      REQUIRE(parametric[1] == 0);
+      // the lift is the lowest element around the edge, with the weight on the
+      // edge's vertices
+      REQUIRE(elem == LowestAdjacentElement(mesh, 1, idx));
+      REQUIRE(ElementHasVertices(mesh, elem, {va, vb}));
+      const auto x = PositionInElement(mesh, elem, bary_h, 1);
+      REQUIRE(x[0] == Catch::Approx(mesh_coords[va * 2] + t * abx));
+      REQUIRE(x[1] == Catch::Approx(mesh_coords[va * 2 + 1] + t * aby));
     }
     {
-      auto [dim, idx, coords] = results_h(7);
-      const auto face_idx = search.GetOwningElementId(results_h(7));
+      auto [dim, idx, parametric] = results_h(7);
+      const auto elem = elems_h(7);
       REQUIRE(dim == GridPointSearch2D::Result::Dimensionality::FACE);
       REQUIRE(idx == 0);
-      REQUIRE(face_idx >= 0);
+      // a face is its own element, with the reduced coordinates as weights
+      REQUIRE(elem == idx);
+      REQUIRE(bary_h(7, 0) == Catch::Approx(1 - parametric[0] - parametric[1]));
+      REQUIRE(bary_h(7, 1) == Catch::Approx(parametric[0]));
+      REQUIRE(bary_h(7, 2) == Catch::Approx(parametric[1]));
+      const auto x = PositionInElement(mesh, elem, bary_h, 7);
+      REQUIRE(x[0] == Catch::Approx(0.05));
+      REQUIRE(x[1] == Catch::Approx(0.02));
     }
   }
   SECTION("Global coordinate outside mesh")
@@ -324,23 +423,30 @@ TEST_CASE("uniform grid search")
     REQUIRE(out_of_bounds.dimensionality ==
             GridPointSearch2D::Result::Dimensionality::VERTEX);
     REQUIRE(out_of_bounds.IsOutside());
-    REQUIRE(out_of_bounds.EntityId() == top_right.element_id);
-    REQUIRE(search.GetOwningElementId(out_of_bounds) >= 0);
+    REQUIRE(out_of_bounds.EntityId() == top_right.entity);
+    REQUIRE(elems_h(2) >= 0);
+    REQUIRE(ElementHasVertices(mesh, elems_h(2), {out_of_bounds.EntityId()}));
 
     out_of_bounds = results_h(4);
     auto bot_left = results_h(0);
     REQUIRE(out_of_bounds.dimensionality ==
             GridPointSearch2D::Result::Dimensionality::VERTEX);
     REQUIRE(out_of_bounds.IsOutside());
-    REQUIRE(out_of_bounds.EntityId() == bot_left.element_id);
-    REQUIRE(search.GetOwningElementId(out_of_bounds) >= 0);
+    REQUIRE(out_of_bounds.EntityId() == bot_left.entity);
+    REQUIRE(elems_h(4) >= 0);
+    REQUIRE(ElementHasVertices(mesh, elems_h(4), {out_of_bounds.EntityId()}));
 
     out_of_bounds = results_h(5);
     REQUIRE(out_of_bounds.dimensionality ==
             GridPointSearch2D::Result::Dimensionality::EDGE);
     REQUIRE(out_of_bounds.IsOutside());
     REQUIRE(out_of_bounds.EntityId() == 219);
-    REQUIRE(search.GetOwningElementId(out_of_bounds) >= 0);
+    REQUIRE(elems_h(5) >= 0);
+    REQUIRE(ElementHasVertices(mesh, elems_h(5),
+                               {edge_verts[219 * 2], edge_verts[219 * 2 + 1]}));
+    // the outside point's position on its nearest edge is its projection
+    REQUIRE(out_of_bounds.parametric[0] >= 0);
+    REQUIRE(out_of_bounds.parametric[0] <= 1);
 
     // (0.05, -0.01) is within the edge tolerance of the bottom edge, so it is
     // located on that edge rather than reported outside.
@@ -348,8 +454,10 @@ TEST_CASE("uniform grid search")
     REQUIRE(on_edge.dimensionality ==
             GridPointSearch2D::Result::Dimensionality::EDGE);
     REQUIRE_FALSE(on_edge.IsOutside());
-    REQUIRE(on_edge.element_id == 0);
-    REQUIRE(search.GetOwningElementId(on_edge) >= 0);
+    REQUIRE(on_edge.entity == 0);
+    REQUIRE(elems_h(6) >= 0);
+    REQUIRE(
+      ElementHasVertices(mesh, elems_h(6), {edge_verts[0], edge_verts[1]}));
   }
   SECTION("point on extension of an edge")
   {
@@ -361,16 +469,18 @@ TEST_CASE("uniform grid search")
     auto ext_results = search(ext_points);
     auto ext_results_h = Kokkos::create_mirror_view(ext_results);
     Kokkos::deep_copy(ext_results_h, ext_results);
+    auto [ext_elems_h, ext_bary_h] = LiftOnHost<2>(mesh, ext_results);
 
     auto res = ext_results_h(0);
-    // Must be out-of-bounds (negative element id)
-    REQUIRE(res.element_id < 0);
+    // Must be out-of-bounds (negative entity id)
+    REQUIRE(res.entity < 0);
     // Dimensionality must be VERTEX — the nearest entity is the
     // rightmost bottom vertex (1.0, 0).
     REQUIRE(res.dimensionality ==
             GridPointSearch2D::Result::Dimensionality::VERTEX);
-    // Owning element should still resolve to a valid face
-    REQUIRE(search.GetOwningElementId(res) >= 0);
+    // The lift still resolves to a valid face around that vertex
+    REQUIRE(ext_elems_h(0) >= 0);
+    REQUIRE(ElementHasVertices(mesh, ext_elems_h(0), {res.EntityId()}));
   }
 }
 
@@ -413,7 +523,7 @@ TEST_CASE("point search locates points on shared faces",
 
   std::vector<Omega_h::LO> not_located;
   for (Omega_h::LO i = 0; i < npoints; ++i) {
-    if (results_h(i).element_id < 0) {
+    if (results_h(i).entity < 0) {
       not_located.push_back(i);
     }
   }
@@ -449,19 +559,18 @@ TEST_CASE("point search encodes outside points unambiguously",
     auto results = search(points);
     auto results_h =
       Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, results);
-    auto owners_h = Kokkos::create_mirror_view_and_copy(
-      Kokkos::HostSpace{}, search.GetOwningElementIds(results));
+    const auto owners_h = LiftOnHost<3>(mesh, results).first;
 
     REQUIRE(results_h(0).dimensionality == Dimensionality::REGION);
     REQUIRE_FALSE(results_h(0).IsOutside());
-    REQUIRE(results_h(0).element_id == 0);
+    REQUIRE(results_h(0).entity == 0);
     REQUIRE(results_h(0).EntityId() == 0);
+    // a region is its own element
     REQUIRE(owners_h(0) == 0);
 
     REQUIRE(results_h(1).dimensionality == Dimensionality::REGION);
     REQUIRE(results_h(1).IsOutside());
     REQUIRE(results_h(1).EntityId() == 0);
-    REQUIRE(search.GetOwningElementId(results_h(1)) == 0);
     REQUIRE(owners_h(1) == 0);
 
     // The grid over a single tet has no empty cell, so decode the
@@ -469,14 +578,12 @@ TEST_CASE("point search encodes outside points unambiguously",
     Kokkos::View<GridPointSearch3D::Result*> none("none", 1);
     Kokkos::deep_copy(none,
                       GridPointSearch3D::Result{Dimensionality::NO_INTERSECT,
-                                                -1, Omega_h::zero_vector<4>()});
+                                                -1, Omega_h::zero_vector<3>()});
     auto none_h =
       Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, none);
-    auto none_owners_h = Kokkos::create_mirror_view_and_copy(
-      Kokkos::HostSpace{}, search.GetOwningElementIds(none));
+    const auto none_owners_h = LiftOnHost<3>(mesh, none).first;
     REQUIRE(none_h(0).IsOutside());
     REQUIRE(none_h(0).EntityId() == -1);
-    REQUIRE(search.GetOwningElementId(none_h(0)) == -1);
     REQUIRE(none_owners_h(0) == -1);
   }
 
@@ -506,24 +613,68 @@ TEST_CASE("point search encodes outside points unambiguously",
     auto results = search(points);
     auto results_h =
       Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, results);
-    auto owners_h = Kokkos::create_mirror_view_and_copy(
-      Kokkos::HostSpace{}, search.GetOwningElementIds(results));
+    const auto owners_h = LiftOnHost<2>(mesh, results).first;
 
     REQUIRE(results_h(0).dimensionality == Dimensionality::VERTEX);
     REQUIRE(results_h(0).IsOutside());
     REQUIRE(results_h(0).EntityId() == 0);
-    REQUIRE(search.GetOwningElementId(results_h(0)) == 0);
     REQUIRE(owners_h(0) == 0);
 
     REQUIRE(results_h(1).dimensionality == Dimensionality::NO_INTERSECT);
     REQUIRE(results_h(1).IsOutside());
     REQUIRE(results_h(1).EntityId() == -1);
-    REQUIRE(search.GetOwningElementId(results_h(1)) == -1);
     REQUIRE(owners_h(1) == -1);
 
     REQUIRE(results_h(2).dimensionality == Dimensionality::FACE);
     REQUIRE_FALSE(results_h(2).IsOutside());
-    REQUIRE(results_h(2).element_id == 0);
+    REQUIRE(results_h(2).entity == 0);
     REQUIRE(owners_h(2) == 0);
   }
+}
+
+TEST_CASE("uniform grid search reports the cell and the position in it",
+          "[point_search][uniform_grid]")
+{
+  using Search = pcms::UniformGridPointSearch<2>;
+  // 4 x 2 cells of size 0.5 x 1 over [0, 2] x [0, 2]
+  const pcms::UniformGrid<2> grid{
+    .edge_length = {2.0, 2.0}, .bot_left = {0.0, 0.0}, .divisions = {4, 2}};
+  Kokkos::View<pcms::Real* [2]> points("points", 3);
+  auto points_h = Kokkos::create_mirror_view(points);
+  // in the cell at (1, 0) in axis order, a quarter and a half along its axes
+  points_h(0, 0) = 0.5 + 0.125;
+  points_h(0, 1) = 0.5;
+  // on the grid's far corner
+  points_h(1, 0) = 2.0;
+  points_h(1, 1) = 2.0;
+  // outside, a cell width beyond the near edge of the first cell
+  points_h(2, 0) = -0.5;
+  points_h(2, 1) = 0.5;
+  Kokkos::deep_copy(points, points_h);
+
+  const auto results = Kokkos::create_mirror_view_and_copy(
+    Kokkos::HostSpace{},
+    Search(grid)(
+      Kokkos::View<const pcms::Real**, pcms::DeviceMemorySpace>(points)));
+
+  const auto inside = results(0);
+  REQUIRE_FALSE(inside.IsOutside());
+  REQUIRE(inside.cell == grid.ClosestCellID(Omega_h::Vector<2>{0.625, 0.5}));
+  REQUIRE(inside.parametric[0] == Catch::Approx(0.25));
+  REQUIRE(inside.parametric[1] == Catch::Approx(0.5));
+
+  // the grid is closed: its far corner is in its last cell, at the corner
+  const auto corner = results(1);
+  REQUIRE_FALSE(corner.IsOutside());
+  REQUIRE(corner.cell == 7);
+  REQUIRE(corner.parametric[0] == Catch::Approx(1.0));
+  REQUIRE(corner.parametric[1] == Catch::Approx(1.0));
+
+  // a point outside gets its nearest cell and its position relative to it
+  const auto outside = results(2);
+  REQUIRE(outside.IsOutside());
+  REQUIRE(outside.CellId() == 0);
+  REQUIRE(outside.cell == Search::Result::OutsideId(0));
+  REQUIRE(outside.parametric[0] == Catch::Approx(-1.0));
+  REQUIRE(outside.parametric[1] == Catch::Approx(0.5));
 }
