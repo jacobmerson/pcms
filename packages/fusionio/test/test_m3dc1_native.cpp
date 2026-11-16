@@ -276,6 +276,46 @@ TEST_CASE("Native M3D-C1 Hessian of the poloidal flux matches Fusion-IO 1.x")
   }
 }
 
+TEST_CASE("Native M3D-C1 equilibrium magnetic field matches Fusion-IO 1.x")
+{
+  auto oracle =
+    fusionio::detail::OpenFusionIOSource(fusionio::Format::M3DC1, M3DC1File);
+  const auto native = fusionio::Open(fusionio::Format::M3DC1, M3DC1File,
+                                     fusionio::Evaluation::Native);
+  const fusionio::Options equilibrium{.part = fusionio::Part::Equilibrium};
+  const auto b = native->CreateFunction(Quantity::MagneticField, equilibrium);
+  REQUIRE(b.GetLayout().GetNumComponents() == 3);
+  REQUIRE(pcms::SameValueBasis(
+    b.GetData().GetValueBasis(),
+    pcms::ValueBasis{pcms::csys::CylindricalRThetaZ::Create(),
+                     pcms::ComponentScaling::Physical, pcms::values::Vector}));
+  REQUIRE_FALSE(b.GetSpace().Supports(DifferentialOperator::Gradient));
+  const auto field = oracle->GetField(
+    Quantity::MagneticField, FusionIOOptions(oracle->Get(), equilibrium));
+  const auto points = InsideElements(*oracle->DomainMesh(), NumPoints);
+  std::vector<std::array<Real, 3>> expected(NumPoints);
+  for (size_t i = 0; i < NumPoints; ++i) {
+    int hint = points.elements[i];
+    const auto x = RPhiZ(points.rz, i);
+    REQUIRE(field->eval(x.data(), expected[i].data(), &hint) == FIO_SUCCESS);
+  }
+  const auto values = EvaluateAt(b, points.rz);
+  for (int c = 0; c < 3; ++c) {
+    const Real scale = Scale(expected, c);
+    REQUIRE(scale > 0.);
+    for (size_t i = 0; i < NumPoints; ++i) {
+      CAPTURE(c, i, points.rz[2 * i], points.rz[2 * i + 1]);
+      REQUIRE_THAT(values(i, c), WithinRel(expected[i][c], 1e-10) ||
+                                   WithinAbs(expected[i][c], 1e-10 * scale));
+    }
+  }
+  // the time slices' fields are not axisymmetric
+  REQUIRE_THROWS_WITH(
+    native->CreateFunction(Quantity::MagneticField,
+                           {.timeslice = 1, .part = fusionio::Part::Perturbed}),
+    ContainsSubstring("not axisymmetric"));
+}
+
 TEST_CASE("Native M3D-C1 points outside the domain")
 {
   auto oracle =
