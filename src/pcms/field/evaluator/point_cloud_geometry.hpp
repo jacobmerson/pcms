@@ -5,9 +5,12 @@
 #include "pcms/field/evaluator/mls_point_cloud.h"
 #include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/field_layout.h"
+#include "pcms/field/layout/omega_h_entity.h"
+#include "pcms/field/layout/point_cloud.h"
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/localization/adj_search.hpp"
 #include "pcms/localization/mls_support_helpers.h"
+#include "pcms/utility/arrays.h"
 #include "pcms/utility/assert.h"
 #include "pcms/utility/entity_types.h"
 #include "pcms/utility/omega_h_array_utils.h"
@@ -32,23 +35,8 @@ namespace pcms
 class PointCloudGeometry final : public Geometry
 {
 public:
-  [[nodiscard]] static std::shared_ptr<PointCloudGeometry> Create(
-    std::shared_ptr<const FieldLayout> site_layout,
-    NeighbourhoodOptions options = {})
-  {
-    return std::make_shared<PointCloudGeometry>(std::move(site_layout), nullptr,
-                                                -1, std::move(options));
-  }
-
-  [[nodiscard]] static std::shared_ptr<PointCloudGeometry> Create(
-    std::shared_ptr<const FieldLayout> site_layout, Omega_h::Mesh& mesh,
-    int site_entity_dim, NeighbourhoodOptions options = {})
-  {
-    return std::make_shared<PointCloudGeometry>(
-      std::move(site_layout), &mesh, site_entity_dim, std::move(options));
-  }
-
-  /// Use Create or std::make_shared: Bind uses shared_from_this().
+  /// Own it by std::shared_ptr, as CreatePointCloudGeometry does: Bind uses
+  /// shared_from_this().
   /// @param mesh the mesh whose entities of dimension `site_entity_dim` are
   ///        the sites, or null for a point cloud
   PointCloudGeometry(std::shared_ptr<const FieldLayout> site_layout,
@@ -58,10 +46,10 @@ public:
       mesh_(mesh),
       site_entity_dim_(site_entity_dim),
       options_(std::move(options)),
-      vertex_geometry_(
-        mesh != nullptr && site_entity_dim == Vertex
-          ? OmegaHGeometry::Create(*mesh, site_layout_->GetCoordinateSystem())
-          : nullptr)
+      vertex_geometry_(mesh != nullptr && site_entity_dim == Vertex
+                         ? std::make_shared<OmegaHGeometry>(
+                             *mesh, site_layout_->GetCoordinateSystem())
+                         : nullptr)
   {
     // MLS distances are based on the unweighted Euclidean measure, which is
     // valid only with the identity metric; this almost certainly should be
@@ -158,6 +146,54 @@ private:
   // adjacency search from the element its search finds for each point
   std::shared_ptr<const OmegaHGeometry> vertex_geometry_;
 };
+
+/// A point-cloud geometry whose sites are `coords` (copied to the device).
+/// @param coords the sites
+/// @param options the support search of the geometry
+/// @throws pcms_error if the coordinate system does not have the identity
+///         metric (MLS distances are Euclidean)
+inline std::shared_ptr<Geometry> CreatePointCloudGeometry(
+  CoordinateView<HostMemorySpace> coords, NeighbourhoodOptions options = {})
+{
+  const auto values = coords.GetValues();
+  const int dim = static_cast<int>(values.extent(1));
+  Kokkos::View<const Real**, Kokkos::HostSpace> host_view(
+    values.data_handle(), values.extent(0), values.extent(1));
+  auto device_view = Kokkos::View<Real**>("device_view", host_view.extent(0),
+                                          host_view.extent(1));
+  DeepCopyMismatchLayouts(device_view, host_view);
+  auto layout = std::make_shared<PointCloudLayout>(
+    dim, device_view, coords.GetCoordinateSystem());
+  return std::make_shared<PointCloudGeometry>(std::move(layout), nullptr, -1,
+                                              std::move(options));
+}
+
+/// A point-cloud geometry whose sites are the DOF holders of `sites` (e.g. the
+/// entities of one dimension of a mesh, through OmegaHEntityLayout, which the
+/// adjacency search then serves).
+/// @param sites the layout of the sites
+/// @param options the support search of the geometry
+/// @throws pcms_error if `sites` is null or its coordinate system does not
+///         have the identity metric
+inline std::shared_ptr<Geometry> CreatePointCloudGeometry(
+  std::shared_ptr<const FieldLayout> sites, NeighbourhoodOptions options = {})
+{
+  if (sites == nullptr) {
+    throw pcms_error("CreatePointCloudGeometry: the sites must not be null");
+  }
+  Omega_h::Mesh* mesh = nullptr;
+  int site_entity_dim = -1;
+  if (dynamic_cast<const OmegaHEntityLayout*>(sites.get()) != nullptr) {
+    const auto discretization =
+      std::dynamic_pointer_cast<const OmegaHDiscretization>(
+        sites->GetDiscretization());
+    PCMS_ALWAYS_ASSERT(discretization != nullptr);
+    mesh = &discretization->GetMesh();
+    site_entity_dim = sites->GetDOFHolderEntityDim();
+  }
+  return std::make_shared<PointCloudGeometry>(
+    std::move(sites), mesh, site_entity_dim, std::move(options));
+}
 
 } // namespace pcms
 

@@ -22,8 +22,8 @@ TEST_CASE("omega_h_field2 out of bounds FILL mode")
   auto mesh =
     Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 10, 10, 0, false);
   auto geometry =
-    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
-  auto factory = pcms::LagrangeFunctionSpace::FromGeometry(geometry, 1, 1);
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto factory = pcms::CreateLagrangeSpace(geometry, 1, 1);
   auto field = factory->CreateFunction<Real>();
   pcms::test::SetField(field, OMEGA_H_LAMBDA(Real x, Real y) { return x + y; });
 
@@ -52,10 +52,9 @@ TEST_CASE("uniform_grid_field out of bounds FILL mode")
   grid.edge_length = {1.0, 1.0};
   grid.divisions = {N, N};
 
-  auto factory = pcms::LagrangeFunctionSpace::FromGeometry(
-    pcms::UniformGridGeometry<2>::Create(grid,
-                                         pcms::csys::Cartesian::Deferred()),
-    1, 1);
+  auto factory = pcms::CreateLagrangeSpace(
+    pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Deferred()), 1,
+    1);
   auto field = factory->CreateFunction<Real>();
   pcms::test::SetField(field, OMEGA_H_LAMBDA(Real x, Real y) { return x + y; });
 
@@ -84,9 +83,8 @@ TEST_CASE("spline_field out of bounds FILL mode")
   grid.edge_length = {1.0, 1.0};
   grid.divisions = {N, N};
 
-  auto factory = pcms::SplineFunctionSpace::FromGeometry(
-    pcms::UniformGridGeometry<2>::Create(grid,
-                                         pcms::csys::Cartesian::Deferred()));
+  auto factory = pcms::CreateSplineSpace(
+    pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Deferred()));
   auto field = factory->CreateFunction<Real>();
   pcms::test::SetField(field, OMEGA_H_LAMBDA(Real x, Real y) { return x + y; });
 

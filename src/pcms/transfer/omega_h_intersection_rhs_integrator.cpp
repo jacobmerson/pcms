@@ -30,9 +30,9 @@ struct Data
 };
 
 template <int Dim, int TgtOrder>
-Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
-                   const OmegaHLagrangeLayout& target_layout, int quad_order,
-                   const OmegaHGeometry& source_geometry);
+Data BuildDataImpl(const OmegaHLagrangeLayout& target_layout, int quad_order,
+                   const OmegaHGeometry& source_geometry,
+                   const OmegaHGeometry& target_geometry);
 
 Data BuildData(const FunctionSpace& source_space,
                const FunctionSpace& target_space)
@@ -41,13 +41,12 @@ Data BuildData(const FunctionSpace& source_space,
   const auto [source_layout, source_geometry] =
     detail::ResolveOmegaHScalarSpace(
       source_space, 0, 1, "OmegaHIntersectionRHSIntegrator", "source");
-  const auto target_layout =
+  const auto [target_layout, target_geometry] =
     detail::ResolveOmegaHScalarSpace(
-      target_space, 0, 1, "OmegaHIntersectionRHSIntegrator", "target")
-      .layout;
+      target_space, 0, 1, "OmegaHIntersectionRHSIntegrator", "target");
 
-  const int dim = target_layout->GetMesh().dim();
-  if (source_layout->GetMesh().dim() != dim) {
+  const int dim = GetMesh(*target_geometry).dim();
+  if (GetMesh(*source_geometry).dim() != dim) {
     throw pcms_error("OmegaHIntersectionRHSIntegrator: source and target mesh "
                      "dimensions differ");
   }
@@ -62,20 +61,20 @@ Data BuildData(const FunctionSpace& source_space,
     detail::DispatchByOrder(target_layout->GetOrder(), [&](auto order_c) {
       constexpr int TgtOrder = decltype(order_c)::value;
       if (dim == 3) {
-        return BuildDataImpl<3, TgtOrder>(*source_layout, *target_layout,
-                                          quad_order, *source_geometry);
+        return BuildDataImpl<3, TgtOrder>(*target_layout, quad_order,
+                                          *source_geometry, *target_geometry);
       }
-      return BuildDataImpl<2, TgtOrder>(*source_layout, *target_layout,
-                                        quad_order, *source_geometry);
+      return BuildDataImpl<2, TgtOrder>(*target_layout, quad_order,
+                                        *source_geometry, *target_geometry);
     });
   data.source_geometry = source_geometry;
   return data;
 }
 
 template <int Dim, int TgtOrder>
-Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
-                   const OmegaHLagrangeLayout& target_layout, int quad_order,
-                   const OmegaHGeometry& source_geometry)
+Data BuildDataImpl(const OmegaHLagrangeLayout& target_layout, int quad_order,
+                   const OmegaHGeometry& source_geometry,
+                   const OmegaHGeometry& target_geometry)
 {
   using Basis = detail::TargetSimplexBasis<Dim, TgtOrder>;
   constexpr int ndof = Basis::ndof;
@@ -84,8 +83,8 @@ Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
   // measure `m` scales the reference quadrature weights by Dim! * m.
   constexpr Omega_h::Real ref_factor = (Dim == 3) ? 6.0 : 2.0;
 
-  Omega_h::Mesh& source_mesh = source_layout.GetMesh();
-  Omega_h::Mesh& target_mesh = target_layout.GetMesh();
+  Omega_h::Mesh& source_mesh = GetMesh(source_geometry);
+  Omega_h::Mesh& target_mesh = GetMesh(target_geometry);
 
   const auto intersections = intersectTargets(source_geometry, target_mesh);
 
@@ -240,7 +239,7 @@ OmegaHIntersectionRHSIntegrator::GetIntegrationPoints() const noexcept
 
 KnownOwners OmegaHIntersectionRHSIntegrator::IntegrationPointOwners() const
 {
-  return KnownOwners{source_geometry_, source_geometry_->GetMesh().dim(),
+  return KnownOwners{source_geometry_, GetMesh(*source_geometry_).dim(),
                      source_elements_};
 }
 

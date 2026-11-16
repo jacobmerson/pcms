@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cstdint>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -6,7 +8,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include "pcms/discretization/discretization/omega_h.hpp"
 #include "pcms/field/coordinate_map.hpp"
 #include "pcms/field/coordinate_system.hpp"
 #include "pcms/field/coordinate_systems/cartesian.hpp"
@@ -21,6 +22,7 @@
 #include "pcms/field/field_layout.h"
 #include "pcms/field/function_space.h"
 #include "pcms/field/function_space/lagrange.h"
+#include "pcms/field/function_space/spline.h"
 #include "pcms/field/function_space/polynomial_reconstruction.hpp"
 #include "pcms/field/evaluator/point_cloud_geometry.hpp"
 #include "pcms/field/layout/omega_h_entity.h"
@@ -209,16 +211,53 @@ void bind_create_field_module(py::module& m)
 
   m.def(
     "create_omega_h_geometry",
-    [](Omega_h::Mesh& mesh, const SystemHolder& system, int divisions) {
-      SearchOptions options;
-      options.divisions = divisions;
-      return OmegaHGeometry::Create(mesh, CartesianIfNone(system), options);
+    [](Omega_h::Mesh& mesh, const SystemHolder& system, int divisions,
+       std::string global_id_name,
+       const std::optional<py::array_t<
+         std::int8_t, py::array::c_style | py::array::forcecast>>& owned_mask) {
+      OmegaHGeometryOptions options;
+      options.search.divisions = divisions;
+      options.global_id_name = std::move(global_id_name);
+      if (owned_mask) {
+        if (owned_mask->ndim() != 1) {
+          throw py::value_error(
+            "create_omega_h_geometry: owned_mask must be a 1D array");
+        }
+        Omega_h::HostWrite<Omega_h::I8> host(
+          static_cast<Omega_h::LO>(owned_mask->size()));
+        std::copy(owned_mask->data(), owned_mask->data() + owned_mask->size(),
+                  host.data());
+        options.owned_mask = Omega_h::Read<Omega_h::I8>(host.write());
+      }
+      return CreateOmegaHGeometry(mesh, CartesianIfNone(system),
+                                  std::move(options));
     },
     py::arg("mesh"), py::arg("system") = py::none(), py::arg("divisions") = 0,
+    py::arg("global_id_name") = "global", py::arg("owned_mask") = py::none(),
     py::keep_alive<0, 1>(),
     "Create the geometry of an Omega_h mesh: its coordinate system (default "
     "Cartesian) and point search (`divisions` grid divisions per axis, 0 to "
-    "derive them from the element count)");
+    "derive them from the element count); `global_id_name` names the tag "
+    "that holds the global entity ids; `owned_mask` is a per-vertex (int8) "
+    "ownership override, by default the mesh's ownership");
+
+  m.def(
+    "create_uniform_grid_geometry",
+    [](const UniformGrid<2>& grid, const SystemHolder& system) {
+      return CreateUniformGridGeometry(grid, CartesianIfNone(system));
+    },
+    py::arg("grid"), py::arg("system") = py::none(),
+    "Create the geometry of a 2D uniform grid; the coordinate system defaults "
+    "to Cartesian");
+
+  m.def(
+    "create_uniform_grid_geometry",
+    [](const UniformGrid<3>& grid, const SystemHolder& system) {
+      return CreateUniformGridGeometry(grid, CartesianIfNone(system));
+    },
+    py::arg("grid"), py::arg("system") = py::none(),
+    "Create the geometry of a 3D uniform grid; the coordinate system defaults "
+    "to Cartesian");
 
   py::class_<BoundSource, std::shared_ptr<BoundSource>>(
     m, "BoundSource",
@@ -336,81 +375,45 @@ void bind_create_field_module(py::module& m)
       [](const FunctionSpace& self) {
         return ToPyHolder(self.GetCoordinateSystem());
       },
-      "The coordinate system of the space's geometry")
-    .def(
-      "mesh",
-      [](const FunctionSpace& self) -> Omega_h::Mesh& {
-        auto disc = std::dynamic_pointer_cast<const OmegaHDiscretization>(
-          self.GetDiscretization());
-        if (!disc) {
-          throw std::runtime_error(
-            "FunctionSpace::mesh: this function space is not backed by an "
-            "Omega_h mesh");
-        }
-        return disc->GetMesh();
-      },
-      py::return_value_policy::reference,
-      "The Omega_h mesh this function space is defined on (Omega_h backend "
-      "only).");
-
-  py::class_<LagrangeFunctionSpace, FunctionSpace,
-             std::shared_ptr<LagrangeFunctionSpace>>
-    lagrange_space(m, "LagrangeFunctionSpace");
+      "The coordinate system of the space's geometry");
 
   // Backend selecting the underlying field layout. The conservative-projection
   // transfer operators require the native Omega_h backend.
-  py::enum_<LagrangeFunctionSpace::Backend>(lagrange_space, "Backend")
-    .value("MeshFields", LagrangeFunctionSpace::Backend::MeshFields,
+  py::enum_<LagrangeBackend>(m, "LagrangeBackend")
+    .value("MeshFields", LagrangeBackend::MeshFields,
            "MeshFields-backed layout (default when MeshFields is enabled)")
-    .value("OmegaH", LagrangeFunctionSpace::Backend::OmegaH,
+    .value("OmegaH", LagrangeBackend::OmegaH,
            "Native Omega_h Lagrange layout (required by the conservative and "
-           "Monte Carlo projection transfer operators)")
-    .export_values();
+           "Monte Carlo projection transfer operators)");
 
-  // The mesh-backed spaces refer to the mesh, so it is kept alive with them.
-  lagrange_space
-    .def_static(
-      "from_geometry",
-      [](const std::shared_ptr<OmegaHGeometry>& geometry, int order,
-         int num_components, std::string global_id_name,
-         LagrangeFunctionSpace::Backend backend) {
-        return LagrangeFunctionSpace::FromGeometry(
-          geometry, order, num_components, std::move(global_id_name), backend);
-      },
-      py::arg("geometry").none(false), py::arg("order"),
-      py::arg("num_components"), py::arg("global_id_name") = "global",
-      py::arg("backend") = LagrangeFunctionSpace::DefaultBackend,
-      py::keep_alive<0, 1>(),
-      "Create a LagrangeFunctionSpace on an Omega_h geometry; spaces on one "
-      "geometry accept each other's bound sources.")
-    .def_static(
-      "from_uniform_grid",
-      [](const UniformGrid<2>& grid, int num_components,
-         const SystemHolder& mesh_coordinate_system, int order) {
-        return LagrangeFunctionSpace::FromGeometry(
-          UniformGridGeometry<2>::Create(
-            grid, CartesianIfNone(mesh_coordinate_system)),
-          order, num_components);
-      },
-      py::arg("grid"), py::arg("num_components"),
-      py::arg("mesh_coordinate_system") = py::none(), py::arg("order") = 1,
-      "Create a LagrangeFunctionSpace from a 2D uniform grid. The coordinate "
-      "system defaults to Cartesian.")
-    .def_static(
-      "from_uniform_grid",
-      [](const UniformGrid<3>& grid, int num_components,
-         const SystemHolder& mesh_coordinate_system, int order) {
-        return LagrangeFunctionSpace::FromGeometry(
-          UniformGridGeometry<3>::Create(
-            grid, CartesianIfNone(mesh_coordinate_system)),
-          order, num_components);
-      },
-      py::arg("grid"), py::arg("num_components"),
-      py::arg("mesh_coordinate_system") = py::none(), py::arg("order") = 1,
-      "Create a LagrangeFunctionSpace from a 3D uniform grid. The coordinate "
-      "system defaults to Cartesian.");
+  // The spaces keep their geometry alive, and with it the mesh of an Omega_h
+  // geometry.
+  m.def(
+    "create_lagrange_space",
+    [](std::shared_ptr<Geometry> geometry, int order, int num_components,
+       LagrangeBackend backend, std::string layout_name) {
+      return CreateLagrangeSpace(
+        std::move(geometry), order, num_components,
+        LagrangeOptions{.backend = backend,
+                        .layout_name = std::move(layout_name)});
+    },
+    py::arg("geometry").none(false), py::arg("order"),
+    py::arg("num_components"), py::arg("backend") = DefaultLagrangeBackend,
+    py::arg("layout_name") = "", py::keep_alive<0, 1>(),
+    "Create a Lagrange FunctionSpace of order `order` on an Omega_h geometry "
+    "(backend OmegaH: orders 0 and 1; MeshFields: orders 1 and 2) or a "
+    "uniform-grid geometry (orders 0 and 1, `backend` ignored); spaces on one "
+    "geometry accept each other's bound sources.");
 
-  // Configuration for PolynomialReconstructionFunctionSpace MLS evaluation.
+  m.def(
+    "create_spline_space",
+    [](std::shared_ptr<Geometry> geometry) {
+      return CreateSplineSpace(std::move(geometry));
+    },
+    py::arg("geometry").none(false), py::keep_alive<0, 1>(),
+    "Create a bicubic spline FunctionSpace on a 2D uniform-grid geometry");
+
+  // Configuration for MLS evaluation of polynomial reconstruction spaces.
   py::class_<MLSOptions>(m, "MLSOptions")
     .def(py::init<>(), "Default MLSOptions")
     .def_readwrite("degree", &MLSOptions::degree)
@@ -419,52 +422,66 @@ void bind_create_field_module(py::module& m)
     .def_readwrite("decay_factor", &MLSOptions::decay_factor)
     .def_readwrite("basis", &MLSOptions::basis);
 
-  py::class_<NeighbourhoodOptions>(
-    m, "NeighbourhoodOptions",
-    "Support search of a PolynomialReconstructionFunctionSpace's geometry")
+  py::class_<NeighbourhoodOptions>(m, "NeighbourhoodOptions",
+                                   "Support search of a point-cloud geometry")
     .def(py::init<>(), "Default NeighbourhoodOptions")
     .def_readwrite("radius", &NeighbourhoodOptions::radius)
     .def_readwrite("min_supports", &NeighbourhoodOptions::min_supports)
     .def_readwrite("adapt_radius", &NeighbourhoodOptions::adapt_radius);
 
-  py::class_<PolynomialReconstructionFunctionSpace, FunctionSpace,
-             std::shared_ptr<PolynomialReconstructionFunctionSpace>>(
-    m, "PolynomialReconstructionFunctionSpace")
-    .def_static(
-      "create",
-      [](const PyCoordinateView& coords, MLSOptions options,
-         NeighbourhoodOptions neighbourhood) {
-        auto values = NumpyInput<Real>::ensure(coords.values);
-        return PolynomialReconstructionFunctionSpace::Create(
-          CoordinateView<HostMemorySpace>(coords.system,
-                                          NumpyToHostView<2, Real>(values)),
-          options, std::move(neighbourhood));
-      },
-      py::arg("coords"), py::arg("options") = MLSOptions{},
-      py::arg("neighbourhood") = NeighbourhoodOptions{},
-      "Create a PolynomialReconstructionFunctionSpace over the source points "
-      "of a CoordinateView")
-    .def_static(
-      "from_mesh",
-      [](Omega_h::Mesh& mesh, int source_entity_dim,
-         const SystemHolder& coordinate_system, MLSOptions options,
-         NeighbourhoodOptions neighbourhood) {
-        if (source_entity_dim < 0 || source_entity_dim > mesh.dim()) {
-          throw py::value_error("from_mesh: source_entity_dim is out of range");
-        }
-        return PolynomialReconstructionFunctionSpace::FromGeometry(
-          PointCloudGeometry::Create(
-            std::make_shared<OmegaHEntityLayout>(
-              mesh, source_entity_dim, 1, CartesianIfNone(coordinate_system)),
-            mesh, source_entity_dim, std::move(neighbourhood)),
-          options);
-      },
-      py::arg("mesh"), py::arg("source_entity_dim"),
-      py::arg("coordinate_system") = py::none(),
-      py::arg("options") = MLSOptions{},
-      py::arg("neighbourhood") = NeighbourhoodOptions{}, py::keep_alive<0, 1>(),
-      "Create a PolynomialReconstructionFunctionSpace on the entities of one "
-      "dimension of a mesh, on a new geometry of them");
+  m.def(
+    "create_polynomial_reconstruction_space",
+    [](std::shared_ptr<Geometry> geometry, MLSOptions options) {
+      return CreatePolynomialReconstructionSpace(std::move(geometry), options);
+    },
+    py::arg("geometry").none(false), py::arg("options") = MLSOptions{},
+    py::keep_alive<0, 1>(),
+    "Create an MLS reconstruction FunctionSpace on a point-cloud geometry "
+    "(its sites are the DOF holders); `options` are the reconstruction "
+    "parameters, the support search is the geometry's");
+
+  m.def(
+    "create_point_cloud_geometry",
+    [](const PyCoordinateView& coords, NeighbourhoodOptions neighbourhood) {
+      auto values = NumpyInput<Real>::ensure(coords.values);
+      return CreatePointCloudGeometry(
+        CoordinateView<HostMemorySpace>(coords.system,
+                                        NumpyToHostView<2, Real>(values)),
+        std::move(neighbourhood));
+    },
+    py::arg("coords"), py::arg("neighbourhood") = NeighbourhoodOptions{},
+    "Create a point-cloud geometry whose sites are the points of a "
+    "CoordinateView; `neighbourhood` is its support search");
+
+  m.def(
+    "create_point_cloud_geometry",
+    [](std::shared_ptr<FieldLayout> sites, NeighbourhoodOptions neighbourhood) {
+      return CreatePointCloudGeometry(std::move(sites),
+                                      std::move(neighbourhood));
+    },
+    py::arg("sites").none(false),
+    py::arg("neighbourhood") = NeighbourhoodOptions{}, py::keep_alive<0, 1>(),
+    "Create a point-cloud geometry whose sites are the DOF holders of a "
+    "layout; `neighbourhood` is its support search");
+
+  m.def(
+    "create_point_cloud_geometry",
+    [](Omega_h::Mesh& mesh, int entity_dim, const SystemHolder& system,
+       NeighbourhoodOptions neighbourhood) {
+      if (entity_dim < 0 || entity_dim > mesh.dim()) {
+        throw py::value_error(
+          "create_point_cloud_geometry: entity_dim is out of range");
+      }
+      return CreatePointCloudGeometry(
+        std::make_shared<OmegaHEntityLayout>(mesh, entity_dim, 1,
+                                             CartesianIfNone(system)),
+        std::move(neighbourhood));
+    },
+    py::arg("mesh"), py::arg("entity_dim"), py::arg("system") = py::none(),
+    py::arg("neighbourhood") = NeighbourhoodOptions{}, py::keep_alive<0, 1>(),
+    "A point-cloud geometry whose sites are the entities of one dimension of "
+    "an Omega_h mesh (e.g. element centroids); the support search uses the "
+    "mesh adjacency.");
 
   m.def(
     "create_uniform_grid_from_mesh",

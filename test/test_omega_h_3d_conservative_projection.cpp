@@ -91,13 +91,13 @@ TEST_CASE("OmegaHConservativeProjection (3D tets) refuses spaces in "
   Omega_h::Mesh source_mesh = pcms::test::BuildUnitCube(lib, 1);
   Omega_h::Mesh target_mesh = pcms::test::BuildUnitCube(lib, 2);
   const auto cylindrical = pcms::csys::CylindricalRThetaZ::Create();
-  auto source_space = pcms::LagrangeFunctionSpace::FromGeometry(
-    pcms::OmegaHGeometry::Create(source_mesh, cylindrical), 1, 1, "global",
-    pcms::LagrangeFunctionSpace::Backend::OmegaH);
+  auto source_space = pcms::CreateLagrangeSpace(
+    pcms::CreateOmegaHGeometry(source_mesh, cylindrical), 1, 1,
+    pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
   auto cartesian_source = pcms::test::MakeP1Space(source_mesh);
-  auto target_space = pcms::LagrangeFunctionSpace::FromGeometry(
-    pcms::OmegaHGeometry::Create(target_mesh, cylindrical), 1, 1, "global",
-    pcms::LagrangeFunctionSpace::Backend::OmegaH);
+  auto target_space = pcms::CreateLagrangeSpace(
+    pcms::CreateOmegaHGeometry(target_mesh, cylindrical), 1, 1,
+    pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
   auto cartesian_target = pcms::test::MakeP1Space(target_mesh);
 
   REQUIRE_THROWS_WITH(

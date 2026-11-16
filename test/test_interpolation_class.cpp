@@ -58,18 +58,19 @@ TEST_CASE("MLS reconstruction from a mesh to vertices")
   {
     // element centroids to the vertices of the same mesh, by the mesh
     // adjacency and by the distance search over the centroids as a point cloud
-    auto mesh_space = pcms::PolynomialReconstructionFunctionSpace::FromGeometry(
-      pcms::PointCloudGeometry::Create(
-        std::make_shared<pcms::OmegaHEntityLayout>(source_mesh, pcms::Face, 1,
-                                                   system),
-        source_mesh, pcms::Face, supports));
+    auto mesh_space = pcms::CreatePolynomialReconstructionSpace(
+      pcms::CreatePointCloudGeometry(std::make_shared<pcms::OmegaHEntityLayout>(
+                                       source_mesh, pcms::Face, 1, system),
+                                     supports));
     auto centroids = pcms::test::CopyOmegaHRealsToVector(
       pcms::get_entity_centroids(source_mesh, Omega_h::FACE));
-    auto cloud_space = pcms::PolynomialReconstructionFunctionSpace::Create(
-      pcms::CoordinateView<HostMemorySpace>(
-        system, pcms::Rank2View<const Real, HostMemorySpace>(
-                  centroids.data(), source_mesh.nfaces(), 2)),
-      {}, supports);
+    auto cloud_space = pcms::CreatePolynomialReconstructionSpace(
+      pcms::CreatePointCloudGeometry(
+        pcms::CoordinateView<HostMemorySpace>(
+          system, pcms::Rank2View<const Real, HostMemorySpace>(
+                    centroids.data(), source_mesh.nfaces(), 2)),
+        supports),
+      {});
     const auto mesh_bound = mesh_space->GetGeometry()->Bind(
       vertices->GetDOFHolderCoordinates(),
       pcms::DOFHolderOwners(*vertices, mesh_space->GetGeometry()));
@@ -105,9 +106,8 @@ TEST_CASE("MLS reconstruction from a mesh to vertices")
     // the vertices of one mesh to the vertices of another
     auto target_mesh =
       Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 17, 17, 0, false);
-    auto space = pcms::PolynomialReconstructionFunctionSpace::FromGeometry(
-      pcms::PointCloudGeometry::Create(vertices, source_mesh, pcms::Vertex,
-                                       supports));
+    auto space = pcms::CreatePolynomialReconstructionSpace(
+      pcms::CreatePointCloudGeometry(vertices, supports));
     auto field = space->CreateFunction<Real>();
     pcms::test::SetField(
       field, OMEGA_H_LAMBDA(Real x, Real y) { return SinxCosy(x, y); });
@@ -132,12 +132,13 @@ TEST_CASE("MLS reconstruction honours the dimension of the points")
     }
   }
   const auto system = pcms::csys::Cartesian::Create(3);
-  auto space = pcms::PolynomialReconstructionFunctionSpace::Create(
-    pcms::CoordinateView<HostMemorySpace>(
-      system,
-      pcms::Rank2View<const Real, HostMemorySpace>(points.data(), 27, 3)),
-    pcms::MLSOptions{.degree = 1},
-    pcms::NeighbourhoodOptions{.radius = 2.5, .min_supports = 10});
+  auto space = pcms::CreatePolynomialReconstructionSpace(
+    pcms::CreatePointCloudGeometry(
+      pcms::CoordinateView<HostMemorySpace>(
+        system,
+        pcms::Rank2View<const Real, HostMemorySpace>(points.data(), 27, 3)),
+      pcms::NeighbourhoodOptions{.radius = 2.5, .min_supports = 10}),
+    pcms::MLSOptions{.degree = 1});
   // a degree-1 polynomial that depends on z to catch accidental 2D behavior
   auto field = space->CreateFunction<Real>();
   pcms::test::SetField(

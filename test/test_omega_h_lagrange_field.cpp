@@ -116,8 +116,8 @@ TEST_CASE("OmegaHLagrangeLayout layout sharing")
   auto lib = Omega_h::Library{};
   auto mesh = MakeBox2D(lib.world());
   auto geometry =
-    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
-  auto factory = pcms::LagrangeFunctionSpace::FromGeometry(geometry, 1, 1);
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto factory = pcms::CreateLagrangeSpace(geometry, 1, 1);
 
   auto f1 = factory->CreateFunction<Real>();
   auto f2 = factory->CreateFunction<Real>();
@@ -132,8 +132,8 @@ TEST_CASE("OmegaHLagrangeField order-1: set/get DOF data round-trip")
   auto lib = Omega_h::Library{};
   auto mesh = MakeBox2D(lib.world());
   auto geometry =
-    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
-  auto factory = pcms::LagrangeFunctionSpace::FromGeometry(geometry, 1, 1);
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto factory = pcms::CreateLagrangeSpace(geometry, 1, 1);
   auto field = factory->CreateFunction<Real>();
 
   int n = factory->GetLayout()->GetNumDofHolder();
@@ -157,8 +157,8 @@ TEST_CASE("Field checked writes validate the view shape, not just total size")
   auto lib = Omega_h::Library{};
   auto mesh = MakeBox2D(lib.world());
   auto geometry =
-    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
-  auto factory = pcms::LagrangeFunctionSpace::FromGeometry(geometry, 1, 1);
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto factory = pcms::CreateLagrangeSpace(geometry, 1, 1);
   auto field = factory->CreateFunction<Real>();
 
   const int n = factory->GetLayout()->GetNumDofHolder();
@@ -186,8 +186,8 @@ TEST_CASE("OmegaHLagrangeField order-1: linear function evaluation")
   auto lib = Omega_h::Library{};
   auto mesh = MakeBox2D(lib.world(), 20, 20);
   auto geometry =
-    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
-  auto factory = pcms::LagrangeFunctionSpace::FromGeometry(geometry, 1, 1);
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto factory = pcms::CreateLagrangeSpace(geometry, 1, 1);
   auto field = factory->CreateFunction<Real>();
 
   pcms::test::SetField(
@@ -205,8 +205,8 @@ TEST_CASE("MeshFieldsAdapter order-1: linear function evaluation (shared util)")
   auto lib = Omega_h::Library{};
   auto mesh = MakeBox2D(lib.world(), 20, 20);
   auto geometry =
-    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
-  auto factory = pcms::LagrangeFunctionSpace::FromGeometry(geometry, 1, 1);
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto factory = pcms::CreateLagrangeSpace(geometry, 1, 1);
   auto field = factory->CreateFunction<Real>();
 
   pcms::test::SetField(
@@ -222,8 +222,8 @@ TEST_CASE("OmegaHLagrangeField order-1: out-of-bounds FILL mode")
   auto lib = Omega_h::Library{};
   auto mesh = MakeBox2D(lib.world());
   auto geometry =
-    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
-  auto factory = pcms::LagrangeFunctionSpace::FromGeometry(geometry, 1, 1);
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto factory = pcms::CreateLagrangeSpace(geometry, 1, 1);
   auto field = factory->CreateFunction<Real>();
 
   pcms::test::SetField(
@@ -242,8 +242,8 @@ TEST_CASE("OmegaHLagrangeField order-0: set/get DOF data round-trip")
   auto lib = Omega_h::Library{};
   auto mesh = MakeBox2D(lib.world());
   auto geometry =
-    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
-  auto factory = pcms::LagrangeFunctionSpace::FromGeometry(geometry, 0, 1);
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto factory = pcms::CreateLagrangeSpace(geometry, 0, 1);
   auto field = factory->CreateFunction<Real>();
 
   int n = factory->GetLayout()->GetNumDofHolder();
@@ -264,8 +264,8 @@ TEST_CASE("OmegaHLagrangeField order-0: constant field evaluation")
   auto lib = Omega_h::Library{};
   auto mesh = MakeBox2D(lib.world(), 10, 10);
   auto geometry =
-    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
-  auto factory = pcms::LagrangeFunctionSpace::FromGeometry(geometry, 0, 1);
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto factory = pcms::CreateLagrangeSpace(geometry, 0, 1);
   auto field = factory->CreateFunction<Real>();
 
   const Real kValue = 42.0;
@@ -287,8 +287,8 @@ TEST_CASE("OmegaHLagrangeField order-0: out-of-bounds FILL mode")
   auto lib = Omega_h::Library{};
   auto mesh = MakeBox2D(lib.world());
   auto geometry =
-    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
-  auto factory = pcms::LagrangeFunctionSpace::FromGeometry(geometry, 0, 1);
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto factory = pcms::CreateLagrangeSpace(geometry, 0, 1);
   auto field = factory->CreateFunction<Real>();
 
   int nelems = mesh.nelems();
@@ -310,7 +310,7 @@ TEST_CASE("OmegaHLagrangeField order-0: out-of-bounds FILL mode")
 // test_field_communication with clientId=2/3 via test_shared_layout):
 //
 // When two fields are added to an Application2 that share the same FieldLayout
-// (e.g. both created from the same LagrangeFunctionSpace), the Application2
+// (e.g. both created from the same Lagrange function space), the Application2
 // must reuse a single FieldLayoutCommunicator for both fields rather than
 // creating separate communicators. This is verified by:
 //   - Calling AddLayout() registers exactly one FieldLayoutCommunicator
@@ -328,8 +328,8 @@ TEST_CASE("OmegaHLagrangeField: field valid after layout destruction")
   std::optional<pcms::Field<Real>> field;
   {
     auto geometry =
-      pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
-    auto factory = pcms::LagrangeFunctionSpace::FromGeometry(geometry, 1, 1);
+      pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+    auto factory = pcms::CreateLagrangeSpace(geometry, 1, 1);
     field.emplace(factory->CreateFunction<Real>());
   } // factory goes out of scope; field keeps layout alive
 

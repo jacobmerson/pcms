@@ -8,6 +8,7 @@
 
 #include <array>
 #include <memory>
+#include <string>
 
 namespace pcms
 {
@@ -15,7 +16,18 @@ namespace pcms
 class OmegaHDiscretization : public Discretization
 {
 public:
-  explicit OmegaHDiscretization(Omega_h::Mesh& mesh);
+  /// @param mesh the mesh, classified
+  /// @param global_id_name name of the vertex, edge, ... tag that holds the
+  ///        global entity ids the layouts on this discretization use
+  /// @param owned_mask per-vertex ownership override: a vertex the mask is 0
+  ///        for is not owned, whatever the mesh says; empty means the mesh's
+  ///        own ownership. Layouts whose DOF holders are the mesh vertices
+  ///        apply it; layouts of other entities do not.
+  /// @throws pcms_error if a non-empty `owned_mask` does not have one entry
+  ///         per vertex
+  explicit OmegaHDiscretization(Omega_h::Mesh& mesh,
+                                std::string global_id_name = "global",
+                                Omega_h::Read<Omega_h::I8> owned_mask = {});
 
   bool SameEntities(const Discretization& other) const noexcept override;
 
@@ -32,10 +44,25 @@ public:
   // The Omega_h mesh this discretization is defined on.
   Omega_h::Mesh& GetMesh() const noexcept { return mesh_; }
 
+  /// @return the name of the tag that holds the global entity ids
+  const std::string& GetGlobalIdName() const noexcept
+  {
+    return global_id_name_;
+  }
+
+  /// @return the per-vertex ownership override, empty if the mesh's own
+  ///         ownership applies
+  Omega_h::Read<Omega_h::I8> GetOwnedMask() const noexcept
+  {
+    return owned_mask_;
+  }
+
 private:
   static constexpr int max_entity_dim_ = Region;
 
   Omega_h::Mesh& mesh_;
+  std::string global_id_name_;
+  Omega_h::Read<Omega_h::I8> owned_mask_;
   std::array<Omega_h::Read<Omega_h::I8>, max_entity_dim_ + 1>
     class_dims_by_dim_;
   std::array<Omega_h::Read<Omega_h::ClassId>, max_entity_dim_ + 1>

@@ -2,7 +2,7 @@
 #define PCMS_ADAPTER_OMEGA_H_LAGRANGE_LAYOUT_H
 
 #include <Omega_h_mesh.hpp>
-#include <optional>
+#include <memory>
 #include "pcms/utility/arrays.h"
 #include "pcms/discretization/discretization/omega_h.hpp"
 #include "pcms/field/field_layout.h"
@@ -20,23 +20,14 @@ class OmegaHLagrangeLayout : public FieldLayout
 public:
   /// @param discretization discretization of `mesh` to share, e.g. its
   ///        geometry's, so SameEntities is pointer equality for spaces on one
-  ///        geometry
+  ///        geometry; the layout reads the global id tag name and the owned
+  ///        mask from it. The mask is per vertex: it applies to the DOF holders
+  ///        of an order-1 layout and not to those of an order-0 layout.
   /// @throws pcms_error if `discretization` is not of `mesh`
   OmegaHLagrangeLayout(
     Omega_h::Mesh& mesh, int order, int num_components,
     std::shared_ptr<const CoordinateSystem> coordinate_system,
-    std::shared_ptr<const OmegaHDiscretization> discretization,
-    std::string global_id_name = "global");
-  /// @param discretization discretization of `mesh` to share, e.g. its
-  ///        geometry's, so SameEntities is pointer equality for spaces on one
-  ///        geometry
-  /// @throws pcms_error if `discretization` is not of `mesh`
-  OmegaHLagrangeLayout(
-    Omega_h::Mesh& mesh, int order, int num_components,
-    std::shared_ptr<const CoordinateSystem> coordinate_system,
-    Omega_h::Read<Omega_h::I8> owned_mask,
-    std::shared_ptr<const OmegaHDiscretization> discretization,
-    std::string global_id_name = "global");
+    std::shared_ptr<const OmegaHDiscretization> discretization);
 
   std::shared_ptr<const Discretization> GetDiscretization()
     const noexcept override;
@@ -71,17 +62,9 @@ public:
   Omega_h::Mesh& GetMesh() const;
 
 private:
-  OmegaHLagrangeLayout(
-    Omega_h::Mesh& mesh, int order, int num_components,
-    std::shared_ptr<const CoordinateSystem> coordinate_system,
-    std::string global_id_name,
-    std::shared_ptr<const OmegaHDiscretization> discretization,
-    std::optional<Omega_h::Read<Omega_h::I8>> owned_mask);
-
   Omega_h::Mesh& mesh_;
   int order_;
   int num_components_;
-  std::string global_id_name_;
 
   Omega_h::Write<Omega_h::GO> gids_;
   Kokkos::View<Real**, DeviceMemorySpace> coords_2d_;

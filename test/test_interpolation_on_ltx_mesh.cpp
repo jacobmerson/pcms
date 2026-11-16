@@ -15,6 +15,7 @@
 #include <Omega_h_vtk.hpp>
 #include <pcms/field/coordinate_systems/cartesian.hpp>
 #include <pcms/field/function_space/polynomial_reconstruction.hpp>
+#include <pcms/field/evaluator/point_cloud_geometry.hpp>
 #include <pcms/field/point_evaluator.h>
 #include <pcms/utility/arrays.h>
 #include <pcms/utility/mesh_geometry.h>
@@ -36,12 +37,13 @@ std::function<void(HostArray, HostArray)> PointCloudInterpolation(
   double lambda)
 {
   const auto system = pcms::csys::Cartesian::Create(2);
-  auto space = pcms::PolynomialReconstructionFunctionSpace::Create(
-    pcms::CoordinateView<pcms::HostMemorySpace>(
-      system, pcms::Rank2View<const double, pcms::HostMemorySpace>(
-                source.data_handle(), source.size() / 2, 2)),
-    pcms::MLSOptions{.degree = 1, .lambda = lambda, .decay_factor = 50.0},
-    pcms::NeighbourhoodOptions{.radius = radius, .min_supports = 10});
+  auto space = pcms::CreatePolynomialReconstructionSpace(
+    pcms::CreatePointCloudGeometry(
+      pcms::CoordinateView<pcms::HostMemorySpace>(
+        system, pcms::Rank2View<const double, pcms::HostMemorySpace>(
+                  source.data_handle(), source.size() / 2, 2)),
+      pcms::NeighbourhoodOptions{.radius = radius, .min_supports = 10}),
+    pcms::MLSOptions{.degree = 1, .lambda = lambda, .decay_factor = 50.0});
   Kokkos::View<double**, pcms::DeviceMemorySpace> targets("ltx_targets",
                                                           target.size() / 2, 2);
   pcms::DeepCopyMismatchLayouts(

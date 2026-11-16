@@ -16,6 +16,7 @@
 #include "pcms/utility/arrays.h"
 #include "pcms/utility/memory_spaces.h"
 #include "pcms/utility/types.h"
+#include <functional>
 #include <memory>
 #include <optional>
 #include <variant>
@@ -23,23 +24,45 @@
 namespace pcms
 {
 
-// FunctionSpace is an abstract interface representing an evaluatable field
-// space: layout, evaluation rules, and coordinate interpretation. It produces
-// Functions (a Field bound to this space).
+// A FunctionSpace is an evaluatable field space: the layout of its fields, the
+// evaluator source that evaluates them at points, and the coordinate
+// interpretation. It produces Functions (a Field bound to this space).
 //
-// Concrete implementations (e.g. LagrangeFunctionSpace) provide backends for
-// specific discretizations or mesh types, and their From* factories return a
-// shared_ptr. A Function co-owns its space via shared_ptr (obtained through
-// enable_shared_from_this), which is why concrete spaces are always
-// shared-owned; a stack-allocated FunctionSpace is not constructible (the
-// backend constructors are private and reachable only via the shared_ptr
-// From* factories).
-class FunctionSpace
+// It is the one concrete space; backends differ in the components they hand
+// to its constructor, and the Create* factories (CreateLagrangeSpace, ...)
+// assemble them. A Function co-owns its space via shared_ptr (obtained through
+// enable_shared_from_this), so spaces are always shared-owned:
+// CreateFunction throws for a space that is not.
+class FunctionSpace final
   : public PointEvaluatorFactory
   , public std::enable_shared_from_this<FunctionSpace>
 {
 public:
-  /// @return the geometry the space is created on: its backend source's, or
+  /// A function space from its components. Own it by std::shared_ptr:
+  /// functions co-own their space. Backends build spaces this way; users call
+  /// the Create* factories.
+  /// @param layout the layout of the space's fields
+  /// @param create_field_data makes the data of a field of this space from a
+  ///        value type and basis (may throw for spaces whose fields hold no
+  ///        values in PCMS)
+  /// @param evaluator the evaluator source that evaluates the fields at
+  ///        points, or null for a space that does not evaluate at points
+  /// @param geometry the geometry of a space without an evaluator source, or
+  ///        null (an evaluator source supplies its own)
+  explicit FunctionSpace(
+    std::shared_ptr<const FieldLayout> layout,
+    std::function<FieldDataVariant(Type, ValueBasis)> create_field_data,
+    std::shared_ptr<const PointEvaluatorFactory> evaluator,
+    std::shared_ptr<const Geometry> geometry = nullptr) noexcept
+    : layout_(std::move(layout)),
+      create_field_data_(std::move(create_field_data)),
+      evaluator_(std::move(evaluator)),
+      geometry_(std::move(geometry))
+  {
+    PCMS_ALWAYS_ASSERT(evaluator_ == nullptr || geometry_ == nullptr);
+  }
+
+  /// @return the geometry the space is created on: its evaluator source's, or
   ///         the one given to the constructor; null for a space that does not
   ///         evaluate at points
   [[nodiscard]] std::shared_ptr<const Geometry> GetGeometry()
@@ -50,15 +73,18 @@ public:
 
   /// @return the geometry's discretization, or the layout's for a space
   ///         without a geometry
-  [[nodiscard]] virtual std::shared_ptr<const Discretization>
-  GetDiscretization() const noexcept
+  [[nodiscard]] std::shared_ptr<const Discretization> GetDiscretization()
+    const noexcept
   {
     const auto geometry = GetGeometry();
     return geometry != nullptr ? geometry->GetDiscretization()
                                : GetLayout()->GetDiscretization();
   }
 
-  virtual std::shared_ptr<const FieldLayout> GetLayout() const noexcept = 0;
+  [[nodiscard]] std::shared_ptr<const FieldLayout> GetLayout() const noexcept
+  {
+    return layout_;
+  }
 
   /// @return the geometry's coordinate system, or the layout's for a space
   ///         without a geometry
@@ -71,19 +97,19 @@ public:
                                : GetLayout()->GetCoordinateSystem();
   }
 
-  /// @return whether the space's backend source supports `op`; for a space
+  /// @return whether the space's evaluator source supports `op`; for a space
   ///         without one, whether `op` is Value and the space has a geometry
-  ///         (it implements CreatePointEvaluatorImpl), unless it overrides
-  ///         this
   [[nodiscard]] bool Supports(DifferentialOperator op) const noexcept override;
 
-  virtual ~FunctionSpace() noexcept = default;
+  ~FunctionSpace() noexcept override = default;
 
+  /// @throws pcms_error if the space is not owned by a std::shared_ptr
   template <typename T>
   [[nodiscard]] Function<T> CreateFunction(
     std::string name = "", VarianceSignature variance = values::Scalar,
     std::optional<ComponentScaling> scaling = std::nullopt) const;
 
+  /// @throws pcms_error if the space is not owned by a std::shared_ptr
   template <typename T>
   [[nodiscard]] Function<T> CreateFunction(
     std::string name, VarianceSignature variance,
@@ -91,31 +117,22 @@ public:
     std::optional<ComponentScaling> scaling = std::nullopt) const;
 
   // Expert API: wrap externally constructed field data into a Function for this
-  // space. The concrete space validates backend-specific field-data type and
-  // storage size compatibility.
+  // space. The space validates backend-specific field-data type and storage
+  // size compatibility.
+  /// @throws pcms_error if the space is not owned by a std::shared_ptr
   template <typename T>
   [[nodiscard]] Function<T> CreateFunction(
     std::string name, std::unique_ptr<FieldData<T>> data) const;
 
-protected:
-  /// @param evaluator backend source over this space's geometry, or null for
-  ///        a space that implements Supports and CreatePointEvaluatorImpl
-  ///        itself and then must pass its geometry
-  /// @param geometry the geometry of a space without a backend source, or
-  ///        null; both null for a space that does not evaluate at points
-  explicit FunctionSpace(
-    std::shared_ptr<const PointEvaluatorFactory> evaluator = nullptr,
-    std::shared_ptr<const Geometry> geometry = nullptr) noexcept
-    : evaluator_(std::move(evaluator)), geometry_(std::move(geometry))
-  {
-    PCMS_ALWAYS_ASSERT(evaluator_ == nullptr || geometry_ == nullptr);
-  }
-
-  /// @brief Creates the evaluator through the backend source.
-  /// @throws pcms_error if the space has no backend source
+private:
+  /// @brief Creates the evaluator through the evaluator source.
+  /// @throws pcms_error if the space has no evaluator source
   PointEvaluatorVariant CreatePointEvaluatorImpl(
     Type value_type, std::shared_ptr<const BoundSource> bound,
     DifferentialOperator op) const override;
+
+  /// @throws pcms_error if the space is not owned by a std::shared_ptr
+  std::shared_ptr<const FunctionSpace> Owner() const;
 
   template <typename T>
   static Field<T> WrapField(std::shared_ptr<const FieldLayout> layout,
@@ -134,12 +151,12 @@ protected:
                        std::move(space));
   }
 
-  virtual FieldVariant CreateFieldImpl(Type storage_type,
-                                       ValueBasis basis) const = 0;
+  FieldVariant CreateFieldImpl(Type storage_type, ValueBasis basis) const;
 
-  virtual FieldVariant CreateFieldImpl(FieldDataVariant data) const = 0;
+  FieldVariant CreateFieldImpl(FieldDataVariant data) const;
 
-private:
+  std::shared_ptr<const FieldLayout> layout_;
+  std::function<FieldDataVariant(Type, ValueBasis)> create_field_data_;
   std::shared_ptr<const PointEvaluatorFactory> evaluator_;
   std::shared_ptr<const Geometry> geometry_;
 };
@@ -160,13 +177,14 @@ Function<T> FunctionSpace::CreateFunction(
 {
   static_assert(is_supported_field_type_v<T>,
                 "T is not a supported field type");
+  auto owner = Owner();
   ValueBasis basis = detail::MakeValueBasis(GetCoordinateSystem(), variance,
                                             std::move(system), scaling);
   detail::ValidateValueSemantics(basis, GetLayout()->GetNumComponents());
   Field<T> field = std::get<Field<T>>(
     CreateFieldImpl(TypeEnumFromType<T>(), std::move(basis)));
   return WrapFunction<T>(std::move(name), std::move(field.layout_),
-                         std::move(field.data_), shared_from_this());
+                         std::move(field.data_), std::move(owner));
 }
 
 template <typename T>
@@ -175,6 +193,7 @@ Function<T> FunctionSpace::CreateFunction(
 {
   static_assert(is_supported_field_type_v<T>,
                 "T is not a supported field type");
+  auto owner = Owner();
   if (!data) {
     throw pcms_error("FunctionSpace::CreateFunction: data must not be null");
   }
@@ -183,7 +202,7 @@ Function<T> FunctionSpace::CreateFunction(
   Field<T> field =
     std::get<Field<T>>(CreateFieldImpl(FieldDataVariant{std::move(data)}));
   return WrapFunction<T>(std::move(name), std::move(field.layout_),
-                         std::move(field.data_), shared_from_this());
+                         std::move(field.data_), std::move(owner));
 }
 
 } // namespace pcms

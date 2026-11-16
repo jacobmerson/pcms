@@ -1,57 +1,19 @@
 #ifndef PCMS_SPLINE_FUNCTION_SPACE_H
 #define PCMS_SPLINE_FUNCTION_SPACE_H
 
-#include "pcms/field/field.h"
-#include "pcms/field/field_data.h"
-#include "pcms/field/field_layout.h"
-#include "pcms/field/value_view.hpp"
 #include "pcms/field/function_space.h"
-#include "pcms/field/out_of_bounds_policy.h"
-#include "pcms/field/point_evaluator.h"
-#include "pcms/utility/arrays.h"
-#include "pcms/utility/eqdsk.h"
-#include "pcms/utility/memory_spaces.h"
-#include "pcms/utility/uniform_grid.h"
+#include "pcms/geometry/geometry.hpp"
 
 #include <memory>
 
 namespace pcms
 {
 
-template <unsigned Dim>
-class UniformGridGeometry;
-
-class SplineFunctionSpace : public FunctionSpace
-{
-  // Passkey: only members (the From* factories) can create a Key, so only they
-  // can construct a space, while std::make_shared can still call the ctor.
-  struct Key
-  {
-    explicit Key() = default;
-  };
-
-public:
-  SplineFunctionSpace(
-    Key, std::shared_ptr<const FieldLayout> layout,
-    std::shared_ptr<const PointEvaluatorFactory> evaluator) noexcept;
-
-  /// @brief The bicubic spline space on the grid of a uniform-grid geometry.
-  [[nodiscard]] static std::shared_ptr<SplineFunctionSpace> FromGeometry(
-    std::shared_ptr<const UniformGridGeometry<2>> geometry);
-
-  [[nodiscard]] std::shared_ptr<const FieldLayout> GetLayout()
-    const noexcept override;
-
-protected:
-  [[nodiscard]] FieldVariant CreateFieldImpl(Type storage_type,
-                                             ValueBasis basis) const override;
-
-  [[nodiscard]] FieldVariant CreateFieldImpl(
-    FieldDataVariant data) const override;
-
-private:
-  std::shared_ptr<const FieldLayout> layout_;
-};
+/// A bicubic spline space on a 2D uniform-grid geometry. Spaces on one
+/// geometry accept each other's bound sources.
+/// @throws pcms_error if `geometry` is null or not a 2D uniform-grid geometry
+std::shared_ptr<FunctionSpace> CreateSplineSpace(
+  std::shared_ptr<const Geometry> geometry);
 
 } // namespace pcms
 

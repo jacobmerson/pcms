@@ -86,19 +86,30 @@ GridPointSearchVariant MakeGridSearch(Omega_h::Mesh& mesh,
 
 OmegaHGeometry::OmegaHGeometry(Omega_h::Mesh& mesh,
                                std::shared_ptr<const CoordinateSystem> system,
-                               SearchOptions options)
+                               OmegaHGeometryOptions options)
   : mesh_(mesh),
-    discretization_(std::make_shared<OmegaHDiscretization>(mesh)),
+    discretization_(std::make_shared<OmegaHDiscretization>(
+      mesh, std::move(options.global_id_name), std::move(options.owned_mask))),
     system_(ResolveCoordinateSystem(std::move(system), mesh.dim())),
-    search_(MakeGridSearch(mesh, options))
+    search_(MakeGridSearch(mesh, options.search))
 {
 }
 
-std::shared_ptr<OmegaHGeometry> OmegaHGeometry::Create(
+std::shared_ptr<Geometry> CreateOmegaHGeometry(
   Omega_h::Mesh& mesh, std::shared_ptr<const CoordinateSystem> system,
-  SearchOptions options)
+  OmegaHGeometryOptions options)
 {
-  return std::make_shared<OmegaHGeometry>(mesh, std::move(system), options);
+  return std::make_shared<OmegaHGeometry>(mesh, std::move(system),
+                                          std::move(options));
+}
+
+Omega_h::Mesh& GetMesh(const Geometry& geometry)
+{
+  const auto* omega_h = dynamic_cast<const OmegaHGeometry*>(&geometry);
+  if (omega_h == nullptr) {
+    throw pcms_error("GetMesh: the geometry is not an Omega_h geometry");
+  }
+  return omega_h->GetMesh();
 }
 
 std::shared_ptr<BoundSource> OmegaHGeometry::BindImpl(

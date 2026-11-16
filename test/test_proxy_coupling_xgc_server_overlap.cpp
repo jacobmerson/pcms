@@ -170,11 +170,13 @@ void omegah_coupler_with_overlap(MPI_Comm comm, Omega_h::Mesh& mesh,
 
     application->SetLayoutOverlapMask(ss.str(), std::move(overlap_mask));
 
-    auto geometry =
-      pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
-    auto factory = pcms::LagrangeFunctionSpace::FromGeometry(
-      geometry, 1, 1, numbering, pcms::LagrangeFunctionSpace::Backend::OmegaH,
-      ss.str());
+    auto geometry = pcms::CreateOmegaHGeometry(
+      mesh, pcms::csys::Cartesian::Deferred(),
+      pcms::OmegaHGeometryOptions{.global_id_name = numbering});
+    auto factory = pcms::CreateLagrangeSpace(
+      geometry, 1, 1,
+      pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH,
+                            .layout_name = ss.str()});
 
     auto field = factory->CreateFunction<GO>(
       ss.str(), std::make_unique<pcms::OmegaHFieldData<GO>>(

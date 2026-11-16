@@ -203,10 +203,8 @@ struct CopyClassInfoFunctor
 MeshFieldsAdapterLayout::MeshFieldsAdapterLayout(
   Omega_h::Mesh& mesh, std::array<int, 4> nodes_per_dim, int num_components,
   std::shared_ptr<const CoordinateSystem> coordinate_system,
-  std::shared_ptr<const OmegaHDiscretization> discretization,
-  std::string global_id_name)
+  std::shared_ptr<const OmegaHDiscretization> discretization)
   : mesh_(mesh),
-    global_id_name_(global_id_name),
     num_components_(num_components),
     nodes_per_dim_(nodes_per_dim),
     dof_holder_coords_("", GetNumDofHolderWithGhosts(), mesh_.dim()),
@@ -220,7 +218,12 @@ MeshFieldsAdapterLayout::MeshFieldsAdapterLayout(
     ResolveCoordinateSystem(std::move(coordinate_system), mesh_.dim()));
   LO total_ents = GetNumEnts();
 
-  auto tag = mesh_.get_tagbase(0, global_id_name_);
+  const auto checked = detail::CheckDiscretizationOf(
+    mesh_, std::move(discretization), "MeshFieldsAdapterLayout");
+  discretization_ = checked;
+  const std::string& global_id_name = checked->GetGlobalIdName();
+
+  auto tag = mesh_.get_tagbase(0, global_id_name);
   if (Omega_h::is<GO>(tag)) {
     gids_ = GetGidsHelper<GO>(total_ents, nodes_per_dim, mesh, global_id_name);
   } else if (Omega_h::is<LO>(tag)) {
@@ -249,8 +252,6 @@ MeshFieldsAdapterLayout::MeshFieldsAdapterLayout(
   }
   BuildOwnedViews();
 
-  discretization_ = detail::CheckDiscretizationOf(
-    mesh_, std::move(discretization), "MeshFieldsAdapterLayout");
   BuildOwnedClassification();
 }
 

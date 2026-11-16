@@ -152,35 +152,35 @@ inline Omega_h::Mesh BuildReferenceTet(Omega_h::Library& lib)
                        }));
 }
 
-inline std::shared_ptr<LagrangeFunctionSpace> MakeP1Space(
-  std::shared_ptr<const OmegaHGeometry> geometry,
-  const std::string& global_id_name = "global")
+inline std::shared_ptr<FunctionSpace> MakeP1Space(
+  std::shared_ptr<const Geometry> geometry)
 {
-  return LagrangeFunctionSpace::FromGeometry(
-    std::move(geometry), 1, 1, global_id_name,
-    LagrangeFunctionSpace::Backend::OmegaH);
+  return CreateLagrangeSpace(
+    std::move(geometry), 1, 1,
+    LagrangeOptions{.backend = LagrangeBackend::OmegaH});
 }
 
-inline std::shared_ptr<LagrangeFunctionSpace> MakeP0Space(
-  std::shared_ptr<const OmegaHGeometry> geometry)
+inline std::shared_ptr<FunctionSpace> MakeP0Space(
+  std::shared_ptr<const Geometry> geometry)
 {
-  return LagrangeFunctionSpace::FromGeometry(
-    std::move(geometry), 0, 1, "global",
-    LagrangeFunctionSpace::Backend::OmegaH);
+  return CreateLagrangeSpace(
+    std::move(geometry), 0, 1,
+    LagrangeOptions{.backend = LagrangeBackend::OmegaH});
 }
 
 // Spaces on a Cartesian geometry of their own on `mesh`; spaces that should
 // share a bind take one geometry instead.
-inline std::shared_ptr<LagrangeFunctionSpace> MakeP1Space(
+inline std::shared_ptr<FunctionSpace> MakeP1Space(
   Omega_h::Mesh& mesh, const std::string& global_id_name = "global")
 {
-  return MakeP1Space(OmegaHGeometry::Create(mesh, csys::Cartesian::Deferred()),
-                     global_id_name);
+  return MakeP1Space(CreateOmegaHGeometry(
+    mesh, csys::Cartesian::Deferred(),
+    OmegaHGeometryOptions{.global_id_name = global_id_name}));
 }
 
-inline std::shared_ptr<LagrangeFunctionSpace> MakeP0Space(Omega_h::Mesh& mesh)
+inline std::shared_ptr<FunctionSpace> MakeP0Space(Omega_h::Mesh& mesh)
 {
-  return MakeP0Space(OmegaHGeometry::Create(mesh, csys::Cartesian::Deferred()));
+  return MakeP0Space(CreateOmegaHGeometry(mesh, csys::Cartesian::Deferred()));
 }
 
 inline bool AreArraysEqualUnordered(
@@ -523,7 +523,7 @@ void CheckEvaluation(const PointEvaluator<Real>& evaluator,
 }
 
 // Overload that creates the evaluator from any point evaluator factory (e.g.
-// LagrangeFunctionSpace).
+// a Lagrange FunctionSpace).
 template <typename Factory, typename ExecutionSpace = DefaultExecutionSpace,
           typename Func>
 void CheckEvaluation(const Factory& factory, const Field<Real>& field,

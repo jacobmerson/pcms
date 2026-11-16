@@ -123,17 +123,20 @@ public:
   }
 };
 
-class MockSpace final : public pcms::FunctionSpace
+// The evaluator source of the mock: it hands out MockEvaluators on the
+// analytic geometry.
+class MockEvaluatorFactory final : public pcms::PointEvaluatorFactory
 {
 public:
-  static std::shared_ptr<MockSpace> Create(int num_components)
+  MockEvaluatorFactory(std::shared_ptr<const pcms::Geometry> geometry,
+                       std::shared_ptr<const pcms::FieldLayout> layout)
+    : geometry_(std::move(geometry)), layout_(std::move(layout))
   {
-    return std::shared_ptr<MockSpace>(new MockSpace(num_components));
   }
 
-  std::shared_ptr<const pcms::FieldLayout> GetLayout() const noexcept override
+  std::shared_ptr<const pcms::Geometry> GetGeometry() const noexcept override
   {
-    return layout_;
+    return geometry_;
   }
 
   bool Supports(pcms::DifferentialOperator op) const noexcept override
@@ -142,20 +145,6 @@ public:
   }
 
 protected:
-  pcms::FieldVariant CreateFieldImpl(pcms::Type, ValueBasis) const override
-  {
-    throw pcms::pcms_error("MockSpace: pass the data naming the quantity");
-  }
-
-  pcms::FieldVariant CreateFieldImpl(pcms::FieldDataVariant data) const override
-  {
-    auto& real = std::get<std::unique_ptr<pcms::FieldData<Real>>>(data);
-    if (dynamic_cast<const MockData*>(real.get()) == nullptr) {
-      throw pcms::pcms_error("MockSpace: requires MockData");
-    }
-    return WrapField<Real>(layout_, std::move(real));
-  }
-
   pcms::PointEvaluatorVariant CreatePointEvaluatorImpl(
     pcms::Type, std::shared_ptr<const pcms::BoundSource> bound,
     pcms::DifferentialOperator /*op*/) const override
@@ -165,22 +154,32 @@ protected:
   }
 
 private:
-  explicit MockSpace(int num_components)
-    : FunctionSpace(nullptr, std::make_shared<AnalyticGeometry>()),
-      layout_(std::make_shared<pcms::EmptyFieldLayout>(
-        pcms::csys::CylindricalRThetaZ::Create(), num_components))
-  {
-  }
-
-  std::shared_ptr<const pcms::EmptyFieldLayout> layout_;
+  std::shared_ptr<const pcms::Geometry> geometry_;
+  std::shared_ptr<const pcms::FieldLayout> layout_;
 };
 
-std::shared_ptr<pcms::LagrangeFunctionSpace> MakePoloidalTarget(
-  Omega_h::Mesh& mesh, int num_components)
+// A space on an empty layout whose fields are made from data naming the
+// quantity (MockData), evaluated by the mock on the analytic geometry.
+std::shared_ptr<pcms::FunctionSpace> MakeMockSpace(int num_components)
 {
-  return pcms::LagrangeFunctionSpace::FromGeometry(
-    pcms::OmegaHGeometry::Create(mesh, pcms::csys::CylindricalRZ::Create()), 1,
-    num_components, "global", pcms::LagrangeFunctionSpace::Backend::OmegaH);
+  const auto layout = std::make_shared<pcms::EmptyFieldLayout>(
+    pcms::csys::CylindricalRThetaZ::Create(), num_components);
+  return std::make_shared<pcms::FunctionSpace>(
+    layout,
+    [](pcms::Type, ValueBasis) -> pcms::FieldDataVariant {
+      throw pcms::pcms_error("MockSpace: pass the data naming the quantity");
+    },
+    std::make_shared<MockEvaluatorFactory>(std::make_shared<AnalyticGeometry>(),
+                                           layout));
+}
+
+std::shared_ptr<pcms::FunctionSpace> MakePoloidalTarget(Omega_h::Mesh& mesh,
+                                                        int num_components)
+{
+  return pcms::CreateLagrangeSpace(
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::CylindricalRZ::Create()), 1,
+    num_components,
+    pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
 }
 
 } // namespace
@@ -190,7 +189,7 @@ TEST_CASE("Evaluation-only space interpolates onto a poloidal plane")
   auto lib = Omega_h::Library{};
   auto mesh = pcms::test::BuildUnitSquare(lib, 1);
   const int num_components = GENERATE(1, 2);
-  auto source = MockSpace::Create(num_components);
+  auto source = MakeMockSpace(num_components);
   auto target = MakePoloidalTarget(mesh, num_components);
   const Real theta0 = -0.3;
   const auto target_layout = target->GetLayout();
@@ -226,7 +225,7 @@ TEST_CASE("Evaluation-only space interpolates onto a poloidal plane")
 
 TEST_CASE("Functions of an evaluation-only space hold no values")
 {
-  auto source = MockSpace::Create(1);
+  auto source = MakeMockSpace(1);
   auto f = source->CreateFunction<Real>("f", std::make_unique<MockData>());
   REQUIRE(f.GetLayout().GetNumDofHolder() == 0);
   REQUIRE_THROWS_WITH(f.GetDOFHolderData(), ContainsSubstring("no DOFAccess"));

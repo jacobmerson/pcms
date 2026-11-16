@@ -110,10 +110,9 @@ TEST_CASE("UniformGrid field creation")
   REQUIRE(layout->GetNumGlobalDofHolder() == 36);
   REQUIRE_FALSE(layout->IsDistributed());
 
-  auto field_space = pcms::LagrangeFunctionSpace::FromGeometry(
-    pcms::UniformGridGeometry<2>::Create(grid,
-                                         pcms::csys::Cartesian::Deferred()),
-    1, 1);
+  auto field_space = pcms::CreateLagrangeSpace(
+    pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Deferred()), 1,
+    1);
   auto field = field_space->CreateFunction<pcms::Real>();
   REQUIRE(field.GetDOFHolderDataHost().size() ==
           static_cast<size_t>(layout->Size()));
@@ -128,10 +127,9 @@ TEST_CASE("UniformGrid order-0 field creation and evaluation")
 
   auto layout = std::make_shared<pcms::UniformGridFieldLayout<2>>(
     grid, 1, pcms::csys::Cartesian::Deferred(), 0);
-  auto field_space = pcms::LagrangeFunctionSpace::FromGeometry(
-    pcms::UniformGridGeometry<2>::Create(grid,
-                                         pcms::csys::Cartesian::Deferred()),
-    0, 1);
+  auto field_space = pcms::CreateLagrangeSpace(
+    pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Deferred()), 0,
+    1);
   auto field = field_space->CreateFunction<pcms::Real>();
 
   REQUIRE(layout->GetOrder() == 0);
@@ -178,10 +176,9 @@ TEST_CASE("UniformGrid field data operations", "[uniform_grid_field]")
 
   auto layout = std::make_shared<pcms::UniformGridFieldLayout<2>>(
     grid, 1, pcms::csys::Cartesian::Deferred());
-  auto field_space = pcms::LagrangeFunctionSpace::FromGeometry(
-    pcms::UniformGridGeometry<2>::Create(grid,
-                                         pcms::csys::Cartesian::Deferred()),
-    1, 1);
+  auto field_space = pcms::CreateLagrangeSpace(
+    pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Deferred()), 1,
+    1);
   auto field = field_space->CreateFunction<pcms::Real>();
 
   std::vector<pcms::Real> data(25);
@@ -208,10 +205,9 @@ TEST_CASE("UniformGrid field evaluation - piecewise constant")
 
   auto layout = std::make_shared<pcms::UniformGridFieldLayout<2>>(
     grid, 1, pcms::csys::Cartesian::Deferred());
-  auto field_space = pcms::LagrangeFunctionSpace::FromGeometry(
-    pcms::UniformGridGeometry<2>::Create(grid,
-                                         pcms::csys::Cartesian::Deferred()),
-    1, 1);
+  auto field_space = pcms::CreateLagrangeSpace(
+    pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Deferred()), 1,
+    1);
   auto field = field_space->CreateFunction<pcms::Real>();
 
   // Set vertex values for a 2x2 cell grid (3x3 = 9 vertices)
@@ -277,10 +273,9 @@ TEST_CASE("UniformGrid field copy")
     10.0, 15.0, 20.0  // y=10: v6(0,10)=10, v7(5,10)=15, v8(10,10)=20
   };
 
-  auto factory = pcms::LagrangeFunctionSpace::FromGeometry(
-    pcms::UniformGridGeometry<2>::Create(grid,
-                                         pcms::csys::Cartesian::Deferred()),
-    1, 1);
+  auto factory = pcms::CreateLagrangeSpace(
+    pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Deferred()), 1,
+    1);
   auto field = factory->CreateFunction<pcms::Real>();
   field.SetDOFHolderDataUncheckedHost(
     pcms::Rank2View<const pcms::Real, pcms::HostMemorySpace>(
@@ -304,9 +299,8 @@ TEST_CASE("Transfer from OmegaH field to UniformGrid field")
                                  2, 0, false);
 
   auto geometry =
-    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
-  auto omega_h_factory =
-    pcms::LagrangeFunctionSpace::FromGeometry(geometry, 1, 1);
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto omega_h_factory = pcms::CreateLagrangeSpace(geometry, 1, 1);
   auto omega_h_field = omega_h_factory->CreateFunction<pcms::Real>();
   pcms::test::SetField(
     omega_h_field, OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) {
@@ -317,10 +311,9 @@ TEST_CASE("Transfer from OmegaH field to UniformGrid field")
   grid.edge_length = {1.0, 1.0};
   grid.bot_left = {0.0, 0.0};
   grid.divisions = {2, 2};
-  auto ug_factory = pcms::LagrangeFunctionSpace::FromGeometry(
-    pcms::UniformGridGeometry<2>::Create(grid,
-                                         pcms::csys::Cartesian::Deferred()),
-    1, 1);
+  auto ug_factory = pcms::CreateLagrangeSpace(
+    pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Deferred()), 1,
+    1);
   auto ug_field = ug_factory->CreateFunction<pcms::Real>();
 
   pcms::Interpolator<pcms::Real> interp(*omega_h_factory, *ug_factory);
@@ -633,19 +626,17 @@ TEST_CASE("UniformGrid workflow")
   auto grid = pcms::CreateUniformGridFromMesh<2>(mesh, {4, 4});
 
   auto geometry =
-    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
-  auto omega_h_factory =
-    pcms::LagrangeFunctionSpace::FromGeometry(geometry, 1, 1);
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto omega_h_factory = pcms::CreateLagrangeSpace(geometry, 1, 1);
   auto omega_h_field = omega_h_factory->CreateFunction<pcms::Real>();
   pcms::test::SetField(
     omega_h_field, OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) {
       return pcms::test::linear_f(x, y);
     });
 
-  auto ug_factory = pcms::LagrangeFunctionSpace::FromGeometry(
-    pcms::UniformGridGeometry<2>::Create(grid,
-                                         pcms::csys::Cartesian::Deferred()),
-    1, 1);
+  auto ug_factory = pcms::CreateLagrangeSpace(
+    pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Deferred()), 1,
+    1);
   auto ug_field = ug_factory->CreateFunction<pcms::Real>();
 
   auto [mask_layout, mask_field] =
@@ -683,10 +674,9 @@ TEST_CASE("UniformGrid Order-1 multi-component field evaluation")
 
   auto layout = std::make_shared<pcms::UniformGridFieldLayout<2>>(
     grid, num_components, pcms::csys::Cartesian::Deferred());
-  auto field_space = pcms::LagrangeFunctionSpace::FromGeometry(
-    pcms::UniformGridGeometry<2>::Create(grid,
-                                         pcms::csys::Cartesian::Deferred()),
-    1, num_components);
+  auto field_space = pcms::CreateLagrangeSpace(
+    pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Deferred()), 1,
+    num_components);
   auto field = field_space->CreateFunction<pcms::Real>();
 
   // Vertex layout:
@@ -764,10 +754,9 @@ TEST_CASE("UniformGrid Order-0 multi-component field (regression)")
 
   auto layout = std::make_shared<pcms::UniformGridFieldLayout<2>>(
     grid, num_components, pcms::csys::Cartesian::Deferred(), 0); // Order 0
-  auto field_space = pcms::LagrangeFunctionSpace::FromGeometry(
-    pcms::UniformGridGeometry<2>::Create(grid,
-                                         pcms::csys::Cartesian::Deferred()),
-    0, num_components);
+  auto field_space = pcms::CreateLagrangeSpace(
+    pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Deferred()), 0,
+    num_components);
   auto field = field_space->CreateFunction<pcms::Real>();
 
   // Set cell values (4 cells, 2 components each)

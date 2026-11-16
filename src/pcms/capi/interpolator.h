@@ -27,8 +27,8 @@ extern "C" {
 
 /**
  * @brief Holds a void pointer to an MLS interpolation: a
- * PolynomialReconstructionFunctionSpace field and its evaluator at the targets
- * @see PolynomialReconstructionFunctionSpace
+ * polynomial reconstruction space field and its evaluator at the targets
+ * @see CreatePolynomialReconstructionSpace
  */
 struct PcmsInterpolatorHandle
 {
@@ -38,7 +38,7 @@ struct PcmsInterpolatorHandle
 /**
  * @brief Typedef for PcmsInterpolatorHandle struct
  * @copydetails PcmsInterpolatorHandle
- * @see PcmsInterpolatorHandle, PolynomialReconstructionFunctionSpace
+ * @see PcmsInterpolatorHandle, CreatePolynomialReconstructionSpace
  */
 typedef struct PcmsInterpolatorHandle PcmsInterpolatorHandle;
 
@@ -56,7 +56,7 @@ typedef struct PcmsInterpolatorHandle PcmsInterpolatorHandle;
  * @note The mesh must be 2D and carry a "global" id tag on its vertices and
  * faces; classification tags ("class_id", "class_dim") are added to it if it
  * has none.
- * @see PolynomialReconstructionFunctionSpace
+ * @see CreatePolynomialReconstructionSpace
  */
 PcmsInterpolatorHandle pcms_create_interpolator(PcmsOmegaHMeshHandle oh_mesh,
                                                 double radius);
@@ -90,7 +90,7 @@ PcmsInterpolatorHandle pcms_create_interpolator(PcmsOmegaHMeshHandle oh_mesh,
  * no longer needed after the interpolator is created as they are copied
  * internally.
  *
- * @see mls_interpolation, PolynomialReconstructionFunctionSpace
+ * @see mls_interpolation, CreatePolynomialReconstructionSpace
  */
 PcmsInterpolatorHandle pcms_create_point_based_interpolator(
   void* source_points, int source_points_size, void* target_points,

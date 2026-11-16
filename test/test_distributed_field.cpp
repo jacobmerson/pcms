@@ -85,7 +85,7 @@ void require(bool condition, const char* message)
 }
 
 void check_distributed_evaluation(Omega_h::Mesh& mesh,
-                                  const pcms::LagrangeFunctionSpace& space)
+                                  const pcms::FunctionSpace& space)
 {
   const auto& layout = *space.GetLayout();
   // Order-1 layout: the DOF holders with ghosts are the mesh vertices.
@@ -237,9 +237,10 @@ int main(int argc, char** argv)
                                      n, 0, false);
       mesh.set_parting(OMEGA_H_GHOSTED, 1, false);
       auto geometry =
-        pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
-      auto space = pcms::LagrangeFunctionSpace::FromGeometry(
-        geometry, 1, 1, "global", pcms::LagrangeFunctionSpace::Backend::OmegaH);
+        pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+      auto space = pcms::CreateLagrangeSpace(
+        geometry, 1, 1,
+        pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
 
       check_distributed_evaluation(mesh, *space);
     }

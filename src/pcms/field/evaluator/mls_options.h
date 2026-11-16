@@ -8,7 +8,7 @@ namespace pcms
 
 /// Configuration of the Moving Least Squares reconstruction. The supports it
 /// is computed on come from the geometry's search (NeighbourhoodOptions).
-/// Passed to PolynomialReconstructionFunctionSpace and
+/// Passed to CreatePolynomialReconstructionSpace and
 /// PointCloudEvaluatorFactory.
 struct MLSOptions
 {

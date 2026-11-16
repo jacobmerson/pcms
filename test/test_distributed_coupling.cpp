@@ -79,7 +79,7 @@ redev::InMessageLayout MakeInMessageLayout(int rank, int nproc, size_t msg_size)
 struct DistributedCouplingContext
 {
   Omega_h::Mesh& mesh;
-  std::shared_ptr<pcms::LagrangeFunctionSpace> space;
+  std::shared_ptr<pcms::FunctionSpace> space;
   int rank;
   int nproc;
 
@@ -443,10 +443,10 @@ int main(int argc, char** argv)
       mesh.set_parting(OMEGA_H_GHOSTED, 1, false);
 
       auto geometry =
-        pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Deferred());
-      auto space = pcms::LagrangeFunctionSpace::FromGeometry(
-        geometry, /*order=*/1, /*num_components=*/1, "global",
-        pcms::LagrangeFunctionSpace::Backend::OmegaH);
+        pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+      auto space = pcms::CreateLagrangeSpace(
+        geometry, /*order=*/1, /*num_components=*/1,
+        pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
       const DistributedCouplingContext ctx{mesh, space, rank, nproc};
 
       check_serializer_round_trip(ctx);

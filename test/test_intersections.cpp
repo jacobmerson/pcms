@@ -80,8 +80,8 @@ TEST_CASE("Mesh intersection test with source and target", "[intersection]")
   // ============================
   // Compute intersection mapping
   // ============================
-  const auto src_geometry =
-    pcms::OmegaHGeometry::Create(src_mesh, pcms::csys::Cartesian::Create(2));
+  const auto src_geometry = std::make_shared<pcms::OmegaHGeometry>(
+    src_mesh, pcms::csys::Cartesian::Create(2));
   auto intersection = intersectTargets(*src_geometry, tgt_mesh);
 
   auto offsets = Omega_h::HostRead(intersection.tgt2src_offsets);

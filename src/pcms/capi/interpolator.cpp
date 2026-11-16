@@ -38,7 +38,7 @@ pcms::NeighbourhoodOptions Supports(double radius, int min_req_supports)
 }
 
 PcmsInterpolatorHandle MakeHandle(
-  const pcms::PolynomialReconstructionFunctionSpace& space,
+  const pcms::FunctionSpace& space,
   std::shared_ptr<const pcms::BoundSource> bound)
 {
   return {new MLSInterpolation{
@@ -56,10 +56,10 @@ PcmsInterpolatorHandle pcms_create_interpolator(PcmsOmegaHMeshHandle oh_mesh,
   OMEGA_H_CHECK_PRINTF(
     mesh.dim() == 2, "Only 2D meshes are supported but found %d\n", mesh.dim());
   const auto system = pcms::csys::Cartesian::Create(2);
-  auto space = pcms::PolynomialReconstructionFunctionSpace::FromGeometry(
-    pcms::PointCloudGeometry::Create(
+  auto space =
+    pcms::CreatePolynomialReconstructionSpace(pcms::CreatePointCloudGeometry(
       std::make_shared<pcms::OmegaHEntityLayout>(mesh, pcms::Face, 1, system),
-      mesh, pcms::Face, Supports(radius, 10)));
+      Supports(radius, 10)));
   // the vertices of the same mesh, whose supports follow from its adjacency
   const pcms::OmegaHEntityLayout vertices(mesh, pcms::Vertex, 1, system);
   const auto geometry = space->GetGeometry();
@@ -74,15 +74,16 @@ PcmsInterpolatorHandle pcms_create_point_based_interpolator(
   double lambda, double decay_factor)
 {
   const auto system = pcms::csys::Cartesian::Create(2);
-  auto space = pcms::PolynomialReconstructionFunctionSpace::Create(
-    pcms::CoordinateView<pcms::HostMemorySpace>(
-      system, pcms::Rank2View<const pcms::Real, pcms::HostMemorySpace>(
-                static_cast<const pcms::Real*>(source_points),
-                source_points_size / 2, 2)),
+  auto space = pcms::CreatePolynomialReconstructionSpace(
+    pcms::CreatePointCloudGeometry(
+      pcms::CoordinateView<pcms::HostMemorySpace>(
+        system, pcms::Rank2View<const pcms::Real, pcms::HostMemorySpace>(
+                  static_cast<const pcms::Real*>(source_points),
+                  source_points_size / 2, 2)),
+      Supports(radius, min_req_supports)),
     {.degree = static_cast<unsigned>(degree),
      .lambda = lambda,
-     .decay_factor = decay_factor},
-    Supports(radius, min_req_supports));
+     .decay_factor = decay_factor});
   const Kokkos::View<const pcms::Real**, Kokkos::LayoutRight,
                      pcms::HostMemorySpace, Kokkos::MemoryUnmanaged>
     targets_host(static_cast<const pcms::Real*>(target_points),

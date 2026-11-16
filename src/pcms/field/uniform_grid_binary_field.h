@@ -38,8 +38,8 @@ template <unsigned Dim>
 std::pair<std::shared_ptr<const UniformGridFieldLayout<Dim>>, Field<Real>>
 CreateUniformGridBinaryField(Omega_h::Mesh& mesh, const UniformGrid<Dim>& grid)
 {
-  auto function_space = LagrangeFunctionSpace::FromGeometry(
-    UniformGridGeometry<Dim>::Create(grid, csys::Cartesian::Deferred()), 1, 1);
+  auto function_space = CreateLagrangeSpace(
+    CreateUniformGridGeometry(grid, csys::Cartesian::Deferred()), 1, 1);
   auto layout = std::dynamic_pointer_cast<const UniformGridFieldLayout<Dim>>(
     function_space->GetLayout());
   PCMS_ALWAYS_ASSERT(layout != nullptr);

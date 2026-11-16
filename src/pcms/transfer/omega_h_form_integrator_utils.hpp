@@ -46,7 +46,14 @@ inline OmegaHScalarSpace ResolveOmegaHScalarSpace(const FunctionSpace& space,
   if (layout->GetNumComponents() != 1) {
     throw pcms_error(prefix + "space must have exactly one component");
   }
-  const Omega_h::Mesh& mesh = layout->GetMesh();
+  auto geometry =
+    std::dynamic_pointer_cast<const OmegaHGeometry>(space.GetGeometry());
+  if (geometry == nullptr || &GetMesh(*geometry) != &layout->GetMesh()) {
+    throw pcms_error(prefix +
+                     "space must be on the Omega_h geometry of its layout's "
+                     "mesh");
+  }
+  const Omega_h::Mesh& mesh = GetMesh(*geometry);
   if (mesh.dim() != 2 && mesh.dim() != 3) {
     throw pcms_error(prefix + "mesh must be 2D or 3D");
   }
@@ -66,13 +73,6 @@ inline OmegaHScalarSpace ResolveOmegaHScalarSpace(const FunctionSpace& space,
       prefix + "space must be order-" + std::to_string(min_order) +
       (max_order > min_order ? " or order-" + std::to_string(max_order)
                              : std::string()));
-  }
-  auto geometry =
-    std::dynamic_pointer_cast<const OmegaHGeometry>(space.GetGeometry());
-  if (geometry == nullptr || &geometry->GetMesh() != &mesh) {
-    throw pcms_error(prefix +
-                     "space must be on the Omega_h geometry of its layout's "
-                     "mesh");
   }
   return {std::move(layout), std::move(geometry)};
 }

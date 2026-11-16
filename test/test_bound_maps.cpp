@@ -21,9 +21,11 @@ using Catch::Matchers::WithinAbs;
 using pcms::ComponentScaling;
 using pcms::CoordinateMap;
 using pcms::DeviceMemorySpace;
+using pcms::FunctionSpace;
 using pcms::GO;
 using pcms::HostMemorySpace;
-using pcms::LagrangeFunctionSpace;
+using pcms::LagrangeBackend;
+using pcms::LagrangeOptions;
 using pcms::OutOfBoundsMode;
 using pcms::OutOfBoundsPolicy;
 using pcms::Real;
@@ -35,26 +37,27 @@ namespace values = pcms::values;
 namespace
 {
 
-std::shared_ptr<LagrangeFunctionSpace> BuildCylindricalSource(
-  Omega_h::Library& lib, Omega_h::Mesh& mesh, int num_components)
+std::shared_ptr<FunctionSpace> BuildCylindricalSource(Omega_h::Library& lib,
+                                                      Omega_h::Mesh& mesh,
+                                                      int num_components)
 {
   mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 2.0, 1.6, 1.1, 8, 8,
                             6, false);
-  return LagrangeFunctionSpace::FromGeometry(
-    pcms::OmegaHGeometry::Create(mesh,
-                                 pcms::csys::CylindricalRThetaZ::Create()),
-    1, num_components, "global", LagrangeFunctionSpace::Backend::OmegaH);
+  return CreateLagrangeSpace(
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::CylindricalRThetaZ::Create()),
+    1, num_components, LagrangeOptions{.backend = LagrangeBackend::OmegaH});
 }
 
-std::shared_ptr<LagrangeFunctionSpace> BuildCartesianTarget(
-  Omega_h::Library& lib, Omega_h::Mesh& mesh, int num_components,
-  double x_extent = 1.0)
+std::shared_ptr<FunctionSpace> BuildCartesianTarget(Omega_h::Library& lib,
+                                                    Omega_h::Mesh& mesh,
+                                                    int num_components,
+                                                    double x_extent = 1.0)
 {
   mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, x_extent, 1.0, 1.0, 4,
                             4, 4, false);
-  return LagrangeFunctionSpace::FromGeometry(
-    pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Create(3)), 1,
-    num_components, "global", LagrangeFunctionSpace::Backend::OmegaH);
+  return CreateLagrangeSpace(
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Create(3)), 1,
+    num_components, LagrangeOptions{.backend = LagrangeBackend::OmegaH});
 }
 
 ValueBasis CylindricalVector()
@@ -346,10 +349,10 @@ TEST_CASE("Bind with a map: NEAREST_BOUNDARY follows the geometry")
     grid.bot_left = {0.1, -3.2, 0.0};
     grid.edge_length = {1.5, 6.4, 1.0};
     grid.divisions = {6, 16, 4};
-    auto src = LagrangeFunctionSpace::FromGeometry(
-      pcms::UniformGridGeometry<3>::Create(
-        grid, pcms::csys::CylindricalRThetaZ::Create()),
-      1, 1);
+    auto src =
+      CreateLagrangeSpace(pcms::CreateUniformGridGeometry(
+                            grid, pcms::csys::CylindricalRThetaZ::Create()),
+                          1, 1);
     auto bound =
       src->GetGeometry()->Bind(query.coordinate_view, nearest, cart_to_cyl);
     REQUIRE(bound->MissingPoints().extent(0) == 0);
@@ -416,9 +419,9 @@ TEST_CASE("Bind with a map: one map serves many fields, spaces and targets")
 
   SECTION("a mapped bind serves every space on the source geometry")
   {
-    auto scalars = LagrangeFunctionSpace::FromGeometry(
-      std::dynamic_pointer_cast<const pcms::OmegaHGeometry>(src->GetGeometry()),
-      1, 1, "global", LagrangeFunctionSpace::Backend::OmegaH);
+    auto scalars =
+      CreateLagrangeSpace(src->GetGeometry(), 1, 1,
+                          LagrangeOptions{.backend = LagrangeBackend::OmegaH});
     auto f = scalars->CreateFunction<Real>("f");
     pcms::test::SetField(
       f, OMEGA_H_LAMBDA(Real r, Real, Real z) { return r + z; });

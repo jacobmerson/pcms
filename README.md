@@ -89,8 +89,14 @@ Follow the instructions there.
 
 ## Python API
 
-
 ```python
+source_space = pcms.create_lagrange_space(
+    pcms.create_omega_h_geometry(source_mesh), 1, 1)
+target_space = pcms.create_lagrange_space(
+    pcms.create_omega_h_geometry(target_mesh), 1, 1)
+source = source_space.create_function()
+target = target_space.create_function()
+
 bound = source_space.get_geometry().bind(pcms.CoordinateView(eval_coords))
 values = source_space.create_point_evaluator(bound)
 # for sources that evaluate derivatives

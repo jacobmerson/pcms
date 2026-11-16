@@ -30,8 +30,10 @@
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
 using pcms::DeviceMemorySpace;
+using pcms::FunctionSpace;
 using pcms::HostMemorySpace;
-using pcms::LagrangeFunctionSpace;
+using pcms::LagrangeBackend;
+using pcms::LagrangeOptions;
 using pcms::LO;
 using pcms::Real;
 
@@ -44,11 +46,12 @@ Omega_h::Mesh BuildSquareMesh(Omega_h::Library& lib, int n)
                             0);
 }
 
-std::shared_ptr<pcms::OmegaHGeometry> MakeGeometry(
-  Omega_h::Mesh& mesh, pcms::SearchOptions options = {})
+std::shared_ptr<pcms::Geometry> MakeGeometry(Omega_h::Mesh& mesh,
+                                             pcms::SearchOptions options = {})
 {
-  return pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Create(2),
-                                      options);
+  return pcms::CreateOmegaHGeometry(
+    mesh, pcms::csys::Cartesian::Create(2),
+    pcms::OmegaHGeometryOptions{.search = options});
 }
 
 /// The element the grid search of `mesh` finds for each point, lifted from the
@@ -69,13 +72,13 @@ Kokkos::View<LO*> StartElements(Omega_h::Mesh& mesh,
     pcms::MakeGridSearch(mesh, {}));
 }
 
-std::shared_ptr<LagrangeFunctionSpace> MakeSpace(
-  const std::shared_ptr<pcms::OmegaHGeometry>& geometry, int order,
+std::shared_ptr<FunctionSpace> MakeSpace(
+  const std::shared_ptr<pcms::Geometry>& geometry, int order,
   int num_components)
 {
-  return LagrangeFunctionSpace::FromGeometry(
-    geometry, order, num_components, "global",
-    LagrangeFunctionSpace::Backend::OmegaH);
+  return CreateLagrangeSpace(
+    geometry, order, num_components,
+    LagrangeOptions{.backend = LagrangeBackend::OmegaH});
 }
 
 /// Checks the orientation convention of the Jacobian of element `e`: row i is
@@ -169,8 +172,8 @@ TEST_CASE("Spaces on a geometry share its discretization")
   REQUIRE(cells->GetLayout()->GetDiscretization() == discretization);
   REQUIRE(scalars->GetDiscretization() == discretization);
 #ifdef PCMS_ENABLE_MESHFIELDS
-  auto p2 = LagrangeFunctionSpace::FromGeometry(
-    geometry, 2, 1, "global", LagrangeFunctionSpace::Backend::MeshFields);
+  auto p2 = CreateLagrangeSpace(
+    geometry, 2, 1, LagrangeOptions{.backend = LagrangeBackend::MeshFields});
   REQUIRE(p2->GetLayout()->GetDiscretization() == discretization);
 #endif
   // a space on another geometry of the same mesh has the same entities, but
@@ -285,7 +288,7 @@ TEST_CASE("Differential gives the element measure")
   {
     auto mesh = pcms::test::BuildUnitCube(lib, 2);
     auto geometry =
-      pcms::OmegaHGeometry::Create(mesh, pcms::csys::Cartesian::Create(3));
+      pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Create(3));
     auto coords = pcms::test::CreateDeviceCoordinateView(
       {0.5, 0.5, 0.5}, geometry->GetCoordinateSystem(), 3);
     const auto differential =
@@ -424,10 +427,9 @@ TEST_CASE("PointCloudGeometry::Neighbourhood takes the search of its sites")
   // a point cloud, and element centroids queried at arbitrary points: the
   // distance search
   pcms::test::CheckSupportResultsEquivalent(
-    pcms::PointCloudGeometry::Create(cloud)->Neighbourhood(query, options),
+    pcms::CreatePointCloudGeometry(cloud)->Neighbourhood(query, options),
     distance_search);
-  const auto centroid_sites =
-    pcms::PointCloudGeometry::Create(faces, mesh, pcms::Face);
+  const auto centroid_sites = pcms::CreatePointCloudGeometry(faces);
   pcms::test::CheckSupportResultsEquivalent(
     centroid_sites->Neighbourhood(query, options), distance_search);
   // element centroids queried at the vertices of their mesh, given as the
@@ -453,8 +455,7 @@ TEST_CASE("PointCloudGeometry::Neighbourhood takes the search of its sites")
             .supports_idx.size() == 0);
   // vertices: the adjacency search from the element of each query point
   pcms::test::CheckSupportResultsEquivalent(
-    pcms::PointCloudGeometry::Create(vertices, mesh, pcms::Vertex)
-      ->Neighbourhood(query, options),
+    pcms::CreatePointCloudGeometry(vertices)->Neighbourhood(query, options),
     pcms::searchNeighbors(
       mesh, 0, mesh.coords(), 2,
       StartElements(mesh,
@@ -474,10 +475,9 @@ TEST_CASE("Points the adjacency search cannot start from are missing")
   const auto system = pcms::csys::Cartesian::Create(2);
   auto vertices =
     std::make_shared<pcms::OmegaHEntityLayout>(mesh, pcms::Vertex, 1, system);
-  auto space = pcms::PolynomialReconstructionFunctionSpace::FromGeometry(
-    pcms::PointCloudGeometry::Create(
-      vertices, mesh, pcms::Vertex,
-      pcms::NeighbourhoodOptions{.radius = 0.5, .min_supports = 3}),
+  auto space = pcms::CreatePolynomialReconstructionSpace(
+    pcms::CreatePointCloudGeometry(
+      vertices, pcms::NeighbourhoodOptions{.radius = 0.5, .min_supports = 3}),
     pcms::MLSOptions{.degree = 1});
   auto f = space->CreateFunction<Real>();
   pcms::test::SetField(
@@ -504,14 +504,14 @@ TEST_CASE("An empty bind evaluates to nothing")
   grid.bot_left = {0.0, 0.0};
   grid.edge_length = {1.0, 1.0};
   grid.divisions = {2, 2};
-  std::vector<std::shared_ptr<LagrangeFunctionSpace>> spaces{
-    MakeSpace(geometry, 1, 1), LagrangeFunctionSpace::FromGeometry(
-                                 pcms::UniformGridGeometry<2>::Create(
-                                   grid, pcms::csys::Cartesian::Create(2)),
-                                 1, 1)};
+  std::vector<std::shared_ptr<FunctionSpace>> spaces{
+    MakeSpace(geometry, 1, 1),
+    CreateLagrangeSpace(
+      pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Create(2)),
+      1, 1)};
 #ifdef PCMS_ENABLE_MESHFIELDS
-  spaces.push_back(LagrangeFunctionSpace::FromGeometry(
-    geometry, 1, 1, "global", LagrangeFunctionSpace::Backend::MeshFields));
+  spaces.push_back(CreateLagrangeSpace(
+    geometry, 1, 1, LagrangeOptions{.backend = LagrangeBackend::MeshFields}));
 #endif
   const Kokkos::View<Real**, DeviceMemorySpace> none("none", 0, 2);
   for (const auto& space : spaces) {
@@ -545,16 +545,18 @@ TEST_CASE("DOFHolderOwners gives the entity of each DOF holder")
   entities(*MakeSpace(geometry, 0, 1), pcms::Face);
 #ifdef PCMS_ENABLE_MESHFIELDS
   entities(
-    *LagrangeFunctionSpace::FromGeometry(
-      geometry, 1, 1, "global", LagrangeFunctionSpace::Backend::MeshFields),
+    *CreateLagrangeSpace(
+      geometry, 1, 1, LagrangeOptions{.backend = LagrangeBackend::MeshFields}),
     pcms::Vertex);
 #endif
   // with ghosts, DOF holders are not the entities
   Omega_h::Write<Omega_h::I8> mask(mesh.nverts(), 1);
   Kokkos::deep_copy(Kokkos::View<Omega_h::I8*>(mask.data(), 1), 0);
-  const auto ghosted = LagrangeFunctionSpace::FromGeometry(
-    geometry, 1, 1, Omega_h::Read(mask), "global",
-    LagrangeFunctionSpace::Backend::OmegaH);
+  const auto ghosted = CreateLagrangeSpace(
+    pcms::CreateOmegaHGeometry(
+      mesh, pcms::csys::Cartesian::Create(2),
+      pcms::OmegaHGeometryOptions{.owned_mask = Omega_h::Read(mask)}),
+    1, 1, LagrangeOptions{.backend = LagrangeBackend::OmegaH});
   REQUIRE(ghosted->GetLayout()->HasGhosts());
   REQUIRE(
     pcms::DOFHolderOwners(*ghosted->GetLayout(), geometry).entities.extent(0) ==
@@ -611,8 +613,8 @@ TEST_CASE("MeshFields evaluates P2 fields through the geometry's bind")
   auto lib = Omega_h::Library{};
   auto mesh = BuildSquareMesh(lib, 6);
   auto geometry = MakeGeometry(mesh);
-  auto p2 = LagrangeFunctionSpace::FromGeometry(
-    geometry, 2, 1, "global", LagrangeFunctionSpace::Backend::MeshFields);
+  auto p2 = CreateLagrangeSpace(
+    geometry, 2, 1, LagrangeOptions{.backend = LagrangeBackend::MeshFields});
   auto f2 = p2->CreateFunction<Real>("f2");
   pcms::test::SetField(
     f2, OMEGA_H_LAMBDA(Real x, Real y) { return Quadratic(x, y); });

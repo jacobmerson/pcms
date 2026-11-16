@@ -134,10 +134,10 @@ mask_value = mask_data[vertex_id, 0]  # Returns 0.0 or 1.0
 
 ```python
 # Create the mesh's geometry (its coordinate system and point search) once,
-# then a concrete FunctionSpace on it with linear (order=1) elements and
+# then a FunctionSpace on it with linear (order=1) elements and
 # 1 component (scalar)
 geometry = pcms.create_omega_h_geometry(mesh)
-omega_h_factory = pcms.LagrangeFunctionSpace.from_geometry(
+omega_h_factory = pcms.create_lagrange_space(
     geometry,
     1,
     1,
@@ -174,7 +174,7 @@ vertex_field = pcms.map_entity_field_to_vertices_average(mesh, face_field, face_
 
 # Create vertex-based field and set data
 geometry = pcms.create_omega_h_geometry(mesh)
-omega_h_factory = pcms.LagrangeFunctionSpace.from_geometry(
+omega_h_factory = pcms.create_lagrange_space(
     geometry, 1, 1)
 omega_h_field = omega_h_factory.create_function()
 omega_h_field.set_dof_holder_data(vertex_field)
@@ -188,9 +188,12 @@ omega_h_field.set_dof_holder_data(vertex_field)
 Set up the data structure for storing field values on the uniform grid vertices.
 
 ```python
-# Create a uniform-grid FunctionSpace
-ug_factory = pcms.LagrangeFunctionSpace.from_uniform_grid(
-    grid,
+# Create a uniform-grid FunctionSpace: the grid's geometry, then a space of
+# linear (order=1) elements on it
+ug_geometry = pcms.create_uniform_grid_geometry(grid)
+ug_factory = pcms.create_lagrange_space(
+    ug_geometry,
+    1,                                      # Order
     1,                                      # Number of components
 )
 ug_field = ug_factory.create_function()
@@ -264,11 +267,13 @@ snake_case form of the C++ method (`GetDOFHolderData` is
 - `ValueView(basis, values)` - values `(num_points, num_components)` tagged with their basis; the array is not copied
 
 ### Field Factories
-- `FunctionSpace` - abstract base class for field spaces; a `PointEvaluatorFactory`
-- `create_omega_h_geometry(mesh, system=None)` - the geometry of an Omega_h mesh (coordinate system and point search), shared by the spaces on it
-- `LagrangeFunctionSpace.from_geometry(geometry, order, num_components)` - create an Omega_h-backed FunctionSpace
-- `LagrangeFunctionSpace.from_uniform_grid(grid, num_components, mesh_coordinate_system, order=1)` - create a uniform-grid-backed FunctionSpace
-- `PolynomialReconstructionFunctionSpace.create(coordinate_view, options, neighbourhood)` - MLS reconstruction (`MLSOptions`) over a point cloud, on supports found with `NeighbourhoodOptions`
+- `FunctionSpace` - a field space: its layout and evaluator source; a `PointEvaluatorFactory`
+- `create_omega_h_geometry(mesh, system=None, divisions=0, global_id_name="global", owned_mask=None)` - the geometry of an Omega_h mesh (coordinate system, point search, global id tag and a per-vertex ownership override), shared by the spaces on it
+- `create_uniform_grid_geometry(grid, system=None)` - the geometry of a 2D or 3D uniform grid
+- `create_point_cloud_geometry(coordinate_view, neighbourhood)` - the geometry of a point cloud, whose supports are found with `NeighbourhoodOptions`
+- `create_lagrange_space(geometry, order, num_components, backend=default, layout_name="")` - a Lagrange `FunctionSpace` on an Omega_h or uniform-grid geometry; `LagrangeBackend.MeshFields` or `LagrangeBackend.OmegaH`
+- `create_spline_space(geometry)` - a bicubic spline `FunctionSpace` on a 2D uniform-grid geometry
+- `create_polynomial_reconstruction_space(geometry, options)` - MLS reconstruction (`MLSOptions`) on a point-cloud geometry
 
 ### Field Operations
 - `space.create_function(name="", variance=values.Scalar, system=None, scaling=None)` - Create a real-valued `Function`; vector and tensor values are in `system`'s basis (default: the space's)
@@ -283,7 +288,7 @@ snake_case form of the C++ method (`GetDOFHolderData` is
 - `geometry = factory.get_geometry()` - The `Geometry` (coordinates and point search) whose bound sources a `PointEvaluatorFactory` accepts; every space on one geometry accepts the same bound sources
 - `bound = geometry.bind(coordinate_view, policy=...)` - Localize query points (in `geometry.get_coordinate_system()`); the search is done once here
 - `bound = geometry.bind(space, policy=...)` - Localize another FunctionSpace's DOF-holder coordinates
-- `create_omega_h_geometry(mesh, system=None, divisions=0)`, `LagrangeFunctionSpace.from_geometry(geometry, order, num_components)` - Several spaces on one mesh geometry, sharing one search and one bind
+- `create_omega_h_geometry(mesh, system=None, divisions=0)`, `create_lagrange_space(geometry, order, num_components)` - Several spaces on one mesh geometry, sharing one search and one bind
 - `bound.found_points()`, `bound.missing_points()` - indices of the query points the source evaluates / does not evaluate
 - `factory.create_point_evaluator(bound, op=DifferentialOperator.Value)` - Create an evaluator at the bound points that applies `op`; `DifferentialOperator.Gradient` evaluates the gradient
 - `factory.supports(op)` - Whether `create_point_evaluator` accepts the `DifferentialOperator` `op`

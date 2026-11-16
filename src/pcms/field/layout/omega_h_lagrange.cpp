@@ -77,49 +77,28 @@ Kokkos::View<bool*, DeviceMemorySpace> BuildOwned(
 OmegaHLagrangeLayout::OmegaHLagrangeLayout(
   Omega_h::Mesh& mesh, int order, int num_components,
   std::shared_ptr<const CoordinateSystem> coordinate_system,
-  std::shared_ptr<const OmegaHDiscretization> discretization,
-  std::string global_id_name)
-  : OmegaHLagrangeLayout(
-      mesh, order, num_components, std::move(coordinate_system),
-      std::move(global_id_name), std::move(discretization), std::nullopt)
-{
-}
-
-OmegaHLagrangeLayout::OmegaHLagrangeLayout(
-  Omega_h::Mesh& mesh, int order, int num_components,
-  std::shared_ptr<const CoordinateSystem> coordinate_system,
-  Omega_h::Read<Omega_h::I8> owned_mask,
-  std::shared_ptr<const OmegaHDiscretization> discretization,
-  std::string global_id_name)
-  : OmegaHLagrangeLayout(mesh, order, num_components,
-                         std::move(coordinate_system),
-                         std::move(global_id_name), std::move(discretization),
-                         std::move(owned_mask))
-{
-}
-
-OmegaHLagrangeLayout::OmegaHLagrangeLayout(
-  Omega_h::Mesh& mesh, int order, int num_components,
-  std::shared_ptr<const CoordinateSystem> coordinate_system,
-  std::string global_id_name,
-  std::shared_ptr<const OmegaHDiscretization> discretization,
-  std::optional<Omega_h::Read<Omega_h::I8>> owned_mask)
-  : mesh_(mesh),
-    order_(order),
-    num_components_(num_components),
-    global_id_name_(std::move(global_id_name))
+  std::shared_ptr<const OmegaHDiscretization> discretization)
+  : mesh_(mesh), order_(order), num_components_(num_components)
 {
   PCMS_FUNCTION_TIMER;
   SetCoordinateSystem(
     ResolveCoordinateSystem(std::move(coordinate_system), mesh_.dim()));
   int entity_dim = EntityDimForOrder(order_, mesh_.dim());
 
+  const auto checked = detail::CheckDiscretizationOf(
+    mesh_, std::move(discretization), "OmegaHLagrangeLayout");
+  discretization_ = checked;
+  // the mask is per vertex: it applies to the DOF holders of an order-1
+  // layout only
+  const auto owned_mask = checked->GetOwnedMask();
+
   EnsureClassification(mesh_);
-  gids_ = BuildGids(mesh_, entity_dim, global_id_name_);
+  gids_ = BuildGids(mesh_, entity_dim, checked->GetGlobalIdName());
   coords_ = get_entity_centroids(mesh_, entity_dim);
   coords_2d_ = ConvertCoordsTo2D(coords_, mesh_.nents(entity_dim), mesh_.dim());
-  owned_ = owned_mask ? BuildOwned(mesh_, entity_dim, *owned_mask)
-                      : BuildOwned(mesh_, entity_dim);
+  owned_ = entity_dim == 0 && owned_mask.size() > 0
+             ? BuildOwned(mesh_, entity_dim, owned_mask)
+             : BuildOwned(mesh_, entity_dim);
   owned_host_ =
     Kokkos::View<bool*, HostMemorySpace>("owned_host", owned_.size());
   Kokkos::deep_copy(owned_host_, owned_);
@@ -130,8 +109,6 @@ OmegaHLagrangeLayout::OmegaHLagrangeLayout(
   class_dims_ = Omega_h::Read<Omega_h::I8>(
     mesh_.get_array<Omega_h::I8>(entity_dim, "class_dim"));
 
-  discretization_ = detail::CheckDiscretizationOf(
-    mesh_, std::move(discretization), "OmegaHLagrangeLayout");
   BuildOwnedClassification();
 
   BuildGlobalToLocalPermutation(
