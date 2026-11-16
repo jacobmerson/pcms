@@ -26,8 +26,9 @@ target_link_libraries(
         Kokkos::kokkos
         pcms::utility
         pcms::geometry
-        Omega_h::omega_h
 )
+# Omega_h is used by the implementation only (no public header includes it)
+target_link_libraries(pcms_localization PRIVATE Omega_h::omega_h)
 target_compile_features(pcms_localization PUBLIC cxx_std_20)
 
 set_target_properties(
