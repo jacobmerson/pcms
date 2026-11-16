@@ -105,6 +105,23 @@ std::shared_ptr<BoundSource> OmegaHGeometry::BindImpl(
                                              search_, mesh_);
 }
 
+Kokkos::View<const LO*, DeviceMemorySpace> OmegaHGeometry::FindElementSeeds(
+  Kokkos::View<const Real**, DeviceMemorySpace> points) const
+{
+  if (points.extent(1) != static_cast<std::size_t>(mesh_.dim())) {
+    throw pcms_error("OmegaHGeometry::FindElementSeeds: point dimension "
+                     "differs from the mesh dimension");
+  }
+  return std::visit(
+    [&](const auto& s) -> Kokkos::View<const LO*, DeviceMemorySpace> {
+      constexpr int Dim = std::decay_t<decltype(s)>::DIM;
+      return detail::LiftElements<Dim>(
+        mesh_, Kokkos::View<const typename std::decay_t<decltype(s)>::Result*,
+                            DeviceMemorySpace>(s(points)));
+    },
+    search_);
+}
+
 SupportResults OmegaHGeometry::Neighbourhood(
   CoordinateView<DeviceMemorySpace> coords, const NeighbourhoodOptions& options,
   const KnownOwners& owners) const
@@ -128,15 +145,7 @@ SupportResults OmegaHGeometry::Neighbourhood(
     // the mesh, the element nearest it; -1, and so no supports, if its grid
     // cell has none)
     const auto points = ConvertCoordsTo2D(flat_points, n, dim);
-    seeds = std::visit(
-      [&](const auto& s) {
-        constexpr int Dim = std::decay_t<decltype(s)>::DIM;
-        return detail::LiftElements<Dim>(
-          mesh_,
-          Kokkos::View<const typename std::decay_t<decltype(s)>::Result*,
-                       DeviceMemorySpace>(LocatePoints(s, points).second));
-      },
-      search_);
+    seeds = FindElementSeeds(points);
   }
   return searchNeighbors(mesh_, /*site_dim=*/0, flat_points, seed_dim, seeds,
                          options.radius * options.radius, options.min_supports,
