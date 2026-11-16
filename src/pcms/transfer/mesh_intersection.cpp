@@ -189,17 +189,15 @@ template void FindIntersections::adjBasedIntersectSearch<3>(
 namespace
 {
 template <int Dim>
-IntersectionResults intersectTargetsImpl(Omega_h::Mesh& source_mesh,
+IntersectionResults intersectTargetsImpl(const OmegaHGeometry& source,
                                          Omega_h::Mesh& target_mesh,
-                                         const OmegaHGeometry& source_geometry,
                                          bool use_prefilter)
 {
-  FindIntersections intersect(source_mesh, target_mesh);
+  FindIntersections intersect(source.GetMesh(), target_mesh);
 
   auto nelems_target = target_mesh.nelems();
 
-  const auto start_elements =
-    LocateTargetCentroids<Dim>(target_mesh, source_geometry);
+  const auto start_elements = LocateTargetCentroids<Dim>(target_mesh, source);
 
   Omega_h::Write<Omega_h::LO> nIntersections(
     nelems_target, 0, "number of intersections in each target element");
@@ -230,17 +228,17 @@ IntersectionResults intersectTargetsImpl(Omega_h::Mesh& source_mesh,
 
 } // namespace
 
-IntersectionResults intersectTargets(Omega_h::Mesh& source_mesh,
+IntersectionResults intersectTargets(const OmegaHGeometry& source,
                                      Omega_h::Mesh& target_mesh,
-                                     const OmegaHGeometry& source_geometry,
                                      bool use_prefilter)
 {
-  OMEGA_H_CHECK(source_mesh.dim() == target_mesh.dim());
-  if (source_mesh.dim() == 3) {
-    return intersectTargetsImpl<3>(source_mesh, target_mesh, source_geometry,
-                                   use_prefilter);
+  if (source.GetMesh().dim() != target_mesh.dim()) {
+    throw pcms_error("intersectTargets: the source geometry's mesh and the "
+                     "target mesh differ in dimension");
   }
-  return intersectTargetsImpl<2>(source_mesh, target_mesh, source_geometry,
-                                 use_prefilter);
+  if (target_mesh.dim() == 3) {
+    return intersectTargetsImpl<3>(source, target_mesh, use_prefilter);
+  }
+  return intersectTargetsImpl<2>(source, target_mesh, use_prefilter);
 }
 } // namespace pcms

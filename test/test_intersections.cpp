@@ -82,7 +82,7 @@ TEST_CASE("Mesh intersection test with source and target", "[intersection]")
   // ============================
   const auto src_geometry =
     pcms::OmegaHGeometry::Create(src_mesh, pcms::csys::Cartesian::Create(2));
-  auto intersection = intersectTargets(src_mesh, tgt_mesh, *src_geometry);
+  auto intersection = intersectTargets(*src_geometry, tgt_mesh);
 
   auto offsets = Omega_h::HostRead(intersection.tgt2src_offsets);
   auto indices = Omega_h::HostRead(intersection.tgt2src_indices);

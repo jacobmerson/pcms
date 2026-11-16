@@ -114,8 +114,8 @@ TEST_CASE("intersection prefilter preserves the intersection map",
     const auto geometry =
       pcms::OmegaHGeometry::Create(source, pcms::csys::Cartesian::Create(2));
     require_intersections_identical(
-      pcms::intersectTargets(source, target, *geometry, true),
-      pcms::intersectTargets(source, target, *geometry, false));
+      pcms::intersectTargets(*geometry, target, true),
+      pcms::intersectTargets(*geometry, target, false));
   }
   SECTION("2D, nested resolutions")
   {
@@ -126,8 +126,8 @@ TEST_CASE("intersection prefilter preserves the intersection map",
     const auto geometry =
       pcms::OmegaHGeometry::Create(source, pcms::csys::Cartesian::Create(2));
     require_intersections_identical(
-      pcms::intersectTargets(source, target, *geometry, true),
-      pcms::intersectTargets(source, target, *geometry, false));
+      pcms::intersectTargets(*geometry, target, true),
+      pcms::intersectTargets(*geometry, target, false));
   }
   SECTION("2D, non-nested resolutions")
   {
@@ -138,8 +138,8 @@ TEST_CASE("intersection prefilter preserves the intersection map",
     const auto geometry =
       pcms::OmegaHGeometry::Create(source, pcms::csys::Cartesian::Create(2));
     require_intersections_identical(
-      pcms::intersectTargets(source, target, *geometry, true),
-      pcms::intersectTargets(source, target, *geometry, false));
+      pcms::intersectTargets(*geometry, target, true),
+      pcms::intersectTargets(*geometry, target, false));
   }
   SECTION("3D, identical meshes")
   {
@@ -150,8 +150,8 @@ TEST_CASE("intersection prefilter preserves the intersection map",
     const auto geometry =
       pcms::OmegaHGeometry::Create(source, pcms::csys::Cartesian::Create(3));
     require_intersections_identical(
-      pcms::intersectTargets(source, target, *geometry, true),
-      pcms::intersectTargets(source, target, *geometry, false));
+      pcms::intersectTargets(*geometry, target, true),
+      pcms::intersectTargets(*geometry, target, false));
   }
   SECTION("3D, nested resolutions")
   {
@@ -162,8 +162,8 @@ TEST_CASE("intersection prefilter preserves the intersection map",
     const auto geometry =
       pcms::OmegaHGeometry::Create(source, pcms::csys::Cartesian::Create(3));
     require_intersections_identical(
-      pcms::intersectTargets(source, target, *geometry, true),
-      pcms::intersectTargets(source, target, *geometry, false));
+      pcms::intersectTargets(*geometry, target, true),
+      pcms::intersectTargets(*geometry, target, false));
   }
   SECTION("3D, non-nested resolutions")
   {
@@ -174,8 +174,8 @@ TEST_CASE("intersection prefilter preserves the intersection map",
     const auto geometry =
       pcms::OmegaHGeometry::Create(source, pcms::csys::Cartesian::Create(3));
     require_intersections_identical(
-      pcms::intersectTargets(source, target, *geometry, true),
-      pcms::intersectTargets(source, target, *geometry, false));
+      pcms::intersectTargets(*geometry, target, true),
+      pcms::intersectTargets(*geometry, target, false));
   }
 }
 
@@ -200,9 +200,8 @@ TEST_CASE("intersection map is independent of the source search resolution",
       source, pcms::csys::Cartesian::Create(2), pcms::SearchOptions{3});
     const auto geometry =
       pcms::OmegaHGeometry::Create(source, pcms::csys::Cartesian::Create(2));
-    require_intersections_equivalent(
-      pcms::intersectTargets(source, target, *coarse),
-      pcms::intersectTargets(source, target, *geometry));
+    require_intersections_equivalent(pcms::intersectTargets(*coarse, target),
+                                     pcms::intersectTargets(*geometry, target));
   }
   SECTION("3D, coarse geometry search grid")
   {
@@ -214,8 +213,18 @@ TEST_CASE("intersection map is independent of the source search resolution",
       source, pcms::csys::Cartesian::Create(3), pcms::SearchOptions{2});
     const auto geometry =
       pcms::OmegaHGeometry::Create(source, pcms::csys::Cartesian::Create(3));
-    require_intersections_equivalent(
-      pcms::intersectTargets(source, target, *coarse),
-      pcms::intersectTargets(source, target, *geometry));
+    require_intersections_equivalent(pcms::intersectTargets(*coarse, target),
+                                     pcms::intersectTargets(*geometry, target));
+  }
+  SECTION("a 2D geometry cannot intersect a 3D target")
+  {
+    auto flat =
+      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 2, 2, 0, false);
+    auto target =
+      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 2, 2, 2, false);
+    const auto geometry =
+      pcms::OmegaHGeometry::Create(flat, pcms::csys::Cartesian::Create(2));
+    REQUIRE_THROWS_AS(pcms::intersectTargets(*geometry, target),
+                      pcms::pcms_error);
   }
 }

@@ -87,8 +87,7 @@ Data BuildDataImpl(const OmegaHLagrangeLayout& source_layout,
   Omega_h::Mesh& source_mesh = source_layout.GetMesh();
   Omega_h::Mesh& target_mesh = target_layout.GetMesh();
 
-  const auto intersections =
-    intersectTargets(source_mesh, target_mesh, source_geometry);
+  const auto intersections = intersectTargets(source_geometry, target_mesh);
 
   const auto& tgt_coords = target_mesh.coords();
   const auto& tgt_elems2nodes = target_mesh.ask_down(Dim, Omega_h::VERT).ab2b;

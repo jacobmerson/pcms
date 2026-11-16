@@ -183,22 +183,22 @@ public:
  * adjacency-based breadth-first search strategy. The result is returned as a
  * compact mapping.
  *
- * @param source_mesh The source Omega_h mesh.
+ * @param source geometry of the source mesh; its search locates the source
+ * element containing each target centroid
  * @param target_mesh The target Omega_h mesh.
- * @param source_geometry geometry of `source_mesh`; its search locates the
- * source element containing each target centroid
  * @param use_prefilter if true, skip degenerate clips
  * @return An IntersectionResults struct containing target-to-source mapping
  * data.
+ * @throws pcms_error if the source geometry's mesh and the target mesh differ
+ * in dimension
  *
  * @note The intersection test is done using 2D polygon intersection routines
  * from r3d. Only valid (non-degenerate) polygonal intersections are included.
  *
  * @see FindIntersections::adjBasedIntersectSearch
  */
-IntersectionResults intersectTargets(Omega_h::Mesh& source_mesh,
+IntersectionResults intersectTargets(const OmegaHGeometry& source,
                                      Omega_h::Mesh& target_mesh,
-                                     const OmegaHGeometry& source_geometry,
                                      bool use_prefilter = true);
 } // namespace pcms
 #endif // PCMS_TRANSFER_MESH_INTERSECTION_HPP
