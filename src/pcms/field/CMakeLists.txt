@@ -72,7 +72,10 @@ target_link_libraries(pcms_field PUBLIC
         pcms::geometry)
 
 if(PCMS_ENABLE_OMEGA_H)
-    target_link_libraries(pcms_field PUBLIC Omega_h::omega_h)
+    # private: core public headers do not include Omega_h. The Omega_h backend
+    # header (pcms/backends/omega_h/omega_h.hpp) does; its users link
+    # Omega_h::omega_h themselves
+    target_link_libraries(pcms_field PRIVATE Omega_h::omega_h)
     target_link_libraries(pcms_field PRIVATE Kokkos::kokkoskernels)
 endif()
 
