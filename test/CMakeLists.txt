@@ -504,7 +504,7 @@ if(Catch2_FOUND)
   endif()
 
   target_link_libraries(unit_tests PUBLIC Catch2::Catch2 pcms::pcms
-          pcms::transfer Kokkos::kokkoskernels)
+          pcms::transfer Kokkos::kokkoskernels Omega_h::omega_h MPI::MPI_CXX)
   target_include_directories(unit_tests PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
   if(PCMS_ENABLE_PETSC)
@@ -514,7 +514,8 @@ if(Catch2_FOUND)
   add_executable(test_interpolation_on_ltx_mesh test_interpolation_on_ltx_mesh.cpp)
   target_link_libraries(test_interpolation_on_ltx_mesh PUBLIC Catch2::Catch2WithMain
                                                         pcms::pcms
-                                                        pcms::transfer)
+                                                        pcms::transfer
+                                                        Omega_h::omega_h)
   target_include_directories(test_interpolation_on_ltx_mesh PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
   add_test(NAME test_interpolation_on_ltx_mesh
           COMMAND test_interpolation_on_ltx_mesh
@@ -537,7 +538,7 @@ endif()
 
 if(PCMS_ENABLE_MFEM AND TARGET pcms::coupler)
   add_executable(test_mfem_coupling test_mfem_coupling.cpp)
-  target_link_libraries(test_mfem_coupling PUBLIC pcms::pcms mfem)
+  target_link_libraries(test_mfem_coupling PUBLIC pcms::pcms mfem MPI::MPI_CXX)
   if(HOST_NPROC GREATER_EQUAL 2)
     dual_mpi_test(
       TESTNAME
