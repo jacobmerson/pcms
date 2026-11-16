@@ -1,10 +1,11 @@
 // Benchmarks of field transfer from an M3D-C1 source: Fusion-IO 1.x called
-// point by point, fusionio's bind, locate (QueryPoints) and evaluate, and a
-// PCMS Interpolator onto a mesh. Hidden behind the [!benchmark] tag, so ctest
-// does not run them; run them with
+// point by point; fusionio's bind, locate (QueryPoints) and evaluate, wrapping
+// Fusion-IO 1.x and natively; and a PCMS Interpolator onto a mesh. Hidden
+// behind the [!benchmark] tag, so ctest does not run them; run them with
 //   OMP_NUM_THREADS=1 fusionio_tests "[!benchmark]" --benchmark-samples 10
-// (Fusion-IO 1.x is not thread safe). Every point keeps its own search hint
-// across samples, so the times are for warm hints, as in a repeated transfer.
+// (Fusion-IO 1.x is not thread safe; the native rows use the threads). Every
+// point keeps its own search hint across samples, so the times are for warm
+// hints, as in a repeated transfer.
 
 #include <catch2/benchmark/catch_benchmark.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -84,34 +85,39 @@ void BenchmarkFusionIO(const std::string& name, int type,
 
 /// fusionio: binds of the points, and evaluations of `quantity` at them
 /// through a QueryPoints, whose Locate rebinds in place.
-void BenchmarkFio(const std::string& name, fusionio::Quantity quantity,
-                  const std::vector<Real>& points)
+void BenchmarkFio(
+  const std::string& name, fusionio::Quantity quantity,
+  const std::vector<Real>& points,
+  fusionio::Evaluation evaluation = fusionio::Evaluation::FusionIO)
 {
-  const auto source = fusionio::Open(fusionio::Format::M3DC1, M3DC1File);
+  const auto source =
+    fusionio::Open(fusionio::Format::M3DC1, M3DC1File, evaluation);
+  const std::string label =
+    evaluation == fusionio::Evaluation::Native ? "native" : "fusionio";
   const auto function = source->CreateFunction(quantity);
   const auto geometry = source->GetGeometry();
   const auto coords = fusionio::test::CreateDeviceCoordinateView(
     points, geometry->GetCoordinateSystem(), 3);
   const pcms::OutOfBoundsPolicy fill{pcms::OutOfBoundsMode::FILL,
                                      std::numeric_limits<Real>::quiet_NaN()};
-  BENCHMARK(name + ": fusionio bind (ERROR)")
+  BENCHMARK(name + ": " + label + " bind (ERROR)")
   {
     return geometry->Bind(coords.coordinate_view);
   };
-  BENCHMARK(name + ": fusionio bind (FILL)")
+  BENCHMARK(name + ": " + label + " bind (FILL)")
   {
     return geometry->Bind(coords.coordinate_view, fill);
   };
   pcms::QueryPoints query(geometry, fill);
   query.Locate(coords.coordinate_view);
-  BENCHMARK(name + ": fusionio locate (FILL, QueryPoints)")
+  BENCHMARK(name + ": " + label + " locate (FILL, QueryPoints)")
   {
     query.Locate(coords.coordinate_view);
     return query.Bound()->NumPoints();
   };
   Kokkos::View<Real**, DeviceMemorySpace> out(
     "out", points.size() / 3, function.GetLayout().GetNumComponents());
-  BENCHMARK(name + ": fusionio evaluate")
+  BENCHMARK(name + ": " + label + " evaluate")
   {
     query.Evaluate(function, fusionio::test::TagLike<Real>(function, out));
     Kokkos::fence();
@@ -142,8 +148,12 @@ TEST_CASE("Transfer benchmarks: M3D-C1 poloidal flux and magnetic field",
   const auto points = GridPoints();
   BenchmarkFusionIO("psi", FIO_POLOIDAL_FLUX, points);
   BenchmarkFio("psi", fusionio::Quantity::PoloidalFlux, points);
+  BenchmarkFio("psi", fusionio::Quantity::PoloidalFlux, points,
+               fusionio::Evaluation::Native);
   BenchmarkFusionIO("B", FIO_MAGNETIC_FIELD, points);
   BenchmarkFio("B", fusionio::Quantity::MagneticField, points);
+  BenchmarkFio("B", fusionio::Quantity::MagneticField, points,
+               fusionio::Evaluation::Native);
 }
 
 TEST_CASE("Transfer benchmarks: M3D-C1 poloidal flux onto a P1 mesh",
