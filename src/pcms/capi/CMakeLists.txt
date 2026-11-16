@@ -6,7 +6,7 @@ if(TARGET pcms::coupler)
   target_link_libraries(
     pcms_capi_core
     PUBLIC MPI::MPI_C
-    PRIVATE pcms::coupler)
+    PRIVATE pcms::coupler Omega_h::omega_h)
 
   target_include_directories(
     pcms_capi_core
@@ -35,7 +35,8 @@ endif()
 
 add_library(pcms_capi_transfer mesh.cpp interpolator.cpp kokkos.cpp)
 add_library(pcms::capi::transfer ALIAS pcms_capi_transfer)
-target_link_libraries(pcms_capi_transfer PUBLIC MPI::MPI_C PRIVATE pcms::transfer)
+target_link_libraries(pcms_capi_transfer PUBLIC MPI::MPI_C PRIVATE pcms::transfer
+                                                         Omega_h::omega_h)
 target_include_directories(pcms_capi_transfer
         PUBLIC
         "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>"
