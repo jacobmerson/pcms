@@ -1,7 +1,7 @@
 // Benchmarks of field transfer from an M3D-C1 source: Fusion-IO 1.x called
-// point by point, fusionio's bind and evaluate, and a PCMS Interpolator onto a
-// mesh. Hidden behind the [!benchmark] tag, so ctest does not run them; run
-// them with
+// point by point, fusionio's bind, locate (QueryPoints) and evaluate, and a
+// PCMS Interpolator onto a mesh. Hidden behind the [!benchmark] tag, so ctest
+// does not run them; run them with
 //   OMP_NUM_THREADS=1 fusionio_tests "[!benchmark]" --benchmark-samples 10
 // (Fusion-IO 1.x is not thread safe). Every point keeps its own search hint
 // across samples, so the times are for warm hints, as in a repeated transfer.
@@ -15,8 +15,9 @@
 #include <Omega_h_mesh.hpp>
 #include <pcms/field/coordinate_map.hpp>
 #include <pcms/field/coordinate_systems/cylindrical.hpp>
+#include <pcms/field/evaluator/omega_h_geometry.hpp>
 #include <pcms/field/function_space/lagrange.h>
-#include <pcms/field/transformed_source.hpp>
+#include <pcms/field/query_points.hpp>
 #include <pcms/transfer/interpolator.h>
 #include "fusion_io_source.hpp"
 #include "test_utils.hpp"
@@ -81,32 +82,38 @@ void BenchmarkFusionIO(const std::string& name, int type,
   };
 }
 
-/// fusionio: one bind of the points, then evaluations of `quantity`.
+/// fusionio: binds of the points, and evaluations of `quantity` at them
+/// through a QueryPoints, whose Locate rebinds in place.
 void BenchmarkFio(const std::string& name, fusionio::Quantity quantity,
                   const std::vector<Real>& points)
 {
   const auto source = fusionio::Open(fusionio::Format::M3DC1, M3DC1File);
   const auto function = source->CreateFunction(quantity);
-  const auto& space = function.GetSpace();
+  const auto geometry = source->GetGeometry();
   const auto coords = fusionio::test::CreateDeviceCoordinateView(
-    points, space.GetCoordinateSystem(), 3);
+    points, geometry->GetCoordinateSystem(), 3);
   const pcms::OutOfBoundsPolicy fill{pcms::OutOfBoundsMode::FILL,
                                      std::numeric_limits<Real>::quiet_NaN()};
   BENCHMARK(name + ": fusionio bind (ERROR)")
   {
-    return space.Bind(coords.coordinate_view);
+    return geometry->Bind(coords.coordinate_view);
   };
   BENCHMARK(name + ": fusionio bind (FILL)")
   {
-    return space.Bind(coords.coordinate_view, fill);
+    return geometry->Bind(coords.coordinate_view, fill);
   };
-  const auto evaluator =
-    space.CreatePointEvaluator<Real>(space.Bind(coords.coordinate_view, fill));
+  pcms::QueryPoints query(geometry, fill);
+  query.Locate(coords.coordinate_view);
+  BENCHMARK(name + ": fusionio locate (FILL, QueryPoints)")
+  {
+    query.Locate(coords.coordinate_view);
+    return query.Bound()->NumPoints();
+  };
   Kokkos::View<Real**, DeviceMemorySpace> out(
     "out", points.size() / 3, function.GetLayout().GetNumComponents());
   BENCHMARK(name + ": fusionio evaluate")
   {
-    evaluator->Evaluate(function, fusionio::test::TagLike<Real>(function, out));
+    query.Evaluate(function, fusionio::test::TagLike<Real>(function, out));
     Kokkos::fence();
     return out.data()[0];
   };
@@ -146,21 +153,25 @@ TEST_CASE("Transfer benchmarks: M3D-C1 poloidal flux onto a P1 mesh",
   auto mesh = RectangleMesh(lib);
   const auto source = fusionio::Open(fusionio::Format::M3DC1, M3DC1File);
   const auto psi = source->CreateFunction(fusionio::Quantity::PoloidalFlux);
-  // The mesh is the poloidal plane phi = 0 of the source's (R, phi, Z).
-  auto target = pcms::LagrangeFunctionSpace::FromMesh(
-    mesh, 1, 1, pcms::csys::CylindricalRZ::Create(), "global",
-    pcms::LagrangeFunctionSpace::Backend::OmegaH);
-  const pcms::TransformedSource on_plane(
-    psi.GetSpacePtr(), std::make_shared<pcms::PoloidalPlaneEmbedding>(0.0));
+  // The mesh is the poloidal plane phi = 0 of the source's (R, phi, Z): the
+  // map of the bind places its points there.
+  auto target = pcms::CreateLagrangeSpace(
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::CylindricalRZ::Create()), 1, 1,
+    {.backend = pcms::LagrangeBackend::OmegaH});
+  const auto on_plane = std::make_shared<pcms::PoloidalPlaneEmbedding>(0.0);
   const pcms::OutOfBoundsPolicy fill{pcms::OutOfBoundsMode::FILL,
                                      std::numeric_limits<Real>::quiet_NaN()};
+  const auto bind = [&]() {
+    return source->GetGeometry()->Bind(
+      target->GetLayout()->GetDOFHolderCoordinates(), fill, on_plane);
+  };
   REQUIRE(target->GetLayout()->GetNumDofHolder() ==
           (Divisions + 1) * (Divisions + 1));
   BENCHMARK("psi: Interpolator construction (FILL)")
   {
-    return pcms::Interpolator<Real>(on_plane, *target, fill);
+    return pcms::Interpolator<Real>(psi.GetSpace(), *target, bind());
   };
-  const pcms::Interpolator<Real> interpolator(on_plane, *target, fill);
+  const pcms::Interpolator<Real> interpolator(psi.GetSpace(), *target, bind());
   auto psi_t = target->CreateFunction<Real>("psi");
   BENCHMARK("psi: Interpolator apply")
   {
@@ -179,12 +190,9 @@ TEST_CASE("Transfer benchmarks: fixed cost of one M3D-C1 point", "[!benchmark]")
   BenchmarkFio("1 point, B", fusionio::Quantity::MagneticField, point);
   const auto source = fusionio::Open(fusionio::Format::M3DC1, M3DC1File);
   const auto b = source->CreateFunction(fusionio::Quantity::MagneticField);
-  const auto& space = b.GetSpace();
-  const auto coords = fusionio::test::CreateDeviceCoordinateView(
-    point, space.GetCoordinateSystem(), 3);
-  const auto bound = space.Bind(coords.coordinate_view);
+  const auto bound = fusionio::test::Bind(*source->GetGeometry(), point);
   BENCHMARK("1 point, B: fusionio create evaluator")
   {
-    return space.CreatePointEvaluator<Real>(bound);
+    return b.GetSpace().CreatePointEvaluator<Real>(bound);
   };
 }
