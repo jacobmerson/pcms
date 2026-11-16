@@ -45,7 +45,7 @@ target_link_libraries(pcms_utility PUBLIC Kokkos::kokkos perfstubs)
 # assert.cpp reports the MPI rank; MPI is not part of the public interface
 target_link_libraries(pcms_utility PRIVATE MPI::MPI_CXX)
 if(PCMS_ENABLE_OMEGA_H)
-    target_link_libraries(pcms_utility PUBLIC Omega_h::omega_h)
+    target_link_libraries(pcms_utility PRIVATE Omega_h::omega_h)
 endif()
 target_compile_features(pcms_utility PUBLIC cxx_std_20)
 
