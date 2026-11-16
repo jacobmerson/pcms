@@ -1,5 +1,5 @@
-#ifndef FUSION_IO_SRC_HOST_EVALUATION_HPP
-#define FUSION_IO_SRC_HOST_EVALUATION_HPP
+#ifndef FUSIONIO_SRC_HOST_EVALUATION_HPP
+#define FUSIONIO_SRC_HOST_EVALUATION_HPP
 
 // Private: what the function spaces wrapping external host evaluators
 // (Fusion-IO 1.x, NIMROD's nimeval) share. Their fields hold no values in
@@ -18,7 +18,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace fio::detail
+namespace fusionio::detail
 {
 
 using HostRows =
@@ -198,6 +198,6 @@ void CopyToOutput(const HostRows& rows, const Output& out)
   }
 }
 
-} // namespace fio::detail
+} // namespace fusionio::detail
 
-#endif // FUSION_IO_SRC_HOST_EVALUATION_HPP
+#endif // FUSIONIO_SRC_HOST_EVALUATION_HPP

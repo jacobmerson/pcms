@@ -1,16 +1,16 @@
-#ifndef FUSION_IO_SRC_FUSION_IO_SOURCE_HPP
-#define FUSION_IO_SRC_FUSION_IO_SOURCE_HPP
+#ifndef FUSIONIO_SRC_FUSION_IO_SOURCE_HPP
+#define FUSIONIO_SRC_FUSION_IO_SOURCE_HPP
 
 // Private (not installed): the definition of the opaque FusionIOSource, for
 // the Fusion-IO function space and its tests.
 
-#include "fusion_io/fusion_io.hpp"
+#include "fusionio/fusionio.hpp"
 #include <fusion_io.h>
 #include <memory>
 #include <optional>
 #include <vector>
 
-namespace fio::detail
+namespace fusionio::detail
 {
 
 /// Closes a Fusion-IO source. Unlike deleting it, fio_close_source also closes
@@ -78,6 +78,6 @@ private:
   mutable std::shared_ptr<std::vector<char>> hints_;
 };
 
-} // namespace fio::detail
+} // namespace fusionio::detail
 
-#endif // FUSION_IO_SRC_FUSION_IO_SOURCE_HPP
+#endif // FUSIONIO_SRC_FUSION_IO_SOURCE_HPP
