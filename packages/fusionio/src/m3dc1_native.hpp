@@ -70,13 +70,15 @@ private:
   pcms::Real period_;
 };
 
-/// An M3D-C1 source whose functions are evaluated natively: GetGeometry() is
-/// the M3DC1NativeMesh's (R, Z) geometry, and CreateFunction creates the
-/// axisymmetric (2D) fields of `source`: the scalar quantities Fusion-IO 1.x
-/// reads as one stored field (poloidal flux and its normalized form,
-/// pressures but the main ion's, densities, temperatures, resistivity,
+/// An M3D-C1 source whose functions are evaluated natively. GetGeometry()
+/// takes (R, phi, Z) points (CylindricalRThetaZ, as the Fusion-IO 1.x
+/// source's) and locates their (R, Z) projection on the M3DC1NativeMesh's
+/// geometry. CreateFunction creates the fields of `source` on its 2D mesh,
+/// axisymmetric or of one toroidal mode (linear runs): the scalar quantities
+/// Fusion-IO 1.x reads as one stored field (poloidal flux and its normalized
+/// form, pressures but the main ion's, densities, temperatures, resistivity,
 /// radiation, bootstrap-current terms), with Gradient and Hessian, and the
-/// magnetic field, as physical (R, phi, Z) components. Quantities, times,
+/// magnetic field, as physical cylindrical components. Quantities, times,
 /// period and series are `wrapped`'s.
 /// @param source an M3D-C1 source
 /// @param wrapped the Fusion-IO 1.x source of `source`

@@ -69,6 +69,8 @@ struct Parameters
   bool reverse = false;
   int nplanes = 1;
   bool timing = false;
+  // evaluate M3D-C1 sources natively (fusionio::Evaluation::Native)
+  bool native = false;
 };
 
 /// Batches of (R, phi, Z) points located on one geometry (a pcms::QueryPoints,
@@ -423,7 +425,8 @@ using OpenSources = std::map<std::pair<fusionio::Format, std::string>,
                              std::shared_ptr<fusionio::Source>>;
 
 TraceSource CreateSource(fusionio::Format format,
-                         const std::vector<std::string>& a, OpenSources& opened)
+                         const std::vector<std::string>& a, OpenSources& opened,
+                         bool native)
 {
   if (a.empty() && format != fusionio::Format::M3DC1) {
     throw std::runtime_error("a file name must be provided");
@@ -431,7 +434,10 @@ TraceSource CreateSource(fusionio::Format format,
   const std::string path = a.empty() ? "C1.h5" : a[0];
   auto& source = opened[{format, path}];
   if (source == nullptr) {
-    source = fusionio::Open(format, path);
+    source = fusionio::Open(format, path,
+                            native && format == fusionio::Format::M3DC1
+                              ? fusionio::Evaluation::Native
+                              : fusionio::Evaluation::FusionIO);
   }
   fusionio::Options options;
   Real slice_time = 0;
@@ -483,9 +489,10 @@ void PrintHelp()
     << "Usage:\n"
     << "\tfio_trace <sources> -dR <dR> -dZ <dZ> -dR0 <dR0> -dZ0 <dZ0> /\n"
     << "\t   -p <pts> -t <trans> -s <steps> -a <angle> -phi0 <phi0> \n"
-    << "\t   -pout <pplot> -qout <qplot> -n <nplanes> -timing\n\n"
+    << "\t   -pout <pplot> -qout <qplot> -n <nplanes> -timing -native\n\n"
     << " As Fusion-IO 1.x's trace (see trace -h), with -timing to print the\n"
-    << " time spent evaluating the field. Sources: -m3dc1 <c1_file> <ts>\n"
+    << " time spent evaluating the field, and -native to evaluate M3D-C1\n"
+    << " sources natively. Sources: -m3dc1 <c1_file> <ts>\n"
     << " <factor> <shift>, -geqdsk <gfile>, -gpec <dir>.\n"
     << std::endl;
 }
@@ -494,9 +501,9 @@ bool ParseCommandLine(int argc, char* argv[], Parameters& p,
                       std::vector<TraceSource>& sources)
 {
   const std::vector<std::string> options = {
-    "-gpec", "-geqdsk", "-m3dc1", "-dR",      "-dZ",   "-dR0",   "-dZ0",
-    "-R0",   "-Z0",     "-p",     "-t",       "-s",    "-a",     "-pout",
-    "-qout", "-phi0",   "-n",     "-reverse", "-tavg", "-timing"};
+    "-gpec", "-geqdsk", "-m3dc1", "-dR",      "-dZ",   "-dR0",    "-dZ0",
+    "-R0",   "-Z0",     "-p",     "-t",       "-s",    "-a",      "-pout",
+    "-qout", "-phi0",   "-n",     "-reverse", "-tavg", "-timing", "-native"};
   std::vector<std::pair<std::string, std::vector<std::string>>> parsed;
   OpenSources opened;
   for (int i = 1; i < argc; ++i) {
@@ -513,6 +520,9 @@ bool ParseCommandLine(int argc, char* argv[], Parameters& p,
       parsed.back().second.push_back(arg);
     }
   }
+  // sources are created as they are parsed, so this goes first
+  p.native = std::ranges::any_of(
+    parsed, [](const auto& option) { return option.first == "-native"; });
   for (const auto& [opt, a] : parsed) {
     const auto one = [&]() {
       if (a.size() != 1) {
@@ -522,11 +532,14 @@ bool ParseCommandLine(int argc, char* argv[], Parameters& p,
       return a[0];
     };
     if (opt == "-m3dc1") {
-      sources.push_back(CreateSource(fusionio::Format::M3DC1, a, opened));
+      sources.push_back(
+        CreateSource(fusionio::Format::M3DC1, a, opened, p.native));
     } else if (opt == "-geqdsk") {
-      sources.push_back(CreateSource(fusionio::Format::GEQDSK, a, opened));
+      sources.push_back(
+        CreateSource(fusionio::Format::GEQDSK, a, opened, p.native));
     } else if (opt == "-gpec") {
-      sources.push_back(CreateSource(fusionio::Format::GPEC, a, opened));
+      sources.push_back(
+        CreateSource(fusionio::Format::GPEC, a, opened, p.native));
     } else if (opt == "-dR") {
       p.dR = std::atof(one().c_str());
     } else if (opt == "-dZ") {
