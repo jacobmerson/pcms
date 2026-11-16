@@ -51,13 +51,21 @@ std::shared_ptr<pcms::OmegaHGeometry> MakeGeometry(
                                       options);
 }
 
-/// The element the grid search of `mesh` finds for each point: where the
-/// adjacency search of the point starts.
+/// The element the grid search of `mesh` finds for each point, lifted from the
+/// entity it reports: where the adjacency search of the point starts.
 Kokkos::View<LO*> StartElements(Omega_h::Mesh& mesh,
                                 Kokkos::View<const Real**> points)
 {
   return std::visit(
-    [&](const auto& s) { return pcms::FindOwningElements(s, points).second; },
+    [&](const auto& s) {
+      constexpr int Dim = std::decay_t<decltype(s)>::DIM;
+      return pcms::detail::LiftResults<Dim>(
+               mesh,
+               Kokkos::View<const typename std::decay_t<decltype(s)>::Result*,
+                            pcms::DeviceMemorySpace>(
+                 pcms::LocatePoints(s, points).second))
+        .first;
+    },
     pcms::MakeGridSearch(mesh, {}));
 }
 

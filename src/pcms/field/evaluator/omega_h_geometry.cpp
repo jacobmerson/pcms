@@ -28,15 +28,33 @@ OmegaHMeshBinding::OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
   std::visit(
     [&](const auto& s) {
       constexpr int Dim = std::decay_t<decltype(s)>::DIM;
-      Kokkos::View<const LO*, DeviceMemorySpace> owning_ids =
-        request.owners.entities;
-      if (!hinted) {
-        auto [found, located] = FindOwningElements(s, LocatedPointValues());
-        SetFound(found);
-        owning_ids = located;
+      if (hinted) {
+        std::tie(elem_ids_, bary_) = detail::BarycentricInElements<Dim>(
+          mesh, LocatedPointValues(), FoundPoints(), request.owners.entities);
+        return;
       }
-      std::tie(elem_ids_, bary_) = detail::BarycentricInElements<Dim>(
-        mesh, LocatedPointValues(), FoundPoints(), owning_ids);
+      auto [found, results] = LocatePoints(s, LocatedPointValues());
+      SetFound(found);
+      const auto [lifted_elems, lifted_bary] = detail::LiftResults<Dim>(
+        mesh, Kokkos::View<const typename std::decay_t<decltype(s)>::Result*,
+                           DeviceMemorySpace>(results));
+      // the rows of the found points
+      const auto rows = FoundPoints();
+      const auto n = static_cast<LO>(rows.extent(0));
+      elem_ids_ = Kokkos::View<LO*, DeviceMemorySpace>("omega_h_elem_ids", n);
+      bary_ =
+        Kokkos::View<Real**, DeviceMemorySpace>("omega_h_bary", n, Dim + 1);
+      const auto elem_ids = elem_ids_;
+      const auto bary = bary_;
+      Kokkos::parallel_for(
+        "GatherFoundLifts",
+        Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
+        KOKKOS_LAMBDA(const LO k) {
+          elem_ids(k) = lifted_elems(rows(k));
+          for (int v = 0; v <= Dim; ++v) {
+            bary(k, v) = lifted_bary(rows(k), v);
+          }
+        });
     },
     search);
 }
@@ -115,7 +133,15 @@ SupportResults OmegaHGeometry::Neighbourhood(
     // cell has none)
     const auto points = ConvertCoordsTo2D(flat_points, n, dim);
     seeds = std::visit(
-      [&](const auto& s) { return FindOwningElements(s, points).second; },
+      [&](const auto& s) {
+        constexpr int Dim = std::decay_t<decltype(s)>::DIM;
+        return detail::LiftResults<Dim>(
+                 mesh_,
+                 Kokkos::View<const typename std::decay_t<decltype(s)>::Result*,
+                              DeviceMemorySpace>(
+                   LocatePoints(s, points).second))
+          .first;
+      },
       search_);
   }
   return searchNeighbors(mesh_, /*site_dim=*/0, flat_points, seed_dim, seeds,

@@ -59,10 +59,116 @@ BarycentricInElements(Omega_h::Mesh& mesh,
   return {elem_ids, bary};
 }
 
+/// The element a search result lifts to, and the point's barycentric
+/// coordinates in it ([vertex], in the element's vertex order). An element
+/// (face in 2D, region in 3D) result is its own element, with the barycentric
+/// coordinates its reduced coordinates give. A result on a lower-dimensional
+/// entity (shared by several elements) lifts to the lowest adjacent element,
+/// with the barycentric coordinates the reduced coordinates give on the
+/// vertices of the entity and zero on the others. A point outside the mesh
+/// lifts through its nearest entity; NO_INTERSECT lifts to element -1.
+/// @param entities2elems per entity dimension below Dim, the adjacency from
+///        the entities to the elements around them
+/// @param entities2verts per entity dimension from 1 below Dim, the
+///        adjacency from the entities to their vertices
+/// @param elem_verts the vertices of each element
+/// @param result the search's result
+template <int Dim>
+KOKKOS_INLINE_FUNCTION Kokkos::pair<LO, Omega_h::Vector<Dim + 1>> LiftToElement(
+  const Omega_h::Few<Omega_h::Adj, Dim>& entities2elems,
+  const Omega_h::Few<Omega_h::Adj, Dim>& entities2verts,
+  const Omega_h::LOs& elem_verts,
+  const typename PointLocalizationSearch<Dim>::Result& result)
+{
+  const int entity_dim = static_cast<int>(result.dimensionality);
+  const LO entity = result.EntityId();
+  auto bary = Omega_h::zero_vector<Dim + 1>();
+  if (entity < 0 || entity_dim > Dim) {
+    return {-1, bary};
+  }
+  // the barycentric coordinates of the point in the entity, in the order of
+  // the entity's vertices
+  Real weights[Dim + 1];
+  weights[0] = 1.0;
+  for (int j = 0; j < entity_dim; ++j) {
+    weights[j + 1] = result.parametric[j];
+    weights[0] -= result.parametric[j];
+  }
+  if (entity_dim == Dim) {
+    for (int k = 0; k <= Dim; ++k) {
+      bary[k] = weights[k];
+    }
+    return {entity, bary};
+  }
+  const auto& up = entities2elems[entity_dim];
+  const LO begin = up.a2ab[entity];
+  const LO end = up.a2ab[entity + 1];
+  if (begin >= end) {
+    return {-1, bary};
+  }
+  LO elem = up.ab2b[begin];
+  for (LO i = begin + 1; i < end; ++i) {
+    elem = Kokkos::min(elem, up.ab2b[i]);
+  }
+  for (int j = 0; j <= entity_dim; ++j) {
+    const LO vertex =
+      entity_dim == 0
+        ? entity
+        : entities2verts[entity_dim].ab2b[entity * (entity_dim + 1) + j];
+    for (int k = 0; k <= Dim; ++k) {
+      if (elem_verts[elem * (Dim + 1) + k] == vertex) {
+        bary[k] = weights[j];
+      }
+    }
+  }
+  return {elem, bary};
+}
+
+/// The element and barycentric coordinates ([point][vertex]) every result of a
+/// search lifts to, see LiftToElement.
+template <int Dim>
+std::pair<Kokkos::View<LO*, DeviceMemorySpace>,
+          Kokkos::View<Real**, DeviceMemorySpace>>
+LiftResults(Omega_h::Mesh& mesh,
+            Kokkos::View<const typename PointLocalizationSearch<Dim>::Result*,
+                         DeviceMemorySpace>
+              results)
+{
+  const auto n = static_cast<LO>(results.extent(0));
+  Kokkos::View<LO*, DeviceMemorySpace> elem_ids("omega_h_lift_elem_ids", n);
+  Kokkos::View<Real**, DeviceMemorySpace> bary("omega_h_lift_bary", n, Dim + 1);
+  Omega_h::Few<Omega_h::Adj, Dim> entities2elems;
+  Omega_h::Few<Omega_h::Adj, Dim> entities2verts;
+  for (int d = 0; d < Dim; ++d) {
+    entities2elems[d] = mesh.ask_up(d, Dim);
+    if (d > 0) {
+      entities2verts[d] = mesh.ask_down(d, Omega_h::VERT);
+    }
+  }
+  const auto elem_verts = mesh.ask_elem_verts();
+  Kokkos::parallel_for(
+    "LiftResults",
+    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
+    KOKKOS_LAMBDA(const LO i) {
+      const auto lifted = LiftToElement<Dim>(entities2elems, entities2verts,
+                                             elem_verts, results(i));
+      elem_ids(i) = lifted.first;
+      for (int k = 0; k <= Dim; ++k) {
+        bary(i, k) = lifted.second[k];
+      }
+    });
+  return {elem_ids, bary};
+}
+
 } // namespace detail
 
 /// Bound source of an Omega_h simplex mesh: element and barycentric
 /// coordinates of each found point, in FoundPoints() order.
+///
+/// The search reports the entity a point lies on and its position on it; the
+/// binding's policy picks the element for the evaluators, which need one:
+/// shared entities (a point on an edge or vertex) take the lowest adjacent
+/// element, and a hinted bind uses the hinted element.
 class OmegaHMeshBinding final : public BoundSource
 {
 public:

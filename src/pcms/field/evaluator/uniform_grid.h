@@ -63,7 +63,6 @@ public:
     // Every point has a (closest) cell, so all rows are computed; Evaluate
     // overwrites the rows of points outside the grid in FILL mode.
     auto cell_indices = binding_->CellIndices();
-    auto coordinates = binding_->LocatedPointValues();
 
     if (layout_->GetOrder() == 0) {
       Kokkos::parallel_for(
@@ -102,20 +101,16 @@ public:
         dimensions_view(d) = cell_divisions[Dim - 1 - d] + 1;
       });
 
+    // the binding's coordinates are in axis order; cell_dim_indices is filled
+    // from GetDimensionedIndex(), which returns indices in the opposite order
     RealMatView parametric_coords("parametric_coords", num_points, Dim);
+    const auto parametric = binding_->Parametric();
     Kokkos::parallel_for(
       "compute_parametric_coords",
       Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, num_points),
-      KOKKOS_CLASS_LAMBDA(const LO i) {
-        auto cell_bbox = grid_copy.GetCellBBOX(cell_indices(i));
+      KOKKOS_LAMBDA(const LO i) {
         for (unsigned d = 0; d < Dim; ++d) {
-          Real coord = coordinates(i, d);
-          Real cell_min = cell_bbox.center[d] - cell_bbox.half_width[d];
-          Real cell_max = cell_bbox.center[d] + cell_bbox.half_width[d];
-          // cell_dim_indices is filled from GetDimensionedIndex(), which
-          // returns indices in the opposite order of the coordinates
-          parametric_coords(i, Dim - 1 - d) =
-            (coord - cell_min) / (cell_max - cell_min);
+          parametric_coords(i, Dim - 1 - d) = parametric(i, d);
         }
       });
 
