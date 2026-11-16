@@ -98,26 +98,38 @@ KOKKOS_INLINE_FUNCTION void EvaluatePolynomial(const Real* c, Real xi, Real eta,
   }
 }
 
-/// A scalar quantity: (linfac * field + equilibrium - offset) * factor, as
-/// m3dc1_scalar_field::eval; derivatives without the offset
-/// (m3dc1_scalar_field::eval_deriv).
-struct NativeScalar
+/// A native quantity. A scalar is (linfac * field + equilibrium - offset) *
+/// factor, as m3dc1_scalar_field::eval, and its derivatives the same without
+/// the offset (m3dc1_scalar_field::eval_deriv). The magnetic field is
+/// m3dc1_magnetic_field::eval with psi the field and I the current:
+///   B_R = -(dpsi/dZ) / r, B_phi = I / r, B_Z = (dpsi/dR) / r
+/// (r = R for toroidal files, 1 otherwise), each term of the perturbation
+/// times linfac and the equilibrium's added, times factor (B0). Its f terms
+/// (-d2f/dRdphi, -d2f/dZdphi) vanish for axisymmetric fields and are not
+/// evaluated.
+struct NativeQuantity
 {
   std::shared_ptr<const M3DC1NativeMesh> mesh;
+  bool magnetic_field = false;
+  /// the scalar's stored field, or the magnetic field's psi
   Coefficients field;
-  /// empty unless the equilibrium is added (1.x's eqsub)
+  /// `field`'s equilibrium when it is added (1.x's eqsub), otherwise empty
   Coefficients equilibrium;
+  /// the magnetic field's I, and its equilibrium when it is added
+  Coefficients current;
+  Coefficients current_equilibrium;
   Real linfac = 1.;
   Real offset = 0.;
   Real factor = 1.;
+  bool toroidal = true;
 };
 
-using NativeFieldData = ExternalFieldData<NativeScalar>;
+using NativeFieldData = ExternalFieldData<NativeQuantity>;
 
-/// Evaluates native scalar quantities at the points of an Omega_h binding of
-/// the native mesh's geometry: the value, the gradient (d/dR, d/dZ) or the
-/// Hessian (d2/dR2, d2/dRdZ, d2/dZdR, d2/dZ2), physical components in
-/// CylindricalRZ.
+/// Evaluates native quantities at the points of an Omega_h binding of the
+/// native mesh's geometry: the value, or for scalars the gradient (d/dR,
+/// d/dZ) or the Hessian (d2/dR2, d2/dRdZ, d2/dZdR, d2/dZ2), physical
+/// components in CylindricalRZ.
 class M3DC1NativeEvaluator final : public PointEvaluator<Real>
 {
 public:
@@ -156,18 +168,22 @@ protected:
       throw pcms_error("M3DC1NativeEvaluator: the field is not a native "
                        "M3D-C1 quantity");
     }
-    const NativeScalar& q = data->quantity;
+    const NativeQuantity& q = data->quantity;
     const auto out = values.GetValues();
     const auto points = bound_->LocatedPointValues();
     const auto found = bound_->FoundPoints();
     const auto elements = bound_->ElementIds();
     const auto frames = frames_;
+    const bool magnetic_field = q.magnetic_field;
     const Coefficients f1 = q.field;
     const Coefficients f0 = q.equilibrium;
+    const Coefficients i1 = q.current;
+    const Coefficients i0 = q.current_equilibrium;
     const bool eqsub = f0.extent(0) > 0;
     const Real linfac = q.linfac;
     const Real offset = q.offset;
     const Real factor = q.factor;
+    const bool toroidal = q.toroidal;
     const int order = Operator() == DifferentialOperator::Value      ? 0
                       : Operator() == DifferentialOperator::Gradient ? 1
                                                                      : 2;
@@ -187,6 +203,26 @@ protected:
         const Real eta = -dx * sn + dz * co;
         Real v1[6];
         Real v0[6];
+        if (magnetic_field) {
+          const Real r = toroidal ? points(i, 0) : 1.;
+          EvaluatePolynomial(&f1(e, 0), xi, eta, co, sn, 1, v1);
+          Real b[3];
+          b[0] = -linfac * v1[2] / r;
+          b[2] = linfac * v1[1] / r;
+          EvaluatePolynomial(&i1(e, 0), xi, eta, co, sn, 0, v1);
+          b[1] = linfac * v1[0] / r;
+          if (eqsub) {
+            EvaluatePolynomial(&f0(e, 0), xi, eta, co, sn, 1, v0);
+            b[0] -= v0[2] / r;
+            b[2] += v0[1] / r;
+            EvaluatePolynomial(&i0(e, 0), xi, eta, co, sn, 0, v0);
+            b[1] += v0[0] / r;
+          }
+          for (int c = 0; c < 3; ++c) {
+            out(i, c) = b[c] * factor;
+          }
+          return;
+        }
         EvaluatePolynomial(&f1(e, 0), xi, eta, co, sn, order, v1);
         if (eqsub) {
           EvaluatePolynomial(&f0(e, 0), xi, eta, co, sn, order, v0);
@@ -221,17 +257,18 @@ private:
   M3DC1NativeMesh::Frames frames_;
 };
 
-/// Creates the native evaluators of the scalar quantities on the native
-/// mesh's geometry: Value, Gradient and Hessian.
+/// Creates the native evaluators of the quantities of one representation on
+/// the native mesh's geometry: scalars with Gradient and Hessian, the
+/// magnetic field with Value only.
 class M3DC1NativeEvaluatorFactory final
   : public TypedPointEvaluatorFactory<Real, OmegaHMeshBinding>
 {
 public:
-  M3DC1NativeEvaluatorFactory(std::shared_ptr<const M3DC1NativeMesh> mesh,
-                              std::shared_ptr<const FieldLayout> layout)
-    : TypedPointEvaluatorFactory(
-        mesh->GetGeometry(),
-        {DifferentialOperator::Gradient, DifferentialOperator::Hessian}),
+  M3DC1NativeEvaluatorFactory(
+    std::shared_ptr<const M3DC1NativeMesh> mesh,
+    std::shared_ptr<const FieldLayout> layout,
+    std::initializer_list<DifferentialOperator> supported)
+    : TypedPointEvaluatorFactory(mesh->GetGeometry(), supported),
       mesh_(std::move(mesh)),
       layout_(std::move(layout))
   {
@@ -250,6 +287,19 @@ private:
   std::shared_ptr<const M3DC1NativeMesh> mesh_;
   std::shared_ptr<const FieldLayout> layout_;
 };
+
+/// A space of native quantities with `num_components` components.
+std::shared_ptr<FunctionSpace> CreateNativeSpace(
+  std::shared_ptr<const M3DC1NativeMesh> mesh, int num_components,
+  std::initializer_list<DifferentialOperator> supported)
+{
+  auto layout = std::make_shared<EmptyFieldLayout>(
+    mesh->GetGeometry()->GetCoordinateSystem(), num_components);
+  auto evaluator = std::make_shared<M3DC1NativeEvaluatorFactory>(
+    std::move(mesh), layout, supported);
+  return std::make_shared<FunctionSpace>(std::move(layout), CreateNoFieldData,
+                                         std::move(evaluator));
+}
 
 /// Whether two M3D-C1 meshes have the same elements.
 bool SameElements(const m3dc1_mesh& a, const m3dc1_mesh& b)
@@ -364,6 +414,7 @@ struct ResolvedOptions
   int time = 0;
   Real linfac = 1.;
   bool eqsub = false;
+  bool use_f = false;
 };
 
 /// An M3D-C1 source evaluated natively, see CreateM3DC1NativeSource.
@@ -382,12 +433,10 @@ public:
     }
     domain_mesh_ = mesh;
     mesh_ = std::make_shared<M3DC1NativeMesh>(*mesh);
-    auto layout =
-      std::make_shared<EmptyFieldLayout>(csys::CylindricalRZ::Create(), 1);
-    auto evaluator =
-      std::make_shared<M3DC1NativeEvaluatorFactory>(mesh_, layout);
-    scalars_ = std::make_shared<FunctionSpace>(
-      std::move(layout), CreateNoFieldData, std::move(evaluator));
+    scalars_ = CreateNativeSpace(
+      mesh_, 1,
+      {DifferentialOperator::Gradient, DifferentialOperator::Hessian});
+    vectors_ = CreateNativeSpace(mesh_, 3, {});
   }
 
   [[nodiscard]] std::shared_ptr<const Geometry> GetGeometry() const override
@@ -416,20 +465,53 @@ public:
   [[nodiscard]] Function<Real> CreateFunction(
     Quantity quantity, const Options& options) const override
   {
+    if (quantity == Quantity::MagneticField) {
+      return CreateMagneticField(options);
+    }
     const ScalarEntry entry = Entry(quantity, options);
     const ResolvedOptions resolved = Resolve(options, entry.equilibrium_only);
-    NativeScalar scalar{mesh_,
-                        Load(entry.name, resolved.time),
-                        resolved.eqsub ? Load(entry.name, -1) : Coefficients(),
-                        resolved.linfac,
-                        entry.offset,
-                        entry.factor};
+    NativeQuantity scalar;
+    scalar.mesh = mesh_;
+    scalar.field = Load(entry.name, resolved.time);
+    if (resolved.eqsub) {
+      scalar.equilibrium = Load(entry.name, -1);
+    }
+    scalar.linfac = resolved.linfac;
+    scalar.offset = entry.offset;
+    scalar.factor = entry.factor;
     return scalars_->CreateFunction<Real>(
       std::string(Name(quantity)),
       std::make_unique<NativeFieldData>(std::move(scalar), ValueBasis{}));
   }
 
 private:
+  // The magnetic field, as m3dc1_magnetic_field::load and eval.
+  Function<Real> CreateMagneticField(const Options& options) const
+  {
+    const m3dc1_source& s = *m3dc1_;
+    const ResolvedOptions resolved = Resolve(options, false);
+    if (resolved.use_f) {
+      throw pcms_error("fusionio: the magnetic field of this time slice is "
+                       "not axisymmetric; only 2D fields are evaluated "
+                       "natively");
+    }
+    NativeQuantity b;
+    b.mesh = mesh_;
+    b.magnetic_field = true;
+    b.field = Load("psi", resolved.time);
+    b.current = Load("I", resolved.time);
+    if (resolved.eqsub) {
+      b.equilibrium = Load("psi", -1);
+      b.current_equilibrium = Load("I", -1);
+    }
+    b.linfac = resolved.linfac;
+    b.factor = s.B0;
+    b.toroidal = s.itor == 1;
+    return vectors_->CreateFunction<Real>(
+      std::string(Name(Quantity::MagneticField)),
+      std::make_unique<NativeFieldData>(std::move(b), QuantityBasis(true)));
+  }
+
   // The stored field of a scalar quantity, as m3dc1_source::get_field.
   ScalarEntry Entry(Quantity quantity, const Options& options) const
   {
@@ -520,8 +602,10 @@ private:
       resolved.time = -1;
     }
     resolved.eqsub = s.eqsubtract == 1 && part != Part::Perturbed;
+    resolved.use_f = s.i3d == 1 || s.icomplex == 1;
     if (resolved.time == -1) {
       resolved.eqsub = false;
+      resolved.use_f = false;
     }
     if (resolved.linfac != 1. && (s.linear == 0 || resolved.time == -1)) {
       resolved.linfac = 1.;
@@ -577,6 +661,7 @@ private:
   const m3dc1_mesh* domain_mesh_ = nullptr;
   std::shared_ptr<const M3DC1NativeMesh> mesh_;
   std::shared_ptr<FunctionSpace> scalars_;
+  std::shared_ptr<FunctionSpace> vectors_;
   mutable std::map<std::pair<std::string, int>, Coefficients> coefficients_;
 };
 
