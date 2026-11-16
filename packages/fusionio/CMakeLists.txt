@@ -26,7 +26,7 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-add_library(fusionio src/fusion_io_space.cpp)
+add_library(fusionio src/fusion_io_space.cpp src/m3dc1_native.cpp)
 add_library(fusionio::fusionio ALIAS fusionio)
 target_compile_features(fusionio PUBLIC cxx_std_20)
 target_include_directories(

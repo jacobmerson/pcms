@@ -1,6 +1,7 @@
 #include "fusion_io_space.hpp"
 #include "fusion_io_source.hpp"
 #include "host_evaluation.hpp"
+#include "m3dc1_native.hpp"
 #include "pcms/discretization/discretization/empty.hpp"
 #include "pcms/field/layout/empty.h"
 #include "pcms/utility/profile.h"
@@ -610,10 +611,19 @@ std::string_view Name(Quantity quantity)
   return detail::EntryOf(quantity).name;
 }
 
-std::shared_ptr<Source> Open(Format format, const std::string& path)
+std::shared_ptr<Source> Open(Format format, const std::string& path,
+                             Evaluation evaluation)
 {
-  return std::make_shared<detail::FusionIOFileSource>(
-    detail::OpenFusionIOSource(format, path));
+  auto source = detail::OpenFusionIOSource(format, path);
+  auto wrapped = std::make_shared<detail::FusionIOFileSource>(source);
+  if (evaluation == Evaluation::FusionIO) {
+    return wrapped;
+  }
+  if (format != Format::M3DC1) {
+    throw pcms::pcms_error(
+      "fusionio::Open: only M3D-C1 sources are evaluated natively");
+  }
+  return detail::CreateM3DC1NativeSource(std::move(source), std::move(wrapped));
 }
 
 } // namespace fusionio
