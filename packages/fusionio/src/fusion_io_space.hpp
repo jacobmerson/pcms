@@ -1,13 +1,13 @@
-#ifndef FUSION_IO_SRC_FUSION_IO_SPACE_HPP
-#define FUSION_IO_SRC_FUSION_IO_SPACE_HPP
+#ifndef FUSIONIO_SRC_FUSION_IO_SPACE_HPP
+#define FUSIONIO_SRC_FUSION_IO_SPACE_HPP
 
-#include "fusion_io/fusion_io.hpp"
+#include "fusionio/fusionio.hpp"
 #include "pcms/field/function_space.h"
 #include "pcms/field/layout/empty.h"
 #include <memory>
 #include <string>
 
-namespace fio::detail
+namespace fusionio::detail
 {
 
 /// An open Fusion-IO file. Opaque: Fusion-IO is a private dependency.
@@ -64,6 +64,6 @@ private:
   std::shared_ptr<const pcms::EmptyFieldLayout> layout_;
 };
 
-} // namespace fio::detail
+} // namespace fusionio::detail
 
-#endif // FUSION_IO_SRC_FUSION_IO_SPACE_HPP
+#endif // FUSIONIO_SRC_FUSION_IO_SPACE_HPP

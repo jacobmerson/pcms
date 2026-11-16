@@ -1,8 +1,0 @@
-@PACKAGE_INIT@
-
-include(CMakeFindDependencyMacro)
-find_dependency(pcms CONFIG)
-find_dependency(fusionio CONFIG)
-
-include("${CMAKE_CURRENT_LIST_DIR}/fusion_io-targets.cmake")
-check_required_components(fusion_io)

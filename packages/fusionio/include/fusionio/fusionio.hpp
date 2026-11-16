@@ -1,5 +1,5 @@
-#ifndef FUSION_IO_FUSION_IO_HPP
-#define FUSION_IO_FUSION_IO_HPP
+#ifndef FUSIONIO_FUSIONIO_HPP
+#define FUSIONIO_FUSIONIO_HPP
 
 /// Fusion-IO 2.0: fields of fusion simulation codes as PCMS functions.
 ///
@@ -17,7 +17,7 @@
 #include <string_view>
 #include <vector>
 
-namespace fio
+namespace fusionio
 {
 
 using Real = pcms::Real;
@@ -160,6 +160,6 @@ std::shared_ptr<Source> OpenNimrod(const std::string& dump,
                                    const std::string& fields,
                                    const std::string& case_dir = "");
 
-} // namespace fio
+} // namespace fusionio
 
-#endif // FUSION_IO_FUSION_IO_HPP
+#endif // FUSIONIO_FUSIONIO_HPP

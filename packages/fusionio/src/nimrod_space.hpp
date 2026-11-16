@@ -1,14 +1,14 @@
-#ifndef FUSION_IO_SRC_NIMROD_SPACE_HPP
-#define FUSION_IO_SRC_NIMROD_SPACE_HPP
+#ifndef FUSIONIO_SRC_NIMROD_SPACE_HPP
+#define FUSIONIO_SRC_NIMROD_SPACE_HPP
 
-#include "fusion_io/fusion_io.hpp"
+#include "fusionio/fusionio.hpp"
 #include "pcms/field/function_space.h"
 #include "pcms/field/layout/empty.h"
 #include <memory>
 #include <string>
 #include <vector>
 
-namespace fio::detail
+namespace fusionio::detail
 {
 
 /// A NIMROD dump opened for evaluation. Opaque: NIMROD is a private
@@ -82,6 +82,6 @@ private:
   std::shared_ptr<const pcms::EmptyFieldLayout> layout_;
 };
 
-} // namespace fio::detail
+} // namespace fusionio::detail
 
-#endif // FUSION_IO_SRC_NIMROD_SPACE_HPP
+#endif // FUSIONIO_SRC_NIMROD_SPACE_HPP

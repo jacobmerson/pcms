@@ -1,5 +1,5 @@
-#ifndef FUSION_IO_TEST_TEST_UTILS_HPP
-#define FUSION_IO_TEST_TEST_UTILS_HPP
+#ifndef FUSIONIO_TEST_TEST_UTILS_HPP
+#define FUSIONIO_TEST_TEST_UTILS_HPP
 
 // The few helpers the Fusion-IO tests need, written against PCMS's installed
 // headers (PCMS's own test utilities are not installed).
@@ -15,7 +15,7 @@
 #include <memory>
 #include <vector>
 
-namespace fio::test
+namespace fusionio::test
 {
 
 inline constexpr double ExactTol = 1e-12;
@@ -111,6 +111,6 @@ inline Kokkos::View<Real**, HostMemorySpace> EvaluateAt(
   return EvaluateAt(function.GetSpace(), function, points);
 }
 
-} // namespace fio::test
+} // namespace fusionio::test
 
-#endif // FUSION_IO_TEST_TEST_UTILS_HPP
+#endif // FUSIONIO_TEST_TEST_UTILS_HPP
