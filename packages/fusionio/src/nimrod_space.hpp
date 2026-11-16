@@ -2,8 +2,6 @@
 #define FUSIONIO_SRC_NIMROD_SPACE_HPP
 
 #include "fusionio/fusionio.hpp"
-#include "pcms/field/function_space.h"
-#include "pcms/field/layout/empty.h"
 #include <memory>
 #include <string>
 #include <vector>
@@ -15,17 +13,12 @@ namespace fusionio::detail
 /// dependency.
 class NimrodSource;
 
-struct NimrodOptions
-{
-  Part part = Part::Total;
-};
-
 /// Opens a NIMROD dump for evaluation of the fields named by the
 /// single-character ids in `fields`, e.g. "bvn". NIMROD's evaluator holds one
-/// dump per process, so this throws while another source is open; the spaces
-/// and fields created from a source share and keep it open. Only toroidal
-/// cases (geom='tor') are supported. Not thread safe: it changes the current
-/// directory while NIMROD opens the dump.
+/// dump per process, so this throws while another source is open; the
+/// geometries, spaces and fields created from a source share and keep it
+/// open. Only toroidal cases (geom='tor') are supported. Not thread safe: it
+/// changes the current directory while NIMROD opens the dump.
 ///
 /// @param case_dir directory holding the case's nimrod.in (default: the
 /// current directory). It must be writable: NIMROD writes scratch files there
@@ -36,51 +29,6 @@ std::shared_ptr<NimrodSource> OpenNimrodSource(
 
 /// NIMROD's names for the quantities `source` can evaluate, e.g. "b" or "ti".
 std::vector<std::string> AvailableQuantities(const NimrodSource& source);
-
-/// Fields of a NIMROD dump, evaluated by NIMROD at the query points. Points
-/// are (R, theta, Z), which is CylindricalRThetaZ, and vector values are
-/// physical cylindrical components. PCMS holds none of the values: functions
-/// can be evaluated and used as transfer sources, but not read or written.
-///
-/// NIMROD orders coordinates (R, Z, phi), right-handed, so its phi is -theta
-/// and vectors are mapped accordingly.
-///
-/// A space holds quantities with one component count (e.g. 1 for pressure, 3
-/// for vectors); create one space per count over the same source.
-///
-/// Evaluators of derivative order 1 give the gradient of single-component
-/// scalar quantities as physical cylindrical components
-/// (d/dR, (1/R) d/dtheta, d/dZ).
-class NimrodFunctionSpace final : public pcms::FunctionSpace
-{
-public:
-  static std::shared_ptr<NimrodFunctionSpace> Create(
-    std::shared_ptr<NimrodSource> source, int num_components);
-
-  std::shared_ptr<const pcms::FieldLayout> GetLayout() const noexcept override
-  {
-    return layout_;
-  }
-
-  /// Function for a NIMROD quantity, whose component count must be the
-  /// space's.
-  /// @param quantity NIMROD's name for it (see AvailableQuantities)
-  pcms::Function<Real> CreateFunction(std::string name,
-                                      const std::string& quantity,
-                                      const NimrodOptions& options = {}) const;
-
-protected:
-  pcms::FieldVariant CreateFieldImpl(pcms::Type storage_type,
-                                     pcms::ValueBasis basis) const override;
-  pcms::FieldVariant CreateFieldImpl(
-    pcms::FieldDataVariant data) const override;
-
-private:
-  NimrodFunctionSpace(std::shared_ptr<NimrodSource> source, int num_components);
-
-  std::shared_ptr<NimrodSource> source_;
-  std::shared_ptr<const pcms::EmptyFieldLayout> layout_;
-};
 
 } // namespace fusionio::detail
 
