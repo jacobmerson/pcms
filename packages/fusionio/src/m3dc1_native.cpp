@@ -1,6 +1,7 @@
 #include "m3dc1_native.hpp"
 #include "fusion_io_source.hpp"
 #include "host_evaluation.hpp"
+#include "pcms/discretization/discretization/empty.hpp"
 #include "pcms/field/coordinate_systems/cylindrical.hpp"
 #include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/layout/empty.h"
@@ -98,42 +99,218 @@ KOKKOS_INLINE_FUNCTION void EvaluatePolynomial(const Real* c, Real xi, Real eta,
   }
 }
 
+/// A stored field on the device: an m3dc1_field's coefficients, or an
+/// m3dc1_complex_field's real and imaginary ones and its toroidal wave number
+/// kphi = 2 pi ntor / period.
+struct NativeField
+{
+  Coefficients real;
+  /// empty for a real field (or a complex one of toroidal mode 0, which
+  /// evaluates to its real part)
+  Coefficients imag;
+  Real kphi = 0.;
+
+  [[nodiscard]] bool Empty() const noexcept { return real.extent(0) == 0; }
+};
+
+/// m3dc1_field::eval or m3dc1_complex_field::eval of `field` in element e at
+/// (xi, eta) and the toroidal angle phi (the point's minus the phase): val as
+/// EvaluatePolynomial, pval the phi derivatives of its entries (OP_DP,
+/// OP_DRP, OP_DZP, ...) and ppval the second of the value (OP_DPP); the phi
+/// derivatives are zero for real fields, as in 1.x.
+KOKKOS_INLINE_FUNCTION void EvaluateField(const NativeField& field, LO e,
+                                          Real xi, Real eta, Real co, Real sn,
+                                          Real phi, int order, Real* val,
+                                          Real* pval, Real& ppval)
+{
+  EvaluatePolynomial(&field.real(e, 0), xi, eta, co, sn, order, val);
+  if (field.imag.extent(0) == 0) {
+    for (int j = 0; j < 6; ++j) {
+      pval[j] = 0.;
+    }
+    ppval = 0.;
+    return;
+  }
+  Real vr[6];
+  Real vi[6];
+  for (int j = 0; j < 6; ++j) {
+    vr[j] = val[j];
+  }
+  EvaluatePolynomial(&field.imag(e, 0), xi, eta, co, sn, order, vi);
+  const Real c = Kokkos::cos(phi * field.kphi);
+  const Real s = Kokkos::sin(phi * field.kphi);
+  for (int j = 0; j < 6; ++j) {
+    val[j] = vr[j] * c - vi[j] * s;
+    pval[j] = -field.kphi * (vi[j] * c + vr[j] * s);
+  }
+  ppval = -field.kphi * field.kphi * val[0];
+}
+
 /// A native quantity. A scalar is (linfac * field + equilibrium - offset) *
 /// factor, as m3dc1_scalar_field::eval, and its derivatives the same without
 /// the offset (m3dc1_scalar_field::eval_deriv). The magnetic field is
-/// m3dc1_magnetic_field::eval with psi the field and I the current:
-///   B_R = -(dpsi/dZ) / r, B_phi = I / r, B_Z = (dpsi/dR) / r
-/// (r = R for toroidal files, 1 otherwise), each term of the perturbation
-/// times linfac and the equilibrium's added, times factor (B0). Its f terms
-/// (-d2f/dRdphi, -d2f/dZdphi) vanish for axisymmetric fields and are not
-/// evaluated.
+/// m3dc1_magnetic_field::eval with psi the field, I the current and f the
+/// toroidal term:
+///   B_R   = -(dpsi/dZ) / r - d2f/dRdphi
+///   B_phi =  I / r
+///   B_Z   =  (dpsi/dR) / r - d2f/dZdphi
+/// (r = R for toroidal files, 1 otherwise; with ifprime, f is f' and its R
+/// and Z derivatives replace those), each term of the perturbation times
+/// linfac and the equilibrium's psi and I terms added, times factor (B0).
+/// Fields are evaluated at the point's phi minus the phase.
 struct NativeQuantity
 {
-  std::shared_ptr<const M3DC1NativeMesh> mesh;
   bool magnetic_field = false;
   /// the scalar's stored field, or the magnetic field's psi
-  Coefficients field;
+  NativeField field;
   /// `field`'s equilibrium when it is added (1.x's eqsub), otherwise empty
-  Coefficients equilibrium;
+  NativeField equilibrium;
   /// the magnetic field's I, and its equilibrium when it is added
-  Coefficients current;
-  Coefficients current_equilibrium;
+  NativeField current;
+  NativeField current_equilibrium;
+  /// the magnetic field's f (or f') when 1.x takes it (use_f), else empty
+  NativeField toroidal_term;
+  bool fprime = false;
   Real linfac = 1.;
   Real offset = 0.;
   Real factor = 1.;
+  Real phase = 0.;
   bool toroidal = true;
 };
 
 using NativeFieldData = ExternalFieldData<NativeQuantity>;
 
-/// Evaluates native quantities at the points of an Omega_h binding of the
-/// native mesh's geometry: the value, or for scalars the gradient (d/dR,
-/// d/dZ) or the Hessian (d2/dR2, d2/dRdZ, d2/dZdR, d2/dZ2), physical
-/// components in CylindricalRZ.
+/// Points of M3DC1Geometry: the (R, Z) projection of the points bound on the
+/// native mesh's (R, Z) geometry, and each point's phi. The found points are
+/// the projection's.
+class M3DC1Binding final : public BoundSource
+{
+public:
+  M3DC1Binding(std::shared_ptr<const Geometry> geometry,
+               const BindRequest& request,
+               std::shared_ptr<const Geometry> plane)
+    : BoundSource(std::move(geometry), request), plane_(std::move(plane))
+  {
+    Locate();
+  }
+
+  /// The projection's binding: ElementIds() per found point, and
+  /// LocatedPointValues() the (R, Z) of every point.
+  [[nodiscard]] const OmegaHMeshBinding& Plane() const
+  {
+    return static_cast<const OmegaHMeshBinding&>(*plane_bound_);
+  }
+
+  /// phi of every point
+  [[nodiscard]] Kokkos::View<const Real*, DeviceMemorySpace> Phi()
+    const noexcept
+  {
+    return Kokkos::subview(phi_, Kokkos::make_pair(LO{0}, NumPoints()));
+  }
+
+protected:
+  void RebindImpl() override { Locate(); }
+
+  [[nodiscard]] bool UnsharedImpl() const noexcept override
+  {
+    return rz_.use_count() <= 1 && phi_.use_count() <= 1 &&
+           plane_bound_.use_count() <= 1;
+  }
+
+private:
+  // Projects the points to (R, Z), binds (or rebinds) the projection and
+  // takes its found points.
+  void Locate()
+  {
+    const LO n = NumPoints();
+    const auto points = LocatedPointValues();
+    pcms::detail::ReserveRows(rz_, "m3dc1_rz", static_cast<size_t>(n), 2);
+    pcms::detail::ReserveRows(phi_, "m3dc1_phi", static_cast<size_t>(n));
+    const auto rz =
+      Kokkos::subview(rz_, Kokkos::make_pair(LO{0}, n), Kokkos::ALL);
+    const auto phi = phi_;
+    Kokkos::parallel_for(
+      "M3DC1Binding::Project",
+      Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
+      KOKKOS_LAMBDA(const LO i) {
+        rz(i, 0) = points(i, 0);
+        rz(i, 1) = points(i, 2);
+        phi(i) = points(i, 1);
+      });
+    const CoordinateView<DeviceMemorySpace> projected(
+      plane_->GetCoordinateSystem(), MakeRank2View(rz));
+    plane_bound_ = plane_bound_ == nullptr
+                     ? plane_->Bind(projected, Policy())
+                     : plane_->Rebind(std::move(plane_bound_), projected);
+    const auto missing = plane_bound_->MissingPoints();
+    if (missing.extent(0) == 0) {
+      return;
+    }
+    Kokkos::View<bool*, DeviceMemorySpace> found("m3dc1_found", n);
+    Kokkos::deep_copy(found, true);
+    Kokkos::parallel_for(
+      "M3DC1Binding::Missing",
+      Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(
+        0, static_cast<LO>(missing.extent(0))),
+      KOKKOS_LAMBDA(const LO k) { found(missing(k)) = false; });
+    SetFound(found);
+  }
+
+  std::shared_ptr<const Geometry> plane_;
+  std::shared_ptr<const BoundSource> plane_bound_;
+  Kokkos::View<Real**, DeviceMemorySpace> rz_;
+  Kokkos::View<Real*, DeviceMemorySpace> phi_;
+};
+
+/// (R, phi, Z) points on the native mesh of an axisymmetric M3D-C1 domain:
+/// CylindricalRThetaZ, as Fusion-IO's (R, phi, Z), with phi = theta. Bind
+/// locates the points' (R, Z) projection on the mesh's (R, Z) geometry and
+/// keeps phi. KnownOwners are ignored (they would name the mesh's elements,
+/// which this geometry's discretization does not expose), and
+/// NEAREST_BOUNDARY is not supported.
+class M3DC1Geometry final : public Geometry
+{
+public:
+  explicit M3DC1Geometry(std::shared_ptr<const M3DC1NativeMesh> mesh)
+    : mesh_(std::move(mesh)),
+      discretization_(std::make_shared<EmptyDiscretization>()),
+      system_(csys::CylindricalRThetaZ::Create())
+  {
+  }
+
+  [[nodiscard]] std::shared_ptr<const Discretization> GetDiscretization()
+    const noexcept override
+  {
+    return discretization_;
+  }
+
+  [[nodiscard]] const std::shared_ptr<const CoordinateSystem>&
+  GetCoordinateSystem() const noexcept override
+  {
+    return system_;
+  }
+
+protected:
+  [[nodiscard]] std::shared_ptr<BoundSource> BindImpl(
+    const BindRequest& request) const override
+  {
+    return std::make_shared<M3DC1Binding>(shared_from_this(), request,
+                                          mesh_->GetGeometry());
+  }
+
+private:
+  std::shared_ptr<const M3DC1NativeMesh> mesh_;
+  std::shared_ptr<const Discretization> discretization_;
+  std::shared_ptr<const CoordinateSystem> system_;
+};
+
+/// Evaluates native quantities at the points of an M3DC1Geometry binding:
+/// the value, or for scalars the gradient (d/dR, (1/R) d/dphi, d/dZ) or the
+/// Hessian (rows and columns R, phi, Z), physical cylindrical components.
 class M3DC1NativeEvaluator final : public PointEvaluator<Real>
 {
 public:
-  M3DC1NativeEvaluator(std::shared_ptr<const OmegaHMeshBinding> bound,
+  M3DC1NativeEvaluator(std::shared_ptr<const M3DC1Binding> bound,
                        DifferentialOperator op,
                        std::shared_ptr<const FieldLayout> layout,
                        M3DC1NativeMesh::Frames frames)
@@ -168,22 +345,13 @@ protected:
       throw pcms_error("M3DC1NativeEvaluator: the field is not a native "
                        "M3D-C1 quantity");
     }
-    const NativeQuantity& q = data->quantity;
+    const NativeQuantity q = data->quantity;
     const auto out = values.GetValues();
-    const auto points = bound_->LocatedPointValues();
+    const auto rz = bound_->Plane().LocatedPointValues();
+    const auto phis = bound_->Phi();
     const auto found = bound_->FoundPoints();
-    const auto elements = bound_->ElementIds();
+    const auto elements = bound_->Plane().ElementIds();
     const auto frames = frames_;
-    const bool magnetic_field = q.magnetic_field;
-    const Coefficients f1 = q.field;
-    const Coefficients f0 = q.equilibrium;
-    const Coefficients i1 = q.current;
-    const Coefficients i0 = q.current_equilibrium;
-    const bool eqsub = f0.extent(0) > 0;
-    const Real linfac = q.linfac;
-    const Real offset = q.offset;
-    const Real factor = q.factor;
-    const bool toroidal = q.toroidal;
     const int order = Operator() == DifferentialOperator::Value      ? 0
                       : Operator() == DifferentialOperator::Gradient ? 1
                                                                      : 2;
@@ -196,107 +364,143 @@ protected:
         const LO e = elements(k);
         const Real co = frames(e, FrameCo);
         const Real sn = frames(e, FrameSn);
+        const Real R = rz(i, 0);
         // m3dc1_mesh::global_to_local
-        const Real dx = points(i, 0) - frames(e, FrameX);
-        const Real dz = points(i, 1) - frames(e, FrameZ);
+        const Real dx = R - frames(e, FrameX);
+        const Real dz = rz(i, 1) - frames(e, FrameZ);
         const Real xi = dx * co + dz * sn - frames(e, FrameB);
         const Real eta = -dx * sn + dz * co;
-        Real v1[6];
-        Real v0[6];
-        if (magnetic_field) {
-          const Real r = toroidal ? points(i, 0) : 1.;
-          EvaluatePolynomial(&f1(e, 0), xi, eta, co, sn, 1, v1);
+        const Real phi = phis(i) - q.phase;
+        const bool eqsub = !q.equilibrium.Empty();
+        Real v1[6], p1[6], pp1;
+        Real v0[6], p0[6], pp0;
+        if (q.magnetic_field) {
+          const Real r = q.toroidal ? R : 1.;
           Real b[3];
-          b[0] = -linfac * v1[2] / r;
-          b[2] = linfac * v1[1] / r;
-          EvaluatePolynomial(&i1(e, 0), xi, eta, co, sn, 0, v1);
-          b[1] = linfac * v1[0] / r;
+          EvaluateField(q.field, e, xi, eta, co, sn, phi, 1, v1, p1, pp1);
+          b[0] = -q.linfac * v1[2] / r;
+          b[2] = q.linfac * v1[1] / r;
+          EvaluateField(q.current, e, xi, eta, co, sn, phi, 0, v1, p1, pp1);
+          b[1] = q.linfac * v1[0] / r;
+          if (!q.toroidal_term.Empty()) {
+            EvaluateField(q.toroidal_term, e, xi, eta, co, sn, phi, 1, v1, p1,
+                          pp1);
+            b[0] -= q.linfac * (q.fprime ? v1[1] : p1[1]);
+            b[2] -= q.linfac * (q.fprime ? v1[2] : p1[2]);
+          }
           if (eqsub) {
-            EvaluatePolynomial(&f0(e, 0), xi, eta, co, sn, 1, v0);
+            EvaluateField(q.equilibrium, e, xi, eta, co, sn, phi, 1, v0, p0,
+                          pp0);
             b[0] -= v0[2] / r;
             b[2] += v0[1] / r;
-            EvaluatePolynomial(&i0(e, 0), xi, eta, co, sn, 0, v0);
+            EvaluateField(q.current_equilibrium, e, xi, eta, co, sn, phi, 0, v0,
+                          p0, pp0);
             b[1] += v0[0] / r;
           }
           for (int c = 0; c < 3; ++c) {
-            out(i, c) = b[c] * factor;
+            out(i, c) = b[c] * q.factor;
           }
           return;
         }
-        EvaluatePolynomial(&f1(e, 0), xi, eta, co, sn, order, v1);
+        EvaluateField(q.field, e, xi, eta, co, sn, phi, order, v1, p1, pp1);
         if (eqsub) {
-          EvaluatePolynomial(&f0(e, 0), xi, eta, co, sn, order, v0);
+          EvaluateField(q.equilibrium, e, xi, eta, co, sn, phi, order, v0, p0,
+                        pp0);
         }
+        // m3dc1_scalar_field: linfac times the field plus the equilibrium,
+        // times the factor
+        const auto scaled = [&](Real perturbed, Real equilibrium) {
+          Real v = q.linfac * perturbed;
+          if (eqsub) {
+            v += equilibrium;
+          }
+          return v * q.factor;
+        };
         if (order == 0) {
-          Real v = linfac * v1[0];
+          Real v = q.linfac * v1[0];
           if (eqsub) {
             v += v0[0];
           }
-          v -= offset;
-          v *= factor;
+          v -= q.offset;
+          v *= q.factor;
           out(i, 0) = v;
           return;
         }
-        // (d/dR, d/dZ) or (d2/dR2, d2/dRdZ, d2/dZdR, d2/dZ2) from val's
-        // OP_DR, OP_DZ or OP_DRR, OP_DRZ, OP_DZZ
-        const int from[4] = {order == 1 ? 1 : 3, order == 1 ? 2 : 4, 4, 5};
-        const int n = order == 1 ? 2 : 4;
-        for (int c = 0; c < n; ++c) {
-          Real d = linfac * v1[from[c]];
-          if (eqsub) {
-            d += v0[from[c]];
-          }
-          d *= factor;
-          out(i, c) = d;
+        const Real f_r = scaled(v1[1], v0[1]);
+        const Real f_phi = scaled(p1[0], p0[0]);
+        const Real f_z = scaled(v1[2], v0[2]);
+        if (order == 1) {
+          // physical components: (1/R) d/dphi, as the wrapped evaluator
+          out(i, 0) = f_r;
+          out(i, 1) = f_phi / R;
+          out(i, 2) = f_z;
+          return;
+        }
+        // The Hessian's physical components in (R, phi, Z): the coordinate
+        // second derivatives less the connection's terms, over the scale
+        // factors (1, R, 1).
+        const Real f_rr = scaled(v1[3], v0[3]);
+        const Real f_rz = scaled(v1[4], v0[4]);
+        const Real f_zz = scaled(v1[5], v0[5]);
+        const Real f_rphi = scaled(p1[1], p0[1]);
+        const Real f_zphi = scaled(p1[2], p0[2]);
+        const Real f_phiphi = scaled(pp1, pp0);
+        const Real h_rphi = f_rphi / R - f_phi / (R * R);
+        const Real h_phiz = f_zphi / R;
+        const Real h_phiphi = f_phiphi / (R * R) + f_r / R;
+        const Real h[9] = {f_rr,   h_rphi, f_rz,   h_rphi, h_phiphi,
+                           h_phiz, f_rz,   h_phiz, f_zz};
+        for (int c = 0; c < 9; ++c) {
+          out(i, c) = h[c];
         }
       });
   }
 
 private:
-  std::shared_ptr<const OmegaHMeshBinding> bound_;
+  std::shared_ptr<const M3DC1Binding> bound_;
   M3DC1NativeMesh::Frames frames_;
 };
 
 /// Creates the native evaluators of the quantities of one representation on
-/// the native mesh's geometry: scalars with Gradient and Hessian, the
-/// magnetic field with Value only.
+/// an M3DC1Geometry: scalars with Gradient and Hessian, the magnetic field
+/// with Value only.
 class M3DC1NativeEvaluatorFactory final
-  : public TypedPointEvaluatorFactory<Real, OmegaHMeshBinding>
+  : public TypedPointEvaluatorFactory<Real, M3DC1Binding>
 {
 public:
   M3DC1NativeEvaluatorFactory(
-    std::shared_ptr<const M3DC1NativeMesh> mesh,
-    std::shared_ptr<const FieldLayout> layout,
+    std::shared_ptr<const M3DC1Geometry> geometry,
+    M3DC1NativeMesh::Frames frames, std::shared_ptr<const FieldLayout> layout,
     std::initializer_list<DifferentialOperator> supported)
-    : TypedPointEvaluatorFactory(mesh->GetGeometry(), supported),
-      mesh_(std::move(mesh)),
+    : TypedPointEvaluatorFactory(std::move(geometry), supported),
+      frames_(std::move(frames)),
       layout_(std::move(layout))
   {
   }
 
 protected:
   std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
-    std::shared_ptr<const OmegaHMeshBinding> bound,
+    std::shared_ptr<const M3DC1Binding> bound,
     DifferentialOperator op) const override
   {
     return std::make_unique<M3DC1NativeEvaluator>(std::move(bound), op, layout_,
-                                                  mesh_->GetFrames());
+                                                  frames_);
   }
 
 private:
-  std::shared_ptr<const M3DC1NativeMesh> mesh_;
+  M3DC1NativeMesh::Frames frames_;
   std::shared_ptr<const FieldLayout> layout_;
 };
 
 /// A space of native quantities with `num_components` components.
 std::shared_ptr<FunctionSpace> CreateNativeSpace(
-  std::shared_ptr<const M3DC1NativeMesh> mesh, int num_components,
-  std::initializer_list<DifferentialOperator> supported)
+  std::shared_ptr<const M3DC1Geometry> geometry, const M3DC1NativeMesh& mesh,
+  int num_components, std::initializer_list<DifferentialOperator> supported)
 {
   auto layout = std::make_shared<EmptyFieldLayout>(
-    mesh->GetGeometry()->GetCoordinateSystem(), num_components);
+    geometry->GetCoordinateSystem(), num_components);
   auto evaluator = std::make_shared<M3DC1NativeEvaluatorFactory>(
-    std::move(mesh), layout, supported);
+    std::move(geometry), mesh.GetFrames(), layout, supported);
   return std::make_shared<FunctionSpace>(std::move(layout), CreateNoFieldData,
                                          std::move(evaluator));
 }
@@ -433,15 +637,16 @@ public:
     }
     domain_mesh_ = mesh;
     mesh_ = std::make_shared<M3DC1NativeMesh>(*mesh);
+    geometry_ = std::make_shared<M3DC1Geometry>(mesh_);
     scalars_ = CreateNativeSpace(
-      mesh_, 1,
+      geometry_, *mesh_, 1,
       {DifferentialOperator::Gradient, DifferentialOperator::Hessian});
-    vectors_ = CreateNativeSpace(mesh_, 3, {});
+    vectors_ = CreateNativeSpace(geometry_, *mesh_, 3, {});
   }
 
   [[nodiscard]] std::shared_ptr<const Geometry> GetGeometry() const override
   {
-    return mesh_->GetGeometry();
+    return geometry_;
   }
 
   [[nodiscard]] std::vector<QuantityInfo> Quantities() const override
@@ -471,7 +676,6 @@ public:
     const ScalarEntry entry = Entry(quantity, options);
     const ResolvedOptions resolved = Resolve(options, entry.equilibrium_only);
     NativeQuantity scalar;
-    scalar.mesh = mesh_;
     scalar.field = Load(entry.name, resolved.time);
     if (resolved.eqsub) {
       scalar.equilibrium = Load(entry.name, -1);
@@ -479,6 +683,7 @@ public:
     scalar.linfac = resolved.linfac;
     scalar.offset = entry.offset;
     scalar.factor = entry.factor;
+    scalar.phase = options.phase.value_or(0.);
     return scalars_->CreateFunction<Real>(
       std::string(Name(quantity)),
       std::make_unique<NativeFieldData>(std::move(scalar), ValueBasis{}));
@@ -490,14 +695,12 @@ private:
   {
     const m3dc1_source& s = *m3dc1_;
     const ResolvedOptions resolved = Resolve(options, false);
-    if (resolved.use_f) {
-      throw pcms_error("fusionio: the magnetic field of this time slice is "
-                       "not axisymmetric; only 2D fields are evaluated "
-                       "natively");
-    }
     NativeQuantity b;
-    b.mesh = mesh_;
     b.magnetic_field = true;
+    if (resolved.use_f) {
+      b.fprime = s.ifprime != 0;
+      b.toroidal_term = Load(b.fprime ? "fp" : "f", resolved.time);
+    }
     b.field = Load("psi", resolved.time);
     b.current = Load("I", resolved.time);
     if (resolved.eqsub) {
@@ -506,6 +709,7 @@ private:
     }
     b.linfac = resolved.linfac;
     b.factor = s.B0;
+    b.phase = options.phase.value_or(0.);
     b.toroidal = s.itor == 1;
     return vectors_->CreateFunction<Real>(
       std::string(Name(Quantity::MagneticField)),
@@ -614,10 +818,10 @@ private:
   }
 
   // The coefficients of a stored field on the device, read once.
-  Coefficients Load(const std::string& name, int time) const
+  NativeField Load(const std::string& name, int time) const
   {
-    auto& loaded = coefficients_[{name, time}];
-    if (loaded.extent(0) > 0) {
+    auto& loaded = fields_[{name, time}];
+    if (!loaded.Empty()) {
       return loaded;
     }
     m3dc1_field* field = m3dc1_->file.load_field(name.c_str(), time);
@@ -625,14 +829,14 @@ private:
       throw pcms_error("fusionio: could not read the M3D-C1 field \"" + name +
                        "\" of time slice " + std::to_string(time));
     }
+    // 2D fields: real ones and complex ones (a toroidal mode); not 3D,
+    // stellarator or compound fields
     const auto* complex = dynamic_cast<const m3dc1_complex_field*>(field);
-    const bool axisymmetric =
-      typeid(*field) == typeid(m3dc1_field) ||
-      (typeid(*field) == typeid(m3dc1_complex_field) && complex->ntor == 0);
-    if (!axisymmetric) {
+    if (typeid(*field) != typeid(m3dc1_field) &&
+        typeid(*field) != typeid(m3dc1_complex_field)) {
       throw pcms_error("fusionio: the M3D-C1 field \"" + name +
                        "\" of time slice " + std::to_string(time) +
-                       " is not axisymmetric; only 2D fields are evaluated "
+                       " is not a 2D field; only those are evaluated "
                        "natively");
     }
     if (field->mesh != domain_mesh_ &&
@@ -641,18 +845,29 @@ private:
                        "\" of time slice " + std::to_string(time) +
                        " is on another mesh");
     }
+    loaded.real = Upload(field->data, name);
     // A complex field of toroidal mode 0 evaluates to its real part
     // (m3dc1_complex_field::eval: cos(0) = 1, sin(0) = 0).
+    if (complex != nullptr && complex->ntor != 0) {
+      loaded.imag = Upload(complex->data_i, name + "_i");
+      loaded.kphi = 2. * std::numbers::pi * static_cast<Real>(complex->ntor) /
+                    field->mesh->period;
+    }
+    return loaded;
+  }
+
+  // nelms x 20 coefficients copied to the device
+  Coefficients Upload(const double* data, const std::string& name) const
+  {
     const Kokkos::View<const Real**, Kokkos::LayoutRight, HostMemorySpace,
                        Kokkos::MemoryTraits<Kokkos::Unmanaged>>
-      host(field->data, static_cast<size_t>(mesh_->NumElements()), NumBasis);
+      host(data, static_cast<size_t>(mesh_->NumElements()), NumBasis);
     Kokkos::View<Real**, Kokkos::LayoutRight, DeviceMemorySpace> device(
       Kokkos::view_alloc(Kokkos::WithoutInitializing,
                          "m3dc1_coefficients_" + name),
       host.extent(0), NumBasis);
     Kokkos::deep_copy(device, host);
-    loaded = device;
-    return loaded;
+    return device;
   }
 
   std::shared_ptr<FusionIOSource> source_;
@@ -660,9 +875,10 @@ private:
   m3dc1_source* m3dc1_ = nullptr;
   const m3dc1_mesh* domain_mesh_ = nullptr;
   std::shared_ptr<const M3DC1NativeMesh> mesh_;
+  std::shared_ptr<const M3DC1Geometry> geometry_;
   std::shared_ptr<FunctionSpace> scalars_;
   std::shared_ptr<FunctionSpace> vectors_;
-  mutable std::map<std::pair<std::string, int>, Coefficients> coefficients_;
+  mutable std::map<std::pair<std::string, int>, NativeField> fields_;
 };
 
 } // namespace
