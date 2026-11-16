@@ -75,8 +75,9 @@ private:
 /// axisymmetric (2D) fields of `source`: the scalar quantities Fusion-IO 1.x
 /// reads as one stored field (poloidal flux and its normalized form,
 /// pressures but the main ion's, densities, temperatures, resistivity,
-/// radiation, bootstrap-current terms), with Gradient and Hessian.
-/// Quantities, times, period and series are `wrapped`'s.
+/// radiation, bootstrap-current terms), with Gradient and Hessian, and the
+/// magnetic field, as physical (R, phi, Z) components. Quantities, times,
+/// period and series are `wrapped`'s.
 /// @param source an M3D-C1 source
 /// @param wrapped the Fusion-IO 1.x source of `source`
 /// @throws pcms_error if the file's mesh is not a 2D M3D-C1 mesh
