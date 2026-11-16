@@ -153,10 +153,26 @@ public:
     Quantity quantity, const Options& options = {}) const = 0;
 };
 
+/// How the functions of a source opened with Open are evaluated.
+enum class Evaluation
+{
+  /// by Fusion-IO 1.x, point by point on the host (every format)
+  FusionIO,
+  /// by Kokkos kernels on the device, from the file's mesh and coefficients
+  /// as Fusion-IO 1.x reads them: M3D-C1 sources with a 2D mesh, whose
+  /// axisymmetric scalar fields are evaluated at (R, Z) points (the
+  /// geometry is CylindricalRZ) with gradients and Hessians. CreateFunction
+  /// throws for the quantities and options it does not evaluate natively.
+  Native
+};
+
 /// Opens a file through Fusion-IO 1.x, e.g. an M3D-C1 C1.h5 (with its
 /// time-slice files next to it) or a geqdsk file. Only sources with
 /// cylindrical geometry are supported.
-std::shared_ptr<Source> Open(Format format, const std::string& path);
+/// @throws if `evaluation` is Native and the source cannot be evaluated
+///         natively
+std::shared_ptr<Source> Open(Format format, const std::string& path,
+                             Evaluation evaluation = Evaluation::FusionIO);
 
 /// Opens a NIMROD dump for the fields named by NIMROD's single-character ids
 /// in `fields` (e.g. "bvn"). NIMROD's evaluator holds one dump per process,
