@@ -55,7 +55,11 @@ endforeach()
 
 add_library(pcms_public_header_check OBJECT EXCLUDE_FROM_ALL
             ${pcms_header_check_sources})
-target_link_libraries(pcms_public_header_check PRIVATE pcms::pcms)
+target_link_libraries(pcms_public_header_check PRIVATE pcms::pcms MPI::MPI_CXX)
+# the Omega_h and XGC backend headers include Omega_h
+if(TARGET Omega_h::omega_h)
+  target_link_libraries(pcms_public_header_check PRIVATE Omega_h::omega_h)
+endif()
 if(TARGET mfem)
   target_link_libraries(pcms_public_header_check PRIVATE mfem)
 endif()
