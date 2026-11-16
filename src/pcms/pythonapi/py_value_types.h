@@ -85,6 +85,19 @@ PyValueView ToPyValueView(const ValueView<Element, MemorySpace, Layout>& view,
   return PyValueView{view.GetBasis(), ViewToNumpy(view.GetValues(), owner)};
 }
 
+/// @brief Read-only NumPy array over device point indices.
+/// @param indices indices to expose
+/// @param owner Python object that keeps `indices` alive
+/// @return the array (empty if there are no indices)
+inline py::array_t<LO> IndicesToNumpy(
+  Kokkos::View<const LO*, DeviceMemorySpace> indices, py::object owner)
+{
+  if (indices.extent(0) == 0) {
+    return py::array_t<LO>(0);
+  }
+  return ViewToNumpy(MakeRank1View(indices), owner);
+}
+
 // Device copy of the coordinates together with the CoordinateView over it.
 // The view is valid while `storage` is alive.
 struct DeviceCoordinates
