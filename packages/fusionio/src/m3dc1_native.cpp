@@ -5,6 +5,7 @@
 #include "pcms/field/coordinate_systems/cylindrical.hpp"
 #include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/layout/empty.h"
+#include "pcms/utility/memory_spaces.h"
 #include "pcms/utility/profile.h"
 #include <Omega_h_build.hpp>
 #include <algorithm>
@@ -229,10 +230,8 @@ private:
     const auto rz =
       Kokkos::subview(rz_, Kokkos::make_pair(LO{0}, n), Kokkos::ALL);
     const auto phi = phi_;
-    Kokkos::parallel_for(
-      "M3DC1Binding::Project",
-      Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
-      KOKKOS_LAMBDA(const LO i) {
+    ForEach(
+      "M3DC1Binding::Project", n, KOKKOS_LAMBDA(const LO i) {
         rz(i, 0) = points(i, 0);
         rz(i, 1) = points(i, 2);
         phi(i) = points(i, 1);
@@ -246,12 +245,12 @@ private:
     if (missing.extent(0) == 0) {
       return;
     }
-    Kokkos::View<bool*, DeviceMemorySpace> found("m3dc1_found", n);
-    Kokkos::deep_copy(found, true);
-    Kokkos::parallel_for(
-      "M3DC1Binding::Missing",
-      Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(
-        0, static_cast<LO>(missing.extent(0))),
+    Kokkos::View<bool*, DeviceMemorySpace> found(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing, "m3dc1_found"), n);
+    ForEach(
+      "M3DC1Binding::Found", n, KOKKOS_LAMBDA(const LO i) { found(i) = true; });
+    ForEach(
+      "M3DC1Binding::Missing", static_cast<LO>(missing.extent(0)),
       KOKKOS_LAMBDA(const LO k) { found(missing(k)) = false; });
     SetFound(found);
   }
@@ -355,10 +354,8 @@ protected:
     const int order = Operator() == DifferentialOperator::Value      ? 0
                       : Operator() == DifferentialOperator::Gradient ? 1
                                                                      : 2;
-    Kokkos::parallel_for(
-      "M3DC1NativeEvaluator",
-      Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(
-        0, static_cast<LO>(found.extent(0))),
+    ForEach(
+      "M3DC1NativeEvaluator", static_cast<LO>(found.extent(0)),
       KOKKOS_LAMBDA(const LO k) {
         const LO i = found(k);
         const LO e = elements(k);
