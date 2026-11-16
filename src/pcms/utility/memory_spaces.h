@@ -40,6 +40,24 @@ inline constexpr std::size_t SmallHostBatchSize = 256;
          n <= SmallHostBatchSize;
 }
 
+/// Runs `functor(i)` for every i in [0, n): as a plain loop on the calling
+/// thread for a small host batch (IsSmallHostBatch), else as a kernel on
+/// DeviceMemorySpace's execution space. For the kernels of a bind or an
+/// evaluation, whose work is proportional to the number of query points.
+template <typename Index, typename Functor>
+void ForEach(const char* label, Index n, const Functor& functor)
+{
+  if (IsSmallHostBatch(static_cast<std::size_t>(n))) {
+    for (Index i = 0; i < n; ++i) {
+      functor(i);
+    }
+    return;
+  }
+  Kokkos::parallel_for(
+    label, Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
+    functor);
+}
+
 } // namespace pcms
 
 #endif // PCMS_COUPLING_MEMORY_SPACES_H

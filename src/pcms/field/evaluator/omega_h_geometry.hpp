@@ -37,10 +37,8 @@ void BarycentricInElements(
   ReserveRows(bary, "omega_h_bary", n, Dim + 1);
   const auto elem_verts = mesh.ask_elem_verts();
   const auto mesh_coords = mesh.coords();
-  Kokkos::parallel_for(
-    "BarycentricInElements",
-    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
-    KOKKOS_LAMBDA(const LO k) {
+  ForEach(
+    "BarycentricInElements", n, KOKKOS_LAMBDA(const LO k) {
       const LO i = rows(k);
       const LO elem = owning_ids(i);
       elem_ids(k) = elem;
@@ -137,8 +135,12 @@ LiftResults(Omega_h::Mesh& mesh,
               results)
 {
   const auto n = static_cast<LO>(results.extent(0));
-  Kokkos::View<LO*, DeviceMemorySpace> elem_ids("omega_h_lift_elem_ids", n);
-  Kokkos::View<Real**, DeviceMemorySpace> bary("omega_h_lift_bary", n, Dim + 1);
+  Kokkos::View<LO*, DeviceMemorySpace> elem_ids(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "omega_h_lift_elem_ids"),
+    n);
+  Kokkos::View<Real**, DeviceMemorySpace> bary(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "omega_h_lift_bary"), n,
+    Dim + 1);
   Omega_h::Few<Omega_h::Adj, Dim> entities2elems;
   Omega_h::Few<Omega_h::Adj, Dim> entities2verts;
   for (int d = 0; d < Dim; ++d) {
@@ -148,10 +150,8 @@ LiftResults(Omega_h::Mesh& mesh,
     }
   }
   const auto elem_verts = mesh.ask_elem_verts();
-  Kokkos::parallel_for(
-    "LiftResults",
-    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
-    KOKKOS_LAMBDA(const LO i) {
+  ForEach(
+    "LiftResults", n, KOKKOS_LAMBDA(const LO i) {
       const auto lifted = LiftToElement<Dim>(entities2elems, entities2verts,
                                              elem_verts, results(i));
       elem_ids(i) = lifted.first;

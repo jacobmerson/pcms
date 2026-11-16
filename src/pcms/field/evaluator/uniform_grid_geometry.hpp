@@ -67,15 +67,14 @@ private:
     const auto results = search_(LocatedPointValues());
     const auto n = static_cast<LO>(results.extent(0));
     const bool nearest = Policy().mode == OutOfBoundsMode::NEAREST_BOUNDARY;
-    Kokkos::View<bool*, DeviceMemorySpace> found("uniform_grid_found", n);
+    Kokkos::View<bool*, DeviceMemorySpace> found(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing, "uniform_grid_found"), n);
     detail::ReserveRows(cell_indices_, "uniform_grid_cell_indices", n);
     detail::ReserveRows(parametric_, "uniform_grid_parametric", n, Dim);
     const auto cell_indices = cell_indices_;
     const auto parametric = parametric_;
-    Kokkos::parallel_for(
-      "UniformGridBinding",
-      Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
-      KOKKOS_LAMBDA(const LO i) {
+    ForEach(
+      "UniformGridBinding", n, KOKKOS_LAMBDA(const LO i) {
         const Result result = results(i);
         found(i) = nearest || !result.IsOutside();
         cell_indices(i) = result.CellId();

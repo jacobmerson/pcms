@@ -56,10 +56,8 @@ void OmegaHMeshBinding::Locate(
       detail::ReserveRows(bary_, "omega_h_bary", n, Dim + 1);
       const auto elem_ids = elem_ids_;
       const auto bary = bary_;
-      Kokkos::parallel_for(
-        "GatherFoundLifts",
-        Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
-        KOKKOS_LAMBDA(const LO k) {
+      ForEach(
+        "GatherFoundLifts", n, KOKKOS_LAMBDA(const LO k) {
           elem_ids(k) = lifted_elems(rows(k));
           for (int v = 0; v <= Dim; ++v) {
             bary(k, v) = lifted_bary(rows(k), v);
