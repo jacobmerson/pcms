@@ -1,0 +1,12 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(pcms CONFIG)
+# Fusion-IO 1.x is also a CMake package named fusionio, so finding it by name
+# would find this file: load the configuration this package was built with.
+if(NOT TARGET fusionio::fusionio_fusionio)
+  include("@FUSIONIO_1X_CONFIG@")
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/fusionio-targets.cmake")
+check_required_components(fusionio)

@@ -24,8 +24,8 @@
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
-using fio::test::EvaluateAt;
-using fio::test::EvaluateGradientAt;
+using fusionio::test::EvaluateAt;
+using fusionio::test::EvaluateGradientAt;
 using pcms::DeviceMemorySpace;
 using pcms::HostMemorySpace;
 using pcms::Real;
@@ -36,9 +36,9 @@ namespace
 
 // The Fusion-IO example data (fusion-io/examples/data) in the test data.
 const std::string GeqdskFile =
-  std::string(FUSION_IO_TEST_DATA_DIR) + "/geqdsk/g158115.04701";
+  std::string(FUSIONIO_TEST_DATA_DIR) + "/geqdsk/g158115.04701";
 const std::string M3DC1File =
-  std::string(FUSION_IO_TEST_DATA_DIR) + "/m3dc1/C1.h5";
+  std::string(FUSIONIO_TEST_DATA_DIR) + "/m3dc1/C1.h5";
 
 // Fusion-IO's poloidal flux field is the total flux 2 pi R A_phi; geqdsk
 // files and Fusion-IO's flux series are per radian.
@@ -60,9 +60,9 @@ Real EvaluateSeries(fio_source& source, int type)
 TEST_CASE("Fusion-IO geqdsk poloidal flux matches the grid values")
 {
   auto source =
-    fio::detail::OpenFusionIOSource(fio::Format::GEQDSK, GeqdskFile);
-  auto space = fio::detail::FusionIOFunctionSpace::Create(source, 1);
-  auto psi = space->CreateFunction("psi", fio::Quantity::PoloidalFlux);
+    fusionio::detail::OpenFusionIOSource(fusionio::Format::GEQDSK, GeqdskFile);
+  auto space = fusionio::detail::FusionIOFunctionSpace::Create(source, 1);
+  auto psi = space->CreateFunction("psi", fusionio::Quantity::PoloidalFlux);
 
   // Fusion-IO's interpolant reproduces the grid values (read here by PCMS's
   // own reader) at the grid nodes, and phi must not matter.
@@ -80,17 +80,18 @@ TEST_CASE("Fusion-IO geqdsk poloidal flux matches the grid values")
   const auto result = EvaluateAt(*space, psi, points);
   for (size_t i = 0; i < expected.size(); ++i) {
     CAPTURE(i, points[3 * i], points[3 * i + 2]);
-    REQUIRE_THAT(result(i, 0), WithinRel(expected[i], fio::test::EvalTol));
+    REQUIRE_THAT(result(i, 0), WithinRel(expected[i], fusionio::test::EvalTol));
   }
 }
 
 TEST_CASE("Fusion-IO M3D-C1 fields")
 {
-  auto source = fio::detail::OpenFusionIOSource(fio::Format::M3DC1, M3DC1File);
-  auto scalars = fio::detail::FusionIOFunctionSpace::Create(source, 1);
-  auto vectors = fio::detail::FusionIOFunctionSpace::Create(source, 3);
-  auto psi = scalars->CreateFunction("psi", fio::Quantity::PoloidalFlux);
-  auto a = vectors->CreateFunction("A", fio::Quantity::VectorPotential);
+  auto source =
+    fusionio::detail::OpenFusionIOSource(fusionio::Format::M3DC1, M3DC1File);
+  auto scalars = fusionio::detail::FusionIOFunctionSpace::Create(source, 1);
+  auto vectors = fusionio::detail::FusionIOFunctionSpace::Create(source, 3);
+  auto psi = scalars->CreateFunction("psi", fusionio::Quantity::PoloidalFlux);
+  auto a = vectors->CreateFunction("A", fusionio::Quantity::VectorPotential);
   REQUIRE(pcms::SameValueBasis(
     a.GetData().GetValueBasis(),
     ValueBasis{pcms::csys::CylindricalRThetaZ::Create(),
@@ -119,7 +120,7 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
     for (size_t i = 0; i < psi_values.extent(0); ++i) {
       CAPTURE(i);
       REQUIRE_THAT(TwoPi * points[3 * i] * a_values(i, 1),
-                   WithinRel(psi_values(i, 0), fio::test::EvalTol));
+                   WithinRel(psi_values(i, 0), fusionio::test::EvalTol));
     }
   }
 
@@ -127,11 +128,11 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
   {
     // The axisymmetric part has no phi derivative, so this holds exactly for
     // a right-handed system and with the opposite sign otherwise.
-    const fio::Options equilibrium{.part = fio::Part::Equilibrium};
-    auto a_eq =
-      vectors->CreateFunction("A", fio::Quantity::VectorPotential, equilibrium);
-    auto b_eq =
-      vectors->CreateFunction("B", fio::Quantity::MagneticField, equilibrium);
+    const fusionio::Options equilibrium{.part = fusionio::Part::Equilibrium};
+    auto a_eq = vectors->CreateFunction(
+      "A", fusionio::Quantity::VectorPotential, equilibrium);
+    auto b_eq = vectors->CreateFunction("B", fusionio::Quantity::MagneticField,
+                                        equilibrium);
     const Real r = 2.0, z = 0.3, dz = 1e-4;
     const auto a_values =
       EvaluateAt(*vectors, a_eq, {r, 0.0, z + dz, r, 0.0, z - dz});
@@ -143,13 +144,14 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
 
   SECTION("options reach Fusion-IO: the equilibrium part is axisymmetric")
   {
-    auto psi_eq = scalars->CreateFunction("psi_eq", fio::Quantity::PoloidalFlux,
-                                          {.part = fio::Part::Equilibrium});
+    auto psi_eq =
+      scalars->CreateFunction("psi_eq", fusionio::Quantity::PoloidalFlux,
+                              {.part = fusionio::Part::Equilibrium});
     const std::vector<Real> points = {1.6, 0.1, 0.2, 1.6, 2.5, 0.2};
     const auto total = EvaluateAt(*scalars, psi, points);
     const auto equilibrium = EvaluateAt(*scalars, psi_eq, points);
     REQUIRE_THAT(equilibrium(1, 0),
-                 WithinRel(equilibrium(0, 0), fio::test::ExactTol));
+                 WithinRel(equilibrium(0, 0), fusionio::test::ExactTol));
     // The perturbation in the total varies with phi.
     REQUIRE_FALSE(total(1, 0) == total(0, 0));
   }
@@ -157,22 +159,23 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
   SECTION("evaluators created from one bound source share its search")
   {
     const std::vector<Real> points = {1.6, 0.1, 0.2, 2.0, 2.5, -0.4};
-    const auto coords = fio::test::CreateDeviceCoordinateView(
+    const auto coords = fusionio::test::CreateDeviceCoordinateView(
       points, scalars->GetCoordinateSystem(), 3);
     const auto bound = scalars->Bind(coords.coordinate_view);
-    auto psi_eq = scalars->CreateFunction("psi_eq", fio::Quantity::PoloidalFlux,
-                                          {.part = fio::Part::Equilibrium});
+    auto psi_eq =
+      scalars->CreateFunction("psi_eq", fusionio::Quantity::PoloidalFlux,
+                              {.part = fusionio::Part::Equilibrium});
     for (const auto* f : {&psi, &psi_eq}) {
       const auto evaluator = scalars->CreatePointEvaluator<Real>(bound);
       Kokkos::View<Real**, DeviceMemorySpace> out("out", 2, 1);
-      evaluator->Evaluate(*f, fio::test::TagLike(*f, out));
+      evaluator->Evaluate(*f, fusionio::test::TagLike(*f, out));
       const auto shared =
         Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
       const auto separate = EvaluateAt(*scalars, *f, points);
       for (size_t i = 0; i < 2; ++i) {
         CAPTURE(f->GetName(), i);
         REQUIRE_THAT(shared(i, 0),
-                     WithinRel(separate(i, 0), fio::test::ExactTol));
+                     WithinRel(separate(i, 0), fusionio::test::ExactTol));
       }
     }
     REQUIRE_THROWS_WITH(vectors->CreatePointEvaluator<Real>(bound),
@@ -181,7 +184,8 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
 
   SECTION("values match direct fusion-io evaluation")
   {
-    const fio::Options options{.timeslice = 1, .part = fio::Part::Perturbed};
+    const fusionio::Options options{.timeslice = 1,
+                                    .part = fusionio::Part::Perturbed};
     fio_option_list fio_options;
     source->Get().get_field_options(&fio_options);
     fio_options.set_option(FIO_TIMESLICE, 1);
@@ -189,9 +193,9 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
     const std::vector<Real> points = {1.3, 0.0, 0.4, 1.6, 0.7, -0.6,
                                       2.0, 2.5, 0.1, 2.2, 4.0, -0.3};
     for (const auto& [quantity, space] :
-         {std::pair{fio::Quantity::PoloidalFlux, scalars},
-          std::pair{fio::Quantity::MagneticField, vectors}}) {
-      CAPTURE(fio::Name(quantity));
+         {std::pair{fusionio::Quantity::PoloidalFlux, scalars},
+          std::pair{fusionio::Quantity::MagneticField, vectors}}) {
+      CAPTURE(fusionio::Name(quantity));
       const auto values = EvaluateAt(
         *space, space->CreateFunction("f", quantity, options), points);
       const auto field = source->GetField(quantity, fio_options);
@@ -202,8 +206,8 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
           CAPTURE(i, c);
           // The absolute floor covers components near zero.
           REQUIRE_THAT(values(i, c),
-                       WithinRel(expected[c], fio::test::ExactTol) ||
-                         WithinAbs(expected[c], fio::test::ExactTol));
+                       WithinRel(expected[c], fusionio::test::ExactTol) ||
+                         WithinAbs(expected[c], fusionio::test::ExactTol));
         }
       }
     }
@@ -243,44 +247,47 @@ public:
 TEST_CASE("Fusion-IO evaluation errors")
 {
   auto source =
-    fio::detail::OpenFusionIOSource(fio::Format::GEQDSK, GeqdskFile);
-  auto scalars = fio::detail::FusionIOFunctionSpace::Create(source, 1);
-  auto vectors = fio::detail::FusionIOFunctionSpace::Create(source, 3);
-  auto psi = scalars->CreateFunction("psi", fio::Quantity::PoloidalFlux);
-  REQUIRE(source->Provides(fio::Quantity::MagneticField));
+    fusionio::detail::OpenFusionIOSource(fusionio::Format::GEQDSK, GeqdskFile);
+  auto scalars = fusionio::detail::FusionIOFunctionSpace::Create(source, 1);
+  auto vectors = fusionio::detail::FusionIOFunctionSpace::Create(source, 3);
+  auto psi = scalars->CreateFunction("psi", fusionio::Quantity::PoloidalFlux);
+  REQUIRE(source->Provides(fusionio::Quantity::MagneticField));
 
   REQUIRE_THROWS_WITH(EvaluateAt(*scalars, psi, {50.0, 0.0, 0.0}),
                       ContainsSubstring("outside the source's domain"));
   REQUIRE_THROWS_WITH(
-    scalars->CreateFunction("B", fio::Quantity::MagneticField),
+    scalars->CreateFunction("B", fusionio::Quantity::MagneticField),
     ContainsSubstring("the space holds 1"));
   REQUIRE_THROWS_WITH(
-    vectors->CreateFunction("psi", fio::Quantity::PoloidalFlux),
+    vectors->CreateFunction("psi", fusionio::Quantity::PoloidalFlux),
     ContainsSubstring("the space holds 3"));
-  REQUIRE_THROWS_WITH(scalars->CreateFunction("eta", fio::Quantity::Viscosity),
-                      ContainsSubstring("\"viscosity\" is not a quantity") &&
-                        ContainsSubstring("poloidal flux"));
+  REQUIRE_THROWS_WITH(
+    scalars->CreateFunction("eta", fusionio::Quantity::Viscosity),
+    ContainsSubstring("\"viscosity\" is not a quantity") &&
+      ContainsSubstring("poloidal flux"));
   REQUIRE_THROWS_WITH(psi.GetDOFHolderData(),
                       ContainsSubstring("no DOFAccess"));
   REQUIRE_THROWS_WITH(
-    fio::detail::OpenFusionIOSource(fio::Format::GEQDSK, "missing"),
+    fusionio::detail::OpenFusionIOSource(fusionio::Format::GEQDSK, "missing"),
     ContainsSubstring("could not open"));
-  REQUIRE_THROWS_WITH(fio::detail::FusionIOSource(
-                        fio::detail::FusionIOSourcePtr(new CartesianSource)),
-                      ContainsSubstring("cylindrical geometry"));
+  REQUIRE_THROWS_WITH(
+    fusionio::detail::FusionIOSource(
+      fusionio::detail::FusionIOSourcePtr(new CartesianSource)),
+    ContainsSubstring("cylindrical geometry"));
 
   // Fusion-IO writes one row per query point.
-  const auto coords = fio::test::CreateDeviceCoordinateView(
+  const auto coords = fusionio::test::CreateDeviceCoordinateView(
     {1.8, 0.0, 0.1, 2.0, 0.0, 0.1}, scalars->GetCoordinateSystem(), 3);
   const auto evaluator =
     scalars->CreatePointEvaluator<Real>(scalars->Bind(coords.coordinate_view));
   Kokkos::View<Real**, DeviceMemorySpace> short_out("short_out", 1, 1);
   REQUIRE_THROWS_WITH(
-    evaluator->Evaluate(psi, fio::test::TagLike(psi, short_out)),
+    evaluator->Evaluate(psi, fusionio::test::TagLike(psi, short_out)),
     ContainsSubstring("but must be [2][1]"));
 
-  auto other = fio::detail::FusionIOFunctionSpace::Create(
-    fio::detail::OpenFusionIOSource(fio::Format::GEQDSK, GeqdskFile), 1);
+  auto other = fusionio::detail::FusionIOFunctionSpace::Create(
+    fusionio::detail::OpenFusionIOSource(fusionio::Format::GEQDSK, GeqdskFile),
+    1);
   REQUIRE_THROWS_WITH(EvaluateAt(*other, psi, {1.8, 0.0, 0.1}),
                       ContainsSubstring("field is not a quantity"));
 }
@@ -291,13 +298,13 @@ TEST_CASE("Fusion-IO FILL finds the points the domain probe evaluates")
   // the probe, and geqdsk sources evaluate it: both must find the points
   // where the probe evaluates, here on a grid across the domain boundary.
   const auto [format, file, r0, r1, z0, z1] =
-    GENERATE(table<fio::Format, std::string, Real, Real, Real, Real>(
-      {{fio::Format::M3DC1, M3DC1File, 0.8, 2.8, -1.6, 1.6},
-       {fio::Format::GEQDSK, GeqdskFile, 0.5, 3.0, -2.0, 2.0}}));
+    GENERATE(table<fusionio::Format, std::string, Real, Real, Real, Real>(
+      {{fusionio::Format::M3DC1, M3DC1File, 0.8, 2.8, -1.6, 1.6},
+       {fusionio::Format::GEQDSK, GeqdskFile, 0.5, 3.0, -2.0, 2.0}}));
   CAPTURE(file);
-  auto source = fio::detail::OpenFusionIOSource(format, file);
-  auto vectors = fio::detail::FusionIOFunctionSpace::Create(source, 3);
-  auto b = vectors->CreateFunction("B", fio::Quantity::MagneticField);
+  auto source = fusionio::detail::OpenFusionIOSource(format, file);
+  auto vectors = fusionio::detail::FusionIOFunctionSpace::Create(source, 3);
+  auto b = vectors->CreateFunction("B", fusionio::Quantity::MagneticField);
   constexpr int N = 24;
   std::vector<Real> points;
   for (int j = 0; j <= N; ++j) {
@@ -319,7 +326,7 @@ TEST_CASE("Fusion-IO FILL finds the points the domain probe evaluates")
   REQUIRE(outside.size() < n);
 
   constexpr Real Fill = -7.0;
-  const auto coords = fio::test::CreateDeviceCoordinateView(
+  const auto coords = fusionio::test::CreateDeviceCoordinateView(
     points, vectors->GetCoordinateSystem(), 3);
   const auto evaluator = vectors->CreatePointEvaluator<Real>(
     vectors->Bind(coords.coordinate_view, {pcms::OutOfBoundsMode::FILL, Fill}));
@@ -328,7 +335,7 @@ TEST_CASE("Fusion-IO FILL finds the points the domain probe evaluates")
   REQUIRE(std::vector<pcms::LO>(filled.data(),
                                 filled.data() + filled.extent(0)) == outside);
   Kokkos::View<Real**, DeviceMemorySpace> out("out", n, 3);
-  evaluator->Evaluate(b, fio::test::TagLike(b, out));
+  evaluator->Evaluate(b, fusionio::test::TagLike(b, out));
   const auto values =
     Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
   for (const pcms::LO i : outside) {
@@ -341,14 +348,14 @@ TEST_CASE("Fusion-IO gradients")
   SECTION("M3D-C1: the equilibrium field is the curl of the flux")
   {
     auto source =
-      fio::detail::OpenFusionIOSource(fio::Format::M3DC1, M3DC1File);
-    auto scalars = fio::detail::FusionIOFunctionSpace::Create(source, 1);
-    auto vectors = fio::detail::FusionIOFunctionSpace::Create(source, 3);
-    const fio::Options equilibrium{.part = fio::Part::Equilibrium};
-    auto psi =
-      scalars->CreateFunction("psi", fio::Quantity::PoloidalFlux, equilibrium);
-    auto b =
-      vectors->CreateFunction("B", fio::Quantity::MagneticField, equilibrium);
+      fusionio::detail::OpenFusionIOSource(fusionio::Format::M3DC1, M3DC1File);
+    auto scalars = fusionio::detail::FusionIOFunctionSpace::Create(source, 1);
+    auto vectors = fusionio::detail::FusionIOFunctionSpace::Create(source, 3);
+    const fusionio::Options equilibrium{.part = fusionio::Part::Equilibrium};
+    auto psi = scalars->CreateFunction("psi", fusionio::Quantity::PoloidalFlux,
+                                       equilibrium);
+    auto b = vectors->CreateFunction("B", fusionio::Quantity::MagneticField,
+                                     equilibrium);
     // Axisymmetric, so B_R = -dpsi/dZ / (2 pi R) and B_Z = dpsi/dR / (2 pi R)
     // for the total flux psi, and the toroidal derivative vanishes.
     const std::vector<Real> points = {1.6,  0.1, 0.2, 2.0, 2.5,
@@ -359,14 +366,14 @@ TEST_CASE("Fusion-IO gradients")
       const Real r = points[3 * i];
       CAPTURE(i);
       REQUIRE_THAT(-grad(i, 2) / (TwoPi * r),
-                   WithinRel(b_values(i, 0), fio::test::EvalTol));
+                   WithinRel(b_values(i, 0), fusionio::test::EvalTol));
       REQUIRE_THAT(grad(i, 0) / (TwoPi * r),
-                   WithinRel(b_values(i, 2), fio::test::EvalTol));
-      REQUIRE_THAT(grad(i, 1), WithinAbs(0.0, fio::test::ExactTol));
+                   WithinRel(b_values(i, 2), fusionio::test::EvalTol));
+      REQUIRE_THAT(grad(i, 1), WithinAbs(0.0, fusionio::test::ExactTol));
     }
     REQUIRE_THROWS_WITH(
       vectors->CreatePointEvaluator<Real>(
-        vectors->Bind(fio::test::CreateDeviceCoordinateView(
+        vectors->Bind(fusionio::test::CreateDeviceCoordinateView(
                         points, vectors->GetCoordinateSystem(), 3)
                         .coordinate_view),
         1),
@@ -375,10 +382,10 @@ TEST_CASE("Fusion-IO gradients")
 
   SECTION("geqdsk: the gradient matches finite differences of the flux")
   {
-    auto source =
-      fio::detail::OpenFusionIOSource(fio::Format::GEQDSK, GeqdskFile);
-    auto space = fio::detail::FusionIOFunctionSpace::Create(source, 1);
-    auto psi = space->CreateFunction("psi", fio::Quantity::PoloidalFlux);
+    auto source = fusionio::detail::OpenFusionIOSource(fusionio::Format::GEQDSK,
+                                                       GeqdskFile);
+    auto space = fusionio::detail::FusionIOFunctionSpace::Create(source, 1);
+    auto psi = space->CreateFunction("psi", fusionio::Quantity::PoloidalFlux);
     // Inside a grid cell: Fusion-IO's bicubic interpolant of the geqdsk grid
     // is not differentiable across grid lines, where the finite difference
     // would straddle two cells.
@@ -392,21 +399,21 @@ TEST_CASE("Fusion-IO gradients")
                  WithinRel((values(0, 0) - values(1, 0)) / (2.0 * h), 1e-6));
     REQUIRE_THAT(grad(0, 2),
                  WithinRel((values(2, 0) - values(3, 0)) / (2.0 * h), 1e-6));
-    REQUIRE_THAT(grad(0, 1), WithinAbs(0.0, fio::test::ExactTol));
+    REQUIRE_THAT(grad(0, 1), WithinAbs(0.0, fusionio::test::ExactTol));
   }
 
   SECTION("M3D-C1: the flux gradient interpolates onto a grid")
   {
     auto source =
-      fio::detail::OpenFusionIOSource(fio::Format::M3DC1, M3DC1File);
-    std::shared_ptr<const fio::detail::FusionIOFunctionSpace> scalars =
-      fio::detail::FusionIOFunctionSpace::Create(source, 1);
-    auto vectors = fio::detail::FusionIOFunctionSpace::Create(source, 3);
-    const fio::Options equilibrium{.part = fio::Part::Equilibrium};
-    auto psi =
-      scalars->CreateFunction("psi", fio::Quantity::PoloidalFlux, equilibrium);
-    auto b =
-      vectors->CreateFunction("B", fio::Quantity::MagneticField, equilibrium);
+      fusionio::detail::OpenFusionIOSource(fusionio::Format::M3DC1, M3DC1File);
+    std::shared_ptr<const fusionio::detail::FusionIOFunctionSpace> scalars =
+      fusionio::detail::FusionIOFunctionSpace::Create(source, 1);
+    auto vectors = fusionio::detail::FusionIOFunctionSpace::Create(source, 3);
+    const fusionio::Options equilibrium{.part = fusionio::Part::Equilibrium};
+    auto psi = scalars->CreateFunction("psi", fusionio::Quantity::PoloidalFlux,
+                                       equilibrium);
+    auto b = vectors->CreateFunction("B", fusionio::Quantity::MagneticField,
+                                     equilibrium);
 
     // A grid in (R, theta, Z) inside the M3D-C1 domain.
     pcms::UniformGrid<3> grid;
@@ -432,7 +439,7 @@ TEST_CASE("Fusion-IO gradients")
     pcms::Interpolator<Real>(*vectors, *vector_space).Apply(b, b_t);
 
     // Axisymmetric: B_R = -dpsi/dZ / (2 pi R), B_Z = dpsi/dR / (2 pi R).
-    const auto coords = fio::test::CopyCoordinatesToHost(
+    const auto coords = fusionio::test::CopyCoordinatesToHost(
       value_space->GetLayout()->GetDOFHolderCoordinates().GetValues());
     const auto grad = grad_psi_t.GetDOFHolderDataHost().GetValues();
     const auto field = b_t.GetDOFHolderDataHost().GetValues();
@@ -441,22 +448,23 @@ TEST_CASE("Fusion-IO gradients")
       const Real r = coords(i, 0);
       CAPTURE(i, r, coords(i, 1), coords(i, 2));
       REQUIRE_THAT(-grad(i, 2) / (TwoPi * r),
-                   WithinRel(field(i, 0), fio::test::EvalTol));
+                   WithinRel(field(i, 0), fusionio::test::EvalTol));
       REQUIRE_THAT(grad(i, 0) / (TwoPi * r),
-                   WithinRel(field(i, 2), fio::test::EvalTol));
-      REQUIRE_THAT(grad(i, 1), WithinAbs(0.0, fio::test::ExactTol));
+                   WithinRel(field(i, 2), fusionio::test::EvalTol));
+      REQUIRE_THAT(grad(i, 1), WithinAbs(0.0, fusionio::test::ExactTol));
     }
   }
 
   SECTION("gradients are re-expressed in Cartesian components")
   {
     auto source =
-      fio::detail::OpenFusionIOSource(fio::Format::M3DC1, M3DC1File);
+      fusionio::detail::OpenFusionIOSource(fusionio::Format::M3DC1, M3DC1File);
     std::shared_ptr<const pcms::FunctionSpace> space =
-      fio::detail::FusionIOFunctionSpace::Create(source, 1);
+      fusionio::detail::FusionIOFunctionSpace::Create(source, 1);
     auto psi =
-      std::static_pointer_cast<const fio::detail::FusionIOFunctionSpace>(space)
-        ->CreateFunction("psi", fio::Quantity::PoloidalFlux);
+      std::static_pointer_cast<const fusionio::detail::FusionIOFunctionSpace>(
+        space)
+        ->CreateFunction("psi", fusionio::Quantity::PoloidalFlux);
     const Real r = 1.7, phi = 2.2, z = 0.3;
     const auto cyl = EvaluateGradientAt(*space, psi, {r, phi, z});
     const Real expected[3] = {
@@ -471,7 +479,7 @@ TEST_CASE("Fusion-IO gradients")
       pcms::Gradient(
         std::make_shared<pcms::TransformedSource>(space, to_cylindrical))};
     for (const auto& cartesian : sources) {
-      const auto coords = fio::test::CreateDeviceCoordinateView(
+      const auto coords = fusionio::test::CreateDeviceCoordinateView(
         {r * std::cos(phi), r * std::sin(phi), z},
         pcms::csys::Cartesian::Create(3), 3);
       const auto evaluator = cartesian->CreatePointEvaluator<Real>(
@@ -488,8 +496,9 @@ TEST_CASE("Fusion-IO gradients")
         Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
       for (int c = 0; c < 3; ++c) {
         CAPTURE(c);
-        REQUIRE_THAT(host(0, c), WithinRel(expected[c], fio::test::EvalTol) ||
-                                   WithinAbs(expected[c], fio::test::ExactTol));
+        REQUIRE_THAT(host(0, c),
+                     WithinRel(expected[c], fusionio::test::EvalTol) ||
+                       WithinAbs(expected[c], fusionio::test::ExactTol));
       }
     }
   }

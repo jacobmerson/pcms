@@ -15,7 +15,7 @@
 #include <regex>
 #include <sstream>
 
-namespace fio::detail
+namespace fusionio::detail
 {
 
 // Private implementation built on PCMS's public types.
@@ -254,13 +254,13 @@ NimrodSource::NimrodSource(const std::string& dump, const std::string& fields,
 {
   namespace fs = std::filesystem;
   if (fields.empty()) {
-    throw pcms_error("fio::OpenNimrod: no field ids given");
+    throw pcms_error("fusionio::OpenNimrod: no field ids given");
   }
   const fs::path dir =
     case_dir.empty() ? fs::current_path() : fs::path(case_dir);
   std::ifstream input(dir / "nimrod.in");
   if (!input) {
-    throw pcms_error("fio::OpenNimrod: cannot read " +
+    throw pcms_error("fusionio::OpenNimrod: cannot read " +
                      (dir / "nimrod.in").string());
   }
   std::stringstream buffer;
@@ -272,8 +272,9 @@ NimrodSource::NimrodSource(const std::string& dump, const std::string& fields,
   // Points are passed to NIMROD as (R, Z, phi), which only holds for
   // toroidal cases.
   if (NamelistValue(text, "geom") != "tor") {
-    throw pcms_error("fio::OpenNimrod: only toroidal cases (geom='tor') are "
-                     "supported");
+    throw pcms_error(
+      "fusionio::OpenNimrod: only toroidal cases (geom='tor') are "
+      "supported");
   }
   const int nisp = std::stoi(NamelistValue(text, "nisp").value_or("0"));
   const int ds_nqty = std::stoi(NamelistValue(text, "ds_nqty").value_or("1"));
@@ -297,23 +298,25 @@ NimrodSource::NimrodSource(const std::string& dump, const std::string& fields,
       }
     }
     if (!known) {
-      throw pcms_error(std::string("fio::OpenNimrod: unsupported field id '") +
-                       id + "'; supported ids are bvjnptd");
+      throw pcms_error(
+        std::string("fusionio::OpenNimrod: unsupported field id '") + id +
+        "'; supported ids are bvjnptd");
     }
   }
   const fs::path dump_path = fs::absolute(dump);
   if (!fs::is_regular_file(dump_path)) {
-    throw pcms_error("fio::OpenNimrod: cannot find dump '" + dump + "'");
+    throw pcms_error("fusionio::OpenNimrod: cannot find dump '" + dump + "'");
   }
   if (access(dir.c_str(), W_OK) != 0) {
-    throw pcms_error("fio::OpenNimrod: NIMROD writes scratch files to the "
+    throw pcms_error("fusionio::OpenNimrod: NIMROD writes scratch files to the "
                      "case directory, but " +
                      dir.string() + " is not writable");
   }
 
   if (SourceOpen()) {
-    throw pcms_error("fio::OpenNimrod: another NIMROD source is open; NIMROD "
-                     "can evaluate one dump per process");
+    throw pcms_error(
+      "fusionio::OpenNimrod: another NIMROD source is open; NIMROD "
+      "can evaluate one dump per process");
   }
   {
     const ScopedCurrentPath in_case_dir(dir);
@@ -396,7 +399,7 @@ FieldVariant NimrodFunctionSpace::CreateFieldImpl(FieldDataVariant data) const
 namespace
 {
 
-/// A NIMROD dump as a fio::Source.
+/// A NIMROD dump as a fusionio::Source.
 class NimrodFileSource final : public Source
 {
 public:
@@ -431,21 +434,22 @@ public:
     Quantity quantity, const Options& options) const override
   {
     if (options.timeslice || options.linear_scale || options.phase) {
-      throw pcms_error("fio: NIMROD sources support only the part option");
+      throw pcms_error("fusionio: NIMROD sources support only the part option");
     }
     if (options.species && quantity != Quantity::Temperature) {
-      throw pcms_error("fio: NIMROD sources support the species option only "
-                       "for temperature");
+      throw pcms_error(
+        "fusionio: NIMROD sources support the species option only "
+        "for temperature");
     }
     const std::string name = NimrodName(quantity, options.species);
     const auto found = source_->Quantities().find(name);
     if (found == source_->Quantities().end()) {
-      throw pcms_error("fio: this NIMROD source does not provide " +
-                       std::string(fio::Name(quantity)) + " (NIMROD's \"" +
+      throw pcms_error("fusionio: this NIMROD source does not provide " +
+                       std::string(fusionio::Name(quantity)) + " (NIMROD's \"" +
                        name + "\"); open it with that field id");
     }
     return NimrodFunctionSpace::Create(source_, found->second.components)
-      ->CreateFunction(std::string(fio::Name(quantity)), name,
+      ->CreateFunction(std::string(fusionio::Name(quantity)), name,
                        {.part = options.part.value_or(Part::Total)});
   }
 
@@ -469,8 +473,8 @@ private:
         return name;
       }
     }
-    throw pcms_error("fio: NIMROD sources do not provide " +
-                     std::string(fio::Name(quantity)));
+    throw pcms_error("fusionio: NIMROD sources do not provide " +
+                     std::string(fusionio::Name(quantity)));
   }
 
   std::shared_ptr<NimrodSource> source_;
@@ -478,9 +482,9 @@ private:
 
 } // namespace
 
-} // namespace fio::detail
+} // namespace fusionio::detail
 
-namespace fio
+namespace fusionio
 {
 
 std::shared_ptr<Source> OpenNimrod(const std::string& dump,
@@ -491,4 +495,4 @@ std::shared_ptr<Source> OpenNimrod(const std::string& dump,
     detail::OpenNimrodSource(dump, fields, case_dir));
 }
 
-} // namespace fio
+} // namespace fusionio

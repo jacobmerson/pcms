@@ -1,6 +1,6 @@
 // fio_trace: field-line tracing and Poincare plots, ported from Fusion-IO
 // 1.x's trace tool (trace/main.cpp, trace/trace_integrator.cpp, Copyright (c)
-// 2024 Nathaniel Ferraro, MIT License) to the batched fio/PCMS API.
+// 2024 Nathaniel Ferraro, MIT License) to the batched fusionio/PCMS API.
 //
 // The command line, output files (out<n>, q.out, gplot, gplotpsi, gplot3D)
 // and the fixed-step RK4 integration in phi are those of trace. What changes
@@ -14,7 +14,7 @@
 // points (-ds, unimplemented in trace), and the DIII-D I-coil source
 // (-diiid-i, disabled in trace).
 
-#include <fusion_io/fusion_io.hpp>
+#include <fusionio/fusionio.hpp>
 #include <pcms/field/coordinate_view.hpp>
 #include <pcms/field/function_space.h>
 #include <pcms/field/value_view.hpp>
@@ -39,12 +39,12 @@
 namespace
 {
 
-using fio::Real;
+using fusionio::Real;
 constexpr Real Pi = std::numbers::pi;
 
 struct TraceSource
 {
-  std::shared_ptr<fio::Source> source;
+  std::shared_ptr<fusionio::Source> source;
   pcms::Function<Real> field;
   std::optional<pcms::Function<Real>> psi_norm;
   Real magaxis[2] = {0, 0};
@@ -390,17 +390,18 @@ private:
 
 // trace's create_source: -m3dc1 <file> <ts> <factor> <shift>, -geqdsk <file>,
 // -gpec <dir>.
-TraceSource CreateSource(fio::Format format, const std::vector<std::string>& a)
+TraceSource CreateSource(fusionio::Format format,
+                         const std::vector<std::string>& a)
 {
-  if (a.empty() && format != fio::Format::M3DC1) {
+  if (a.empty() && format != fusionio::Format::M3DC1) {
     throw std::runtime_error("a file name must be provided");
   }
   const std::string path = a.empty() ? "C1.h5" : a[0];
-  auto source = fio::Open(format, path);
-  fio::Options options;
+  auto source = fusionio::Open(format, path);
+  fusionio::Options options;
   Real slice_time = 0;
-  if (format == fio::Format::M3DC1) {
-    options.part = fio::Part::Perturbed;
+  if (format == fusionio::Format::M3DC1) {
+    options.part = fusionio::Part::Perturbed;
     options.timeslice = -1;
   }
   if (a.size() >= 2) {
@@ -420,17 +421,19 @@ TraceSource CreateSource(fio::Format format, const std::vector<std::string>& a)
     options.phase = std::atof(a[3].c_str()) * Pi / 180.;
   }
   TraceSource result{
-    source, source->CreateFunction(fio::Quantity::MagneticField, options)};
+    source, source->CreateFunction(fusionio::Quantity::MagneticField, options)};
   auto equilibrium = options;
-  equilibrium.part = fio::Part::Equilibrium;
+  equilibrium.part = fusionio::Part::Equilibrium;
   try {
     result.psi_norm =
-      source->CreateFunction(fio::Quantity::PoloidalFluxNorm, equilibrium);
+      source->CreateFunction(fusionio::Quantity::PoloidalFluxNorm, equilibrium);
   } catch (const std::exception&) {
     std::cerr << "Warning: couldn't open psi_norm field" << std::endl;
   }
-  const auto R = source->EvaluateSeries(fio::Series::MagneticAxisR, slice_time);
-  const auto Z = source->EvaluateSeries(fio::Series::MagneticAxisZ, slice_time);
+  const auto R =
+    source->EvaluateSeries(fusionio::Series::MagneticAxisR, slice_time);
+  const auto Z =
+    source->EvaluateSeries(fusionio::Series::MagneticAxisZ, slice_time);
   if (!R || !Z) {
     throw std::runtime_error("couldn't load the magnetic axis");
   }
@@ -483,11 +486,11 @@ bool ParseCommandLine(int argc, char* argv[], Parameters& p,
       return a[0];
     };
     if (opt == "-m3dc1") {
-      sources.push_back(CreateSource(fio::Format::M3DC1, a));
+      sources.push_back(CreateSource(fusionio::Format::M3DC1, a));
     } else if (opt == "-geqdsk") {
-      sources.push_back(CreateSource(fio::Format::GEQDSK, a));
+      sources.push_back(CreateSource(fusionio::Format::GEQDSK, a));
     } else if (opt == "-gpec") {
-      sources.push_back(CreateSource(fio::Format::GPEC, a));
+      sources.push_back(CreateSource(fusionio::Format::GPEC, a));
     } else if (opt == "-dR") {
       p.dR = std::atof(one().c_str());
     } else if (opt == "-dZ") {
@@ -569,7 +572,7 @@ int Run(int argc, char* argv[], int rank, int size)
     PrintHelp();
     return 1;
   }
-  // fio sources are cylindrical, which trace calls toroidal.
+  // fusionio sources are cylindrical, which trace calls toroidal.
   std::cerr << "Geometry: toroidal" << std::endl;
   const Real period = sources[0].source->Period();
   std::cerr << "Period: " << period << std::endl;
