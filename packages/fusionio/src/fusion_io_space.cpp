@@ -6,7 +6,7 @@
 #include <numbers>
 #include <string_view>
 
-namespace fio::detail
+namespace fusionio::detail
 {
 
 // Private implementation built on PCMS's public types.
@@ -62,7 +62,7 @@ int FusionIOPart(Part part)
     case Part::Perturbed: return FIO_PERTURBED_ONLY;
     case Part::Equilibrium: return FIO_EQUILIBRIUM_ONLY;
   }
-  throw pcms_error("fio: unknown part");
+  throw pcms_error("fusionio: unknown part");
 }
 
 int FusionIOSpecies(Species species)
@@ -71,7 +71,7 @@ int FusionIOSpecies(Species species)
     case Species::MainIon: return FIO_MAIN_ION;
     case Species::Electron: return FIO_ELECTRON;
   }
-  throw pcms_error("fio: unknown species");
+  throw pcms_error("fusionio: unknown species");
 }
 
 series_type FusionIOSeries(Series series)
@@ -82,7 +82,7 @@ series_type FusionIOSeries(Series series)
     case Series::MagneticAxisR: return FIO_MAGAXIS_R;
     case Series::MagneticAxisZ: return FIO_MAGAXIS_Z;
   }
-  throw pcms_error("fio: unknown series");
+  throw pcms_error("fusionio: unknown series");
 }
 
 const QuantityEntry& EntryOf(Quantity quantity)
@@ -92,7 +92,7 @@ const QuantityEntry& EntryOf(Quantity quantity)
       return entry;
     }
   }
-  throw pcms_error("fio: unknown quantity");
+  throw pcms_error("fusionio: unknown quantity");
 }
 
 // A quantity of a source, read with its options.
@@ -308,8 +308,9 @@ FusionIOSource::FusionIOSource(FusionIOSourcePtr source)
   int geometry = -1;
   if (source_->get_int_parameter(FIO_GEOMETRY, &geometry) != FIO_SUCCESS ||
       geometry != FIO_CYLINDRICAL) {
-    throw pcms_error("fio::Open: only sources with cylindrical geometry are "
-                     "supported");
+    throw pcms_error(
+      "fusionio::Open: only sources with cylindrical geometry are "
+      "supported");
   }
   fio_source::fio_field_list fields;
   source_->get_available_fields(&fields);
@@ -333,8 +334,9 @@ FusionIOFieldPtr FusionIOSource::GetField(Quantity quantity,
     source_->get_field(FieldTypeOf(quantity), &field, &options);
   FusionIOFieldPtr owned(field);
   if (status != FIO_SUCCESS) {
-    throw pcms_error("fio: could not read \"" + std::string(Name(quantity)) +
-                     "\" (Fusion-IO error " + std::to_string(status) + ")");
+    throw pcms_error("fusionio: could not read \"" +
+                     std::string(Name(quantity)) + "\" (Fusion-IO error " +
+                     std::to_string(status) + ")");
   }
   return owned;
 }
@@ -366,7 +368,7 @@ fio_field& FusionIOSource::DomainProbe() const
     }
     delete field;
   }
-  throw pcms_error("fio: none of the source's quantities can be read to "
+  throw pcms_error("fusionio: none of the source's quantities can be read to "
                    "locate points");
 }
 
@@ -427,7 +429,7 @@ std::shared_ptr<FusionIOSource> OpenFusionIOSource(Format format,
   const int status = fio_open_source(&opened, type, filename.c_str());
   // On failure fio_open_source has already deleted the source.
   if (status != FIO_SUCCESS) {
-    throw pcms_error("fio::Open: could not open '" + filename +
+    throw pcms_error("fusionio::Open: could not open '" + filename +
                      "' (Fusion-IO error " + std::to_string(status) + ")");
   }
   return std::make_shared<FusionIOSource>(FusionIOSourcePtr(opened));
@@ -505,7 +507,7 @@ FieldVariant FusionIOFunctionSpace::CreateFieldImpl(FieldDataVariant data) const
 namespace
 {
 
-/// A Fusion-IO 1.x source as a fio::Source.
+/// A Fusion-IO 1.x source as a fusionio::Source.
 class FusionIOFileSource final : public Source
 {
 public:
@@ -534,7 +536,7 @@ public:
     std::vector<Real> times(num_timeslices);
     for (int i = 0; i < num_timeslices; ++i) {
       if (source.get_slice_time(i, &times[i]) != FIO_SUCCESS) {
-        throw pcms_error("fio: could not read the time of time slice " +
+        throw pcms_error("fusionio: could not read the time of time slice " +
                          std::to_string(i));
       }
     }
@@ -560,7 +562,7 @@ public:
     const std::unique_ptr<fio_series> owned(opened);
     Real value = 0;
     if (owned->eval(time, &value) != FIO_SUCCESS) {
-      throw pcms_error("fio: could not evaluate a time series at t = " +
+      throw pcms_error("fusionio: could not evaluate a time series at t = " +
                        std::to_string(time));
     }
     return value;
@@ -579,9 +581,9 @@ private:
 
 } // namespace
 
-} // namespace fio::detail
+} // namespace fusionio::detail
 
-namespace fio
+namespace fusionio
 {
 
 std::string_view Name(Quantity quantity)
@@ -595,4 +597,4 @@ std::shared_ptr<Source> Open(Format format, const std::string& path)
     detail::OpenFusionIOSource(format, path));
 }
 
-} // namespace fio
+} // namespace fusionio

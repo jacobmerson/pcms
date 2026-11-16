@@ -1,14 +1,14 @@
 // Benchmarks of field transfer from an M3D-C1 source: Fusion-IO 1.x called
-// point by point, fio's bind and evaluate, and a PCMS Interpolator onto a
+// point by point, fusionio's bind and evaluate, and a PCMS Interpolator onto a
 // mesh. Hidden behind the [!benchmark] tag, so ctest does not run them; run
 // them with
-//   OMP_NUM_THREADS=1 fusion_io_tests "[!benchmark]" --benchmark-samples 10
+//   OMP_NUM_THREADS=1 fusionio_tests "[!benchmark]" --benchmark-samples 10
 // (Fusion-IO 1.x is not thread safe). Every point keeps its own search hint
 // across samples, so the times are for warm hints, as in a repeated transfer.
 
 #include <catch2/benchmark/catch_benchmark.hpp>
 #include <catch2/catch_test_macros.hpp>
-#include <fusion_io/fusion_io.hpp>
+#include <fusionio/fusionio.hpp>
 #include <Kokkos_Core.hpp>
 #include <Omega_h_build.hpp>
 #include <Omega_h_library.hpp>
@@ -25,14 +25,14 @@
 #include <string>
 #include <vector>
 
-using fio::Real;
+using fusionio::Real;
 using pcms::DeviceMemorySpace;
 
 namespace
 {
 
 const std::string M3DC1File =
-  std::string(FUSION_IO_TEST_DATA_DIR) + "/m3dc1/C1.h5";
+  std::string(FUSIONIO_TEST_DATA_DIR) + "/m3dc1/C1.h5";
 
 // A rectangle of the (R, Z) plane inside the example M3D-C1 domain, with
 // Divisions + 1 points per side (99856 points).
@@ -60,12 +60,12 @@ void BenchmarkFusionIO(const std::string& name, int type,
   fio_source* opened = nullptr;
   REQUIRE(fio_open_source(&opened, FIO_M3DC1_SOURCE, M3DC1File.c_str()) ==
           FIO_SUCCESS);
-  const fio::detail::FusionIOSourcePtr source(opened);
+  const fusionio::detail::FusionIOSourcePtr source(opened);
   fio_option_list options;
   source->get_field_options(&options);
   fio_field* field = nullptr;
   REQUIRE(source->get_field(type, &field, &options) == FIO_SUCCESS);
-  const fio::detail::FusionIOFieldPtr owned(field);
+  const fusionio::detail::FusionIOFieldPtr owned(field);
   const size_t n = points.size() / 3;
   const auto dimension = static_cast<size_t>(field->dimension());
   const auto hint_size = static_cast<size_t>(source->sizeof_search_hint());
@@ -81,22 +81,22 @@ void BenchmarkFusionIO(const std::string& name, int type,
   };
 }
 
-/// fio: one bind of the points, then evaluations of `quantity`.
-void BenchmarkFio(const std::string& name, fio::Quantity quantity,
+/// fusionio: one bind of the points, then evaluations of `quantity`.
+void BenchmarkFio(const std::string& name, fusionio::Quantity quantity,
                   const std::vector<Real>& points)
 {
-  const auto source = fio::Open(fio::Format::M3DC1, M3DC1File);
+  const auto source = fusionio::Open(fusionio::Format::M3DC1, M3DC1File);
   const auto function = source->CreateFunction(quantity);
   const auto& space = function.GetSpace();
-  const auto coords = fio::test::CreateDeviceCoordinateView(
+  const auto coords = fusionio::test::CreateDeviceCoordinateView(
     points, space.GetCoordinateSystem(), 3);
   const pcms::OutOfBoundsPolicy fill{pcms::OutOfBoundsMode::FILL,
                                      std::numeric_limits<Real>::quiet_NaN()};
-  BENCHMARK(name + ": fio bind (ERROR)")
+  BENCHMARK(name + ": fusionio bind (ERROR)")
   {
     return space.Bind(coords.coordinate_view);
   };
-  BENCHMARK(name + ": fio bind (FILL)")
+  BENCHMARK(name + ": fusionio bind (FILL)")
   {
     return space.Bind(coords.coordinate_view, fill);
   };
@@ -104,9 +104,9 @@ void BenchmarkFio(const std::string& name, fio::Quantity quantity,
     space.CreatePointEvaluator<Real>(space.Bind(coords.coordinate_view, fill));
   Kokkos::View<Real**, DeviceMemorySpace> out(
     "out", points.size() / 3, function.GetLayout().GetNumComponents());
-  BENCHMARK(name + ": fio evaluate")
+  BENCHMARK(name + ": fusionio evaluate")
   {
-    evaluator->Evaluate(function, fio::test::TagLike<Real>(function, out));
+    evaluator->Evaluate(function, fusionio::test::TagLike<Real>(function, out));
     Kokkos::fence();
     return out.data()[0];
   };
@@ -134,9 +134,9 @@ TEST_CASE("Transfer benchmarks: M3D-C1 poloidal flux and magnetic field",
 {
   const auto points = GridPoints();
   BenchmarkFusionIO("psi", FIO_POLOIDAL_FLUX, points);
-  BenchmarkFio("psi", fio::Quantity::PoloidalFlux, points);
+  BenchmarkFio("psi", fusionio::Quantity::PoloidalFlux, points);
   BenchmarkFusionIO("B", FIO_MAGNETIC_FIELD, points);
-  BenchmarkFio("B", fio::Quantity::MagneticField, points);
+  BenchmarkFio("B", fusionio::Quantity::MagneticField, points);
 }
 
 TEST_CASE("Transfer benchmarks: M3D-C1 poloidal flux onto a P1 mesh",
@@ -144,8 +144,8 @@ TEST_CASE("Transfer benchmarks: M3D-C1 poloidal flux onto a P1 mesh",
 {
   auto lib = Omega_h::Library{};
   auto mesh = RectangleMesh(lib);
-  const auto source = fio::Open(fio::Format::M3DC1, M3DC1File);
-  const auto psi = source->CreateFunction(fio::Quantity::PoloidalFlux);
+  const auto source = fusionio::Open(fusionio::Format::M3DC1, M3DC1File);
+  const auto psi = source->CreateFunction(fusionio::Quantity::PoloidalFlux);
   // The mesh is the poloidal plane phi = 0 of the source's (R, phi, Z).
   auto target = pcms::LagrangeFunctionSpace::FromMesh(
     mesh, 1, 1, pcms::csys::CylindricalRZ::Create(), "global",
@@ -176,14 +176,14 @@ TEST_CASE("Transfer benchmarks: fixed cost of one M3D-C1 point", "[!benchmark]")
   // per-call cost of each step.
   const std::vector<Real> point = {1.75, 0.0, 0.05};
   BenchmarkFusionIO("1 point, B", FIO_MAGNETIC_FIELD, point);
-  BenchmarkFio("1 point, B", fio::Quantity::MagneticField, point);
-  const auto source = fio::Open(fio::Format::M3DC1, M3DC1File);
-  const auto b = source->CreateFunction(fio::Quantity::MagneticField);
+  BenchmarkFio("1 point, B", fusionio::Quantity::MagneticField, point);
+  const auto source = fusionio::Open(fusionio::Format::M3DC1, M3DC1File);
+  const auto b = source->CreateFunction(fusionio::Quantity::MagneticField);
   const auto& space = b.GetSpace();
-  const auto coords = fio::test::CreateDeviceCoordinateView(
+  const auto coords = fusionio::test::CreateDeviceCoordinateView(
     point, space.GetCoordinateSystem(), 3);
   const auto bound = space.Bind(coords.coordinate_view);
-  BENCHMARK("1 point, B: fio create evaluator")
+  BENCHMARK("1 point, B: fusionio create evaluator")
   {
     return space.CreatePointEvaluator<Real>(bound);
   };

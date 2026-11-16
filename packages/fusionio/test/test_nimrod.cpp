@@ -18,9 +18,9 @@
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
-using fio::detail::NimrodOptions;
-using fio::test::EvaluateAt;
-using fio::test::EvaluateGradientAt;
+using fusionio::detail::NimrodOptions;
+using fusionio::test::EvaluateAt;
+using fusionio::test::EvaluateGradientAt;
 using pcms::DeviceMemorySpace;
 using pcms::HostMemorySpace;
 using pcms::Real;
@@ -31,8 +31,8 @@ namespace
 namespace fs = std::filesystem;
 
 // A NIMROD case directory (nimrod.in and dump) that is not distributed with
-// the test data; set FUSION_IO_TEST_NIMROD_DIR to a copy of the cylrwtm case.
-const fs::path CaseDir = FUSION_IO_TEST_NIMROD_DIR;
+// the test data; set FUSIONIO_TEST_NIMROD_DIR to a copy of the cylrwtm case.
+const fs::path CaseDir = FUSIONIO_TEST_NIMROD_DIR;
 const std::string Dump = "dump_gs.00000.h5";
 
 // A writable copy of the case, which NIMROD needs for its scratch files.
@@ -90,21 +90,21 @@ TEST_CASE("NIMROD values match direct nimeval evaluation")
 {
   const CaseCopy copy("direct");
   auto source =
-    fio::detail::OpenNimrodSource(copy.DumpPath(), "bvn", copy.Dir());
-  auto scalars = fio::detail::NimrodFunctionSpace::Create(source, 1);
-  auto vectors = fio::detail::NimrodFunctionSpace::Create(source, 3);
+    fusionio::detail::OpenNimrodSource(copy.DumpPath(), "bvn", copy.Dir());
+  auto scalars = fusionio::detail::NimrodFunctionSpace::Create(source, 1);
+  auto vectors = fusionio::detail::NimrodFunctionSpace::Create(source, 3);
 
   struct Case
   {
     const char* quantity;
-    fio::Part part;
+    fusionio::Part part;
     int eq;
-    std::shared_ptr<fio::detail::NimrodFunctionSpace> space;
+    std::shared_ptr<fusionio::detail::NimrodFunctionSpace> space;
   };
   for (const auto& [quantity, part, eq, space] :
-       {Case{"b", fio::Part::Total, 2, vectors},
-        Case{"v", fio::Part::Perturbed, 0, vectors},
-        Case{"n", fio::Part::Equilibrium, 1, scalars}}) {
+       {Case{"b", fusionio::Part::Total, 2, vectors},
+        Case{"v", fusionio::Part::Perturbed, 0, vectors},
+        Case{"n", fusionio::Part::Equilibrium, 1, scalars}}) {
     CAPTURE(quantity);
     const auto values = EvaluateAt(
       *space, space->CreateFunction("f", quantity, {.part = part}), Points);
@@ -122,8 +122,8 @@ TEST_CASE("NIMROD values match direct nimeval evaluation")
         CAPTURE(i, c);
         // The absolute floor covers components near zero.
         REQUIRE_THAT(values(i, c),
-                     WithinRel(expected[c], fio::test::ExactTol) ||
-                       WithinAbs(expected[c], fio::test::ExactTol));
+                     WithinRel(expected[c], fusionio::test::ExactTol) ||
+                       WithinAbs(expected[c], fusionio::test::ExactTol));
       }
     }
   }
@@ -132,18 +132,21 @@ TEST_CASE("NIMROD values match direct nimeval evaluation")
 TEST_CASE("NIMROD parts select equilibrium and perturbation")
 {
   const CaseCopy copy("parts");
-  auto source = fio::detail::OpenNimrodSource(copy.DumpPath(), "b", copy.Dir());
-  auto space = fio::detail::NimrodFunctionSpace::Create(source, 3);
+  auto source =
+    fusionio::detail::OpenNimrodSource(copy.DumpPath(), "b", copy.Dir());
+  auto space = fusionio::detail::NimrodFunctionSpace::Create(source, 3);
   // Two points in the same poloidal plane position, half a toroidal turn
   // apart.
   const std::vector<Real> points = {
     10.6, 0.4, 0.3, 10.6, 0.4 + std::numbers::pi, 0.3};
 
   const auto equilibrium = EvaluateAt(
-    *space, space->CreateFunction("b", "b", {.part = fio::Part::Equilibrium}),
+    *space,
+    space->CreateFunction("b", "b", {.part = fusionio::Part::Equilibrium}),
     points);
   const auto perturbed = EvaluateAt(
-    *space, space->CreateFunction("b", "b", {.part = fio::Part::Perturbed}),
+    *space,
+    space->CreateFunction("b", "b", {.part = fusionio::Part::Perturbed}),
     points);
   const auto total =
     EvaluateAt(*space, space->CreateFunction("b", "b"), points);
@@ -152,11 +155,11 @@ TEST_CASE("NIMROD parts select equilibrium and perturbation")
     // The equilibrium is axisymmetric and the case's n = 1 perturbation
     // changes sign over half a turn.
     REQUIRE_THAT(equilibrium(1, c),
-                 WithinAbs(equilibrium(0, c), fio::test::EvalTol));
+                 WithinAbs(equilibrium(0, c), fusionio::test::EvalTol));
     REQUIRE_THAT(perturbed(1, c),
-                 WithinAbs(-perturbed(0, c), fio::test::EvalTol));
+                 WithinAbs(-perturbed(0, c), fusionio::test::EvalTol));
     REQUIRE_THAT(total(0, c), WithinAbs(equilibrium(0, c) + perturbed(0, c),
-                                        fio::test::EvalTol));
+                                        fusionio::test::EvalTol));
   }
   REQUIRE(perturbed(0, 0) != 0.0);
 }
@@ -165,9 +168,9 @@ TEST_CASE("NIMROD gradients match direct nimeval evaluation")
 {
   const CaseCopy copy("gradient");
   auto source =
-    fio::detail::OpenNimrodSource(copy.DumpPath(), "bn", copy.Dir());
-  auto scalars = fio::detail::NimrodFunctionSpace::Create(source, 1);
-  auto vectors = fio::detail::NimrodFunctionSpace::Create(source, 3);
+    fusionio::detail::OpenNimrodSource(copy.DumpPath(), "bn", copy.Dir());
+  auto scalars = fusionio::detail::NimrodFunctionSpace::Create(source, 1);
+  auto vectors = fusionio::detail::NimrodFunctionSpace::Create(source, 3);
   // The cylrwtm case has no scalar with a physical gradient (its density is
   // uniform, its pressure and temperatures zero), so this checks only that
   // NIMROD's (d/dR, d/dZ, (1/R) d/dphi) is reordered to (R, theta, Z) with
@@ -192,12 +195,13 @@ TEST_CASE("NIMROD gradients match direct nimeval evaluation")
     const double expected[3] = {raw[1], -raw[3], raw[2]};
     for (int c = 0; c < 3; ++c) {
       CAPTURE(i, c);
-      REQUIRE_THAT(grad(0, c), WithinRel(expected[c], fio::test::ExactTol) ||
-                                 WithinAbs(expected[c], fio::test::ExactTol));
+      REQUIRE_THAT(grad(0, c),
+                   WithinRel(expected[c], fusionio::test::ExactTol) ||
+                     WithinAbs(expected[c], fusionio::test::ExactTol));
     }
   }
 
-  const auto coords = fio::test::CreateDeviceCoordinateView(
+  const auto coords = fusionio::test::CreateDeviceCoordinateView(
     points, vectors->GetCoordinateSystem(), 3);
   REQUIRE_THROWS_WITH(vectors->CreatePointEvaluator<Real>(
                         vectors->Bind(coords.coordinate_view), 1),
@@ -211,11 +215,11 @@ TEST_CASE("NIMROD evaluation errors")
 {
   const CaseCopy copy("errors");
   auto source =
-    fio::detail::OpenNimrodSource(copy.DumpPath(), "bn", copy.Dir());
-  auto scalars = fio::detail::NimrodFunctionSpace::Create(source, 1);
-  auto vectors = fio::detail::NimrodFunctionSpace::Create(source, 3);
+    fusionio::detail::OpenNimrodSource(copy.DumpPath(), "bn", copy.Dir());
+  auto scalars = fusionio::detail::NimrodFunctionSpace::Create(source, 1);
+  auto vectors = fusionio::detail::NimrodFunctionSpace::Create(source, 3);
   auto n = scalars->CreateFunction("n", "n");
-  REQUIRE(fio::detail::AvailableQuantities(*source) ==
+  REQUIRE(fusionio::detail::AvailableQuantities(*source) ==
           std::vector<std::string>{"b", "n"});
 
   REQUIRE_THROWS_WITH(EvaluateAt(*scalars, n, {20.0, 0.0, 0.0}),
@@ -232,17 +236,18 @@ TEST_CASE("NIMROD evaluation errors")
   REQUIRE_THROWS_WITH(n.GetDOFHolderData(), ContainsSubstring("no DOFAccess"));
 
   // NIMROD writes one row per query point.
-  const auto coords = fio::test::CreateDeviceCoordinateView(
+  const auto coords = fusionio::test::CreateDeviceCoordinateView(
     {10.6, 0.0, 0.3, 10.2, 0.0, 0.1}, scalars->GetCoordinateSystem(), 3);
   const auto evaluator =
     scalars->CreatePointEvaluator<Real>(scalars->Bind(coords.coordinate_view));
   Kokkos::View<Real**, DeviceMemorySpace> short_out("short_out", 1, 1);
-  REQUIRE_THROWS_WITH(evaluator->Evaluate(n, fio::test::TagLike(n, short_out)),
-                      ContainsSubstring("but must be [2][1]"));
+  REQUIRE_THROWS_WITH(
+    evaluator->Evaluate(n, fusionio::test::TagLike(n, short_out)),
+    ContainsSubstring("but must be [2][1]"));
 
   // nimeval holds one dump per process.
   REQUIRE_THROWS_WITH(
-    fio::detail::OpenNimrodSource(copy.DumpPath(), "bn", copy.Dir()),
+    fusionio::detail::OpenNimrodSource(copy.DumpPath(), "bn", copy.Dir()),
     ContainsSubstring("another NIMROD source is open"));
 }
 
@@ -250,17 +255,17 @@ TEST_CASE("NIMROD sources are checked before opening")
 {
   const CaseCopy copy("open");
   REQUIRE_THROWS_WITH(
-    fio::detail::OpenNimrodSource(copy.DumpPath(), "be", copy.Dir()),
+    fusionio::detail::OpenNimrodSource(copy.DumpPath(), "be", copy.Dir()),
     ContainsSubstring("unsupported field id 'e'"));
   REQUIRE_THROWS_WITH(
-    fio::detail::OpenNimrodSource(copy.DumpPath(), "", copy.Dir()),
+    fusionio::detail::OpenNimrodSource(copy.DumpPath(), "", copy.Dir()),
     ContainsSubstring("no field ids"));
   REQUIRE_THROWS_WITH(
-    fio::detail::OpenNimrodSource("missing.h5", "b", copy.Dir()),
+    fusionio::detail::OpenNimrodSource("missing.h5", "b", copy.Dir()),
     ContainsSubstring("cannot find dump"));
-  REQUIRE_THROWS_WITH(
-    fio::detail::OpenNimrodSource(copy.DumpPath(), "b", copy.Dir() / "missing"),
-    ContainsSubstring("cannot read"));
+  REQUIRE_THROWS_WITH(fusionio::detail::OpenNimrodSource(
+                        copy.DumpPath(), "b", copy.Dir() / "missing"),
+                      ContainsSubstring("cannot read"));
 
   // A slab case.
   std::stringstream text;
@@ -269,38 +274,38 @@ TEST_CASE("NIMROD sources are checked before opening")
   input.replace(input.find("geom='tor'"), 10, "geom='lin'");
   std::ofstream(copy.Dir() / "nimrod.in") << input;
   REQUIRE_THROWS_WITH(
-    fio::detail::OpenNimrodSource(copy.DumpPath(), "b", copy.Dir()),
+    fusionio::detail::OpenNimrodSource(copy.DumpPath(), "b", copy.Dir()),
     ContainsSubstring("only toroidal cases"));
 }
 
-TEST_CASE("fio::OpenNimrod gives Fusion-IO's quantities")
+TEST_CASE("fusionio::OpenNimrod gives Fusion-IO's quantities")
 {
-  const CaseCopy copy("fio");
-  const auto source = fio::OpenNimrod(copy.DumpPath(), "bvn", copy.Dir());
+  const CaseCopy copy("fusionio");
+  const auto source = fusionio::OpenNimrod(copy.DumpPath(), "bvn", copy.Dir());
 
   const auto quantities = source->Quantities();
-  const auto components = [&](fio::Quantity quantity) {
-    const auto found =
-      std::ranges::find(quantities, quantity, &fio::QuantityInfo::quantity);
+  const auto components = [&](fusionio::Quantity quantity) {
+    const auto found = std::ranges::find(quantities, quantity,
+                                         &fusionio::QuantityInfo::quantity);
     return found == quantities.end() ? 0 : found->num_components;
   };
-  REQUIRE(components(fio::Quantity::MagneticField) == 3);
-  REQUIRE(components(fio::Quantity::FluidVelocity) == 3);
-  REQUIRE(components(fio::Quantity::Density) >= 1);
-  REQUIRE(components(fio::Quantity::Temperature) == 0);
+  REQUIRE(components(fusionio::Quantity::MagneticField) == 3);
+  REQUIRE(components(fusionio::Quantity::FluidVelocity) == 3);
+  REQUIRE(components(fusionio::Quantity::Density) >= 1);
+  REQUIRE(components(fusionio::Quantity::Temperature) == 0);
   REQUIRE(source->Times().empty());
 
   SECTION("functions match the NIMROD function space")
   {
-    const auto b = source->CreateFunction(fio::Quantity::MagneticField,
-                                          {.part = fio::Part::Equilibrium});
+    const auto b = source->CreateFunction(
+      fusionio::Quantity::MagneticField, {.part = fusionio::Part::Equilibrium});
     REQUIRE(b.GetName() == "magnetic field");
     const auto& space =
-      dynamic_cast<const fio::detail::NimrodFunctionSpace&>(b.GetSpace());
+      dynamic_cast<const fusionio::detail::NimrodFunctionSpace&>(b.GetSpace());
     const auto expected =
-      space.CreateFunction("b", "b", {.part = fio::Part::Equilibrium});
-    const auto actual_values = fio::test::EvaluateAt(b, Points);
-    const auto expected_values = fio::test::EvaluateAt(expected, Points);
+      space.CreateFunction("b", "b", {.part = fusionio::Part::Equilibrium});
+    const auto actual_values = fusionio::test::EvaluateAt(b, Points);
+    const auto expected_values = fusionio::test::EvaluateAt(expected, Points);
     for (size_t i = 0; i < Points.size() / 3; ++i) {
       for (size_t c = 0; c < 3; ++c) {
         REQUIRE(actual_values(i, c) == expected_values(i, c));
@@ -310,12 +315,12 @@ TEST_CASE("fio::OpenNimrod gives Fusion-IO's quantities")
 
   SECTION("unsupported options and quantities throw")
   {
-    REQUIRE_THROWS_WITH(
-      source->CreateFunction(fio::Quantity::MagneticField, {.timeslice = 0}),
-      ContainsSubstring("only the part option"));
-    REQUIRE_THROWS_WITH(source->CreateFunction(fio::Quantity::Temperature),
+    REQUIRE_THROWS_WITH(source->CreateFunction(
+                          fusionio::Quantity::MagneticField, {.timeslice = 0}),
+                        ContainsSubstring("only the part option"));
+    REQUIRE_THROWS_WITH(source->CreateFunction(fusionio::Quantity::Temperature),
                         ContainsSubstring("does not provide"));
-    REQUIRE_THROWS_WITH(source->CreateFunction(fio::Quantity::Viscosity),
+    REQUIRE_THROWS_WITH(source->CreateFunction(fusionio::Quantity::Viscosity),
                         ContainsSubstring("do not provide"));
   }
 }
