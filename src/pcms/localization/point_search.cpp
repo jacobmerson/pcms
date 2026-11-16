@@ -27,6 +27,18 @@ KOKKOS_INLINE_FUNCTION bool normal_intersects_segment(
   return (ap * ab) * (bp * ba) >= 0;
 }
 
+// The position along edge `edge` of the projection of `p`: the barycentric
+// coordinate of the edge's second vertex, in the edge's own vertex order.
+KOKKOS_INLINE_FUNCTION Omega_h::Real edge_parameter(
+  const Omega_h::Adj& edges2verts, const Omega_h::Reals& coords,
+  Omega_h::LO edge, const Omega_h::Vector<2>& p)
+{
+  const auto a = Omega_h::get_vector<2>(coords, edges2verts.ab2b[edge * 2 + 0]);
+  const auto b = Omega_h::get_vector<2>(coords, edges2verts.ab2b[edge * 2 + 1]);
+  const auto ab = b - a;
+  return ((p - a) * ab) / (ab * ab);
+}
+
 /**
  * Barycentric coordinates of a point in a simplex together with the factors
  * that convert a Cartesian distance from facet i into a band on coordinate i:
@@ -606,15 +618,9 @@ Kokkos::View<GridPointSearch2D::Result*> GridPointSearch2D::operator()(
       // Track best entities across all candidates to ensure order invariance
       Omega_h::Real best_vertex_dist = INFINITY;
       LO best_vertex_id = -1;
-      int best_vertex_tid = -1; // triangle providing barycentric coords
-      Omega_h::Vector<3> best_vertex_bary{0.0, 0.0, 0.0};
 
       Omega_h::Real best_edge_dist = INFINITY;
       LO best_edge_id = -1;
-      int best_edge_tid_min = -1;
-      int best_edge_tid_max = -1;
-      Omega_h::Vector<3> best_edge_bary_min{0.0, 0.0, 0.0};
-      Omega_h::Vector<3> best_edge_bary_max{0.0, 0.0, 0.0};
 
       bool found_inside = false;
       LO inside_face_id = -1;
@@ -640,8 +646,6 @@ Kokkos::View<GridPointSearch2D::Result*> GridPointSearch2D::operator()(
               ((dv == best_vertex_dist) && (vertexID < best_vertex_id))) {
             best_vertex_dist = dv;
             best_vertex_id = vertexID;
-            best_vertex_tid = triangleID;
-            best_vertex_bary = parametric_coords;
           }
         }
 
@@ -660,25 +664,9 @@ Kokkos::View<GridPointSearch2D::Result*> GridPointSearch2D::operator()(
 
           const auto de = distance_from_line(va, vb, point);
           if ((de < best_edge_dist) ||
-              ((de == best_edge_dist) && (edgeID < best_edge_id)) ||
-              ((de == best_edge_dist) && (edgeID == best_edge_id) &&
-               (triangleID < best_edge_tid_min))) {
+              ((de == best_edge_dist) && (edgeID < best_edge_id))) {
             best_edge_dist = de;
             best_edge_id = edgeID;
-            best_edge_tid_min = triangleID;
-            best_edge_tid_max = triangleID;
-            best_edge_bary_min = parametric_coords;
-            best_edge_bary_max = parametric_coords;
-          } else if ((de == best_edge_dist) && (edgeID == best_edge_id)) {
-            // Track the extents of face IDs sharing this nearest edge
-            if (triangleID < best_edge_tid_min) {
-              best_edge_tid_min = triangleID;
-              best_edge_bary_min = parametric_coords;
-            }
-            if (triangleID > best_edge_tid_max) {
-              best_edge_tid_max = triangleID;
-              best_edge_bary_max = parametric_coords;
-            }
           }
         }
 
@@ -730,8 +718,8 @@ Kokkos::View<GridPointSearch2D::Result*> GridPointSearch2D::operator()(
 
       GridPointSearch2D::Result::Dimensionality dim_out =
         GridPointSearch2D::Result::Dimensionality::NO_INTERSECT;
-      LO element_id_out = -1;
-      Omega_h::Vector<3> bary_out{0.0, 0.0, 0.0};
+      LO entity_out = -1;
+      Omega_h::Vector<2> parametric_out{0.0, 0.0};
 
       // Apply hierarchy with tolerances
       // Points within tolerance are considered "inside" with positive IDs
@@ -739,43 +727,44 @@ Kokkos::View<GridPointSearch2D::Result*> GridPointSearch2D::operator()(
       if (best_vertex_id >= 0 && best_vertex_dist <= vtol) {
         // Point within vertex tolerance - still inside the mesh
         dim_out = GridPointSearch2D::Result::Dimensionality::VERTEX;
-        element_id_out = best_vertex_id;
-        bary_out = best_vertex_bary;
+        entity_out = best_vertex_id;
       } else if ((best_edge_id >= 0 && best_edge_dist <= etol) ||
                  (found_inside && inside_edge_dist <= etol)) {
         // Point within edge tolerance - still inside the mesh
         dim_out = GridPointSearch2D::Result::Dimensionality::EDGE;
         if (found_inside && inside_edge_dist <= etol &&
             inside_edge_argmin >= 0) {
-          element_id_out = inside_edge_id;
-          bary_out = inside_face_bary;
+          entity_out = inside_edge_id;
         } else {
-          element_id_out = best_edge_id;
-          bary_out = best_edge_bary_min;
+          entity_out = best_edge_id;
         }
+        parametric_out[0] =
+          edge_parameter(edges2verts_adj, coords, entity_out, point);
       } else if (found_inside) {
-        // Point inside face
+        // Point inside face: its barycentric coordinates without the first
+        parametric_out[0] = inside_face_bary[1];
+        parametric_out[1] = inside_face_bary[2];
         dim_out = GridPointSearch2D::Result::Dimensionality::FACE;
-        element_id_out = inside_face_id;
-        bary_out = inside_face_bary;
+        entity_out = inside_face_id;
       } else {
         // Outside mesh - beyond tolerance of any entity: name the nearest
         // entity, encoded so the id stays negative even for entity 0.
         if (best_vertex_id >= 0 &&
             (best_vertex_dist <= best_edge_dist || best_edge_id < 0)) {
           dim_out = GridPointSearch2D::Result::Dimensionality::VERTEX;
-          element_id_out = GridPointSearch2D::Result::OutsideId(best_vertex_id);
-          bary_out = best_vertex_bary;
+          entity_out = GridPointSearch2D::Result::OutsideId(best_vertex_id);
         } else if (best_edge_id >= 0) {
           dim_out = GridPointSearch2D::Result::Dimensionality::EDGE;
-          element_id_out = GridPointSearch2D::Result::OutsideId(best_edge_id);
-          bary_out = best_edge_bary_min;
+          entity_out = GridPointSearch2D::Result::OutsideId(best_edge_id);
+          parametric_out[0] =
+            edge_parameter(edges2verts_adj, coords, best_edge_id, point);
         } else {
           // No candidates at all: NO_INTERSECT with id -1
         }
       }
 
-      results(p) = GridPointSearch2D::Result{dim_out, element_id_out, bary_out};
+      results(p) =
+        GridPointSearch2D::Result{dim_out, entity_out, parametric_out};
     });
 
   return results;
@@ -906,16 +895,23 @@ Kokkos::View<GridPointSearch3D::Result*> GridPointSearch3D::operator()(
         }
       }
 
-      if (inside_elem >= 0) {
-        results(p) = GridPointSearch3D::Result{Dimensionality::REGION,
-                                               inside_elem, inside_lambda};
+      // the reduced coordinates are the barycentric ones without the first
+      const bool inside = inside_elem >= 0;
+      const auto lambda = inside ? inside_lambda : nearest_lambda;
+      Omega_h::Vector<DIM> xi = Omega_h::zero_vector<DIM>();
+      for (int j = 0; j < DIM && (inside || nearest_elem >= 0); ++j) {
+        xi[j] = lambda[j + 1];
+      }
+      if (inside) {
+        results(p) =
+          GridPointSearch3D::Result{Dimensionality::REGION, inside_elem, xi};
       } else if (nearest_elem >= 0) {
         results(p) = GridPointSearch3D::Result{
           Dimensionality::REGION,
-          GridPointSearch3D::Result::OutsideId(nearest_elem), nearest_lambda};
+          GridPointSearch3D::Result::OutsideId(nearest_elem), xi};
       } else {
-        results(p) = GridPointSearch3D::Result{Dimensionality::NO_INTERSECT, -1,
-                                               Omega_h::zero_vector<DIM + 1>()};
+        results(p) =
+          GridPointSearch3D::Result{Dimensionality::NO_INTERSECT, -1, xi};
       }
     });
 

@@ -67,7 +67,8 @@ OmegaHEntityLayout::OmegaHEntityLayout(
     class_dims_(mesh.get_array<Omega_h::I8>(entity_dim, "class_dim")),
     owned_(BuildOwned(mesh, entity_dim)),
     owned_host_("owned_host", owned_.size()),
-    discretization_(std::make_shared<OmegaHDiscretization>(mesh))
+    discretization_(
+      std::make_shared<OmegaHDiscretization>(mesh, global_id_name))
 {
   SetCoordinateSystem(
     ResolveCoordinateSystem(std::move(coordinate_system), dimension_));
