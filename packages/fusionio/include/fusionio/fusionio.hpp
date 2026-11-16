@@ -5,12 +5,15 @@
 ///
 /// A Source is an open file (or dump) of one code. Its quantities are created
 /// as pcms::Function objects, which are evaluated, differentiated, mapped and
-/// transferred with PCMS. Points are (R, phi, Z) cylindrical coordinates
+/// transferred with PCMS. They share the source's geometry, so points bound
+/// once (pcms::QueryPoints on GetGeometry()) serve every quantity. Points are
+/// (R, phi, Z) cylindrical coordinates
 /// (pcms CylindricalRThetaZ: right-handed, phi is theta), values are in SI
 /// units, and vector values are physical cylindrical components. Meshes are
 /// serial for now: every rank opens the whole source.
 
 #include <pcms/field/field.h>
+#include <pcms/geometry/geometry.hpp>
 #include <memory>
 #include <optional>
 #include <string>
@@ -122,6 +125,11 @@ class Source
 public:
   virtual ~Source() = default;
 
+  /// The geometry of the source's functions: bind query points on it once
+  /// and evaluate any of its functions there.
+  [[nodiscard]] virtual std::shared_ptr<const pcms::Geometry> GetGeometry()
+    const = 0;
+
   /// The quantities CreateFunction accepts.
   [[nodiscard]] virtual std::vector<QuantityInfo> Quantities() const = 0;
 
@@ -135,8 +143,11 @@ public:
   [[nodiscard]] virtual std::optional<Real> EvaluateSeries(Series series,
                                                            Real time) const = 0;
 
-  /// The quantity as a function of (R, phi, Z); it holds no values in PCMS,
-  /// so it can be evaluated and used as a transfer source but not written.
+  /// The quantity as a function of (R, phi, Z) on GetGeometry(); it holds no
+  /// values in PCMS, so it can be evaluated and used as a transfer source but
+  /// not written. Its space supports pcms::DifferentialOperator::Gradient
+  /// when the source provides the quantity's derivatives (gradients of scalar
+  /// quantities only, so far).
   /// Throws if the source does not provide the quantity or an option.
   [[nodiscard]] virtual pcms::Function<Real> CreateFunction(
     Quantity quantity, const Options& options = {}) const = 0;

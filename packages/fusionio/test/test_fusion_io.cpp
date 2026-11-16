@@ -6,11 +6,12 @@
 #include <pcms/field/coordinate_map.hpp>
 #include <pcms/field/coordinate_systems/cartesian.hpp>
 #include <pcms/field/coordinate_systems/cylindrical.hpp>
+#include <pcms/field/evaluator/uniform_grid_geometry.hpp>
+#include <pcms/field/function_space/lagrange.h>
 #include <pcms/field/gradient_source.hpp>
-#include <pcms/field/transformed_source.hpp>
+#include <fusionio/fusionio.hpp>
 #include "fusion_io_space.hpp"
 #include "fusion_io_source.hpp"
-#include <pcms/field/function_space/lagrange.h>
 #include <pcms/transfer/interpolator.h>
 #include <pcms/utility/eqdsk.h>
 #include "test_utils.hpp"
@@ -59,10 +60,8 @@ Real EvaluateSeries(fio_source& source, int type)
 
 TEST_CASE("Fusion-IO geqdsk poloidal flux matches the grid values")
 {
-  auto source =
-    fusionio::detail::OpenFusionIOSource(fusionio::Format::GEQDSK, GeqdskFile);
-  auto space = fusionio::detail::FusionIOFunctionSpace::Create(source, 1);
-  auto psi = space->CreateFunction("psi", fusionio::Quantity::PoloidalFlux);
+  const auto psi = fusionio::Open(fusionio::Format::GEQDSK, GeqdskFile)
+                     ->CreateFunction(fusionio::Quantity::PoloidalFlux);
 
   // Fusion-IO's interpolant reproduces the grid values (read here by PCMS's
   // own reader) at the grid nodes, and phi must not matter.
@@ -77,7 +76,7 @@ TEST_CASE("Fusion-IO geqdsk poloidal flux matches the grid values")
       }
     }
   }
-  const auto result = EvaluateAt(*space, psi, points);
+  const auto result = EvaluateAt(psi, points);
   for (size_t i = 0; i < expected.size(); ++i) {
     CAPTURE(i, points[3 * i], points[3 * i + 2]);
     REQUIRE_THAT(result(i, 0), WithinRel(expected[i], fusionio::test::EvalTol));
@@ -88,16 +87,15 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
 {
   auto source =
     fusionio::detail::OpenFusionIOSource(fusionio::Format::M3DC1, M3DC1File);
-  auto scalars = fusionio::detail::FusionIOFunctionSpace::Create(source, 1);
-  auto vectors = fusionio::detail::FusionIOFunctionSpace::Create(source, 3);
-  auto psi = scalars->CreateFunction("psi", fusionio::Quantity::PoloidalFlux);
-  auto a = vectors->CreateFunction("A", fusionio::Quantity::VectorPotential);
+  const auto opened = fusionio::Open(fusionio::Format::M3DC1, M3DC1File);
+  auto psi = opened->CreateFunction(fusionio::Quantity::PoloidalFlux);
+  auto a = opened->CreateFunction(fusionio::Quantity::VectorPotential);
   REQUIRE(pcms::SameValueBasis(
     a.GetData().GetValueBasis(),
     ValueBasis{pcms::csys::CylindricalRThetaZ::Create(),
                pcms::ComponentScaling::Physical, pcms::values::Vector}));
 
-  // The evaluator stores each point's search hint as sizeof_search_hint()
+  // The binding stores each point's search hint as sizeof_search_hint()
   // zero-initialized bytes (an element guess for M3D-C1). Revisit it if this
   // changes.
   REQUIRE(source->Get().sizeof_search_hint() == sizeof(int));
@@ -106,7 +104,7 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
   {
     const Real r = EvaluateSeries(source->Get(), FIO_MAGAXIS_R);
     const Real z = EvaluateSeries(source->Get(), FIO_MAGAXIS_Z);
-    const auto result = EvaluateAt(*scalars, psi, {r, 0.0, z});
+    const auto result = EvaluateAt(psi, {r, 0.0, z});
     REQUIRE_THAT(
       result(0, 0),
       WithinRel(TwoPi * EvaluateSeries(source->Get(), FIO_MAGAXIS_PSI), 1e-3));
@@ -115,8 +113,8 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
   SECTION("vector components are in (R, phi, Z) order: psi = 2 pi R A_phi")
   {
     const std::vector<Real> points = {1.6, 0.1, 0.2, 2.0, 2.5, -0.4};
-    const auto psi_values = EvaluateAt(*scalars, psi, points);
-    const auto a_values = EvaluateAt(*vectors, a, points);
+    const auto psi_values = EvaluateAt(psi, points);
+    const auto a_values = EvaluateAt(a, points);
     for (size_t i = 0; i < psi_values.extent(0); ++i) {
       CAPTURE(i);
       REQUIRE_THAT(TwoPi * points[3 * i] * a_values(i, 1),
@@ -129,14 +127,13 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
     // The axisymmetric part has no phi derivative, so this holds exactly for
     // a right-handed system and with the opposite sign otherwise.
     const fusionio::Options equilibrium{.part = fusionio::Part::Equilibrium};
-    auto a_eq = vectors->CreateFunction(
-      "A", fusionio::Quantity::VectorPotential, equilibrium);
-    auto b_eq = vectors->CreateFunction("B", fusionio::Quantity::MagneticField,
-                                        equilibrium);
+    auto a_eq =
+      opened->CreateFunction(fusionio::Quantity::VectorPotential, equilibrium);
+    auto b_eq =
+      opened->CreateFunction(fusionio::Quantity::MagneticField, equilibrium);
     const Real r = 2.0, z = 0.3, dz = 1e-4;
-    const auto a_values =
-      EvaluateAt(*vectors, a_eq, {r, 0.0, z + dz, r, 0.0, z - dz});
-    const auto b_values = EvaluateAt(*vectors, b_eq, {r, 0.0, z});
+    const auto a_values = EvaluateAt(a_eq, {r, 0.0, z + dz, r, 0.0, z - dz});
+    const auto b_values = EvaluateAt(b_eq, {r, 0.0, z});
     const Real dadz = (a_values(0, 1) - a_values(1, 1)) / (2.0 * dz);
     // The central difference is accurate to O(dz^2), far below dz.
     REQUIRE_THAT(b_values(0, 0), WithinRel(-dadz, dz));
@@ -144,12 +141,11 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
 
   SECTION("options reach Fusion-IO: the equilibrium part is axisymmetric")
   {
-    auto psi_eq =
-      scalars->CreateFunction("psi_eq", fusionio::Quantity::PoloidalFlux,
-                              {.part = fusionio::Part::Equilibrium});
+    auto psi_eq = opened->CreateFunction(fusionio::Quantity::PoloidalFlux,
+                                         {.part = fusionio::Part::Equilibrium});
     const std::vector<Real> points = {1.6, 0.1, 0.2, 1.6, 2.5, 0.2};
-    const auto total = EvaluateAt(*scalars, psi, points);
-    const auto equilibrium = EvaluateAt(*scalars, psi_eq, points);
+    const auto total = EvaluateAt(psi, points);
+    const auto equilibrium = EvaluateAt(psi_eq, points);
     REQUIRE_THAT(equilibrium(1, 0),
                  WithinRel(equilibrium(0, 0), fusionio::test::ExactTol));
     // The perturbation in the total varies with phi.
@@ -159,27 +155,42 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
   SECTION("evaluators created from one bound source share its search")
   {
     const std::vector<Real> points = {1.6, 0.1, 0.2, 2.0, 2.5, -0.4};
-    const auto coords = fusionio::test::CreateDeviceCoordinateView(
-      points, scalars->GetCoordinateSystem(), 3);
-    const auto bound = scalars->Bind(coords.coordinate_view);
-    auto psi_eq =
-      scalars->CreateFunction("psi_eq", fusionio::Quantity::PoloidalFlux,
-                              {.part = fusionio::Part::Equilibrium});
-    for (const auto* f : {&psi, &psi_eq}) {
-      const auto evaluator = scalars->CreatePointEvaluator<Real>(bound);
-      Kokkos::View<Real**, DeviceMemorySpace> out("out", 2, 1);
-      evaluator->Evaluate(*f, fusionio::test::TagLike(*f, out));
-      const auto shared =
-        Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
-      const auto separate = EvaluateAt(*scalars, *f, points);
+    const auto bound = fusionio::test::Bind(*opened->GetGeometry(), points);
+    auto psi_eq = opened->CreateFunction(fusionio::Quantity::PoloidalFlux,
+                                         {.part = fusionio::Part::Equilibrium});
+    auto b = opened->CreateFunction(fusionio::Quantity::MagneticField);
+    for (const auto* f : {&psi, &psi_eq, &b}) {
+      const auto shared = fusionio::test::EvaluateWith(
+        *f->GetSpace().CreatePointEvaluator<Real>(bound), *f);
+      const auto separate = EvaluateAt(*f, points);
       for (size_t i = 0; i < 2; ++i) {
-        CAPTURE(f->GetName(), i);
-        REQUIRE_THAT(shared(i, 0),
-                     WithinRel(separate(i, 0), fusionio::test::ExactTol));
+        for (size_t c = 0; c < shared.extent(1); ++c) {
+          CAPTURE(f->GetName(), i, c);
+          REQUIRE(shared(i, c) == separate(i, c));
+        }
       }
     }
-    REQUIRE_THROWS_WITH(vectors->CreatePointEvaluator<Real>(bound),
-                        ContainsSubstring("bound by another factory"));
+  }
+
+  SECTION("a bound source rebinds in place and keeps evaluating correctly")
+  {
+    const std::vector<Real> first = {1.6, 0.1, 0.2, 2.0, 2.5, -0.4};
+    const std::vector<Real> second = {1.3,  0.0, 0.4, 1.6, 0.7,
+                                      -0.6, 2.0, 2.5, 0.1};
+    const auto& geometry = *opened->GetGeometry();
+    auto bound = fusionio::test::Bind(geometry, first);
+    const auto* storage = bound.get();
+    const auto coords = fusionio::test::CreateDeviceCoordinateView(
+      second, geometry.GetCoordinateSystem(), 3);
+    bound = geometry.Rebind(std::move(bound), coords.coordinate_view);
+    REQUIRE(bound.get() == storage);
+    const auto rebound = fusionio::test::EvaluateWith(
+      *psi.GetSpace().CreatePointEvaluator<Real>(bound), psi);
+    const auto fresh = EvaluateAt(psi, second);
+    for (size_t i = 0; i < 3; ++i) {
+      CAPTURE(i);
+      REQUIRE(rebound(i, 0) == fresh(i, 0));
+    }
   }
 
   SECTION("values match direct fusion-io evaluation")
@@ -192,12 +203,11 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
     fio_options.set_option(FIO_PART, FIO_PERTURBED_ONLY);
     const std::vector<Real> points = {1.3, 0.0, 0.4, 1.6, 0.7, -0.6,
                                       2.0, 2.5, 0.1, 2.2, 4.0, -0.3};
-    for (const auto& [quantity, space] :
-         {std::pair{fusionio::Quantity::PoloidalFlux, scalars},
-          std::pair{fusionio::Quantity::MagneticField, vectors}}) {
+    for (const auto quantity : {fusionio::Quantity::PoloidalFlux,
+                                fusionio::Quantity::MagneticField}) {
       CAPTURE(fusionio::Name(quantity));
-      const auto values = EvaluateAt(
-        *space, space->CreateFunction("f", quantity, options), points);
+      const auto values =
+        EvaluateAt(opened->CreateFunction(quantity, options), points);
       const auto field = source->GetField(quantity, fio_options);
       for (size_t i = 0; i < values.extent(0); ++i) {
         Real expected[3];
@@ -246,50 +256,51 @@ public:
 
 TEST_CASE("Fusion-IO evaluation errors")
 {
-  auto source =
-    fusionio::detail::OpenFusionIOSource(fusionio::Format::GEQDSK, GeqdskFile);
-  auto scalars = fusionio::detail::FusionIOFunctionSpace::Create(source, 1);
-  auto vectors = fusionio::detail::FusionIOFunctionSpace::Create(source, 3);
-  auto psi = scalars->CreateFunction("psi", fusionio::Quantity::PoloidalFlux);
-  REQUIRE(source->Provides(fusionio::Quantity::MagneticField));
+  const auto source = fusionio::Open(fusionio::Format::GEQDSK, GeqdskFile);
+  auto psi = source->CreateFunction(fusionio::Quantity::PoloidalFlux);
 
-  REQUIRE_THROWS_WITH(EvaluateAt(*scalars, psi, {50.0, 0.0, 0.0}),
+  // geqdsk sources locate points only under FILL; evaluation reports the
+  // points outside under ERROR.
+  REQUIRE_THROWS_WITH(EvaluateAt(psi, {50.0, 0.0, 0.0}),
                       ContainsSubstring("outside the source's domain"));
-  REQUIRE_THROWS_WITH(
-    scalars->CreateFunction("B", fusionio::Quantity::MagneticField),
-    ContainsSubstring("the space holds 1"));
-  REQUIRE_THROWS_WITH(
-    vectors->CreateFunction("psi", fusionio::Quantity::PoloidalFlux),
-    ContainsSubstring("the space holds 3"));
-  REQUIRE_THROWS_WITH(
-    scalars->CreateFunction("eta", fusionio::Quantity::Viscosity),
-    ContainsSubstring("\"viscosity\" is not a quantity") &&
-      ContainsSubstring("poloidal flux"));
+  REQUIRE_THROWS_WITH(source->CreateFunction(fusionio::Quantity::Viscosity),
+                      ContainsSubstring("\"viscosity\" is not a quantity") &&
+                        ContainsSubstring("poloidal flux"));
   REQUIRE_THROWS_WITH(psi.GetDOFHolderData(),
                       ContainsSubstring("no DOFAccess"));
+  REQUIRE_THROWS_WITH(psi.GetSpace().CreateFunction<Real>("psi"),
+                      ContainsSubstring("does not name a quantity"));
   REQUIRE_THROWS_WITH(
     fusionio::detail::OpenFusionIOSource(fusionio::Format::GEQDSK, "missing"),
     ContainsSubstring("could not open"));
   REQUIRE_THROWS_WITH(
     fusionio::detail::FusionIOSource(
+      fusionio::Format::M3DC1,
       fusionio::detail::FusionIOSourcePtr(new CartesianSource)),
     ContainsSubstring("cylindrical geometry"));
 
   // Fusion-IO writes one row per query point.
-  const auto coords = fusionio::test::CreateDeviceCoordinateView(
-    {1.8, 0.0, 0.1, 2.0, 0.0, 0.1}, scalars->GetCoordinateSystem(), 3);
   const auto evaluator =
-    scalars->CreatePointEvaluator<Real>(scalars->Bind(coords.coordinate_view));
+    psi.GetSpace().CreatePointEvaluator<Real>(fusionio::test::Bind(
+      *source->GetGeometry(), {1.8, 0.0, 0.1, 2.0, 0.0, 0.1}));
   Kokkos::View<Real**, DeviceMemorySpace> short_out("short_out", 1, 1);
   REQUIRE_THROWS_WITH(
     evaluator->Evaluate(psi, fusionio::test::TagLike(psi, short_out)),
     ContainsSubstring("but must be [2][1]"));
 
-  auto other = fusionio::detail::FusionIOFunctionSpace::Create(
-    fusionio::detail::OpenFusionIOSource(fusionio::Format::GEQDSK, GeqdskFile),
-    1);
-  REQUIRE_THROWS_WITH(EvaluateAt(*other, psi, {1.8, 0.0, 0.1}),
-                      ContainsSubstring("field is not a quantity"));
+  // Spaces of different sources do not share bound sources or fields.
+  const auto other = fusionio::Open(fusionio::Format::GEQDSK, GeqdskFile);
+  auto other_psi = other->CreateFunction(fusionio::Quantity::PoloidalFlux);
+  REQUIRE_THROWS_WITH(
+    other_psi.GetSpace().CreatePointEvaluator<Real>(
+      fusionio::test::Bind(*source->GetGeometry(), {1.8, 0.0, 0.1})),
+    ContainsSubstring("another geometry"));
+  const auto other_evaluator = other_psi.GetSpace().CreatePointEvaluator<Real>(
+    fusionio::test::Bind(*other->GetGeometry(), {1.8, 0.0, 0.1}));
+  Kokkos::View<Real**, DeviceMemorySpace> out("out", 1, 1);
+  REQUIRE_THROWS_WITH(
+    other_evaluator->Evaluate(psi, fusionio::test::TagLike(psi, out)),
+    ContainsSubstring("not a field of the function space"));
 }
 
 TEST_CASE("Fusion-IO FILL finds the points the domain probe evaluates")
@@ -303,8 +314,8 @@ TEST_CASE("Fusion-IO FILL finds the points the domain probe evaluates")
        {fusionio::Format::GEQDSK, GeqdskFile, 0.5, 3.0, -2.0, 2.0}}));
   CAPTURE(file);
   auto source = fusionio::detail::OpenFusionIOSource(format, file);
-  auto vectors = fusionio::detail::FusionIOFunctionSpace::Create(source, 3);
-  auto b = vectors->CreateFunction("B", fusionio::Quantity::MagneticField);
+  const auto opened = fusionio::Open(format, file);
+  auto b = opened->CreateFunction(fusionio::Quantity::MagneticField);
   constexpr int N = 24;
   std::vector<Real> points;
   for (int j = 0; j <= N; ++j) {
@@ -326,10 +337,9 @@ TEST_CASE("Fusion-IO FILL finds the points the domain probe evaluates")
   REQUIRE(outside.size() < n);
 
   constexpr Real Fill = -7.0;
-  const auto coords = fusionio::test::CreateDeviceCoordinateView(
-    points, vectors->GetCoordinateSystem(), 3);
-  const auto evaluator = vectors->CreatePointEvaluator<Real>(
-    vectors->Bind(coords.coordinate_view, {pcms::OutOfBoundsMode::FILL, Fill}));
+  const auto evaluator =
+    b.GetSpace().CreatePointEvaluator<Real>(fusionio::test::Bind(
+      *opened->GetGeometry(), points, {pcms::OutOfBoundsMode::FILL, Fill}));
   const auto filled = Kokkos::create_mirror_view_and_copy(
     HostMemorySpace(), evaluator->FilledPoints());
   REQUIRE(std::vector<pcms::LO>(filled.data(),
@@ -347,21 +357,18 @@ TEST_CASE("Fusion-IO gradients")
 {
   SECTION("M3D-C1: the equilibrium field is the curl of the flux")
   {
-    auto source =
-      fusionio::detail::OpenFusionIOSource(fusionio::Format::M3DC1, M3DC1File);
-    auto scalars = fusionio::detail::FusionIOFunctionSpace::Create(source, 1);
-    auto vectors = fusionio::detail::FusionIOFunctionSpace::Create(source, 3);
+    const auto source = fusionio::Open(fusionio::Format::M3DC1, M3DC1File);
     const fusionio::Options equilibrium{.part = fusionio::Part::Equilibrium};
-    auto psi = scalars->CreateFunction("psi", fusionio::Quantity::PoloidalFlux,
-                                       equilibrium);
-    auto b = vectors->CreateFunction("B", fusionio::Quantity::MagneticField,
-                                     equilibrium);
+    auto psi =
+      source->CreateFunction(fusionio::Quantity::PoloidalFlux, equilibrium);
+    auto b =
+      source->CreateFunction(fusionio::Quantity::MagneticField, equilibrium);
     // Axisymmetric, so B_R = -dpsi/dZ / (2 pi R) and B_Z = dpsi/dR / (2 pi R)
     // for the total flux psi, and the toroidal derivative vanishes.
     const std::vector<Real> points = {1.6,  0.1, 0.2, 2.0, 2.5,
                                       -0.4, 1.3, 4.0, 0.5};
-    const auto grad = EvaluateGradientAt(*scalars, psi, points);
-    const auto b_values = EvaluateAt(*vectors, b, points);
+    const auto grad = EvaluateGradientAt(psi, points);
+    const auto b_values = EvaluateAt(b, points);
     for (size_t i = 0; i < grad.extent(0); ++i) {
       const Real r = points[3 * i];
       CAPTURE(i);
@@ -371,29 +378,27 @@ TEST_CASE("Fusion-IO gradients")
                    WithinRel(b_values(i, 2), fusionio::test::EvalTol));
       REQUIRE_THAT(grad(i, 1), WithinAbs(0.0, fusionio::test::ExactTol));
     }
+    // Fusion-IO provides the derivatives of B, but the package does not
+    // evaluate the gradients of vectors yet.
+    REQUIRE(b.GetSpace().Supports(pcms::DifferentialOperator::Gradient));
     REQUIRE_THROWS_WITH(
-      vectors->CreatePointEvaluator<Real>(
-        vectors->Bind(fusionio::test::CreateDeviceCoordinateView(
-                        points, vectors->GetCoordinateSystem(), 3)
-                        .coordinate_view),
-        1),
+      b.GetSpace().CreatePointEvaluator<Real>(
+        fusionio::test::Bind(*source->GetGeometry(), points),
+        pcms::DifferentialOperator::Gradient),
       ContainsSubstring("more than one component are not supported"));
   }
 
   SECTION("geqdsk: the gradient matches finite differences of the flux")
   {
-    auto source = fusionio::detail::OpenFusionIOSource(fusionio::Format::GEQDSK,
-                                                       GeqdskFile);
-    auto space = fusionio::detail::FusionIOFunctionSpace::Create(source, 1);
-    auto psi = space->CreateFunction("psi", fusionio::Quantity::PoloidalFlux);
+    auto psi = fusionio::Open(fusionio::Format::GEQDSK, GeqdskFile)
+                 ->CreateFunction(fusionio::Quantity::PoloidalFlux);
     // Inside a grid cell: Fusion-IO's bicubic interpolant of the geqdsk grid
     // is not differentiable across grid lines, where the finite difference
     // would straddle two cells.
     const Real r = 1.9, phi = 0.7, z = 0.263, h = 1e-5;
-    const auto grad = EvaluateGradientAt(*space, psi, {r, phi, z});
-    const auto values =
-      EvaluateAt(*space, psi,
-                 {r + h, phi, z, r - h, phi, z, r, phi, z + h, r, phi, z - h});
+    const auto grad = EvaluateGradientAt(psi, {r, phi, z});
+    const auto values = EvaluateAt(
+      psi, {r + h, phi, z, r - h, phi, z, r, phi, z + h, r, phi, z - h});
     // The central differences are accurate to O(h^2) relative to the gradient.
     REQUIRE_THAT(grad(0, 0),
                  WithinRel((values(0, 0) - values(1, 0)) / (2.0 * h), 1e-6));
@@ -404,39 +409,38 @@ TEST_CASE("Fusion-IO gradients")
 
   SECTION("M3D-C1: the flux gradient interpolates onto a grid")
   {
-    auto source =
-      fusionio::detail::OpenFusionIOSource(fusionio::Format::M3DC1, M3DC1File);
-    std::shared_ptr<const fusionio::detail::FusionIOFunctionSpace> scalars =
-      fusionio::detail::FusionIOFunctionSpace::Create(source, 1);
-    auto vectors = fusionio::detail::FusionIOFunctionSpace::Create(source, 3);
+    const auto source = fusionio::Open(fusionio::Format::M3DC1, M3DC1File);
     const fusionio::Options equilibrium{.part = fusionio::Part::Equilibrium};
-    auto psi = scalars->CreateFunction("psi", fusionio::Quantity::PoloidalFlux,
-                                       equilibrium);
-    auto b = vectors->CreateFunction("B", fusionio::Quantity::MagneticField,
-                                     equilibrium);
+    auto psi =
+      source->CreateFunction(fusionio::Quantity::PoloidalFlux, equilibrium);
+    auto b =
+      source->CreateFunction(fusionio::Quantity::MagneticField, equilibrium);
 
     // A grid in (R, theta, Z) inside the M3D-C1 domain.
     pcms::UniformGrid<3> grid;
     grid.bot_left = {1.5, 0.0, -0.3};
     grid.edge_length = {0.4, 1.0, 0.6};
     grid.divisions = {3, 2, 3};
-    const auto system = pcms::csys::CylindricalRThetaZ::Create();
-    auto value_space =
-      pcms::LagrangeFunctionSpace::FromUniformGrid(grid, 1, system);
-    auto vector_space =
-      pcms::LagrangeFunctionSpace::FromUniformGrid(grid, 3, system);
+    const auto target = pcms::CreateUniformGridGeometry(
+      grid, pcms::csys::CylindricalRThetaZ::Create());
+    auto value_space = pcms::CreateLagrangeSpace(target, 1, 1);
+    auto vector_space = pcms::CreateLagrangeSpace(target, 1, 3);
     auto psi_t = value_space->CreateFunction<Real>("psi");
     auto grad_psi_t = vector_space->CreateFunction<Real>(
       "grad psi", pcms::values::Covector, pcms::ComponentScaling::Physical);
     auto b_t = vector_space->CreateFunction<Real>(
       "B", pcms::values::Vector, pcms::ComponentScaling::Physical);
 
-    // The flux and its gradient share one search of the grid points.
-    const auto bound = scalars->Bind(*value_space);
-    pcms::Interpolator<Real>(*scalars, *value_space, bound).Apply(psi, psi_t);
-    pcms::Interpolator<Real>(*pcms::Gradient(scalars), *vector_space, bound)
+    // The flux, its gradient and the field share one search of the grid
+    // points.
+    const auto bound = source->GetGeometry()->Bind(
+      value_space->GetLayout()->GetDOFHolderCoordinates());
+    pcms::Interpolator<Real>(psi.GetSpace(), *value_space, bound)
+      .Apply(psi, psi_t);
+    pcms::Interpolator<Real>(*pcms::Gradient(psi.GetSpacePtr()), *vector_space,
+                             bound)
       .Apply(psi, grad_psi_t);
-    pcms::Interpolator<Real>(*vectors, *vector_space).Apply(b, b_t);
+    pcms::Interpolator<Real>(b.GetSpace(), *vector_space, bound).Apply(b, b_t);
 
     // Axisymmetric: B_R = -dpsi/dZ / (2 pi R), B_Z = dpsi/dR / (2 pi R).
     const auto coords = fusionio::test::CopyCoordinatesToHost(
@@ -457,43 +461,36 @@ TEST_CASE("Fusion-IO gradients")
 
   SECTION("gradients are re-expressed in Cartesian components")
   {
-    auto source =
-      fusionio::detail::OpenFusionIOSource(fusionio::Format::M3DC1, M3DC1File);
-    std::shared_ptr<const pcms::FunctionSpace> space =
-      fusionio::detail::FusionIOFunctionSpace::Create(source, 1);
-    auto psi =
-      std::static_pointer_cast<const fusionio::detail::FusionIOFunctionSpace>(
-        space)
-        ->CreateFunction("psi", fusionio::Quantity::PoloidalFlux);
+    const auto source = fusionio::Open(fusionio::Format::M3DC1, M3DC1File);
+    auto psi = source->CreateFunction(fusionio::Quantity::PoloidalFlux);
     const Real r = 1.7, phi = 2.2, z = 0.3;
-    const auto cyl = EvaluateGradientAt(*space, psi, {r, phi, z});
+    const auto cyl = EvaluateGradientAt(psi, {r, phi, z});
     const Real expected[3] = {
       cyl(0, 0) * std::cos(phi) - cyl(0, 1) * std::sin(phi),
       cyl(0, 0) * std::sin(phi) + cyl(0, 1) * std::cos(phi), cyl(0, 2)};
-    // The map and the gradient compose in either order.
-    const auto to_cylindrical =
-      std::make_shared<pcms::CartesianToCylindrical>();
-    const std::shared_ptr<const pcms::PointEvaluatorFactory> sources[] = {
-      std::make_shared<pcms::TransformedSource>(pcms::Gradient(space),
-                                                to_cylindrical),
-      pcms::Gradient(
-        std::make_shared<pcms::TransformedSource>(space, to_cylindrical))};
-    for (const auto& cartesian : sources) {
-      const auto coords = fusionio::test::CreateDeviceCoordinateView(
-        {r * std::cos(phi), r * std::sin(phi), z},
-        pcms::csys::Cartesian::Create(3), 3);
-      const auto evaluator = cartesian->CreatePointEvaluator<Real>(
-        cartesian->Bind(coords.coordinate_view));
+    // The points are mapped to the source's (R, phi, Z) by the bind, and the
+    // gradient is the space's operator or an operator source over it.
+    const auto coords = fusionio::test::CreateDeviceCoordinateView(
+      {r * std::cos(phi), r * std::sin(phi), z},
+      pcms::csys::Cartesian::Create(3), 3);
+    const auto bound = source->GetGeometry()->Bind(
+      coords.coordinate_view, {},
+      std::make_shared<pcms::CartesianToCylindrical>());
+    std::vector<std::unique_ptr<pcms::PointEvaluator<Real>>> evaluators;
+    evaluators.push_back(psi.GetSpace().CreatePointEvaluator<Real>(
+      bound, pcms::DifferentialOperator::Gradient));
+    evaluators.push_back(
+      pcms::Gradient(psi.GetSpacePtr())->CreatePointEvaluator<Real>(bound));
+    for (const auto& evaluator : evaluators) {
       const ValueBasis basis =
         evaluator->OutputBasis(psi.GetData().GetValueBasis());
-      REQUIRE(basis.variance == pcms::values::Covector);
+      // Physical components on an orthonormal basis: PCMS's cylindrical
+      // rotation reports them as a vector's, which are the same numbers.
+      REQUIRE(basis.Rank() == 1);
+      REQUIRE(basis.scaling == pcms::ComponentScaling::Physical);
       REQUIRE(pcms::SameCoordinateSystem(basis.system,
                                          pcms::csys::Cartesian::Create(3)));
-      Kokkos::View<Real**, DeviceMemorySpace> out("out", 1, 3);
-      evaluator->Evaluate(psi, pcms::ValueView<Real, DeviceMemorySpace>(
-                                 basis, pcms::MakeRank2View(out)));
-      const auto host =
-        Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
+      const auto host = fusionio::test::EvaluateWith(*evaluator, psi);
       for (int c = 0; c < 3; ++c) {
         CAPTURE(c);
         REQUIRE_THAT(host(0, c),

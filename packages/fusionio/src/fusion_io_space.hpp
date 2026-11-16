@@ -3,7 +3,7 @@
 
 #include "fusionio/fusionio.hpp"
 #include "pcms/field/function_space.h"
-#include "pcms/field/layout/empty.h"
+#include "pcms/geometry/geometry.hpp"
 #include <memory>
 #include <string>
 
@@ -14,55 +14,68 @@ namespace fusionio::detail
 class FusionIOSource;
 
 /// Opens a Fusion-IO file, e.g. an M3D-C1 C1.h5 or a geqdsk file. Only
-/// sources with cylindrical geometry are supported. The spaces and fields
-/// created from it share and keep it open.
+/// sources with cylindrical geometry are supported. The geometries, spaces
+/// and fields created from it share and keep it open.
 std::shared_ptr<FusionIOSource> OpenFusionIOSource(Format format,
                                                    const std::string& filename);
 
-/// Fields of a Fusion-IO source, evaluated by Fusion-IO at the query points.
-/// Points are (R, phi, Z), which is CylindricalRThetaZ, and vector values are
-/// physical cylindrical components. PCMS holds none of the values: functions
-/// can be evaluated and used as transfer sources, but not read or written.
+/// The geometry of an open Fusion-IO 1.x file: (R, phi, Z) points, which is
+/// CylindricalRThetaZ (Fusion-IO's (R, phi, Z) is right-handed, so phi is
+/// theta), no discretization PCMS can see, and the file's own point location
+/// as the search. Every quantity of the file shares its domain, so one
+/// binding serves them all.
 ///
-/// Fusion-IO's (R, phi, Z) is right-handed, like CylindricalRThetaZ, so phi is
-/// theta.
-///
-/// A space holds quantities with one component count (1 for scalars, 3 for
-/// vectors); create one space per count over the same source.
-///
-/// Evaluators of derivative order 1 give the gradient of scalar quantities as
-/// physical cylindrical components (d/dR, (1/R) d/dphi, d/dZ). Fusion-IO
-/// provides them for M3D-C1 and geqdsk sources; for other formats Evaluate
-/// throws.
-class FusionIOFunctionSpace final : public pcms::FunctionSpace
+/// Location at bind (and again on Geometry::Rebind): M3D-C1 sources search
+/// the domain probe's mesh (m3dc1_mesh::in_element, see
+/// FusionIOSource::DomainMesh) under every policy, so OutOfBoundsMode::ERROR
+/// throws at bind for points outside; other formats evaluate the domain
+/// probe under OutOfBoundsMode::FILL only, and under ERROR evaluation reports
+/// the points outside. OutOfBoundsMode::NEAREST_BOUNDARY is not supported.
+/// KnownOwners are ignored: the file's mesh is not a PCMS discretization.
+class FusionIOGeometry final : public pcms::Geometry
 {
 public:
-  static std::shared_ptr<FusionIOFunctionSpace> Create(
-    std::shared_ptr<FusionIOSource> source, int num_components);
+  explicit FusionIOGeometry(std::shared_ptr<FusionIOSource> source);
 
-  std::shared_ptr<const pcms::FieldLayout> GetLayout() const noexcept override
+  [[nodiscard]] std::shared_ptr<const pcms::Discretization> GetDiscretization()
+    const noexcept override
   {
-    return layout_;
+    return discretization_;
   }
 
-  /// Function for a quantity of the source, whose component count must be
-  /// the space's.
-  pcms::Function<Real> CreateFunction(std::string name, Quantity quantity,
-                                      const Options& options = {}) const;
+  [[nodiscard]] const std::shared_ptr<const pcms::CoordinateSystem>&
+  GetCoordinateSystem() const noexcept override
+  {
+    return system_;
+  }
+
+  [[nodiscard]] const std::shared_ptr<FusionIOSource>& GetSource()
+    const noexcept
+  {
+    return source_;
+  }
 
 protected:
-  pcms::FieldVariant CreateFieldImpl(pcms::Type storage_type,
-                                     pcms::ValueBasis basis) const override;
-  pcms::FieldVariant CreateFieldImpl(
-    pcms::FieldDataVariant data) const override;
+  [[nodiscard]] std::shared_ptr<pcms::BoundSource> BindImpl(
+    const pcms::BindRequest& request) const override;
 
 private:
-  FusionIOFunctionSpace(std::shared_ptr<FusionIOSource> source,
-                        int num_components);
-
   std::shared_ptr<FusionIOSource> source_;
-  std::shared_ptr<const pcms::EmptyFieldLayout> layout_;
+  std::shared_ptr<const pcms::Discretization> discretization_;
+  std::shared_ptr<const pcms::CoordinateSystem> system_;
 };
+
+/// The space of the quantities of one representation of a Fusion-IO source:
+/// `num_components` components (1 for scalars, 3 for vectors) and, if
+/// `derivatives`, Fusion-IO's derivatives (see ProvidesDerivatives), whose
+/// evaluators then support DifferentialOperator::Gradient: the gradient of
+/// scalar quantities as physical cylindrical components (d/dR, (1/R) d/dphi,
+/// d/dZ). PCMS holds none of the values: its functions are created by
+/// Source::CreateFunction and can be evaluated and used as transfer sources,
+/// but not read or written.
+std::shared_ptr<pcms::FunctionSpace> CreateFusionIOSpace(
+  std::shared_ptr<const FusionIOGeometry> geometry, int num_components,
+  bool derivatives);
 
 } // namespace fusionio::detail
 

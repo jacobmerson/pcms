@@ -17,6 +17,7 @@
 #include <fusionio/fusionio.hpp>
 #include <pcms/field/coordinate_view.hpp>
 #include <pcms/field/function_space.h>
+#include <pcms/field/query_points.hpp>
 #include <pcms/field/value_view.hpp>
 #include <pcms/utility/arrays.h>
 #include <Kokkos_Core.hpp>
@@ -26,14 +27,17 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <deque>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <memory>
 #include <numbers>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -67,56 +71,63 @@ struct Parameters
   bool timing = false;
 };
 
-/// Evaluates a function at batches of (R, phi, Z) points. The point and value
-/// views are kept for the next batch of the same size, so a tracer's RK4
-/// stages allocate them once.
-class BatchEvaluator
+/// Batches of (R, phi, Z) points located on one geometry (a pcms::QueryPoints,
+/// which rebinds in place), and the values of the geometry's functions there.
+/// The point and value views are kept for the next batch of the same size, so
+/// a tracer's RK4 stages allocate them once.
+class BatchPoints
 {
 public:
   using Values =
     Kokkos::View<Real**, pcms::DeviceMemorySpace>::host_mirror_type;
 
-  explicit BatchEvaluator(const pcms::Function<Real>& function)
-    : function_(&function)
+  explicit BatchPoints(std::shared_ptr<const pcms::Geometry> geometry)
+    : query_(geometry, {pcms::OutOfBoundsMode::FILL,
+                        std::numeric_limits<Real>::quiet_NaN()}),
+      system_(geometry->GetCoordinateSystem())
   {
   }
 
-  /// Values at the points in `xyz` (row-major), one row per point; rows of
-  /// points outside the domain are NaN. Valid until the next call.
-  Values operator()(const std::vector<Real>& xyz)
+  /// Locates the points in `xyz` (row-major).
+  void Locate(const std::vector<Real>& xyz)
   {
-    const auto& space = function_->GetSpace();
     const size_t n = xyz.size() / 3;
     if (points_.extent(0) != n) {
-      const auto num_components =
-        static_cast<size_t>(function_->GetLayout().GetNumComponents());
       points_ = Kokkos::View<Real**, pcms::DeviceMemorySpace>(
         Kokkos::view_alloc(Kokkos::WithoutInitializing, "points"), n, 3);
+    }
+    Kokkos::View<const Real**, Kokkos::LayoutRight, pcms::HostMemorySpace,
+                 Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+      host_points(xyz.data(), n, 3);
+    pcms::DeepCopyMismatchLayouts(points_, host_points);
+    query_.Locate(pcms::CoordinateView<pcms::DeviceMemorySpace>(
+      system_, pcms::MakeRank2View(points_)));
+  }
+
+  /// Values of `function` at the located points, one row per point; rows of
+  /// points outside the domain are NaN. Valid until the next call.
+  Values Evaluate(const pcms::Function<Real>& function)
+  {
+    const size_t n = points_.extent(0);
+    const auto num_components =
+      static_cast<size_t>(function.GetLayout().GetNumComponents());
+    if (values_.extent(0) != n || values_.extent(1) != num_components) {
       values_ = Kokkos::View<Real**, pcms::DeviceMemorySpace>(
         Kokkos::view_alloc(Kokkos::WithoutInitializing, "values"), n,
         num_components);
       // the values themselves where device memory is host memory
       result_ = Kokkos::create_mirror_view(values_);
     }
-    Kokkos::View<const Real**, Kokkos::LayoutRight, pcms::HostMemorySpace,
-                 Kokkos::MemoryTraits<Kokkos::Unmanaged>>
-      host_points(xyz.data(), n, 3);
-    pcms::DeepCopyMismatchLayouts(points_, host_points);
-    const auto bound = space.Bind(
-      pcms::CoordinateView<pcms::DeviceMemorySpace>(
-        space.GetCoordinateSystem(), pcms::MakeRank2View(points_)),
-      {pcms::OutOfBoundsMode::FILL, std::numeric_limits<Real>::quiet_NaN()});
-    const auto evaluator = space.CreatePointEvaluator<Real>(bound);
-    evaluator->Evaluate(
-      *function_,
-      pcms::ValueView<Real, pcms::DeviceMemorySpace>(
-        function_->GetData().GetValueBasis(), pcms::MakeRank2View(values_)));
+    query_.Evaluate(function, pcms::ValueView<Real, pcms::DeviceMemorySpace>(
+                                function.GetData().GetValueBasis(),
+                                pcms::MakeRank2View(values_)));
     Kokkos::deep_copy(result_, values_);
     return result_;
   }
 
 private:
-  const pcms::Function<Real>* function_;
+  pcms::QueryPoints query_;
+  std::shared_ptr<const pcms::CoordinateSystem> system_;
   Kokkos::View<Real**, pcms::DeviceMemorySpace> points_;
   Kokkos::View<Real**, pcms::DeviceMemorySpace> values_;
   Values result_;
@@ -131,11 +142,19 @@ public:
              Real period)
     : sources_(sources), p_(p), period_(period)
   {
+    // Sources on one geometry (the same file) share its located points.
+    std::map<const pcms::Geometry*, size_t> located;
     for (const auto& source : sources_) {
-      fields_.emplace_back(source.field);
+      const auto geometry = source.field.GetSpace().GetGeometry();
+      const auto [it, added] =
+        located.emplace(geometry.get(), field_points_.size());
+      if (added) {
+        field_points_.emplace_back(geometry);
+      }
+      points_of_.push_back(it->second);
     }
     if (sources_[0].psi_norm) {
-      psi_norm_.emplace(*sources_[0].psi_norm);
+      psi_norm_points_.emplace(sources_[0].psi_norm->GetSpace().GetGeometry());
     }
   }
 
@@ -269,8 +288,12 @@ private:
       return b;
     }
     const auto start = std::chrono::steady_clock::now();
-    for (auto& field : fields_) {
-      const auto values = field(xyz);
+    for (auto& points : field_points_) {
+      points.Locate(xyz);
+    }
+    for (size_t s = 0; s < sources_.size(); ++s) {
+      const auto values =
+        field_points_[points_of_[s]].Evaluate(sources_[s].field);
       for (size_t i = 0; i < index.size(); ++i) {
         for (int c = 0; c < 3; ++c) {
           b[index[i]][c] += values(i, c);
@@ -366,8 +389,9 @@ private:
       return;
     }
     std::vector<Real> psi(index.size(), 0);
-    if (psi_norm_) {
-      const auto values = (*psi_norm_)(xyz);
+    if (psi_norm_points_) {
+      psi_norm_points_->Locate(xyz);
+      const auto values = psi_norm_points_->Evaluate(*sources_[0].psi_norm);
       for (size_t i = 0; i < index.size(); ++i) {
         psi[i] = std::isnan(values(i, 0)) ? 0 : values(i, 0);
       }
@@ -383,21 +407,32 @@ private:
   const std::vector<TraceSource>& sources_;
   const Parameters& p_;
   Real period_;
-  // the sources' fields and the first source's normalized flux
-  std::vector<BatchEvaluator> fields_;
-  std::optional<BatchEvaluator> psi_norm_;
+  // the points located on each geometry of the sources' fields, the index of
+  // each source's geometry into them, and the points of the first source's
+  // normalized flux
+  std::deque<BatchPoints> field_points_;
+  std::vector<size_t> points_of_;
+  std::optional<BatchPoints> psi_norm_points_;
 };
 
 // trace's create_source: -m3dc1 <file> <ts> <factor> <shift>, -geqdsk <file>,
 // -gpec <dir>.
+// Sources given the same file share one opened source, so their fields share
+// its geometry and are evaluated at one set of located points.
+using OpenSources = std::map<std::pair<fusionio::Format, std::string>,
+                             std::shared_ptr<fusionio::Source>>;
+
 TraceSource CreateSource(fusionio::Format format,
-                         const std::vector<std::string>& a)
+                         const std::vector<std::string>& a, OpenSources& opened)
 {
   if (a.empty() && format != fusionio::Format::M3DC1) {
     throw std::runtime_error("a file name must be provided");
   }
   const std::string path = a.empty() ? "C1.h5" : a[0];
-  auto source = fusionio::Open(format, path);
+  auto& source = opened[{format, path}];
+  if (source == nullptr) {
+    source = fusionio::Open(format, path);
+  }
   fusionio::Options options;
   Real slice_time = 0;
   if (format == fusionio::Format::M3DC1) {
@@ -463,6 +498,7 @@ bool ParseCommandLine(int argc, char* argv[], Parameters& p,
     "-R0",   "-Z0",     "-p",     "-t",       "-s",    "-a",     "-pout",
     "-qout", "-phi0",   "-n",     "-reverse", "-tavg", "-timing"};
   std::vector<std::pair<std::string, std::vector<std::string>>> parsed;
+  OpenSources opened;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
     if (std::find(options.begin(), options.end(), arg) != options.end()) {
@@ -486,11 +522,11 @@ bool ParseCommandLine(int argc, char* argv[], Parameters& p,
       return a[0];
     };
     if (opt == "-m3dc1") {
-      sources.push_back(CreateSource(fusionio::Format::M3DC1, a));
+      sources.push_back(CreateSource(fusionio::Format::M3DC1, a, opened));
     } else if (opt == "-geqdsk") {
-      sources.push_back(CreateSource(fusionio::Format::GEQDSK, a));
+      sources.push_back(CreateSource(fusionio::Format::GEQDSK, a, opened));
     } else if (opt == "-gpec") {
-      sources.push_back(CreateSource(fusionio::Format::GPEC, a));
+      sources.push_back(CreateSource(fusionio::Format::GPEC, a, opened));
     } else if (opt == "-dR") {
       p.dR = std::atof(one().c_str());
     } else if (opt == "-dZ") {

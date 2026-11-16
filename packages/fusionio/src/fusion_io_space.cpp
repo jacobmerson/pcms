@@ -1,10 +1,14 @@
 #include "fusion_io_space.hpp"
 #include "fusion_io_source.hpp"
 #include "host_evaluation.hpp"
+#include "pcms/discretization/discretization/empty.hpp"
+#include "pcms/field/layout/empty.h"
 #include "pcms/utility/profile.h"
 #include <algorithm>
+#include <map>
 #include <numbers>
 #include <string_view>
+#include <utility>
 
 namespace fusionio::detail
 {
@@ -104,98 +108,109 @@ struct FusionIOQuantity
 
 using FusionIOFieldData = ExternalFieldData<FusionIOQuantity>;
 
-// Search hint i of `hints`, a block of hint_size bytes per point; null if the
-// source has no hints.
-fio_hint HintOf(std::vector<char>& hints, size_t hint_size, size_t i)
-{
-  return hint_size > 0 ? &hints[i * hint_size] : nullptr;
-}
-
-// Which of `points` (rows of (R, phi, Z)) are inside the source's domain: the
-// bind step of OutOfBoundsMode::FILL. The fields of a source share its
-// domain, so the result holds for every quantity. Each point's search hint is
-// left where the point was found, as an evaluation leaves it, so evaluations
-// of the found points start there.
+// The query points of a Fusion-IO source located in its domain, with each
+// point's Fusion-IO search hint (sizeof_search_hint() bytes per point; for
+// M3D-C1 the element to try first). Every evaluator created from the binding
+// shares it.
 //
-// M3D-C1 sources search the domain probe's mesh, which finds the same points
-// and elements the probe's evaluation would without evaluating it; other
-// formats evaluate the probe.
-Kokkos::View<bool*, HostMemorySpace> FindPointsInDomain(
-  const FusionIOSource& source, HostPoints points, std::vector<char>& hints)
-{
-  const auto hint_size = static_cast<size_t>(source.Get().sizeof_search_hint());
-  Kokkos::View<bool*, HostMemorySpace> inside(
-    Kokkos::view_alloc(Kokkos::WithoutInitializing, "fusion_io_inside"),
-    points.extent(0));
-  if (m3dc1_mesh* mesh = source.DomainMesh()) {
-    // An M3D-C1 hint is the element to try first (m3dc1_field::eval). The
-    // probe's phase is 0, so its phi is the point's.
-    for (size_t i = 0; i < points.extent(0); ++i) {
-      int* element = static_cast<int*>(HintOf(hints, hint_size, i));
-      *element = mesh->in_element(points(i, 0), points(i, 1), points(i, 2),
-                                  nullptr, nullptr, nullptr, *element);
-      inside(i) = *element >= 0;
-    }
-    return inside;
-  }
-  fio_field& probe = source.DomainProbe();
-  std::vector<Real> values(static_cast<size_t>(probe.dimension()));
-  for (size_t i = 0; i < points.extent(0); ++i) {
-    const int status =
-      probe.eval(&points(i, 0), values.data(), HintOf(hints, hint_size, i));
-    inside(i) = status != FIO_OUT_OF_BOUNDS;
-    if (status != FIO_SUCCESS && status != FIO_OUT_OF_BOUNDS) {
-      throw pcms_error("FusionIOFunctionSpace: locating query point " +
-                       std::to_string(i) + " failed (Fusion-IO error " +
-                       std::to_string(status) + ")");
-    }
-  }
-  return inside;
-}
-
-// The query points in Fusion-IO's layout and the per-point search hints. The
-// hints let Fusion-IO start each point's search where it last found it; every
-// field and evaluator created from this bound source shares them, and the
-// next binding of the source to as many points starts from them. Fusion-IO's
-// evaluation writes them, so evaluators change this bound source's hints
-// although they hold it const.
+// The hints are state of the binding, sized to its capacity, and survive a
+// Geometry::Rebind, so that points that move start their search where they
+// were (the warm start lockstep tracers need); points beyond the previous
+// capacity start from zero, a valid first guess. Fusion-IO's evaluation
+// writes back the hint it used, hence the mutable hints. For M3D-C1 sources,
+// whose points are located at bind, that write-back stores the element the
+// bind found for every field on the probe's mesh, so evaluations do not
+// change the binding observably; other formats have no hints.
 //
-// With OutOfBoundsMode::FILL the points outside the source's domain are found
-// here (FindPointsInDomain). Otherwise every point counts as found, and
-// evaluating outside the domain throws.
-class FusionIOBoundSource final : public HostBoundSource
+// Not thread safe: neither is Fusion-IO 1.x.
+class FusionIOBinding final : public HostBoundSource
 {
 public:
-  FusionIOBoundSource(const FusionIOSource& source, const BindRequest& request)
-    : HostBoundSource(request),
-      hint_size(source.Get().sizeof_search_hint()),
-      hints(source.SearchHints(points.extent(0)))
+  FusionIOBinding(std::shared_ptr<const Geometry> geometry,
+                  const BindRequest& request,
+                  std::shared_ptr<FusionIOSource> source)
+    : HostBoundSource(std::move(geometry), request),
+      source_(std::move(source)),
+      hint_size_(static_cast<size_t>(source_->Get().sizeof_search_hint())),
+      hints_(hint_size_ * static_cast<size_t>(NumPoints()), 0)
   {
-    if (request.policy.mode == OutOfBoundsMode::FILL) {
-      SetFound(FindPointsInDomain(source, points, *hints));
-    }
+    Locate();
   }
 
+  /// The Fusion-IO search hint of query point i; null if the source has none.
   [[nodiscard]] fio_hint Hint(size_t i) const
   {
-    return HintOf(*hints, hint_size, i);
+    return hint_size_ > 0 ? &hints_[i * hint_size_] : nullptr;
   }
 
-  size_t hint_size;
-  std::shared_ptr<std::vector<char>> hints;
+protected:
+  void RebindImpl() override
+  {
+    RefreshHostViews();
+    const size_t size = hint_size_ * static_cast<size_t>(NumPoints());
+    if (hints_.size() < size) {
+      hints_.resize(size, 0);
+    }
+    Locate();
+  }
+
+private:
+  // Locates the points: M3D-C1 sources search the domain probe's mesh, which
+  // finds the points and elements the probe's evaluation would without
+  // evaluating it, and leaves each point's element in its hint; other formats
+  // evaluate the probe under FILL. The fields of a source share its domain,
+  // so the result holds for every quantity.
+  void Locate()
+  {
+    const auto n = static_cast<size_t>(NumPoints());
+    if (m3dc1_mesh* mesh = source_->DomainMesh()) {
+      // The probe's phase is 0, so its phi is the point's.
+      Kokkos::View<bool*, HostMemorySpace> inside(
+        Kokkos::view_alloc(Kokkos::WithoutInitializing, "fusionio_inside"), n);
+      for (size_t i = 0; i < n; ++i) {
+        int* element = static_cast<int*>(Hint(i));
+        *element = mesh->in_element(points(i, 0), points(i, 1), points(i, 2),
+                                    nullptr, nullptr, nullptr, *element);
+        inside(i) = *element >= 0;
+      }
+      SetFound(inside);
+      return;
+    }
+    if (Policy().mode != OutOfBoundsMode::FILL) {
+      return;
+    }
+    fio_field& probe = source_->DomainProbe();
+    std::vector<Real> values(static_cast<size_t>(probe.dimension()));
+    Kokkos::View<bool*, HostMemorySpace> inside(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing, "fusionio_inside"), n);
+    for (size_t i = 0; i < n; ++i) {
+      const int status = probe.eval(&points(i, 0), values.data(), Hint(i));
+      inside(i) = status != FIO_OUT_OF_BOUNDS;
+      if (status != FIO_SUCCESS && status != FIO_OUT_OF_BOUNDS) {
+        throw pcms_error("FusionIOGeometry: locating query point " +
+                         std::to_string(i) + " failed (Fusion-IO error " +
+                         std::to_string(status) + ")");
+      }
+    }
+    SetFound(inside);
+  }
+
+  std::shared_ptr<FusionIOSource> source_;
+  size_t hint_size_;
+  // hint_size_ bytes per point, for the binding's capacity
+  mutable std::vector<char> hints_;
 };
 
-// Evaluates a quantity, or with derivative order 1 its gradient, which
-// Fusion-IO provides for scalar quantities of some formats.
-// Fusion-IO evaluation is not thread safe, don't call Evaluate concurrently
+// Evaluates a quantity, or its gradient, which Fusion-IO provides for scalar
+// quantities of some formats. Fusion-IO evaluation is not thread safe, don't
+// call Evaluate concurrently.
 class FusionIOEvaluator final : public PointEvaluator<Real>
 {
 public:
-  FusionIOEvaluator(std::shared_ptr<FusionIOSource> source,
-                    std::shared_ptr<const FusionIOBoundSource> bound,
-                    int derivative_order)
-    : PointEvaluator<Real>(bound, derivative_order),
-      source_(std::move(source)),
+  FusionIOEvaluator(std::shared_ptr<const FusionIOBinding> bound,
+                    DifferentialOperator op,
+                    std::shared_ptr<const FieldLayout> layout)
+    : PointEvaluator<Real>(bound, op, std::move(layout)),
       bound_(std::move(bound))
   {
   }
@@ -206,34 +221,30 @@ protected:
   {
     PCMS_FUNCTION_TIMER;
     const auto* data = dynamic_cast<const FusionIOFieldData*>(&field.GetData());
-    if (data == nullptr || data->quantity.source != source_) {
+    if (data == nullptr) {
       throw pcms_error(
-        "FusionIOFunctionSpace: field is not a quantity of this source");
+        "FusionIOGeometry: the field is not a quantity of a Fusion-IO source");
     }
     const auto out = values.GetValues();
     const auto& points = bound_->points;
     const auto host_out = HostRowsLike(out);
     fio_field& quantity = *data->quantity.field;
-    const bool gradient = DerivativeOrder() == 1;
+    const bool gradient = Operator() == DifferentialOperator::Gradient;
     for (size_t k = 0; k < bound_->found.extent(0); ++k) {
       const auto i = static_cast<size_t>(bound_->found(k));
       Real* row = &host_out(i, 0);
       const int status =
         gradient ? quantity.eval_deriv(&points(i, 0), row, bound_->Hint(i))
                  : quantity.eval(&points(i, 0), row, bound_->Hint(i));
-      if (status == FIO_UNSUPPORTED && gradient) {
-        throw pcms_error("FusionIOFunctionSpace: Fusion-IO does not provide "
-                         "derivatives of this quantity for this format");
-      }
       if (status == FIO_OUT_OF_BOUNDS) {
         throw pcms_error(
-          "FusionIOFunctionSpace: query point " + std::to_string(i) +
+          "FusionIOGeometry: query point " + std::to_string(i) +
           (bound_->Policy().mode == OutOfBoundsMode::FILL
              ? " is outside this quantity's domain but inside the source's"
              : " is outside the source's domain"));
       }
       if (status != FIO_SUCCESS) {
-        throw pcms_error("FusionIOFunctionSpace: evaluation failed at query "
+        throw pcms_error("FusionIOGeometry: evaluation failed at query "
                          "point " +
                          std::to_string(i) + " (Fusion-IO error " +
                          std::to_string(status) + ")");
@@ -248,43 +259,38 @@ protected:
   }
 
 private:
-  std::shared_ptr<FusionIOSource> source_;
-  std::shared_ptr<const FusionIOBoundSource> bound_;
+  std::shared_ptr<const FusionIOBinding> bound_;
 };
 
-// Binds a source's points and creates the evaluators of a space.
+// Creates the evaluators of the quantities of one representation.
 class FusionIOEvaluatorFactory final
-  : public TypedPointEvaluatorFactory<Real, FusionIOBoundSource>
+  : public TypedPointEvaluatorFactory<Real, FusionIOBinding>
 {
 public:
-  FusionIOEvaluatorFactory(std::shared_ptr<FusionIOSource> source,
-                           int num_components)
-    : TypedPointEvaluatorFactory(csys::CylindricalRThetaZ::Create(), 1),
-      source_(std::move(source)),
-      num_components_(num_components)
+  FusionIOEvaluatorFactory(std::shared_ptr<const FusionIOGeometry> geometry,
+                           std::shared_ptr<const FieldLayout> layout,
+                           bool derivatives)
+    : TypedPointEvaluatorFactory(
+        geometry, derivatives
+                    ? std::initializer_list<
+                        DifferentialOperator>{DifferentialOperator::Gradient}
+                    : std::initializer_list<DifferentialOperator>{}),
+      layout_(std::move(layout))
   {
   }
 
 protected:
-  std::shared_ptr<FusionIOBoundSource> BindPoints(
-    const BindRequest& request) const override
-  {
-    return std::make_shared<FusionIOBoundSource>(*source_, request);
-  }
-
   std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
-    std::shared_ptr<const FusionIOBoundSource> bound,
-    int derivative_order) const override
+    std::shared_ptr<const FusionIOBinding> bound,
+    DifferentialOperator op) const override
   {
-    CheckGradientComponents("FusionIOFunctionSpace", derivative_order,
-                            num_components_);
-    return std::make_unique<FusionIOEvaluator>(source_, std::move(bound),
-                                               derivative_order);
+    CheckGradientComponents("FusionIOGeometry", op,
+                            layout_->GetNumComponents());
+    return std::make_unique<FusionIOEvaluator>(std::move(bound), op, layout_);
   }
 
 private:
-  std::shared_ptr<FusionIOSource> source_;
-  int num_components_;
+  std::shared_ptr<const FieldLayout> layout_;
 };
 
 } // namespace
@@ -300,8 +306,23 @@ int NumComponents(Quantity quantity)
   return FieldTypeOf(quantity) >= FIO_ELECTRIC_FIELD ? 3 : 1;
 }
 
-FusionIOSource::FusionIOSource(FusionIOSourcePtr source)
-  : source_(std::move(source))
+bool ProvidesDerivatives(Format format, Quantity quantity)
+{
+  switch (format) {
+    case Format::M3DC1:
+      return NumComponents(quantity) == 1 ||
+             quantity == Quantity::VectorPotential ||
+             quantity == Quantity::MagneticField;
+    case Format::GEQDSK: return quantity == Quantity::PoloidalFlux;
+    case Format::GATO:
+    case Format::MARS:
+    case Format::GPEC: return false;
+  }
+  return false;
+}
+
+FusionIOSource::FusionIOSource(Format format, FusionIOSourcePtr source)
+  : format_(format), source_(std::move(source))
 {
   // Points are passed to Fusion-IO as (R, phi, Z), which only holds for
   // cylindrical sources.
@@ -400,20 +421,6 @@ m3dc1_mesh* FusionIOSource::DomainMesh() const
   return *domain_mesh_;
 }
 
-std::shared_ptr<std::vector<char>> FusionIOSource::SearchHints(
-  size_t num_points) const
-{
-  // As in Fusion-IO's korc_example, the hints are one zero-initialized block
-  // of sizeof_search_hint() bytes per point. For M3D-C1 a hint is an element
-  // to try first, so zero is a valid starting guess.
-  const size_t size =
-    static_cast<size_t>(source_->sizeof_search_hint()) * num_points;
-  if (hints_ == nullptr || hints_->size() != size) {
-    hints_ = std::make_shared<std::vector<char>>(size, 0);
-  }
-  return hints_;
-}
-
 std::shared_ptr<FusionIOSource> OpenFusionIOSource(Format format,
                                                    const std::string& filename)
 {
@@ -432,88 +439,55 @@ std::shared_ptr<FusionIOSource> OpenFusionIOSource(Format format,
     throw pcms_error("fusionio::Open: could not open '" + filename +
                      "' (Fusion-IO error " + std::to_string(status) + ")");
   }
-  return std::make_shared<FusionIOSource>(FusionIOSourcePtr(opened));
+  return std::make_shared<FusionIOSource>(format, FusionIOSourcePtr(opened));
 }
 
-std::shared_ptr<FusionIOFunctionSpace> FusionIOFunctionSpace::Create(
-  std::shared_ptr<FusionIOSource> source, int num_components)
-{
-  return std::shared_ptr<FusionIOFunctionSpace>(
-    new FusionIOFunctionSpace(std::move(source), num_components));
-}
-
-FusionIOFunctionSpace::FusionIOFunctionSpace(
-  std::shared_ptr<FusionIOSource> source, int num_components)
-  : FunctionSpace(
-      std::make_shared<FusionIOEvaluatorFactory>(source, num_components)),
-    source_(std::move(source)),
-    layout_(std::make_shared<EmptyFieldLayout>(
-      csys::CylindricalRThetaZ::Create(), num_components))
+FusionIOGeometry::FusionIOGeometry(std::shared_ptr<FusionIOSource> source)
+  : source_(std::move(source)),
+    discretization_(std::make_shared<EmptyDiscretization>()),
+    system_(csys::CylindricalRThetaZ::Create())
 {
   if (source_ == nullptr) {
-    throw pcms_error("FusionIOFunctionSpace: source must not be null");
+    throw pcms_error("FusionIOGeometry: source must not be null");
   }
 }
 
-Function<Real> FusionIOFunctionSpace::CreateFunction(
-  std::string name, Quantity quantity, const Options& options) const
+std::shared_ptr<BoundSource> FusionIOGeometry::BindImpl(
+  const BindRequest& request) const
 {
-  if (!source_->Provides(quantity)) {
-    std::vector<std::string> available;
-    for (const Quantity known : source_->Quantities()) {
-      available.emplace_back(Name(known));
-    }
-    ThrowUnknownQuantity("FusionIOFunctionSpace", Name(quantity), available);
-  }
-  CheckComponents("FusionIOFunctionSpace", Name(quantity),
-                  NumComponents(quantity), layout_->GetNumComponents());
-  fio_option_list fio_options;
-  source_->Get().get_field_options(&fio_options);
-  if (options.timeslice) {
-    fio_options.set_option(FIO_TIMESLICE, *options.timeslice);
-  }
-  if (options.part) {
-    fio_options.set_option(FIO_PART, FusionIOPart(*options.part));
-  }
-  if (options.species) {
-    fio_options.set_option(FIO_SPECIES, FusionIOSpecies(*options.species));
-  }
-  if (options.linear_scale) {
-    fio_options.set_option(FIO_LINEAR_SCALE, *options.linear_scale);
-  }
-  if (options.phase) {
-    fio_options.set_option(FIO_PHASE, *options.phase);
-  }
-  return FunctionSpace::CreateFunction<Real>(
-    std::move(name),
-    std::make_unique<FusionIOFieldData>(
-      FusionIOQuantity{source_, source_->GetField(quantity, fio_options)},
-      QuantityBasis(NumComponents(quantity) == 3)));
+  return std::make_shared<FusionIOBinding>(shared_from_this(), request,
+                                           source_);
 }
 
-FieldVariant FusionIOFunctionSpace::CreateFieldImpl(Type /*storage_type*/,
-                                                    ValueBasis /*basis*/) const
+std::shared_ptr<FunctionSpace> CreateFusionIOSpace(
+  std::shared_ptr<const FusionIOGeometry> geometry, int num_components,
+  bool derivatives)
 {
-  throw pcms_error("FusionIOFunctionSpace: a value type does not name a "
-                   "quantity; use CreateFunction(name, quantity)");
-}
-
-FieldVariant FusionIOFunctionSpace::CreateFieldImpl(FieldDataVariant data) const
-{
-  return WrapField<Real>(
-    layout_, std::get<std::unique_ptr<FieldData<Real>>>(std::move(data)));
+  auto layout = std::make_shared<EmptyFieldLayout>(
+    geometry->GetCoordinateSystem(), num_components);
+  auto evaluator = std::make_shared<FusionIOEvaluatorFactory>(
+    std::move(geometry), layout, derivatives);
+  return std::make_shared<FunctionSpace>(std::move(layout), CreateNoFieldData,
+                                         std::move(evaluator));
 }
 
 namespace
 {
 
-/// A Fusion-IO 1.x source as a fusionio::Source.
+/// A Fusion-IO 1.x source as a fusionio::Source: one geometry, and a space
+/// per representation of its quantities, created on first use.
 class FusionIOFileSource final : public Source
 {
 public:
   explicit FusionIOFileSource(std::shared_ptr<FusionIOSource> source)
-    : source_(std::move(source))
+    : source_(std::move(source)),
+      geometry_(std::make_shared<FusionIOGeometry>(source_))
   {
+  }
+
+  [[nodiscard]] std::shared_ptr<const Geometry> GetGeometry() const override
+  {
+    return geometry_;
   }
 
   [[nodiscard]] std::vector<QuantityInfo> Quantities() const override
@@ -571,12 +545,57 @@ public:
   [[nodiscard]] Function<Real> CreateFunction(
     Quantity quantity, const Options& options) const override
   {
-    return FusionIOFunctionSpace::Create(source_, NumComponents(quantity))
-      ->CreateFunction(std::string(Name(quantity)), quantity, options);
+    if (!source_->Provides(quantity)) {
+      std::vector<std::string> available;
+      for (const Quantity known : source_->Quantities()) {
+        available.emplace_back(Name(known));
+      }
+      ThrowUnknownQuantity("fusionio", Name(quantity), available);
+    }
+    fio_option_list fio_options;
+    source_->Get().get_field_options(&fio_options);
+    if (options.timeslice) {
+      fio_options.set_option(FIO_TIMESLICE, *options.timeslice);
+    }
+    if (options.part) {
+      fio_options.set_option(FIO_PART, FusionIOPart(*options.part));
+    }
+    if (options.species) {
+      fio_options.set_option(FIO_SPECIES, FusionIOSpecies(*options.species));
+    }
+    if (options.linear_scale) {
+      fio_options.set_option(FIO_LINEAR_SCALE, *options.linear_scale);
+    }
+    if (options.phase) {
+      fio_options.set_option(FIO_PHASE, *options.phase);
+    }
+    const int num_components = NumComponents(quantity);
+    return Space(num_components,
+                 ProvidesDerivatives(source_->GetFormat(), quantity))
+      ->CreateFunction<Real>(
+        std::string(Name(quantity)),
+        std::make_unique<FusionIOFieldData>(
+          FusionIOQuantity{source_, source_->GetField(quantity, fio_options)},
+          QuantityBasis(num_components == 3)));
   }
 
 private:
+  // The space of a representation: component count and whether Fusion-IO
+  // provides the derivatives.
+  const std::shared_ptr<FunctionSpace>& Space(int num_components,
+                                              bool derivatives) const
+  {
+    auto& space = spaces_[{num_components, derivatives}];
+    if (space == nullptr) {
+      space = CreateFusionIOSpace(geometry_, num_components, derivatives);
+    }
+    return space;
+  }
+
   std::shared_ptr<FusionIOSource> source_;
+  std::shared_ptr<const FusionIOGeometry> geometry_;
+  mutable std::map<std::pair<int, bool>, std::shared_ptr<FunctionSpace>>
+    spaces_;
 };
 
 } // namespace

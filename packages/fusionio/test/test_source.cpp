@@ -2,7 +2,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <fusionio/fusionio.hpp>
-#include "fusion_io_space.hpp"
+#include <pcms/field/query_points.hpp>
 #include "test_utils.hpp"
 #include <algorithm>
 #include <numbers>
@@ -62,28 +62,54 @@ TEST_CASE("fusionio::Open describes an M3D-C1 source")
   REQUIRE(*axis_r < 2.5);
 }
 
-TEST_CASE("fusionio::Open functions match the Fusion-IO function space")
+TEST_CASE("fusionio::Open functions share the source's geometry")
 {
   const auto source = fusionio::Open(fusionio::Format::M3DC1, M3DC1File);
   const fusionio::Options options{.timeslice = 1,
                                   .part = fusionio::Part::Perturbed};
   const auto b = source->CreateFunction(Quantity::MagneticField, options);
+  const auto psi = source->CreateFunction(Quantity::PoloidalFlux, options);
+  const auto p = source->CreateFunction(Quantity::TotalPressure, options);
   REQUIRE(b.GetName() == "magnetic field");
   REQUIRE(b.GetLayout().GetNumComponents() == 3);
+  REQUIRE(b.GetSpace().GetGeometry() == source->GetGeometry());
+  REQUIRE(psi.GetSpace().GetGeometry() == source->GetGeometry());
+  // a space per representation: the scalars share one
+  REQUIRE(&psi.GetSpace() == &p.GetSpace());
+  REQUIRE(&psi.GetSpace() != &b.GetSpace());
+  REQUIRE(psi.GetSpace().Supports(pcms::DifferentialOperator::Gradient));
 
-  const auto space = fusionio::detail::FusionIOFunctionSpace::Create(
-    fusionio::detail::OpenFusionIOSource(fusionio::Format::M3DC1, M3DC1File),
-    3);
-  const auto expected =
-    space->CreateFunction("b", Quantity::MagneticField, options);
-
-  const auto actual_values = EvaluateAt(b, M3DC1Points);
-  const auto expected_values = EvaluateAt(expected, M3DC1Points);
-  for (size_t i = 0; i < 2; ++i) {
-    for (size_t c = 0; c < 3; ++c) {
-      REQUIRE(actual_values(i, c) == expected_values(i, c));
+  // One binding serves every quantity of the source, and evaluates as a
+  // binding of each function's own does.
+  pcms::QueryPoints query(source->GetGeometry());
+  const auto coords = fusionio::test::CreateDeviceCoordinateView(
+    M3DC1Points, source->GetGeometry()->GetCoordinateSystem(), 3);
+  query.Locate(coords.coordinate_view);
+  for (const auto* f : {&b, &psi}) {
+    const int n = f->GetLayout().GetNumComponents();
+    Kokkos::View<Real**, pcms::DeviceMemorySpace> out("out", 2, n);
+    query.Evaluate(*f, fusionio::test::TagLike(*f, out));
+    const auto shared =
+      Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(), out);
+    const auto separate = EvaluateAt(*f, M3DC1Points);
+    for (size_t i = 0; i < 2; ++i) {
+      for (int c = 0; c < n; ++c) {
+        REQUIRE(shared(i, c) == separate(i, c));
+      }
     }
   }
+}
+
+TEST_CASE("fusionio::Open reports derivatives Fusion-IO provides")
+{
+  const auto geqdsk = fusionio::Open(fusionio::Format::GEQDSK, GeqdskFile);
+  REQUIRE(geqdsk->CreateFunction(Quantity::PoloidalFlux)
+            .GetSpace()
+            .Supports(pcms::DifferentialOperator::Gradient));
+  const auto p = geqdsk->CreateFunction(Quantity::TotalPressure);
+  REQUIRE_FALSE(p.GetSpace().Supports(pcms::DifferentialOperator::Gradient));
+  REQUIRE_THROWS_WITH(fusionio::test::EvaluateGradientAt(p, {1.8, 0.0, 0.1}),
+                      ContainsSubstring("Gradient is not supported"));
 }
 
 TEST_CASE("fusionio phase is a toroidal shift in radians")
@@ -141,8 +167,9 @@ TEST_CASE("fusionio functions fill points outside the domain on request")
 
   SECTION("fill")
   {
-    const auto evaluator = space.CreatePointEvaluator<Real>(
-      space.Bind(coords.coordinate_view, {pcms::OutOfBoundsMode::FILL, Fill}));
+    const auto evaluator =
+      space.CreatePointEvaluator<Real>(space.GetGeometry()->Bind(
+        coords.coordinate_view, {pcms::OutOfBoundsMode::FILL, Fill}));
     const auto filled = Kokkos::create_mirror_view_and_copy(
       pcms::HostMemorySpace(), evaluator->FilledPoints());
     REQUIRE(filled.extent(0) == 1);
@@ -160,10 +187,17 @@ TEST_CASE("fusionio functions fill points outside the domain on request")
     }
   }
 
+  SECTION("M3D-C1 sources locate at bind, so ERROR throws there")
+  {
+    REQUIRE_THROWS_WITH(space.GetGeometry()->Bind(coords.coordinate_view),
+                        ContainsSubstring("outside the source's domain"));
+  }
+
   SECTION("nearest boundary is not supported")
   {
-    REQUIRE_THROWS_WITH(space.Bind(coords.coordinate_view,
-                                   {pcms::OutOfBoundsMode::NEAREST_BOUNDARY}),
-                        ContainsSubstring("NEAREST_BOUNDARY"));
+    REQUIRE_THROWS_WITH(
+      space.GetGeometry()->Bind(coords.coordinate_view,
+                                {pcms::OutOfBoundsMode::NEAREST_BOUNDARY}),
+      ContainsSubstring("NEAREST_BOUNDARY"));
   }
 }

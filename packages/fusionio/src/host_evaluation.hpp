@@ -6,10 +6,12 @@
 // PCMS; each names a quantity of the external source.
 
 #include "pcms/field/coordinate_systems/cylindrical.hpp"
+#include "pcms/field/differential_operator.hpp"
 #include "pcms/field/field_data.h"
-#include "pcms/field/bound_source.hpp"
 #include "pcms/field/function_space.h"
 #include "pcms/field/value_view.hpp"
+#include "pcms/geometry/bound_source.hpp"
+#include "pcms/geometry/geometry.hpp"
 #include "pcms/utility/arrays.h"
 #include "pcms/utility/assert.h"
 #include <Kokkos_Core.hpp>
@@ -62,13 +64,13 @@ inline pcms::ValueBasis QuantityBasis(bool vector)
           pcms::ComponentScaling::Physical, pcms::values::Vector};
 }
 
-/// Throws unless a gradient (derivative order 1) of a quantity with
-/// `num_components` components is supported: only single-component quantities
-/// have gradients so far.
+/// Throws unless `op` of a quantity with `num_components` components is
+/// supported: only single-component quantities have gradients so far.
 inline void CheckGradientComponents(std::string_view space,
-                                    int derivative_order, int num_components)
+                                    pcms::DifferentialOperator op,
+                                    int num_components)
 {
-  if (derivative_order == 1 && num_components != 1) {
+  if (op == pcms::DifferentialOperator::Gradient && num_components != 1) {
     throw pcms::pcms_error(std::string(space) +
                            ": derivatives of quantities with more than one "
                            "component are not supported yet");
@@ -77,7 +79,7 @@ inline void CheckGradientComponents(std::string_view space,
 
 /// Throws that `quantity` is not one of `available`.
 [[noreturn]] inline void ThrowUnknownQuantity(
-  std::string_view space, std::string_view quantity,
+  std::string_view source, std::string_view quantity,
   const std::vector<std::string>& available)
 {
   std::string list;
@@ -85,28 +87,28 @@ inline void CheckGradientComponents(std::string_view space,
     list += (list.empty() ? "" : ", ") + name;
   }
   throw pcms::pcms_error(
-    std::string(space) + ": \"" + std::string(quantity) +
+    std::string(source) + ": \"" + std::string(quantity) +
     "\" is not a quantity of this source; it has: " + list);
 }
 
-/// Throws unless a quantity's component count is the space's.
-inline void CheckComponents(std::string_view space, std::string_view quantity,
-                            int components, int space_components)
+/// The data factory of the spaces whose fields name a quantity of an external
+/// source: a value type and basis do not, so it throws.
+inline pcms::FieldDataVariant CreateNoFieldData(pcms::Type /*value_type*/,
+                                                pcms::ValueBasis /*basis*/)
 {
-  if (components != space_components) {
-    throw pcms::pcms_error(std::string(space) + ": \"" + std::string(quantity) +
-                           "\" has " + std::to_string(components) +
-                           " components but the space holds " +
-                           std::to_string(space_components));
-  }
+  throw pcms::pcms_error("fusionio: a value type does not name a quantity; "
+                         "use Source::CreateFunction(quantity)");
 }
 
 /// Host views of query points, one row per point.
 using HostPoints =
   Kokkos::View<const pcms::Real**, Kokkos::LayoutRight, pcms::HostMemorySpace>;
 
-/// Device rows on the host in row-major layout: `rows` itself where device
-/// memory is host memory and row-major, otherwise a copy.
+/// Device rows on the host in row-major layout: an unmanaged view of `rows`
+/// itself where device memory is host memory and row-major, otherwise a copy.
+/// The view of `rows` is unmanaged so that it does not hold the storage of the
+/// bound source `rows` belongs to, which Geometry::Rebind recycles only when
+/// nothing else holds it.
 inline HostPoints HostRowMajor(
   const Kokkos::View<const pcms::Real**, pcms::DeviceMemorySpace>& rows)
 {
@@ -114,7 +116,7 @@ inline HostPoints HostRowMajor(
   if constexpr (std::is_same_v<pcms::DeviceMemorySpace,
                                pcms::HostMemorySpace> &&
                 std::is_same_v<Rows::array_layout, Kokkos::LayoutRight>) {
-    return rows;
+    return HostPoints(rows.data(), rows.extent(0), rows.extent(1));
   } else {
     HostRows copy(
       Kokkos::view_alloc(Kokkos::WithoutInitializing, "external_points"),
@@ -124,29 +126,53 @@ inline HostPoints HostRowMajor(
   }
 }
 
-/// Bound query points of a host evaluator, with the points and FoundPoints()
-/// on the host (views of the bound source's own where the host can read
-/// them, so binding copies nothing more on host-only builds).
+/// Device indices on the host: an unmanaged view of `indices` itself where
+/// device memory is host memory (see HostRowMajor), otherwise a copy.
+inline Kokkos::View<const pcms::LO*, pcms::HostMemorySpace> HostIndices(
+  const Kokkos::View<const pcms::LO*, pcms::DeviceMemorySpace>& indices)
+{
+  if constexpr (std::is_same_v<pcms::DeviceMemorySpace,
+                               pcms::HostMemorySpace>) {
+    return Kokkos::View<const pcms::LO*, pcms::HostMemorySpace>(
+      indices.data(), indices.extent(0));
+  } else {
+    return Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(),
+                                               indices);
+  }
+}
+
+/// Bound query points of a host evaluator, with LocatedPointValues() and
+/// FoundPoints() on the host (unmanaged views of the bound source's own
+/// arrays where the host can read them, so binding copies nothing more on
+/// host-only builds).
 class HostBoundSource : public pcms::BoundSource
 {
 public:
-  /// the bound points, one row per point
+  /// LocatedPointValues() on the host, one row per point
   HostPoints points;
   /// FoundPoints() on the host
   Kokkos::View<const pcms::LO*, pcms::HostMemorySpace> found;
 
 protected:
-  explicit HostBoundSource(const pcms::BindRequest& request)
-    : BoundSource(request),
-      points(HostRowMajor(PointValues())),
-      found(Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(),
-                                                FoundPoints()))
+  HostBoundSource(std::shared_ptr<const pcms::Geometry> geometry,
+                  const pcms::BindRequest& request)
+    : BoundSource(std::move(geometry), request)
   {
+    RefreshHostViews();
+  }
+
+  /// Points the host views at the current points, after a rebind has reset
+  /// them (BoundSource::Reset).
+  void RefreshHostViews()
+  {
+    points = HostRowMajor(LocatedPointValues());
+    found = HostIndices(FoundPoints());
   }
 
   /// Records which points the source evaluates (BoundSource::SetFound).
   /// Every point stays found if `is_found` holds no false.
   /// @param is_found per point, whether the source evaluates it
+  /// @throws pcms_error in OutOfBoundsMode::ERROR if a point is not found
   void SetFound(Kokkos::View<const bool*, pcms::HostMemorySpace> is_found)
   {
     bool all_found = true;
@@ -158,8 +184,7 @@ protected:
     }
     BoundSource::SetFound(
       Kokkos::create_mirror_view_and_copy(pcms::DeviceMemorySpace(), is_found));
-    found = Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(),
-                                                FoundPoints());
+    found = HostIndices(FoundPoints());
   }
 };
 

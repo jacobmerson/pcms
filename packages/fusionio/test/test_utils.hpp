@@ -10,6 +10,7 @@
 #include <pcms/field/field.h>
 #include <pcms/field/function_space.h>
 #include <pcms/field/value_view.hpp>
+#include <pcms/geometry/geometry.hpp>
 #include <pcms/utility/arrays.h>
 #include <pcms/utility/memory_spaces.h>
 #include <memory>
@@ -75,40 +76,53 @@ inline pcms::ValueView<T, DeviceMemorySpace> TagLike(
                                                pcms::MakeRank2View(values));
 }
 
-/// Values or, for derivative_order 1, gradients of `field` evaluated through
-/// `space` at `points` ((R, phi, Z) row-major), on the host.
-inline Kokkos::View<Real**, HostMemorySpace> EvaluateAt(
-  const pcms::FunctionSpace& space, const pcms::Field<Real>& field,
-  const std::vector<Real>& points, int derivative_order = 0)
+/// Binds `points` (row-major, the geometry's dimension per point) on
+/// `geometry`.
+inline std::shared_ptr<const pcms::BoundSource> Bind(
+  const pcms::Geometry& geometry, const std::vector<Real>& points,
+  pcms::OutOfBoundsPolicy policy = {})
 {
+  const int dim = geometry.GetCoordinateSystem()->Dimension();
   const auto coords =
-    CreateDeviceCoordinateView(points, space.GetCoordinateSystem(), 3);
-  const auto evaluator = space.CreatePointEvaluator<Real>(
-    space.Bind(coords.coordinate_view), derivative_order);
-  const auto basis = evaluator->OutputBasis(field.GetData().GetValueBasis());
-  const int columns =
-    derivative_order == 0 ? field.GetLayout().GetNumComponents() : 3;
-  Kokkos::View<Real**, DeviceMemorySpace> out("out", points.size() / 3,
+    CreateDeviceCoordinateView(points, geometry.GetCoordinateSystem(), dim);
+  return geometry.Bind(coords.coordinate_view, policy);
+}
+
+/// `op` of `field` evaluated by `evaluator`, on the host: one row per point.
+inline Kokkos::View<Real**, HostMemorySpace> EvaluateWith(
+  const pcms::PointEvaluator<Real>& evaluator, const pcms::Field<Real>& field)
+{
+  const auto stored = field.GetData().GetValueBasis();
+  const auto basis = evaluator.OutputBasis(stored);
+  int columns = field.GetLayout().GetNumComponents();
+  for (int i = stored.Rank(); i < basis.Rank(); ++i) {
+    columns *= basis.system->Dimension();
+  }
+  Kokkos::View<Real**, DeviceMemorySpace> out("out", evaluator.NumPoints(),
                                               columns);
-  evaluator->Evaluate(field, pcms::ValueView<Real, DeviceMemorySpace>(
-                               basis, pcms::MakeRank2View(out)));
+  evaluator.Evaluate(field, pcms::ValueView<Real, DeviceMemorySpace>(
+                              basis, pcms::MakeRank2View(out)));
   return Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
 }
 
-/// Gradient of the scalar `field` at `points`: (d/dR, (1/R) d/dphi, d/dZ)
-/// per row.
-inline Kokkos::View<Real**, HostMemorySpace> EvaluateGradientAt(
-  const pcms::FunctionSpace& space, const pcms::Field<Real>& field,
-  const std::vector<Real>& points)
+/// `op` of `function` at `points` (row-major, in its geometry's coordinates),
+/// evaluated through its own space, on the host.
+inline Kokkos::View<Real**, HostMemorySpace> EvaluateAt(
+  const pcms::Function<Real>& function, const std::vector<Real>& points,
+  pcms::DifferentialOperator op = pcms::DifferentialOperator::Value)
 {
-  return EvaluateAt(space, field, points, 1);
+  const auto& space = function.GetSpace();
+  const auto evaluator =
+    space.CreatePointEvaluator<Real>(Bind(*space.GetGeometry(), points), op);
+  return EvaluateWith(*evaluator, function);
 }
 
-/// Values of `function` at `points`, evaluated through its own space.
-inline Kokkos::View<Real**, HostMemorySpace> EvaluateAt(
+/// Gradient of the scalar `function` at `points`: (d/dR, (1/R) d/dphi, d/dZ)
+/// per row on a cylindrical (R, phi, Z) geometry.
+inline Kokkos::View<Real**, HostMemorySpace> EvaluateGradientAt(
   const pcms::Function<Real>& function, const std::vector<Real>& points)
 {
-  return EvaluateAt(function.GetSpace(), function, points);
+  return EvaluateAt(function, points, pcms::DifferentialOperator::Gradient);
 }
 
 } // namespace fusionio::test

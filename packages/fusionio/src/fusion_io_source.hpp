@@ -2,7 +2,7 @@
 #define FUSIONIO_SRC_FUSION_IO_SOURCE_HPP
 
 // Private (not installed): the definition of the opaque FusionIOSource, for
-// the Fusion-IO function space and its tests.
+// the Fusion-IO geometry and its tests.
 
 #include "fusionio/fusionio.hpp"
 #include <fusion_io.h>
@@ -29,12 +29,20 @@ using FusionIOFieldPtr = std::unique_ptr<fio_field>;
 /// 3 for vector quantities, 1 for scalars.
 [[nodiscard]] int NumComponents(Quantity quantity);
 
+/// Whether Fusion-IO 1.x provides the derivatives of a quantity of a format
+/// (the fields that override fio_field::eval_deriv): M3D-C1 scalars, vector
+/// potential and magnetic field; the geqdsk poloidal flux.
+[[nodiscard]] bool ProvidesDerivatives(Format format, Quantity quantity);
+
 /// An open Fusion-IO source and the quantities it provides.
 class FusionIOSource
 {
 public:
+  /// @param format the format `source` reads
   /// @param source must have cylindrical geometry
-  explicit FusionIOSource(FusionIOSourcePtr source);
+  FusionIOSource(Format format, FusionIOSourcePtr source);
+
+  [[nodiscard]] Format GetFormat() const noexcept { return format_; }
 
   /// Fusion-IO's interface is not const-correct, so this is shallow const.
   [[nodiscard]] fio_source& Get() const noexcept { return *source_; }
@@ -62,20 +70,12 @@ public:
   /// first use; the source owns it.
   [[nodiscard]] m3dc1_mesh* DomainMesh() const;
 
-  /// Search hints for `num_points` query points: sizeof_search_hint() bytes
-  /// per point. Consecutive bindings to the same number of points share them,
-  /// so point i starts where point i of the previous binding was found (the
-  /// warm start lockstep tracers need). Hints are only first guesses, so
-  /// unrelated bindings sharing them lose speed, never correctness.
-  [[nodiscard]] std::shared_ptr<std::vector<char>> SearchHints(
-    size_t num_points) const;
-
 private:
+  Format format_;
   FusionIOSourcePtr source_;
   std::vector<Quantity> quantities_;
   mutable FusionIOFieldPtr probe_;
   mutable std::optional<m3dc1_mesh*> domain_mesh_;
-  mutable std::shared_ptr<std::vector<char>> hints_;
 };
 
 } // namespace fusionio::detail
