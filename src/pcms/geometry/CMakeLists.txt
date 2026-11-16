@@ -15,6 +15,11 @@ set(
 )
 add_library(pcms_geometry ${PCMS_GEOMETRY_SOURCES})
 add_library(pcms::geometry ALIAS pcms_geometry)
+target_sources(pcms_geometry PUBLIC
+        FILE_SET geometry
+        TYPE HEADERS
+        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/..
+        FILES ${PCMS_GEOMETRY_HEADERS})
 target_include_directories(
         pcms_geometry
         PUBLIC
@@ -38,8 +43,6 @@ set_target_properties(
 )
 
 ## export the library
-set_target_properties(pcms_geometry PROPERTIES PUBLIC_HEADER "${PCMS_GEOMETRY_HEADERS}")
-
 install(
         TARGETS pcms_geometry
         EXPORT pcms_geometry-targets
@@ -48,7 +51,7 @@ install(
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         INCLUDES
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pcms/geometry
+        FILE_SET geometry DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pcms
 )
 
 install(
