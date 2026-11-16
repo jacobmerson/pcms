@@ -9,6 +9,16 @@ include(GNUInstallDirs)
 set(PCMS_INSTALL_CMAKEDIR "lib/cmake/pcms"
     CACHE STRING "Install directory of the pcms CMake package files")
 include(CMakePackageConfigHelpers)
+# Installed libraries find each other and their private dependencies through
+# their RPATH, so consumers of a shared PCMS do not need the private
+# dependencies on their link line (the package config finds them only for a
+# static PCMS).
+if(NOT DEFINED CMAKE_INSTALL_RPATH_USE_LINK_PATH)
+  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
+endif()
+if(NOT DEFINED CMAKE_INSTALL_RPATH AND NOT APPLE)
+  set(CMAKE_INSTALL_RPATH "$ORIGIN")
+endif()
 
 # use _ROOT variables for configurations
 cmake_policy(SET CMP0074 NEW)
