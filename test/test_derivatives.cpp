@@ -49,9 +49,7 @@ TEST_CASE("Spline gradients")
 
   const std::vector<Real> pts = {0.3, -0.7, 1.1, 0.2, 1.7, 0.9, 0.55, 0.45};
   const size_t n = pts.size() / 2;
-  auto coords =
-    pcms::test::CreateDeviceCoordinateView(pts, space->GetCoordinateSystem());
-  const auto bound = space->GetGeometry()->Bind(coords.coordinate_view);
+  const auto bound = pcms::test::Bind(*space->GetGeometry(), pts);
   auto values = space->CreatePointEvaluator<Real>(bound);
   auto gradient = space->CreatePointEvaluator<Real>(
     bound, pcms::DifferentialOperator::Gradient);
@@ -97,9 +95,7 @@ TEST_CASE("Evaluators reject fields of another function space")
     g, OMEGA_H_LAMBDA(Real x, Real y) { return Cubic(x, y); });
 
   const std::vector<Real> pts = {0.3, -0.7, 1.1, 0.2};
-  auto coords =
-    pcms::test::CreateDeviceCoordinateView(pts, space->GetCoordinateSystem());
-  const auto bound = space->GetGeometry()->Bind(coords.coordinate_view);
+  const auto bound = pcms::test::Bind(*space->GetGeometry(), pts);
   auto values = space->CreatePointEvaluator<Real>(bound);
   auto gradient = pcms::Gradient(space)->CreatePointEvaluator<Real>(bound);
 
@@ -121,10 +117,8 @@ TEST_CASE("Gradients fill the out-of-bounds rows")
   pcms::test::SetField(
     f, OMEGA_H_LAMBDA(Real x, Real y) { return Cubic(x, y); });
   const std::vector<Real> pts = {0.5, 0.5, 3.0, 0.0};
-  auto coords =
-    pcms::test::CreateDeviceCoordinateView(pts, space->GetCoordinateSystem());
-  const auto bound = space->GetGeometry()->Bind(
-    coords.coordinate_view,
+  const auto bound = pcms::test::Bind(
+    *space->GetGeometry(), pts,
     pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::FILL, -7.0});
   auto gradient = space->CreatePointEvaluator<Real>(
     bound, pcms::DifferentialOperator::Gradient);
@@ -207,9 +201,7 @@ TEST_CASE("Interpolating a field and its gradient over one localization")
 TEST_CASE("Unsupported operators are refused by name")
 {
   auto space = MakeSplineSpace();
-  auto coords = pcms::test::CreateDeviceCoordinateView(
-    {0.3, -0.7}, space->GetCoordinateSystem());
-  const auto bound = space->GetGeometry()->Bind(coords.coordinate_view);
+  const auto bound = pcms::test::Bind(*space->GetGeometry(), {0.3, -0.7});
   REQUIRE_FALSE(space->Supports(pcms::DifferentialOperator::Curl));
   REQUIRE_THROWS_WITH(
     space->CreatePointEvaluator<Real>(bound, pcms::DifferentialOperator::Curl),

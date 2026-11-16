@@ -150,10 +150,8 @@ TEST_CASE("UniformGrid order-0 field creation and evaluation")
 
   std::vector<pcms::Real> eval_coords = {1.0, 1.0, 9.0, 1.0,
                                          1.0, 9.0, 9.0, 9.0};
-  auto device_coords = pcms::test::CreateDeviceCoordinateView(
-    eval_coords, pcms::csys::Cartesian::Deferred());
   auto evaluator = field_space->CreatePointEvaluator<pcms::Real>(
-    field_space->GetGeometry()->Bind(device_coords.coordinate_view));
+    pcms::test::Bind(*field_space->GetGeometry(), eval_coords));
 
   Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> results_device(
     "results_device", 4, 1);
@@ -232,10 +230,8 @@ TEST_CASE("UniformGrid field evaluation - piecewise constant")
     2.5, 7.5, // Cell 2 center
     7.5, 7.5  // Cell 3 center
   };
-  auto device_coords = pcms::test::CreateDeviceCoordinateView(
-    eval_coords, pcms::csys::Cartesian::Deferred());
   auto evaluator = field_space->CreatePointEvaluator<pcms::Real>(
-    field_space->GetGeometry()->Bind(device_coords.coordinate_view));
+    pcms::test::Bind(*field_space->GetGeometry(), eval_coords));
 
   Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> results_device(
     "results_device", 4, 1);
@@ -715,10 +711,8 @@ TEST_CASE("UniformGrid Order-1 multi-component field evaluation")
     6.0, 1.5, // cell 1 off-center
     7.5, 7.5  // cell 3 center
   };
-  auto device_coords = pcms::test::CreateDeviceCoordinateView(
-    eval_coords, pcms::csys::Cartesian::Deferred());
   auto evaluator = field_space->CreatePointEvaluator<pcms::Real>(
-    field_space->GetGeometry()->Bind(device_coords.coordinate_view));
+    pcms::test::Bind(*field_space->GetGeometry(), eval_coords));
 
   Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> results_device(
     "results_device", num_points, num_components);
@@ -780,10 +774,8 @@ TEST_CASE("UniformGrid Order-0 multi-component field (regression)")
     2.5, 7.5, // Cell 2 center
     7.5, 7.5  // Cell 3 center
   };
-  auto device_coords = pcms::test::CreateDeviceCoordinateView(
-    eval_coords, pcms::csys::Cartesian::Deferred());
   auto evaluator = field_space->CreatePointEvaluator<pcms::Real>(
-    field_space->GetGeometry()->Bind(device_coords.coordinate_view));
+    pcms::test::Bind(*field_space->GetGeometry(), eval_coords));
 
   Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> results_device(
     "results_device", 4, num_components);

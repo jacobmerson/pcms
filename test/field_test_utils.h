@@ -10,6 +10,7 @@
 #include "pcms/field/point_evaluator.h"
 #include "pcms/field/out_of_bounds_policy.h"
 #include "pcms/field/coordinate_view.hpp"
+#include "pcms/geometry/geometry.hpp"
 #include "pcms/utility/arrays.h"
 #include "pcms/utility/memory_spaces.h"
 #ifdef PCMS_ENABLE_OMEGA_H
@@ -119,6 +120,14 @@ inline Omega_h::Mesh BuildUnitCube(Omega_h::Library& lib, int n)
 {
   return Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1.0, 1.0, 1.0, n, n,
                             n);
+}
+
+// Triangle mesh of the unit square with n x n cells. build_box classifies the
+// mesh (see AddDefaultClassification).
+inline Omega_h::Mesh BuildSquareMesh(Omega_h::Library& lib, int n)
+{
+  return Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1.0, 1.0, 0.0, n, n,
+                            0);
 }
 
 inline Omega_h::Mesh BuildTet(Omega_h::Library& lib,
@@ -498,6 +507,19 @@ inline DeviceCoordinates CreateDeviceCoordinateView(
       pcms::MakeRank2View(coords_device)}};
 }
 
+// Binds interleaved points, given in the geometry's coordinate system, on
+// `geometry`; the bound source keeps what it needs, so the points may go.
+inline std::shared_ptr<const BoundSource> Bind(
+  const Geometry& geometry, const std::vector<Real>& pts,
+  OutOfBoundsPolicy policy = {},
+  std::shared_ptr<const CoordinateMap> map = nullptr)
+{
+  const auto coords =
+    CreateDeviceCoordinateView(pts, geometry.GetCoordinateSystem(),
+                               geometry.GetCoordinateSystem()->Dimension());
+  return geometry.Bind(coords.coordinate_view, policy, std::move(map));
+}
+
 // Evaluate field at explicit test points using a PointEvaluator and check
 // results.
 template <typename ExecutionSpace = DefaultExecutionSpace, typename Func>
@@ -530,10 +552,8 @@ void CheckEvaluation(const Factory& factory, const Field<Real>& field,
                      const std::vector<Real>& pts, Func func,
                      double abs_tol = EvalTol)
 {
-  auto device_coords = CreateDeviceCoordinateView(
-    pts, factory->GetGeometry()->GetCoordinateSystem());
   auto evaluator = factory->template CreatePointEvaluator<Real>(
-    factory->GetGeometry()->Bind(device_coords.coordinate_view));
+    pcms::test::Bind(*factory->GetGeometry(), pts));
   CheckEvaluation<ExecutionSpace>(*evaluator, field, pts, func, abs_tol);
 }
 
@@ -577,11 +597,9 @@ template <typename Factory>
 void CheckFillMode(const Factory& factory, const Field<Real>& field,
                    Real fill_value, const std::vector<Real>& outside_pts)
 {
-  auto device_coords = CreateDeviceCoordinateView(
-    outside_pts, factory->GetGeometry()->GetCoordinateSystem());
   OutOfBoundsPolicy policy{OutOfBoundsMode::FILL, fill_value};
   auto evaluator = factory->template CreatePointEvaluator<Real>(
-    factory->GetGeometry()->Bind(device_coords.coordinate_view, policy));
+    pcms::test::Bind(*factory->GetGeometry(), outside_pts, policy));
   CheckFillMode(*evaluator, field, fill_value, outside_pts);
 }
 
@@ -628,11 +646,9 @@ void CheckEvaluationWithFill(const Factory& factory, const Field<Real>& field,
                              const std::vector<bool>& is_inside, Func func,
                              Real fill_value, double abs_tol = EvalTol)
 {
-  auto device_coords = CreateDeviceCoordinateView(
-    pts, factory->GetGeometry()->GetCoordinateSystem());
   OutOfBoundsPolicy policy{OutOfBoundsMode::FILL, fill_value};
   auto evaluator = factory->template CreatePointEvaluator<Real>(
-    factory->GetGeometry()->Bind(device_coords.coordinate_view, policy));
+    pcms::test::Bind(*factory->GetGeometry(), pts, policy));
   CheckEvaluationWithFill<ExecutionSpace>(*evaluator, field, pts, is_inside,
                                           func, fill_value, abs_tol);
 }

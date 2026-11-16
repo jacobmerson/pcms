@@ -15,21 +15,10 @@ using pcms::OutOfBoundsMode;
 using pcms::OutOfBoundsPolicy;
 using pcms::Real;
 
-namespace
-{
-
-Omega_h::Mesh BuildSquare(Omega_h::Library& lib)
-{
-  return Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1, 1, 0, 8, 8, 0,
-                            false);
-}
-
-} // namespace
-
 TEST_CASE("Evaluators created from one bound source share its points")
 {
   auto lib = Omega_h::Library{};
-  auto mesh = BuildSquare(lib);
+  auto mesh = pcms::test::BuildSquareMesh(lib, 8);
   auto space = pcms::test::MakeP1Space(mesh);
   auto field = space->CreateFunction<Real>("f");
   const auto linear = OMEGA_H_LAMBDA(Real x, Real y)
@@ -42,9 +31,7 @@ TEST_CASE("Evaluators created from one bound source share its points")
   const size_t n = pts.size() / 2;
   auto bound = [&] {
     // The bound source keeps what it needs, so the caller's points may go.
-    auto coords =
-      pcms::test::CreateDeviceCoordinateView(pts, space->GetCoordinateSystem());
-    return space->GetGeometry()->Bind(coords.coordinate_view);
+    return pcms::test::Bind(*space->GetGeometry(), pts);
   }();
   REQUIRE(bound->NumPoints() == static_cast<pcms::LO>(n));
   REQUIRE(bound->Policy().mode == OutOfBoundsMode::ERROR);
@@ -58,12 +45,11 @@ TEST_CASE("Evaluators created from one bound source share its points")
 TEST_CASE("A bound source is accepted only by sources on its geometry")
 {
   auto lib = Omega_h::Library{};
-  auto mesh = BuildSquare(lib);
+  auto mesh = pcms::test::BuildSquareMesh(lib, 8);
   auto space = pcms::test::MakeP1Space(mesh);
   auto other = pcms::test::MakeP1Space(mesh);
-  auto coords = pcms::test::CreateDeviceCoordinateView(
-    pcms::test::StandardEvalCoords2D(), space->GetCoordinateSystem());
-  auto bound = space->GetGeometry()->Bind(coords.coordinate_view);
+  auto bound =
+    pcms::test::Bind(*space->GetGeometry(), pcms::test::StandardEvalCoords2D());
 
   REQUIRE_THROWS_WITH(other->CreatePointEvaluator<Real>(bound),
                       ContainsSubstring("another geometry"));
@@ -77,7 +63,7 @@ TEST_CASE("A bound source is accepted only by sources on its geometry")
 TEST_CASE("Binding checks the query coordinate system")
 {
   auto lib = Omega_h::Library{};
-  auto mesh = BuildSquare(lib);
+  auto mesh = pcms::test::BuildSquareMesh(lib, 8);
   auto space = pcms::test::MakeP1Space(mesh);
   auto coords = pcms::test::CreateDeviceCoordinateView(
     pcms::test::StandardEvalCoords2D(), pcms::csys::CylindricalRZ::Create());
@@ -88,11 +74,10 @@ TEST_CASE("Binding checks the query coordinate system")
 TEST_CASE("Sources without derivatives reject the gradient")
 {
   auto lib = Omega_h::Library{};
-  auto mesh = BuildSquare(lib);
+  auto mesh = pcms::test::BuildSquareMesh(lib, 8);
   auto space = pcms::test::MakeP1Space(mesh);
-  auto coords = pcms::test::CreateDeviceCoordinateView(
-    pcms::test::StandardEvalCoords2D(), space->GetCoordinateSystem());
-  auto bound = space->GetGeometry()->Bind(coords.coordinate_view);
+  auto bound =
+    pcms::test::Bind(*space->GetGeometry(), pcms::test::StandardEvalCoords2D());
   REQUIRE_FALSE(space->Supports(pcms::DifferentialOperator::Gradient));
   REQUIRE_THROWS_WITH(space->CreatePointEvaluator<Real>(
                         bound, pcms::DifferentialOperator::Gradient),
@@ -102,7 +87,7 @@ TEST_CASE("Sources without derivatives reject the gradient")
 TEST_CASE("Binding splits found and missing points and applies the policy")
 {
   auto lib = Omega_h::Library{};
-  auto mesh = BuildSquare(lib);
+  auto mesh = pcms::test::BuildSquareMesh(lib, 8);
   auto space = pcms::test::MakeP1Space(mesh);
   auto field = space->CreateFunction<Real>("f");
   pcms::test::SetField(
@@ -110,18 +95,16 @@ TEST_CASE("Binding splits found and missing points and applies the policy")
     OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); });
   // the second point is outside the unit square
   const std::vector<Real> pts = {0.5, 0.5, 2.0, 2.0, 0.25, 0.75};
-  auto coords =
-    pcms::test::CreateDeviceCoordinateView(pts, space->GetCoordinateSystem());
 
-  REQUIRE_THROWS_WITH(space->GetGeometry()->Bind(coords.coordinate_view),
+  REQUIRE_THROWS_WITH(pcms::test::Bind(*space->GetGeometry(), pts),
                       ContainsSubstring("outside the source's domain"));
-  REQUIRE_THROWS_WITH(space->GetGeometry()->Bind(
-                        coords.coordinate_view,
-                        OutOfBoundsPolicy{OutOfBoundsMode::NEAREST_BOUNDARY}),
-                      ContainsSubstring("NEAREST_BOUNDARY"));
+  REQUIRE_THROWS_WITH(
+    pcms::test::Bind(*space->GetGeometry(), pts,
+                     OutOfBoundsPolicy{OutOfBoundsMode::NEAREST_BOUNDARY}),
+    ContainsSubstring("NEAREST_BOUNDARY"));
 
-  auto bound = space->GetGeometry()->Bind(
-    coords.coordinate_view, OutOfBoundsPolicy{OutOfBoundsMode::FILL, -1.0});
+  auto bound = pcms::test::Bind(*space->GetGeometry(), pts,
+                                OutOfBoundsPolicy{OutOfBoundsMode::FILL, -1.0});
   const auto found = Kokkos::create_mirror_view_and_copy(HostMemorySpace(),
                                                          bound->FoundPoints());
   const auto missing = Kokkos::create_mirror_view_and_copy(

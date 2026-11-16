@@ -145,10 +145,9 @@ TEST_CASE("MLS reconstruction honours the dimension of the points")
     field, OMEGA_H_LAMBDA(Real x, Real y, Real z) {
       return 1.0 + 2.0 * x - 3.0 * y + 5.0 * z;
     });
-  auto targets = pcms::test::CreateDeviceCoordinateView(points, system, 3);
   const auto values = pcms::test::EvaluateToHost(
     *space->CreatePointEvaluator<Real>(
-      space->GetGeometry()->Bind(targets.coordinate_view)),
+      pcms::test::Bind(*space->GetGeometry(), points)),
     field, field.GetData().GetValueBasis());
   for (int i = 0; i < 27; ++i) {
     const Real exact = 1.0 + 2.0 * points[3 * i] - 3.0 * points[3 * i + 1] +

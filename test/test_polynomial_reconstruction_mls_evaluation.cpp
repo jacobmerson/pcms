@@ -101,10 +101,8 @@ void CheckPolynomialReproduction(unsigned degree,
   pcms::test::SetField(field, func);
 
   auto pts = pcms::test::StandardEvalCoords2D();
-  auto device_coords = pcms::test::CreateDeviceCoordinateView(
-    pts, pcms::csys::Cartesian::Deferred());
-  auto evaluator = fs->CreatePointEvaluator<Real>(
-    fs->GetGeometry()->Bind(device_coords.coordinate_view));
+  auto evaluator =
+    fs->CreatePointEvaluator<Real>(pcms::test::Bind(*fs->GetGeometry(), pts));
   pcms::test::CheckEvaluation(*evaluator, field, pts, func, abs_tol);
 }
 
@@ -164,11 +162,9 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: same PointEvaluator "
   pcms::test::SetField(field_b, OMEGA_H_LAMBDA(Real, Real) { return cval; });
 
   auto pts = pcms::test::StandardEvalCoords2D();
-  auto device_coords = pcms::test::CreateDeviceCoordinateView(
-    pts, pcms::csys::Cartesian::Deferred());
   // Create the PointEvaluator once and reuse it for both fields.
-  auto evaluator = fs->CreatePointEvaluator<Real>(
-    fs->GetGeometry()->Bind(device_coords.coordinate_view));
+  auto evaluator =
+    fs->CreatePointEvaluator<Real>(pcms::test::Bind(*fs->GetGeometry(), pts));
 
   pcms::test::CheckEvaluation(
     *evaluator, field_a, pts,
@@ -196,10 +192,8 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: Evaluate throws for "
 
   auto pts = pcms::test::StandardEvalCoords2D();
   int n = static_cast<int>(pts.size()) / 2;
-  auto device_coords = pcms::test::CreateDeviceCoordinateView(
-    pts, pcms::csys::Cartesian::Deferred());
-  auto evaluator = fs->CreatePointEvaluator<Real>(
-    fs->GetGeometry()->Bind(device_coords.coordinate_view));
+  auto evaluator =
+    fs->CreatePointEvaluator<Real>(pcms::test::Bind(*fs->GetGeometry(), pts));
 
   // Two-component output — must throw
   Kokkos::View<Real**, DeviceMemorySpace> out_device("out", n, 2);
@@ -226,10 +220,8 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: default MLSOptions — "
 
   auto pts = pcms::test::StandardEvalCoords2D();
   int n = static_cast<int>(pts.size()) / 2;
-  auto device_coords = pcms::test::CreateDeviceCoordinateView(
-    pts, pcms::csys::Cartesian::Deferred());
-  auto evaluator = fs->CreatePointEvaluator<Real>(
-    fs->GetGeometry()->Bind(device_coords.coordinate_view));
+  auto evaluator =
+    fs->CreatePointEvaluator<Real>(pcms::test::Bind(*fs->GetGeometry(), pts));
 
   Kokkos::View<Real**, DeviceMemorySpace> out_device("out", n, 1);
   // Just verify it runs without error and returns finite values
@@ -294,10 +286,8 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: accepts the (R, Z) "
         dof_values.data(), static_cast<pcms::LO>(dof_values.size()), 1)));
 
   std::vector<Real> pts{0.3, 0.4, 0.6, 0.7};
-  auto device_coords = pcms::test::CreateDeviceCoordinateView(
-    pts, pcms::csys::CylindricalRZ::Create());
-  auto evaluator = fs->CreatePointEvaluator<Real>(
-    fs->GetGeometry()->Bind(device_coords.coordinate_view));
+  auto evaluator =
+    fs->CreatePointEvaluator<Real>(pcms::test::Bind(*fs->GetGeometry(), pts));
 
   Kokkos::View<Real**, DeviceMemorySpace> out_device("out", 2, 1);
   evaluator->Evaluate(field, pcms::test::TagLike(field, out_device));
@@ -365,9 +355,7 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: spaces of two degrees "
   f_quadratic.SetDOFHolderDataHost(dofs);
 
   std::vector<Real> pts{0.31, 0.42, 0.55, 0.68, 0.47, 0.23};
-  auto device_coords = pcms::test::CreateDeviceCoordinateView(
-    pts, geometry->GetCoordinateSystem());
-  const auto bound = geometry->Bind(device_coords.coordinate_view);
+  const auto bound = pcms::test::Bind(*geometry, pts);
   const auto quadratic_values =
     pcms::test::EvaluateToHost(*quadratic->CreatePointEvaluator<Real>(bound),
                                f_quadratic, pcms::ValueBasis{});
@@ -409,10 +397,8 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: radius option is "
         dof_values.data(), static_cast<pcms::LO>(dof_values.size()), 1)));
 
   std::vector<Real> pts{0.0, 0.0};
-  auto device_coords = pcms::test::CreateDeviceCoordinateView(
-    pts, pcms::csys::Cartesian::Deferred());
-  auto evaluator = fs->CreatePointEvaluator<Real>(
-    fs->GetGeometry()->Bind(device_coords.coordinate_view));
+  auto evaluator =
+    fs->CreatePointEvaluator<Real>(pcms::test::Bind(*fs->GetGeometry(), pts));
   Kokkos::View<Real**, DeviceMemorySpace> out_device("out", 1, 1);
   evaluator->Evaluate(field, pcms::test::TagLike(field, out_device));
   auto out_host =
@@ -450,10 +436,8 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: 3D point clouds preserve "
     KOKKOS_LAMBDA(Real x, Real y, Real z) { return x + 2.0 * y + 3.0 * z; });
 
   std::vector<Real> pts{0.5, 0.5, 0.25, 0.5, 0.5, 0.75};
-  auto device_coords = pcms::test::CreateDeviceCoordinateView(
-    pts, pcms::csys::Cartesian::Deferred(), 3);
-  auto evaluator = fs->CreatePointEvaluator<Real>(
-    fs->GetGeometry()->Bind(device_coords.coordinate_view));
+  auto evaluator =
+    fs->CreatePointEvaluator<Real>(pcms::test::Bind(*fs->GetGeometry(), pts));
   Kokkos::View<Real**, DeviceMemorySpace> out_device("out", 2, 1);
   evaluator->Evaluate(field, pcms::test::TagLike(field, out_device));
   auto out_host =

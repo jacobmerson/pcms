@@ -40,12 +40,6 @@ using pcms::Real;
 namespace
 {
 
-Omega_h::Mesh BuildSquareMesh(Omega_h::Library& lib, int n)
-{
-  return Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1.0, 1.0, 0.0, n, n,
-                            0);
-}
-
 std::shared_ptr<pcms::Geometry> MakeGeometry(Omega_h::Mesh& mesh,
                                              pcms::SearchOptions options = {})
 {
@@ -113,7 +107,7 @@ KOKKOS_INLINE_FUNCTION Real Quadratic(Real x, Real y)
 TEST_CASE("One bind serves every space on a geometry")
 {
   auto lib = Omega_h::Library{};
-  auto mesh = BuildSquareMesh(lib, 8);
+  auto mesh = pcms::test::BuildSquareMesh(lib, 8);
   auto geometry = MakeGeometry(mesh);
   auto scalars = MakeSpace(geometry, 1, 1);
   auto vectors = MakeSpace(geometry, 1, 3);
@@ -126,9 +120,7 @@ TEST_CASE("One bind serves every space on a geometry")
   pcms::test::SetField(
     f, OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); });
   const auto pts = pcms::test::StandardEvalCoords2D();
-  auto coords = pcms::test::CreateDeviceCoordinateView(
-    pts, geometry->GetCoordinateSystem());
-  const auto bound = geometry->Bind(coords.coordinate_view);
+  const auto bound = pcms::test::Bind(*geometry, pts);
   REQUIRE(bound->GetGeometry() == geometry);
   pcms::test::CheckEvaluation(
     *scalars->CreatePointEvaluator<Real>(bound), f, pts,
@@ -163,7 +155,7 @@ TEST_CASE("One bind serves every space on a geometry")
 TEST_CASE("Spaces on a geometry share its discretization")
 {
   auto lib = Omega_h::Library{};
-  auto mesh = BuildSquareMesh(lib, 4);
+  auto mesh = pcms::test::BuildSquareMesh(lib, 4);
   auto geometry = MakeGeometry(mesh);
   const auto discretization = geometry->GetDiscretization();
   auto scalars = MakeSpace(geometry, 1, 1);
@@ -183,7 +175,7 @@ TEST_CASE("Spaces on a geometry share its discretization")
   REQUIRE(
     other->GetLayout()->GetDiscretization()->SameEntities(*discretization));
   // a layout refuses a discretization of another mesh
-  auto other_mesh = BuildSquareMesh(lib, 2);
+  auto other_mesh = pcms::test::BuildSquareMesh(lib, 2);
   REQUIRE_THROWS_WITH(
     pcms::OmegaHLagrangeLayout(
       other_mesh, 1, 1, pcms::csys::Cartesian::Create(2),
@@ -196,7 +188,7 @@ TEST_CASE("Spaces on a geometry share its discretization")
 TEST_CASE("Known owners skip the search")
 {
   auto lib = Omega_h::Library{};
-  auto mesh = BuildSquareMesh(lib, 4);
+  auto mesh = pcms::test::BuildSquareMesh(lib, 4);
   auto geometry = MakeGeometry(mesh);
   auto space = MakeSpace(geometry, 1, 1);
   auto f = space->CreateFunction<Real>("f");
@@ -260,12 +252,11 @@ TEST_CASE("Differential gives the element measure")
   auto lib = Omega_h::Library{};
   SECTION("triangles")
   {
-    auto mesh = BuildSquareMesh(lib, 5);
+    auto mesh = pcms::test::BuildSquareMesh(lib, 5);
     auto geometry = MakeGeometry(mesh);
-    auto coords = pcms::test::CreateDeviceCoordinateView(
-      pcms::test::StandardEvalCoords2D(), geometry->GetCoordinateSystem());
+    const auto pts = pcms::test::StandardEvalCoords2D();
     const auto differential =
-      geometry->Differential(*geometry->Bind(coords.coordinate_view));
+      geometry->Differential(*pcms::test::Bind(*geometry, pts));
     REQUIRE(differential.per_element);
     REQUIRE(differential.jacobian.extent(0) ==
             static_cast<size_t>(mesh.nelems()));
@@ -280,19 +271,16 @@ TEST_CASE("Differential gives the element measure")
     CheckJacobianRows<2>(mesh, differential, mesh.nelems() / 2);
     // the bound source must be one of this geometry
     auto other = MakeGeometry(mesh);
-    REQUIRE_THROWS_WITH(
-      geometry->Differential(*other->Bind(coords.coordinate_view)),
-      ContainsSubstring("belongs to another geometry"));
+    REQUIRE_THROWS_WITH(geometry->Differential(*pcms::test::Bind(*other, pts)),
+                        ContainsSubstring("belongs to another geometry"));
   }
   SECTION("tetrahedra")
   {
     auto mesh = pcms::test::BuildUnitCube(lib, 2);
     auto geometry =
       pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Create(3));
-    auto coords = pcms::test::CreateDeviceCoordinateView(
-      {0.5, 0.5, 0.5}, geometry->GetCoordinateSystem(), 3);
     const auto differential =
-      geometry->Differential(*geometry->Bind(coords.coordinate_view));
+      geometry->Differential(*pcms::test::Bind(*geometry, {0.5, 0.5, 0.5}));
     const auto det = Kokkos::create_mirror_view_and_copy(
       HostMemorySpace(), differential.determinant);
     const auto measures =
@@ -308,7 +296,7 @@ TEST_CASE("Differential gives the element measure")
 TEST_CASE("Search options are honoured")
 {
   auto lib = Omega_h::Library{};
-  auto mesh = BuildSquareMesh(lib, 8);
+  auto mesh = pcms::test::BuildSquareMesh(lib, 8);
   auto coarse = MakeGeometry(mesh, pcms::SearchOptions{3, 1e-12});
   auto derived = MakeGeometry(mesh);
   auto coarse_space = MakeSpace(coarse, 1, 1);
@@ -325,11 +313,9 @@ TEST_CASE("Search options are honoured")
   for (Real x : pcms::test::StandardOutsideCoords2D()) {
     pts.push_back(x);
   }
-  auto coords =
-    pcms::test::CreateDeviceCoordinateView(pts, coarse->GetCoordinateSystem());
   const pcms::OutOfBoundsPolicy fill{pcms::OutOfBoundsMode::FILL, -1.0};
-  const auto coarse_bound = coarse->Bind(coords.coordinate_view, fill);
-  const auto derived_bound = derived->Bind(coords.coordinate_view, fill);
+  const auto coarse_bound = pcms::test::Bind(*coarse, pts, fill);
+  const auto derived_bound = pcms::test::Bind(*derived, pts, fill);
   const auto coarse_found = Kokkos::create_mirror_view_and_copy(
     HostMemorySpace(), coarse_bound->FoundPoints());
   const auto derived_found = Kokkos::create_mirror_view_and_copy(
@@ -351,14 +337,12 @@ TEST_CASE("Search options are honoured")
   }
 
   // the tolerance decides whether a point just outside the boundary is found
-  auto near = pcms::test::CreateDeviceCoordinateView(
-    {0.5, 0.5, 1.0 + 1e-8, 0.5}, coarse->GetCoordinateSystem());
+  const std::vector<Real> near = {0.5, 0.5, 1.0 + 1e-8, 0.5};
   const auto loose = MakeGeometry(mesh, pcms::SearchOptions{.tolerance = 1e-6});
   const auto tight =
     MakeGeometry(mesh, pcms::SearchOptions{.tolerance = 1e-12});
-  REQUIRE(loose->Bind(near.coordinate_view, fill)->FoundPoints().extent(0) ==
-          2);
-  const auto tight_bound = tight->Bind(near.coordinate_view, fill);
+  REQUIRE(pcms::test::Bind(*loose, near, fill)->FoundPoints().extent(0) == 2);
+  const auto tight_bound = pcms::test::Bind(*tight, near, fill);
   REQUIRE(tight_bound->FoundPoints().extent(0) == 1);
   const auto tight_missing = Kokkos::create_mirror_view_and_copy(
     HostMemorySpace(), tight_bound->MissingPoints());
@@ -369,7 +353,7 @@ TEST_CASE("Search options are honoured")
 TEST_CASE("Neighbourhood returns vertex supports")
 {
   auto lib = Omega_h::Library{};
-  auto mesh = BuildSquareMesh(lib, 8);
+  auto mesh = pcms::test::BuildSquareMesh(lib, 8);
   auto geometry = MakeGeometry(mesh);
   auto coords = pcms::test::CreateDeviceCoordinateView(
     pcms::test::StandardEvalCoords2D(), geometry->GetCoordinateSystem());
@@ -409,7 +393,7 @@ TEST_CASE("Neighbourhood returns vertex supports")
 TEST_CASE("PointCloudGeometry::Neighbourhood takes the search of its sites")
 {
   auto lib = Omega_h::Library{};
-  auto mesh = BuildSquareMesh(lib, 8);
+  auto mesh = pcms::test::BuildSquareMesh(lib, 8);
   const auto system = pcms::csys::Cartesian::Create(2);
   auto vertices =
     std::make_shared<pcms::OmegaHEntityLayout>(mesh, pcms::Vertex, 1, system);
@@ -498,7 +482,7 @@ TEST_CASE("Points the adjacency search cannot start from are missing")
 TEST_CASE("An empty bind evaluates to nothing")
 {
   auto lib = Omega_h::Library{};
-  auto mesh = BuildSquareMesh(lib, 2);
+  auto mesh = pcms::test::BuildSquareMesh(lib, 2);
   auto geometry = MakeGeometry(mesh);
   pcms::UniformGrid<2> grid;
   grid.bot_left = {0.0, 0.0};
@@ -528,7 +512,7 @@ TEST_CASE("An empty bind evaluates to nothing")
 TEST_CASE("DOFHolderOwners gives the entity of each DOF holder")
 {
   auto lib = Omega_h::Library{};
-  auto mesh = BuildSquareMesh(lib, 3);
+  auto mesh = pcms::test::BuildSquareMesh(lib, 3);
   auto geometry = MakeGeometry(mesh);
   const auto entities = [&](const pcms::FunctionSpace& space, int dim) {
     const auto owners = pcms::DOFHolderOwners(*space.GetLayout(), geometry);
@@ -566,7 +550,7 @@ TEST_CASE("DOFHolderOwners gives the entity of each DOF holder")
 TEST_CASE("Hinted neighbourhoods equal searched ones inside the mesh")
 {
   auto lib = Omega_h::Library{};
-  auto mesh = BuildSquareMesh(lib, 6);
+  auto mesh = pcms::test::BuildSquareMesh(lib, 6);
   auto geometry = MakeGeometry(mesh);
   const pcms::NeighbourhoodOptions options{.radius = 0.3, .min_supports = 6};
   for (const int dim : {pcms::Vertex, pcms::Face}) {
@@ -587,7 +571,7 @@ TEST_CASE("Hinted neighbourhoods equal searched ones inside the mesh")
 TEST_CASE("Binding with owners keeps the policy")
 {
   auto lib = Omega_h::Library{};
-  auto mesh = BuildSquareMesh(lib, 4);
+  auto mesh = pcms::test::BuildSquareMesh(lib, 4);
   auto geometry = MakeGeometry(mesh);
   auto space = MakeSpace(geometry, 1, 1);
   auto f = space->CreateFunction<Real>("f");
@@ -611,7 +595,7 @@ TEST_CASE("MeshFields evaluates P2 fields through the geometry's bind")
   // P2 reproduces a quadratic exactly, so any change in the element
   // coordinates MeshFields receives shows up here.
   auto lib = Omega_h::Library{};
-  auto mesh = BuildSquareMesh(lib, 6);
+  auto mesh = pcms::test::BuildSquareMesh(lib, 6);
   auto geometry = MakeGeometry(mesh);
   auto p2 = CreateLagrangeSpace(
     geometry, 2, 1, LagrangeOptions{.backend = LagrangeBackend::MeshFields});
@@ -620,9 +604,7 @@ TEST_CASE("MeshFields evaluates P2 fields through the geometry's bind")
     f2, OMEGA_H_LAMBDA(Real x, Real y) { return Quadratic(x, y); });
 
   const auto pts = pcms::test::StandardEvalCoords2D();
-  auto coords = pcms::test::CreateDeviceCoordinateView(
-    pts, geometry->GetCoordinateSystem());
-  const auto bound = geometry->Bind(coords.coordinate_view);
+  const auto bound = pcms::test::Bind(*geometry, pts);
   pcms::test::CheckEvaluation(
     *p2->CreatePointEvaluator<Real>(bound), f2, pts,
     OMEGA_H_LAMBDA(Real x, Real y) { return Quadratic(x, y); },
