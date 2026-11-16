@@ -20,6 +20,7 @@
 #include <pcms/field/query_points.hpp>
 #include <pcms/field/value_view.hpp>
 #include <pcms/utility/arrays.h>
+#include <pcms/utility/memory_spaces.h>
 #include <Kokkos_Core.hpp>
 #include <mpi.h>
 #include <algorithm>
@@ -98,10 +99,19 @@ public:
       points_ = Kokkos::View<Real**, pcms::DeviceMemorySpace>(
         Kokkos::view_alloc(Kokkos::WithoutInitializing, "points"), n, 3);
     }
-    Kokkos::View<const Real**, Kokkos::LayoutRight, pcms::HostMemorySpace,
-                 Kokkos::MemoryTraits<Kokkos::Unmanaged>>
-      host_points(xyz.data(), n, 3);
-    pcms::DeepCopyMismatchLayouts(points_, host_points);
+    if (pcms::IsSmallHostBatch(n)) {
+      // a plain copy: deep_copy fences, and may run a parallel region
+      for (size_t i = 0; i < n; ++i) {
+        for (size_t c = 0; c < 3; ++c) {
+          points_(i, c) = xyz[3 * i + c];
+        }
+      }
+    } else {
+      Kokkos::View<const Real**, Kokkos::LayoutRight, pcms::HostMemorySpace,
+                   Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+        host_points(xyz.data(), n, 3);
+      pcms::DeepCopyMismatchLayouts(points_, host_points);
+    }
     query_.Locate(pcms::CoordinateView<pcms::DeviceMemorySpace>(
       system_, pcms::MakeRank2View(points_)));
   }
@@ -123,7 +133,15 @@ public:
     query_.Evaluate(function, pcms::ValueView<Real, pcms::DeviceMemorySpace>(
                                 function.GetData().GetValueBasis(),
                                 pcms::MakeRank2View(values_)));
-    Kokkos::deep_copy(result_, values_);
+    if (!pcms::IsSmallHostBatch(n)) {
+      Kokkos::deep_copy(result_, values_);
+    } else if (result_.data() != values_.data()) {
+      for (size_t i = 0; i < n; ++i) {
+        for (size_t c = 0; c < num_components; ++c) {
+          result_(i, c) = values_(i, c);
+        }
+      }
+    }
     return result_;
   }
 
