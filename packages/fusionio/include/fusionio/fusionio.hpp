@@ -160,10 +160,11 @@ enum class Evaluation
   FusionIO,
   /// by Kokkos kernels on the device, from the file's mesh and coefficients
   /// as Fusion-IO 1.x reads them: M3D-C1 sources with a 2D mesh, whose
-  /// axisymmetric scalar fields (with gradients and Hessians) and magnetic
-  /// field are evaluated at (R, Z) points (the geometry is CylindricalRZ).
-  /// CreateFunction throws for the quantities and options it does not
-  /// evaluate natively.
+  /// fields are axisymmetric or of one toroidal mode (linear runs). The
+  /// scalar quantities stored as one field (with gradients and Hessians) and
+  /// the magnetic field are evaluated at (R, phi, Z) points, as with
+  /// FusionIO. CreateFunction throws for the quantities and options it does
+  /// not evaluate natively.
   Native
 };
 

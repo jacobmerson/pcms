@@ -6,11 +6,13 @@
 #include <fusionio/fusionio.hpp>
 #include <pcms/field/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/evaluator/omega_h_geometry.hpp>
+#include <pcms/field/query_points.hpp>
 #include "fusion_io_source.hpp"
 #include "fusion_io_space.hpp"
 #include "m3dc1_native.hpp"
 #include "test_utils.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <memory>
 #include <numbers>
@@ -48,17 +50,24 @@ std::array<std::array<Real, 2>, 3> Corners(const m3dc1_mesh& mesh, int e)
   return corners;
 }
 
-// Random points strictly inside random elements of the mesh, (R, Z)
-// row-major, and the element of each.
+// Random points strictly inside random elements of the mesh at random phi:
+// (R, Z) and (R, phi, Z) row-major, and the element of each.
 struct RandomPoints
 {
   std::vector<Real> rz;
+  std::vector<Real> rpz;
   std::vector<int> elements;
+
+  [[nodiscard]] std::array<Real, 3> At(size_t i) const
+  {
+    return {rpz[3 * i], rpz[3 * i + 1], rpz[3 * i + 2]};
+  }
 };
 
-RandomPoints InsideElements(const m3dc1_mesh& mesh, int n)
+RandomPoints InsideElements(const m3dc1_mesh& mesh, int n,
+                            unsigned seed = 12345)
 {
-  std::mt19937 random(12345);
+  std::mt19937 random(seed);
   std::uniform_int_distribution<int> element(0, mesh.nelms - 1);
   std::uniform_real_distribution<Real> unit(0., 1.);
   RandomPoints points;
@@ -81,42 +90,128 @@ RandomPoints InsideElements(const m3dc1_mesh& mesh, int n)
       r += w[k] * corners[k][0];
       z += w[k] * corners[k][1];
     }
+    const Real phi = 2. * std::numbers::pi * unit(random);
     points.rz.insert(points.rz.end(), {r, z});
+    points.rpz.insert(points.rpz.end(), {r, phi, z});
     points.elements.push_back(e);
   }
   return points;
 }
 
-// (R, phi, Z) of point i of `rz`.
-std::array<Real, 3> RPhiZ(const std::vector<Real>& rz, size_t i)
-{
-  return {rz[2 * i], 0., rz[2 * i + 1]};
-}
-
-// Fusion-IO 1.x's options for `options` (as FusionIOFileSource sets them).
+// Fusion-IO 1.x's options for `options`, as FusionIOFileSource sets them.
 fio_option_list FusionIOOptions(fio_source& source,
                                 const fusionio::Options& options)
 {
   fio_option_list list;
   source.get_field_options(&list);
-  list.set_option(FIO_PART, FIO_EQUILIBRIUM_ONLY);
+  if (options.timeslice) {
+    list.set_option(FIO_TIMESLICE, *options.timeslice);
+  }
+  if (options.part) {
+    list.set_option(FIO_PART, *options.part == fusionio::Part::Equilibrium
+                                ? FIO_EQUILIBRIUM_ONLY
+                              : *options.part == fusionio::Part::Perturbed
+                                ? FIO_PERTURBED_ONLY
+                                : FIO_TOTAL);
+  }
   if (options.species) {
     list.set_option(FIO_SPECIES, *options.species == fusionio::Species::Electron
                                    ? FIO_ELECTRON
                                    : FIO_MAIN_ION);
+  }
+  if (options.linear_scale) {
+    list.set_option(FIO_LINEAR_SCALE, *options.linear_scale);
+  }
+  if (options.phase) {
+    list.set_option(FIO_PHASE, *options.phase);
   }
   return list;
 }
 
 // The largest magnitude of the column `c` of `values`, the scale of the
 // absolute floor of the comparisons.
-Real Scale(const std::vector<std::array<Real, 3>>& values, int c)
+template <size_t N>
+Real Scale(const std::vector<std::array<Real, N>>& values, int c)
 {
   Real scale = 0.;
   for (const auto& v : values) {
     scale = std::max(scale, std::abs(v[c]));
   }
   return scale;
+}
+
+// Requires `actual` (host rows) to match `expected` within `tolerance`,
+// relative or of the column's largest magnitude.
+template <size_t N, typename Actual>
+void RequireClose(const Actual& actual,
+                  const std::vector<std::array<Real, N>>& expected,
+                  Real tolerance)
+{
+  REQUIRE(actual.extent(0) == expected.size());
+  REQUIRE(actual.extent(1) == N);
+  for (int c = 0; c < static_cast<int>(N); ++c) {
+    const Real scale = Scale(expected, c);
+    for (size_t i = 0; i < expected.size(); ++i) {
+      CAPTURE(c, i);
+      REQUIRE_THAT(actual(i, c),
+                   WithinRel(expected[i][c], tolerance) ||
+                     WithinAbs(expected[i][c], tolerance * scale));
+    }
+  }
+}
+
+// Fusion-IO 1.x's values of `field` (eval) or, with `gradient`, its gradient
+// as physical components (eval_deriv, (1/R) d/dphi) at the points.
+template <size_t N>
+std::vector<std::array<Real, N>> FusionIOValues(fio_field& field,
+                                                const RandomPoints& points,
+                                                bool gradient = false)
+{
+  std::vector<std::array<Real, N>> values(points.elements.size());
+  for (size_t i = 0; i < values.size(); ++i) {
+    int hint = points.elements[i];
+    const auto x = points.At(i);
+    const int status = gradient
+                         ? field.eval_deriv(x.data(), values[i].data(), &hint)
+                         : field.eval(x.data(), values[i].data(), &hint);
+    REQUIRE(status == FIO_SUCCESS);
+    if (gradient) {
+      values[i][1] /= x[0];
+    }
+  }
+  return values;
+}
+
+// The physical (R, phi, Z) Hessian of factor * `field` from 1.x's
+// m3dc1_field::eval at the points: the coordinate second derivatives less the
+// connection's terms, over the scale factors (1, R, 1).
+std::vector<std::array<Real, 9>> FusionIOHessian(m3dc1_field& field,
+                                                 const RandomPoints& points,
+                                                 Real factor)
+{
+  const auto get = static_cast<m3dc1_field::m3dc1_get_op>(
+    m3dc1_field::GET_VAL | m3dc1_field::GET_DVAL | m3dc1_field::GET_DDVAL |
+    m3dc1_field::GET_PVAL | m3dc1_field::GET_PPVAL);
+  std::vector<std::array<Real, 9>> hessians(points.elements.size());
+  for (size_t i = 0; i < hessians.size(); ++i) {
+    int hint = points.elements[i];
+    const auto x = points.At(i);
+    Real v[m3dc1_field::OP_NUM];
+    REQUIRE(field.eval(x[0], x[1], x[2], get, v, &hint));
+    for (auto& value : v) {
+      value *= factor;
+    }
+    const Real r = x[0];
+    const Real rphi =
+      v[m3dc1_field::OP_DRP] / r - v[m3dc1_field::OP_DP] / (r * r);
+    const Real phiz = v[m3dc1_field::OP_DZP] / r;
+    const Real phiphi =
+      v[m3dc1_field::OP_DPP] / (r * r) + v[m3dc1_field::OP_DR] / r;
+    hessians[i] = {
+      v[m3dc1_field::OP_DRR], rphi, v[m3dc1_field::OP_DRZ], rphi, phiphi, phiz,
+      v[m3dc1_field::OP_DRZ], phiz, v[m3dc1_field::OP_DZZ]};
+  }
+  return hessians;
 }
 
 } // namespace
@@ -187,52 +282,49 @@ TEST_CASE("Native M3D-C1 scalars match Fusion-IO 1.x")
     fusionio::detail::OpenFusionIOSource(fusionio::Format::M3DC1, M3DC1File);
   const auto native = fusionio::Open(fusionio::Format::M3DC1, M3DC1File,
                                      fusionio::Evaluation::Native);
+  REQUIRE(
+    pcms::SameCoordinateSystem(native->GetGeometry()->GetCoordinateSystem(),
+                               pcms::csys::CylindricalRThetaZ::Create()));
   const auto points = InsideElements(*oracle->DomainMesh(), NumPoints);
   const auto electron = fusionio::Species::Electron;
   const auto ion = fusionio::Species::MainIon;
-  struct Case
-  {
-    Quantity quantity;
-    std::optional<fusionio::Species> species;
-  };
-  for (const auto& [quantity, species] :
-       {Case{Quantity::PoloidalFlux, {}}, Case{Quantity::PoloidalFluxNorm, {}},
-        Case{Quantity::TotalPressure, {}}, Case{Quantity::Pressure, electron},
-        Case{Quantity::Density, ion}, Case{Quantity::Density, electron},
-        Case{Quantity::Temperature, ion}, Case{Quantity::Temperature, electron},
-        Case{Quantity::Resistivity, {}}}) {
-    CAPTURE(fusionio::Name(quantity), species.has_value());
-    const fusionio::Options options{.part = fusionio::Part::Equilibrium,
-                                    .species = species};
+  const auto equilibrium = fusionio::Part::Equilibrium;
+  const auto perturbed = fusionio::Part::Perturbed;
+  // the equilibrium's stored scalars; then the n = 2 perturbation of time
+  // slice 1 (a linear run) of the flux alone (scaled, shifted) and with the
+  // equilibrium, and of the pressure
+  const fusionio::Options cases[] = {
+    {.part = equilibrium},
+    {.part = equilibrium},
+    {.part = equilibrium},
+    {.part = equilibrium, .species = electron},
+    {.part = equilibrium, .species = ion},
+    {.part = equilibrium, .species = electron},
+    {.part = equilibrium, .species = ion},
+    {.part = equilibrium, .species = electron},
+    {.part = equilibrium},
+    {.timeslice = 1, .part = perturbed, .linear_scale = 100., .phase = 0.3},
+    {.timeslice = 1, .linear_scale = 100.},
+    {.timeslice = 1, .part = perturbed, .linear_scale = 100.}};
+  const Quantity quantities[] = {
+    Quantity::PoloidalFlux,  Quantity::PoloidalFluxNorm,
+    Quantity::TotalPressure, Quantity::Pressure,
+    Quantity::Density,       Quantity::Density,
+    Quantity::Temperature,   Quantity::Temperature,
+    Quantity::Resistivity,   Quantity::PoloidalFlux,
+    Quantity::PoloidalFlux,  Quantity::TotalPressure};
+  for (size_t n = 0; n < std::size(cases); ++n) {
+    const auto& options = cases[n];
+    const Quantity quantity = quantities[n];
+    CAPTURE(n, fusionio::Name(quantity));
     const auto function = native->CreateFunction(quantity, options);
     const auto field =
       oracle->GetField(quantity, FusionIOOptions(oracle->Get(), options));
-    std::vector<std::array<Real, 3>> values(NumPoints), gradients(NumPoints);
-    for (size_t i = 0; i < NumPoints; ++i) {
-      int hint = points.elements[i];
-      const auto x = RPhiZ(points.rz, i);
-      REQUIRE(field->eval(x.data(), values[i].data(), &hint) == FIO_SUCCESS);
-      REQUIRE(field->eval_deriv(x.data(), gradients[i].data(), &hint) ==
-              FIO_SUCCESS);
-    }
-    const auto value = EvaluateAt(function, points.rz);
-    const auto gradient =
-      EvaluateAt(function, points.rz, DifferentialOperator::Gradient);
-    REQUIRE(gradient.extent(1) == 2);
-    const Real scale = Scale(values, 0);
-    const Real scale_r = Scale(gradients, 0);
-    const Real scale_z = Scale(gradients, 2);
-    for (size_t i = 0; i < NumPoints; ++i) {
-      CAPTURE(i, points.rz[2 * i], points.rz[2 * i + 1]);
-      REQUIRE_THAT(value(i, 0), WithinRel(values[i][0], 1e-10) ||
-                                  WithinAbs(values[i][0], 1e-10 * scale));
-      REQUIRE_THAT(gradient(i, 0),
-                   WithinRel(gradients[i][0], 1e-8) ||
-                     WithinAbs(gradients[i][0], 1e-8 * scale_r));
-      REQUIRE_THAT(gradient(i, 1),
-                   WithinRel(gradients[i][2], 1e-8) ||
-                     WithinAbs(gradients[i][2], 1e-8 * scale_z));
-    }
+    RequireClose(EvaluateAt(function, points.rpz),
+                 FusionIOValues<1>(*field, points), 1e-10);
+    RequireClose(
+      EvaluateAt(function, points.rpz, DifferentialOperator::Gradient),
+      FusionIOValues<3>(*field, points, true), 1e-8);
   }
 }
 
@@ -243,77 +335,62 @@ TEST_CASE("Native M3D-C1 Hessian of the poloidal flux matches Fusion-IO 1.x")
   auto& m3dc1 = dynamic_cast<m3dc1_source&>(oracle->Get());
   const auto native = fusionio::Open(fusionio::Format::M3DC1, M3DC1File,
                                      fusionio::Evaluation::Native);
-  const auto psi = native->CreateFunction(
-    Quantity::PoloidalFlux, {.part = fusionio::Part::Equilibrium});
   const auto points = InsideElements(*oracle->DomainMesh(), NumPoints);
-  const auto hessian =
-    EvaluateAt(psi, points.rz, DifferentialOperator::Hessian);
-  REQUIRE(hessian.extent(1) == 4);
   // Fusion-IO's poloidal flux is the stored psi times 2 pi B0 L0^2
-  // (m3dc1_source::get_field); its fields give the second derivatives.
-  m3dc1_field* stored = m3dc1.file.load_field("psi", -1);
-  REQUIRE(stored != nullptr);
+  // (m3dc1_source::get_field); its fields give the coordinate derivatives.
   const Real factor = 2. * std::numbers::pi * m3dc1.B0 * m3dc1.L0 * m3dc1.L0;
-  std::vector<std::array<Real, 3>> expected(NumPoints);
-  for (size_t i = 0; i < NumPoints; ++i) {
-    int hint = points.elements[i];
-    Real val[m3dc1_field::OP_NUM];
-    REQUIRE(stored->eval(points.rz[2 * i], 0., points.rz[2 * i + 1],
-                         m3dc1_field::GET_DDVAL, val, &hint));
-    expected[i] = {factor * val[m3dc1_field::OP_DRR],
-                   factor * val[m3dc1_field::OP_DRZ],
-                   factor * val[m3dc1_field::OP_DZZ]};
+  SECTION("equilibrium")
+  {
+    const auto psi = native->CreateFunction(
+      Quantity::PoloidalFlux, {.part = fusionio::Part::Equilibrium});
+    m3dc1_field* stored = m3dc1.file.load_field("psi", -1);
+    REQUIRE(stored != nullptr);
+    RequireClose(EvaluateAt(psi, points.rpz, DifferentialOperator::Hessian),
+                 FusionIOHessian(*stored, points, factor), 1e-8);
   }
-  const int columns[4] = {0, 1, 1, 2};
-  for (int c = 0; c < 4; ++c) {
-    const Real scale = Scale(expected, columns[c]);
-    for (size_t i = 0; i < NumPoints; ++i) {
-      CAPTURE(c, i);
-      const Real e = expected[i][columns[c]];
-      REQUIRE_THAT(hessian(i, c),
-                   WithinRel(e, 1e-8) || WithinAbs(e, 1e-8 * scale));
-    }
+  SECTION("n = 2 perturbation")
+  {
+    const auto psi = native->CreateFunction(
+      Quantity::PoloidalFlux,
+      {.timeslice = 1, .part = fusionio::Part::Perturbed, .linear_scale = 3.});
+    m3dc1_field* stored = m3dc1.file.load_field("psi", 1);
+    REQUIRE(stored != nullptr);
+    REQUIRE(dynamic_cast<m3dc1_complex_field*>(stored) != nullptr);
+    RequireClose(EvaluateAt(psi, points.rpz, DifferentialOperator::Hessian),
+                 FusionIOHessian(*stored, points, 3. * factor), 1e-8);
   }
 }
 
-TEST_CASE("Native M3D-C1 equilibrium magnetic field matches Fusion-IO 1.x")
+TEST_CASE("Native M3D-C1 magnetic field matches Fusion-IO 1.x")
 {
   auto oracle =
     fusionio::detail::OpenFusionIOSource(fusionio::Format::M3DC1, M3DC1File);
   const auto native = fusionio::Open(fusionio::Format::M3DC1, M3DC1File,
                                      fusionio::Evaluation::Native);
-  const fusionio::Options equilibrium{.part = fusionio::Part::Equilibrium};
-  const auto b = native->CreateFunction(Quantity::MagneticField, equilibrium);
-  REQUIRE(b.GetLayout().GetNumComponents() == 3);
-  REQUIRE(pcms::SameValueBasis(
-    b.GetData().GetValueBasis(),
-    pcms::ValueBasis{pcms::csys::CylindricalRThetaZ::Create(),
-                     pcms::ComponentScaling::Physical, pcms::values::Vector}));
-  REQUIRE_FALSE(b.GetSpace().Supports(DifferentialOperator::Gradient));
-  const auto field = oracle->GetField(
-    Quantity::MagneticField, FusionIOOptions(oracle->Get(), equilibrium));
   const auto points = InsideElements(*oracle->DomainMesh(), NumPoints);
-  std::vector<std::array<Real, 3>> expected(NumPoints);
-  for (size_t i = 0; i < NumPoints; ++i) {
-    int hint = points.elements[i];
-    const auto x = RPhiZ(points.rz, i);
-    REQUIRE(field->eval(x.data(), expected[i].data(), &hint) == FIO_SUCCESS);
+  // the equilibrium, the n = 2 perturbation of time slice 1 as fio_trace's
+  // perturbed case takes it (with a phase), and the total
+  const fusionio::Options cases[] = {{.part = fusionio::Part::Equilibrium},
+                                     {.timeslice = 1,
+                                      .part = fusionio::Part::Perturbed,
+                                      .linear_scale = 100.,
+                                      .phase = 0.7},
+                                     {.timeslice = 1, .linear_scale = 100.}};
+  for (const auto& options : cases) {
+    CAPTURE(options.timeslice.value_or(0));
+    const auto b = native->CreateFunction(Quantity::MagneticField, options);
+    REQUIRE(b.GetLayout().GetNumComponents() == 3);
+    REQUIRE(pcms::SameValueBasis(
+      b.GetData().GetValueBasis(),
+      pcms::ValueBasis{pcms::csys::CylindricalRThetaZ::Create(),
+                       pcms::ComponentScaling::Physical,
+                       pcms::values::Vector}));
+    REQUIRE_FALSE(b.GetSpace().Supports(DifferentialOperator::Gradient));
+    const auto field = oracle->GetField(
+      Quantity::MagneticField, FusionIOOptions(oracle->Get(), options));
+    RequireClose(EvaluateAt(b, points.rpz), FusionIOValues<3>(*field, points),
+                 1e-10);
   }
-  const auto values = EvaluateAt(b, points.rz);
-  for (int c = 0; c < 3; ++c) {
-    const Real scale = Scale(expected, c);
-    REQUIRE(scale > 0.);
-    for (size_t i = 0; i < NumPoints; ++i) {
-      CAPTURE(c, i, points.rz[2 * i], points.rz[2 * i + 1]);
-      REQUIRE_THAT(values(i, c), WithinRel(expected[i][c], 1e-10) ||
-                                   WithinAbs(expected[i][c], 1e-10 * scale));
-    }
-  }
-  // the time slices' fields are not axisymmetric
-  REQUIRE_THROWS_WITH(
-    native->CreateFunction(Quantity::MagneticField,
-                           {.timeslice = 1, .part = fusionio::Part::Perturbed}),
-    ContainsSubstring("not axisymmetric"));
 }
 
 TEST_CASE("Native M3D-C1 points outside the domain")
@@ -328,18 +405,22 @@ TEST_CASE("Native M3D-C1 points outside the domain")
     Quantity::PoloidalFlux, FusionIOOptions(oracle->Get(), equilibrium));
   // inside points mixed with points far outside on every side
   const auto inside = InsideElements(*oracle->DomainMesh(), 4);
-  const std::vector<Real> rz = {
-    inside.rz[0], inside.rz[1], 50.0,         0.0,         0.05, 0.0,
-    inside.rz[2], inside.rz[3], 1.7,          5.0,         1.7,  -5.0,
-    inside.rz[4], inside.rz[5], inside.rz[6], inside.rz[7]};
+  std::vector<Real> rpz;
+  for (const std::array<Real, 3>& x :
+       {inside.At(0), std::array<Real, 3>{50.0, 0.0, 0.0},
+        std::array<Real, 3>{0.05, 1.0, 0.0}, inside.At(1),
+        std::array<Real, 3>{1.7, 2.0, 5.0}, std::array<Real, 3>{1.7, 3.0, -5.0},
+        inside.At(2), inside.At(3)}) {
+    rpz.insert(rpz.end(), x.begin(), x.end());
+  }
   const std::vector<pcms::LO> outside = {1, 2, 4, 5};
   for (const pcms::LO i : outside) {
-    const auto x = RPhiZ(rz, static_cast<size_t>(i));
     Real value = 0.;
-    REQUIRE(field->eval(x.data(), &value) == FIO_OUT_OF_BOUNDS);
+    REQUIRE(field->eval(&rpz[3 * static_cast<size_t>(i)], &value) ==
+            FIO_OUT_OF_BOUNDS);
   }
   constexpr Real Fill = -7.0;
-  const auto bound = fusionio::test::Bind(*native->GetGeometry(), rz,
+  const auto bound = fusionio::test::Bind(*native->GetGeometry(), rpz,
                                           {pcms::OutOfBoundsMode::FILL, Fill});
   const auto missing = Kokkos::create_mirror_view_and_copy(
     pcms::HostMemorySpace(), bound->MissingPoints());
@@ -347,7 +428,7 @@ TEST_CASE("Native M3D-C1 points outside the domain")
                                 missing.data() + missing.extent(0)) == outside);
   const auto values = fusionio::test::EvaluateWith(
     *psi.GetSpace().CreatePointEvaluator<Real>(bound), psi);
-  const auto at_inside = EvaluateAt(psi, inside.rz);
+  const auto at_inside = EvaluateAt(psi, inside.rpz);
   for (const pcms::LO i : outside) {
     REQUIRE(values(i, 0) == Fill);
   }
@@ -355,8 +436,29 @@ TEST_CASE("Native M3D-C1 points outside the domain")
   for (size_t k = 0; k < 4; ++k) {
     REQUIRE(values(inside_rows[k], 0) == at_inside(k, 0));
   }
-  REQUIRE_THROWS_WITH(fusionio::test::Bind(*native->GetGeometry(), rz),
+  REQUIRE_THROWS_WITH(fusionio::test::Bind(*native->GetGeometry(), rpz),
                       ContainsSubstring("outside the source's domain"));
+
+  // QueryPoints rebinds in place and evaluates the moved points.
+  const auto& geometry = native->GetGeometry();
+  pcms::QueryPoints query(geometry);
+  const auto first = fusionio::test::CreateDeviceCoordinateView(
+    inside.rpz, geometry->GetCoordinateSystem(), 3);
+  query.Locate(first.coordinate_view);
+  const auto* storage = query.Bound().get();
+  const auto moved_points = InsideElements(*oracle->DomainMesh(), 4, 54321);
+  const auto moved = fusionio::test::CreateDeviceCoordinateView(
+    moved_points.rpz, geometry->GetCoordinateSystem(), 3);
+  query.Locate(moved.coordinate_view);
+  REQUIRE(query.Bound().get() == storage);
+  Kokkos::View<Real**, pcms::DeviceMemorySpace> out("out", 4, 1);
+  query.Evaluate(psi, fusionio::test::TagLike(psi, out));
+  const auto rebound =
+    Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(), out);
+  const auto fresh = EvaluateAt(psi, moved_points.rpz);
+  for (size_t k = 0; k < 4; ++k) {
+    REQUIRE(rebound(k, 0) == fresh(k, 0));
+  }
 }
 
 TEST_CASE("Native M3D-C1 sources refuse what they do not evaluate")
@@ -368,16 +470,13 @@ TEST_CASE("Native M3D-C1 sources refuse what they do not evaluate")
                       ContainsSubstring("only M3D-C1"));
   const auto native = fusionio::Open(fusionio::Format::M3DC1, M3DC1File,
                                      fusionio::Evaluation::Native);
-  // time slice 1 holds an n = 2 perturbation
-  REQUIRE_THROWS_WITH(
-    native->CreateFunction(Quantity::PoloidalFlux,
-                           {.timeslice = 1, .part = fusionio::Part::Perturbed}),
-    ContainsSubstring("not axisymmetric"));
   REQUIRE_THROWS_WITH(
     native->CreateFunction(Quantity::Pressure,
                            {.part = fusionio::Part::Equilibrium,
                             .species = fusionio::Species::MainIon}),
     ContainsSubstring("not evaluated natively"));
+  REQUIRE_THROWS_WITH(native->CreateFunction(Quantity::CurrentDensity),
+                      ContainsSubstring("not evaluated natively"));
   REQUIRE_THROWS_WITH(native->CreateFunction(Quantity::Density),
                       ContainsSubstring("needs the species option"));
   // the wrapped source's description
