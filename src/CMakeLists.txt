@@ -43,6 +43,12 @@ install(
         ${CMAKE_CURRENT_BINARY_DIR}/pcms/configuration.hpp
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pcms)
 
+# the package config finds the private dependencies only for a static build
+if(BUILD_SHARED_LIBS)
+  set(PCMS_BUILD_SHARED TRUE)
+else()
+  set(PCMS_BUILD_SHARED FALSE)
+endif()
 configure_package_config_file(
   "${CMAKE_SOURCE_DIR}/config.cmake.in" "${CMAKE_BINARY_DIR}/pcms-config.cmake"
   INSTALL_DESTINATION ${PCMS_INSTALL_CMAKEDIR}
