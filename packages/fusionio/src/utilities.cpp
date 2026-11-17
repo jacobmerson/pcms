@@ -992,4 +992,135 @@ GriddedSurface GriddedIsosurfaceHybrid(const pcms::Function<Real>& f, Real val,
   return surface;
 }
 
+std::optional<Real> QAtPlane(const pcms::Function<Real>& b,
+                             std::span<const Point> x, std::span<Real> bpol,
+                             std::span<Point> bout)
+{
+  if (b.GetLayout().GetNumComponents() != 3) {
+    throw pcms::pcms_error("fusionio::QAtPlane: the function is not a vector");
+  }
+  Probe probe(b, false);
+  probe.At(x);
+  const size_t n = x.size();
+  Real q = 0.;
+  for (size_t i = 0; i < n; ++i) {
+    if (!probe.Found(i)) {
+      return std::nullopt;
+    }
+    const Point bi{probe.Value(i, 0), probe.Value(i, 1), probe.Value(i, 2)};
+    const Point& xm = x[i == 0 ? n - 1 : i - 1];
+    const Point& xp = x[i == n - 1 ? 0 : i + 1];
+    // the poloidal (R, Z) length element
+    const Real dr = (xp[0] - xm[0]) / 2.;
+    const Real dz = (xp[2] - xm[2]) / 2.;
+    const Real dl = std::hypot(dr, dz);
+    if (dl == 0.) {
+      continue;
+    }
+    const Real bp = (bi[0] * dr + bi[2] * dz) / dl;
+    q += bi[1] / (x[i][0] * bp) * dl;
+    if (!bpol.empty()) {
+      bpol[i] = bp;
+    }
+    if (!bout.empty()) {
+      bout[i] = bi;
+    }
+  }
+  return q / TwoPi;
+}
+
+std::optional<std::vector<Real>> SurfaceAverage(const pcms::Function<Real>& f,
+                                                int ns, int nphi, int ntheta,
+                                                std::span<const Point> x,
+                                                std::span<const Real> jac)
+{
+  RequireScalar(f, "SurfaceAverage");
+  Probe probe(f, false);
+  probe.At(x);
+  const size_t per_surface = static_cast<size_t>(nphi) * ntheta;
+  std::vector<Real> average(ns, 0.);
+  for (size_t i = 0; i < average.size(); ++i) {
+    Real volume = 0.;
+    for (size_t k = i * per_surface; k < (i + 1) * per_surface; ++k) {
+      if (!probe.Found(k)) {
+        return std::nullopt;
+      }
+      average[i] += probe.Value(k) * jac[k];
+      volume += jac[k];
+    }
+    average[i] /= volume;
+  }
+  return average;
+}
+
+std::optional<Real> SurfaceAverage(const pcms::Function<Real>& f,
+                                   std::span<const Point> x,
+                                   std::span<const Real> bpol)
+{
+  RequireScalar(f, "SurfaceAverage");
+  Probe probe(f, false);
+  probe.At(x);
+  const size_t n = x.size();
+  Real average = 0., denominator = 0.;
+  for (size_t i = 0; i < n; ++i) {
+    if (!probe.Found(i)) {
+      return std::nullopt;
+    }
+    const Point& xm = x[i == 0 ? n - 1 : i - 1];
+    const Point& xp = x[i == n - 1 ? 0 : i + 1];
+    const Real dl = std::hypot((xp[0] - xm[0]) / 2., (xp[2] - xm[2]) / 2.);
+    if (dl == 0.) {
+      continue;
+    }
+    average += probe.Value(i) / bpol[i] * dl;
+    denominator += dl / bpol[i];
+  }
+  return average / denominator;
+}
+
+bool IsosurfaceJacobian(int ns, int nphi, int ntheta, std::span<const Point> x,
+                        std::span<Real> jac)
+{
+  if (ns < 2) {
+    throw std::invalid_argument(
+      "fusionio::IsosurfaceJacobian: needs at least two surfaces");
+  }
+  const int di = ntheta * nphi;
+  const int dj = ntheta;
+  const Real dphidj = TwoPi / nphi;
+  const auto R = [&](int ijk) { return x[ijk][0]; };
+  const auto Z = [&](int ijk) { return x[ijk][2]; };
+  int sign = 0;
+  bool consistent = true;
+  for (int i = 0; i < ns; ++i) {
+    for (int j = 0; j < nphi; ++j) {
+      for (int k = 0; k < ntheta; ++k) {
+        const int ijk = k + j * dj + i * di;
+        Real dRdi = 0, dZdi = 0;
+        if (i == 0) {
+          dRdi = R(ijk + di) - R(ijk);
+          dZdi = Z(ijk + di) - Z(ijk);
+        } else if (i == ns - 1) {
+          dRdi = R(ijk) - R(ijk - di);
+          dZdi = Z(ijk) - Z(ijk - di);
+        } else {
+          dRdi = (R(ijk + di) - R(ijk - di)) / 2.;
+          dZdi = (Z(ijk + di) - Z(ijk - di)) / 2.;
+        }
+        const int km = (k == 0 ? ntheta - 1 : k - 1) + j * dj + i * di;
+        const int kp = (k == ntheta - 1 ? 0 : k + 1) + j * dj + i * di;
+        const Real dRdk = (R(kp) - R(km)) / 2.;
+        const Real dZdk = (Z(kp) - Z(km)) / 2.;
+        jac[ijk] = (dRdi * dZdk - dRdk * dZdi) * R(ijk) * dphidj;
+        if (sign == 0) {
+          sign = jac[ijk] > 0 ? 1 : -1;
+        } else if (jac[ijk] * sign <= 0.) {
+          consistent = false;
+        }
+      }
+    }
+  }
+  return consistent;
+}
+
 } // namespace fusionio

@@ -146,6 +146,34 @@ GriddedSurface GriddedIsosurfaceHybrid(const pcms::Function<Real>& f, Real val,
                                        Real tol, Real max_step, int nphi,
                                        int ntheta);
 
+/// fio_q_at_plane: the safety factor of the closed loop `x` from the
+/// magnetic field `b`, the line integral of B_phi / (R B_pol) over 2 pi;
+/// `bpol` and `b_out` get the poloidal field and the field at the points if
+/// not empty. Nullopt if a point is outside the domain.
+std::optional<Real> QAtPlane(const pcms::Function<Real>& b,
+                             std::span<const Point> x,
+                             std::span<Real> bpol = {},
+                             std::span<Point> b_out = {});
+
+/// fio_surface_average: the averages of the scalar `f` over `ns` surfaces of
+/// nphi x ntheta points each, weighted by `jac` (IsosurfaceJacobian).
+/// Nullopt if a point is outside the domain.
+std::optional<std::vector<Real>> SurfaceAverage(const pcms::Function<Real>& f,
+                                                int ns, int nphi, int ntheta,
+                                                std::span<const Point> x,
+                                                std::span<const Real> jac);
+
+/// fio_surface_average (the loop variant): the average of the scalar `f`
+/// over the closed loop `x`, weighted by dl / B_pol.
+std::optional<Real> SurfaceAverage(const pcms::Function<Real>& f,
+                                   std::span<const Point> x,
+                                   std::span<const Real> bpol);
+
+/// fio_isosurface_jacobian: the volume element at each point of `ns`
+/// gridded surfaces of nphi x ntheta points. False if it changes sign.
+bool IsosurfaceJacobian(int ns, int nphi, int ntheta, std::span<const Point> x,
+                        std::span<Real> jac);
+
 } // namespace fusionio
 
 #endif // FUSIONIO_UTILITIES_HPP

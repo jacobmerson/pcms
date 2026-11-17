@@ -485,3 +485,86 @@ TEST_CASE("fusionio hybrid searches match 1.x's")
     }
   }
 }
+
+// fio_surface_average's loop variant, which isosurface.h leaves out
+int fio_surface_average(fio_field* f, int n, double** x, double* a,
+                        double* bpol, fio_hint h);
+
+TEST_CASE("fusionio surface quantities match 1.x's")
+{
+  Flux flux;
+  const Point axis{1.7537, 0., 0.0172};
+
+  SECTION("QAtPlane and the loop SurfaceAverage")
+  {
+    const Real val = flux.Psi1x({1.9, 0., 0.});
+    const auto loop =
+      Contour1x(flux, val, {1.9, 0., 0.}, 0.02, 1e-10 * std::abs(val));
+    const auto b = flux.source->CreateFunction(
+      fusionio::Quantity::MagneticField, {.timeslice = -1});
+    const auto fio_b = flux.Field1x(FIO_MAGNETIC_FIELD);
+    std::vector<Real> bpol(loop.size());
+    std::vector<Point> b_out(loop.size());
+    const auto q = fusionio::QAtPlane(b, loop, bpol, b_out);
+    REQUIRE(q.has_value());
+    Arrays1x loop1x(loop), b1x(loop.size());
+    std::vector<double> bpol1x(loop.size());
+    double q1x = 0.;
+    REQUIRE(fio_q_at_plane(fio_b.get(), static_cast<int>(loop.size()),
+                           loop1x.rows, &q1x, bpol1x.data(), b1x.rows,
+                           nullptr) == FIO_SUCCESS);
+    // the same field values and arithmetic
+    REQUIRE_THAT(*q, WithinRel(q1x, 1e-13));
+    for (size_t i = 0; i < loop.size(); ++i) {
+      CAPTURE(i);
+      REQUIRE_THAT(bpol[i], WithinRel(bpol1x[i], 1e-13));
+      RequirePoint(b_out[i], b1x.At(i), 1e-13 * std::abs(b1x.At(i)[1]));
+    }
+    const auto average = fusionio::SurfaceAverage(flux.psi, loop, bpol);
+    double average1x = 0.;
+    REQUIRE(fio_surface_average(flux.psi1x.get(), static_cast<int>(loop.size()),
+                                loop1x.rows, &average1x, bpol1x.data(),
+                                nullptr) == FIO_SUCCESS);
+    REQUIRE(average.has_value());
+    REQUIRE_THAT(*average, WithinRel(average1x, 1e-13));
+  }
+
+  SECTION("IsosurfaceJacobian and SurfaceAverage on gridded surfaces")
+  {
+    // circles about the axis, nested
+    constexpr int NS = 3, NPhi = 2, NTheta = 32;
+    std::vector<Point> x;
+    for (int i = 0; i < NS; ++i) {
+      for (int j = 0; j < NPhi; ++j) {
+        for (int k = 0; k < NTheta; ++k) {
+          const Real r = 0.05 * (i + 1);
+          const Real theta = 2 * std::numbers::pi * k / NTheta;
+          x.push_back({axis[0] + r * std::cos(theta),
+                       2 * std::numbers::pi * j / NPhi,
+                       axis[2] + r * std::sin(theta)});
+        }
+      }
+    }
+    std::vector<Real> jac(x.size());
+    REQUIRE(fusionio::IsosurfaceJacobian(NS, NPhi, NTheta, x, jac));
+    Arrays1x x1x(x);
+    std::vector<double> jac1x(x.size());
+    REQUIRE(fio_isosurface_jacobian(NS, NPhi, NTheta, x1x.rows, jac1x.data()) ==
+            FIO_SUCCESS);
+    for (size_t k = 0; k < jac.size(); ++k) {
+      CAPTURE(k);
+      REQUIRE_THAT(jac[k], WithinRel(jac1x[k], 1e-14));
+    }
+    const auto average =
+      fusionio::SurfaceAverage(flux.psi, NS, NPhi, NTheta, x, jac);
+    std::vector<double> average1x(NS);
+    REQUIRE(fio_surface_average(flux.psi1x.get(), NS, NPhi, NTheta, x1x.rows,
+                                jac1x.data(), average1x.data(),
+                                nullptr) == FIO_SUCCESS);
+    REQUIRE(average.has_value());
+    for (int i = 0; i < NS; ++i) {
+      CAPTURE(i);
+      REQUIRE_THAT((*average)[i], WithinRel(average1x[i], 1e-13));
+    }
+  }
+}
