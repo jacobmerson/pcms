@@ -315,7 +315,7 @@ TEST_CASE("ForEach writes every entry of small and large batches")
   for (const pcms::LO n : {1, 3, 256, 257, 10000}) {
     Kokkos::View<pcms::LO*, pcms::DeviceMemorySpace> out(
       Kokkos::view_alloc(Kokkos::WithoutInitializing, "out"), n);
-    pcms::ForEach(
+    pcms::detail::ForEach(
       "test", n, KOKKOS_LAMBDA(const pcms::LO i) { out(i) = 2 * i + 1; });
     const auto host =
       Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(), out);

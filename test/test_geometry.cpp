@@ -206,7 +206,7 @@ TEST_CASE("Known owners skip the search")
   const auto coords =
     pcms::test::MakeCoords(centroids, geometry->GetCoordinateSystem());
   Kokkos::View<LO*, DeviceMemorySpace> elements("elements", nelems);
-  pcms::iota_view<LO>(elements);
+  pcms::detail::iota_view<LO>(elements);
   const auto searched = geometry->Bind(coords);
   const auto hinted =
     geometry->Bind(coords, pcms::KnownOwners{geometry, 2, elements});
@@ -565,7 +565,7 @@ TEST_CASE("Hinted neighbourhoods equal searched ones inside the mesh")
     const auto coords =
       pcms::test::MakeCoords(points, geometry->GetCoordinateSystem());
     Kokkos::View<LO*, DeviceMemorySpace> ids("ids", mesh.nents(dim));
-    pcms::iota_view<LO>(ids);
+    pcms::detail::iota_view<LO>(ids);
     pcms::test::CheckSupportResultsEquivalent(
       geometry->Neighbourhood(coords, options,
                               pcms::KnownOwners{geometry, dim, ids}),

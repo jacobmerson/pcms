@@ -61,7 +61,7 @@ GridPointSearchVariant MakeGridSearch(Omega_h::Mesh& mesh,
   if (mesh.dim() == 2) {
     const LO n = options.divisions > 0
                    ? options.divisions
-                   : DivisionsPerAxisForMesh<2>(mesh.nelems());
+                   : pcms::detail::DivisionsPerAxisForMesh<2>(mesh.nelems());
     GridPointSearch2D::PointSearchTolerances tolerances(
       "point search 2d tolerances");
     Kokkos::deep_copy(tolerances, options.tolerance);
@@ -70,7 +70,7 @@ GridPointSearchVariant MakeGridSearch(Omega_h::Mesh& mesh,
   if (mesh.dim() == 3) {
     const LO n = options.divisions > 0
                    ? options.divisions
-                   : DivisionsPerAxisForMesh<3>(mesh.nelems());
+                   : pcms::detail::DivisionsPerAxisForMesh<3>(mesh.nelems());
     GridPointSearch3D::PointSearchTolerances tolerances(
       "point search 3d tolerances");
     Kokkos::deep_copy(tolerances, options.tolerance);
@@ -86,7 +86,8 @@ OmegaHGeometry::OmegaHGeometry(Omega_h::Mesh& mesh,
   : mesh_(mesh),
     discretization_(std::make_shared<OmegaHDiscretization>(
       mesh, std::move(options.global_id_name), std::move(options.owned_mask))),
-    system_(ResolveCoordinateSystem(std::move(system), mesh.dim())),
+    system_(
+      pcms::detail::ResolveCoordinateSystem(std::move(system), mesh.dim())),
     search_(MakeGridSearch(mesh, options.search))
 {
 }

@@ -99,9 +99,9 @@ UniformGridDiscretization<Dim>::GetEntityClassificationDimensions(
   int entity_dim) const
 {
   if (entity_dim == Vertex)
-    return make_const_array_view(vertex_class_dims_);
+    return pcms::detail::make_const_array_view(vertex_class_dims_);
   if (entity_dim == CellEntityDim)
-    return make_const_array_view(cell_class_dims_);
+    return pcms::detail::make_const_array_view(cell_class_dims_);
   return Rank1View<const ClassificationDimension, DeviceMemorySpace>(nullptr,
                                                                      0);
 }
@@ -111,9 +111,9 @@ Rank1View<const ClassificationId, DeviceMemorySpace>
 UniformGridDiscretization<Dim>::GetEntityClassificationIds(int entity_dim) const
 {
   if (entity_dim == Vertex)
-    return make_const_array_view(vertex_class_ids_);
+    return pcms::detail::make_const_array_view(vertex_class_ids_);
   if (entity_dim == CellEntityDim)
-    return make_const_array_view(cell_class_ids_);
+    return pcms::detail::make_const_array_view(cell_class_ids_);
   return Rank1View<const ClassificationId, DeviceMemorySpace>(nullptr, 0);
 }
 

@@ -576,7 +576,7 @@ Kokkos::View<GridPointSearch2D::Result*> GridPointSearch2D::operator()(
   auto edges2verts_adj = edges2verts_adj_;
   auto coords = coords_;
   auto tolerances = tolerances_;
-  ForEach(
+  pcms::detail::ForEach(
     "GridPointSearch", static_cast<LO>(points.extent(0)),
     KOKKOS_LAMBDA(const LO p) {
       Omega_h::Vector<2> point(
@@ -785,7 +785,7 @@ Kokkos::View<GridPointSearch3D::Result*> GridPointSearch3D::operator()(
   auto tris2verts = tris2verts_;
   auto coords = coords_;
   auto tolerances = tolerances_;
-  ForEach(
+  pcms::detail::ForEach(
     "GridPointSearch", static_cast<LO>(points.extent(0)),
     KOKKOS_LAMBDA(const LO p) {
       using Dimensionality = GridPointSearch3D::Result::Dimensionality;

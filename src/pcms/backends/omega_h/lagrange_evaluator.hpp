@@ -92,7 +92,7 @@ public:
     int n_comp = layout_->GetNumComponents();
 
     if (layout_->GetOrder() == 0) {
-      ForEach(
+      pcms::detail::ForEach(
         "OmegaHLagrangePointEvaluator::EvaluateOrder0", n_valid,
         KOKKOS_LAMBDA(LO k) {
           for (int c = 0; c < n_comp; ++c) {
@@ -107,7 +107,7 @@ public:
       int nvpe = mesh_dim + 1;
       auto elem_verts = mesh.ask_elem_verts();
 
-      ForEach(
+      pcms::detail::ForEach(
         "OmegaHLagrangePointEvaluator::EvaluateOrder1", n_valid,
         KOKKOS_LAMBDA(LO k) {
           const LO elem = elem_ids(k);

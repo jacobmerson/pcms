@@ -39,7 +39,7 @@ PointCloudDiscretization::GetEntityClassificationDimensions(
   int entity_dim) const
 {
   return entity_dim == Vertex
-           ? make_const_array_view(class_dims_)
+           ? pcms::detail::make_const_array_view(class_dims_)
            : Rank1View<const ClassificationDimension, DeviceMemorySpace>(
                nullptr, 0);
 }
@@ -48,7 +48,7 @@ Rank1View<const ClassificationId, DeviceMemorySpace>
 PointCloudDiscretization::GetEntityClassificationIds(int entity_dim) const
 {
   return entity_dim == Vertex
-           ? make_const_array_view(class_ids_)
+           ? pcms::detail::make_const_array_view(class_ids_)
            : Rank1View<const ClassificationId, DeviceMemorySpace>(nullptr, 0);
 }
 

@@ -132,8 +132,8 @@ UniformGridFieldLayout<Dim>::UniformGridFieldLayout(
     owned_host_("owned_host", CountDofHolders())
 {
   PCMS_FUNCTION_TIMER;
-  SetCoordinateSystem(ResolveCoordinateSystem(std::move(coordinate_system),
-                                              static_cast<int>(Dim)));
+  SetCoordinateSystem(pcms::detail::ResolveCoordinateSystem(
+    std::move(coordinate_system), static_cast<int>(Dim)));
   PCMS_ALWAYS_ASSERT(order_ == 0 || order_ == 1);
 
   LO num_dofs = CountDofHolders();
@@ -222,7 +222,7 @@ template <unsigned Dim>
 Rank1View<const bool, HostMemorySpace>
 UniformGridFieldLayout<Dim>::GetOwnedHost() const
 {
-  return make_const_array_view(owned_host_);
+  return pcms::detail::make_const_array_view(owned_host_);
 }
 
 template <unsigned Dim>
@@ -283,14 +283,14 @@ template <unsigned Dim>
 Rank1View<const LO, HostMemorySpace>
 UniformGridFieldLayout<Dim>::GetDOFHolderClassificationDimensionsHost() const
 {
-  return make_const_array_view(classification_dims_host_);
+  return pcms::detail::make_const_array_view(classification_dims_host_);
 }
 
 template <unsigned Dim>
 Rank1View<const LO, HostMemorySpace>
 UniformGridFieldLayout<Dim>::GetDOFHolderClassificationIdsHost() const
 {
-  return make_const_array_view(classification_ids_host_);
+  return pcms::detail::make_const_array_view(classification_ids_host_);
 }
 
 template <unsigned Dim>

@@ -82,7 +82,7 @@ TEST_CASE("PointEvaluator::Evaluate gates on the source field's stored basis")
     REQUIRE_NOTHROW(evaluator->Evaluate(
       cartesian,
       ValueView<Real, DeviceMemorySpace>(cartesian.GetData().GetValueBasis(),
-                                         pcms::MakeRank2View(out))));
+                                         pcms::detail::MakeRank2View(out))));
   }
 
   SECTION("a mismatched basis claim is rejected")
@@ -90,7 +90,7 @@ TEST_CASE("PointEvaluator::Evaluate gates on the source field's stored basis")
     REQUIRE_THROWS_WITH(
       evaluator->Evaluate(cartesian, ValueView<Real, DeviceMemorySpace>(
                                        cylindrical.GetData().GetValueBasis(),
-                                       pcms::MakeRank2View(out))),
+                                       pcms::detail::MakeRank2View(out))),
       ContainsSubstring("does not match the basis this call writes"));
   }
 }

@@ -81,8 +81,8 @@ OmegaHLagrangeLayout::OmegaHLagrangeLayout(
   : mesh_(mesh), order_(order), num_components_(num_components)
 {
   PCMS_FUNCTION_TIMER;
-  SetCoordinateSystem(
-    ResolveCoordinateSystem(std::move(coordinate_system), mesh_.dim()));
+  SetCoordinateSystem(pcms::detail::ResolveCoordinateSystem(
+    std::move(coordinate_system), mesh_.dim()));
   int entity_dim = EntityDimForOrder(order_, mesh_.dim());
 
   const auto checked = detail::CheckDiscretizationOf(
@@ -151,7 +151,7 @@ GO OmegaHLagrangeLayout::GetNumGlobalDofHolder() const
 Rank1View<const bool, HostMemorySpace> OmegaHLagrangeLayout::GetOwnedHost()
   const
 {
-  return make_const_array_view(owned_host_);
+  return pcms::detail::make_const_array_view(owned_host_);
 }
 
 GlobalIDView<HostMemorySpace> OmegaHLagrangeLayout::GetGidsHost() const
@@ -208,9 +208,9 @@ bool OmegaHLagrangeLayout::IsDistributed() const
 
 EntOffsetsArray OmegaHLagrangeLayout::GetEntOffsets() const
 {
-  return !HasGhosts()
-           ? EntOffsetsWithGhosts()
-           : OwnedEntOffsets(EntOffsetsWithGhosts(), owned_indices_host_);
+  return !HasGhosts() ? EntOffsetsWithGhosts()
+                      : pcms::detail::OwnedEntOffsets(EntOffsetsWithGhosts(),
+                                                      owned_indices_host_);
 }
 
 EntOffsetsArray OmegaHLagrangeLayout::EntOffsetsWithGhosts() const
@@ -241,20 +241,20 @@ int OmegaHLagrangeLayout::GetDOFHolderEntityDim() const
 Rank1View<const LO, HostMemorySpace>
 OmegaHLagrangeLayout::GetDOFHolderClassificationDimensionsHost() const
 {
-  return make_const_array_view(owned_classification_dims_host_);
+  return pcms::detail::make_const_array_view(owned_classification_dims_host_);
 }
 
 Rank1View<const LO, HostMemorySpace>
 OmegaHLagrangeLayout::GetDOFHolderClassificationIdsHost() const
 {
-  return make_const_array_view(owned_classification_ids_host_);
+  return pcms::detail::make_const_array_view(owned_classification_ids_host_);
 }
 
 void OmegaHLagrangeLayout::BuildOwnedClassification()
 {
-  BuildOwnedClassificationHost(class_dims_, class_ids_, owned_indices_,
-                               owned_classification_dims_host_,
-                               owned_classification_ids_host_);
+  pcms::detail::BuildOwnedClassificationHost(
+    class_dims_, class_ids_, owned_indices_, owned_classification_dims_host_,
+    owned_classification_ids_host_);
 }
 
 int OmegaHLagrangeLayout::GetOrder() const

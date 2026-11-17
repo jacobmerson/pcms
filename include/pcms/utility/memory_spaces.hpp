@@ -25,6 +25,10 @@ using DeviceMemorySpace = Kokkos::DefaultExecutionSpace::memory_space;
 using DeviceMemorySpace = HostMemorySpace;
 #endif
 
+/// Implementer API: not covered by the public-API stability promise.
+namespace detail
+{
+
 /// Kernels over at most this many items run as plain loops when the device
 /// memory is host memory: opening a parallel region (about a microsecond with
 /// OpenMP) costs more than such a loop, and dominates a bind of a few points.
@@ -37,7 +41,7 @@ inline constexpr std::size_t SmallHostBatchSize = 256;
 {
   return Kokkos::SpaceAccessibility<Kokkos::HostSpace,
                                     DeviceMemorySpace>::accessible &&
-         n <= SmallHostBatchSize;
+         n <= detail::SmallHostBatchSize;
 }
 
 /// Runs `functor(i)` for every i in [0, n): as a plain loop on the calling
@@ -47,7 +51,7 @@ inline constexpr std::size_t SmallHostBatchSize = 256;
 template <typename Index, typename Functor>
 void ForEach(const char* label, Index n, const Functor& functor)
 {
-  if (IsSmallHostBatch(static_cast<std::size_t>(n))) {
+  if (detail::IsSmallHostBatch(static_cast<std::size_t>(n))) {
     for (Index i = 0; i < n; ++i) {
       functor(i);
     }
@@ -57,6 +61,8 @@ void ForEach(const char* label, Index n, const Functor& functor)
     label, Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
     functor);
 }
+
+} // namespace detail
 
 } // namespace pcms
 

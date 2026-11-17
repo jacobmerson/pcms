@@ -27,6 +27,8 @@ class CoordinateMap;
 /// hint within range is not detected; the point is then evaluated by
 /// extrapolation from the given entity (OutOfBoundsMode::ERROR does not
 /// throw and FILL does not fill for it).
+///
+/// Implementer API: not covered by the public-API stability promise.
 struct KnownOwners
 {
   /// geometry whose entities `entities` are; a hint for another geometry is
@@ -48,6 +50,8 @@ struct KnownOwners
 };
 
 /// @brief What Geometry::Bind hands to BindImpl.
+///
+/// Implementer API: not covered by the public-API stability promise.
 struct BindRequest
 {
   /// points to locate, in the geometry's coordinate system: the query points,
@@ -187,6 +191,8 @@ public:
 
   /// @brief Passkey of Rebind: its constructor is protected, and only
   ///        Geometry derives the type that creates it.
+  ///
+  /// Implementer API: not covered by the public-API stability promise.
   class RebindKey
   {
   protected:

@@ -35,8 +35,9 @@ PyCoordinateView MakeCoordinateView(const SystemHolder& system,
   // pcms may keep the coordinates, so the view owns a copy
   auto values = ToNumpy(input);
   detail::SetReadOnly(values);
-  return PyCoordinateView{
-    ResolveCoordinateSystem(CartesianIfNone(system), input.extent(1)), values};
+  return PyCoordinateView{pcms::detail::ResolveCoordinateSystem(
+                            CartesianIfNone(system), input.extent(1)),
+                          values};
 }
 
 } // namespace
@@ -65,7 +66,7 @@ void bind_coordinate_system_module(py::module& m)
     .def(
       "__eq__",
       [](const SystemHolder& a, const SystemHolder& b) {
-        return SameCoordinateSystem(a, b);
+        return pcms::detail::SameCoordinateSystem(a, b);
       },
       py::is_operator())
     .def("__hash__",
@@ -97,12 +98,14 @@ void bind_coordinate_system_module(py::module& m)
   m.def(
     "same_coordinate_system",
     [](const SystemHolder& a, const SystemHolder& b) {
-      return SameCoordinateSystem(a, b);
+      return pcms::detail::SameCoordinateSystem(a, b);
     },
     py::arg("a"), py::arg("b"));
   m.def(
     "has_identity_metric",
-    [](const CoordinateSystem& system) { return HasIdentityMetric(system); },
+    [](const CoordinateSystem& system) {
+      return pcms::detail::HasIdentityMetric(system);
+    },
     py::arg("system"));
   py::class_<PyCoordinateView>(m, "CoordinateView",
                                "Coordinates tagged with their coordinate "

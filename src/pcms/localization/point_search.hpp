@@ -224,7 +224,7 @@ LocatePoints(const Search& search, Kokkos::View<const Real**> points)
   const auto n = static_cast<LO>(points.extent(0));
   Kokkos::View<bool*> found(
     Kokkos::view_alloc(Kokkos::WithoutInitializing, "found_in_mesh"), n);
-  ForEach(
+  pcms::detail::ForEach(
     "LocatePoints", n, KOKKOS_LAMBDA(const LO i) {
       found(i) = !results(i).IsOutside() &&
                  results(i).dimensionality !=

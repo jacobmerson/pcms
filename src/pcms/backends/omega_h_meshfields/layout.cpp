@@ -214,8 +214,8 @@ MeshFieldsAdapterLayout::MeshFieldsAdapterLayout(
     owned_host_("", class_dims_.size())
 {
   PCMS_FUNCTION_TIMER;
-  SetCoordinateSystem(
-    ResolveCoordinateSystem(std::move(coordinate_system), mesh_.dim()));
+  SetCoordinateSystem(pcms::detail::ResolveCoordinateSystem(
+    std::move(coordinate_system), mesh_.dim()));
   LO total_ents = GetNumEnts();
 
   const auto checked = detail::CheckDiscretizationOf(
@@ -304,7 +304,7 @@ Rank1View<const bool, HostMemorySpace> MeshFieldsAdapterLayout::GetOwnedHost()
   const
 {
   Kokkos::deep_copy(owned_host_, owned_);
-  return make_const_array_view(owned_host_);
+  return pcms::detail::make_const_array_view(owned_host_);
 }
 
 GlobalIDView<HostMemorySpace> MeshFieldsAdapterLayout::GetGidsHost() const
@@ -381,9 +381,9 @@ Omega_h::Mesh& MeshFieldsAdapterLayout::GetMesh() const
 
 EntOffsetsArray MeshFieldsAdapterLayout::GetEntOffsets() const
 {
-  return !HasGhosts()
-           ? EntOffsetsWithGhosts()
-           : OwnedEntOffsets(EntOffsetsWithGhosts(), owned_indices_host_);
+  return !HasGhosts() ? EntOffsetsWithGhosts()
+                      : pcms::detail::OwnedEntOffsets(EntOffsetsWithGhosts(),
+                                                      owned_indices_host_);
 }
 
 EntOffsetsArray MeshFieldsAdapterLayout::EntOffsetsWithGhosts() const
@@ -423,20 +423,20 @@ int MeshFieldsAdapterLayout::GetDOFHolderEntityDim() const
 Rank1View<const LO, HostMemorySpace>
 MeshFieldsAdapterLayout::GetDOFHolderClassificationDimensionsHost() const
 {
-  return make_const_array_view(owned_classification_dims_host_);
+  return pcms::detail::make_const_array_view(owned_classification_dims_host_);
 }
 
 Rank1View<const LO, HostMemorySpace>
 MeshFieldsAdapterLayout::GetDOFHolderClassificationIdsHost() const
 {
-  return make_const_array_view(owned_classification_ids_host_);
+  return pcms::detail::make_const_array_view(owned_classification_ids_host_);
 }
 
 void MeshFieldsAdapterLayout::BuildOwnedClassification()
 {
-  BuildOwnedClassificationHost(class_dims_, class_ids_, owned_indices_,
-                               owned_classification_dims_host_,
-                               owned_classification_ids_host_);
+  pcms::detail::BuildOwnedClassificationHost(
+    class_dims_, class_ids_, owned_indices_, owned_classification_dims_host_,
+    owned_classification_ids_host_);
 }
 
 } // namespace pcms
