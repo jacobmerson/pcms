@@ -44,7 +44,7 @@ TEST_CASE("Spline gradients")
   auto space = MakeSplineSpace();
   auto f = space->CreateFunction<Real>("f");
   pcms::test::SetField(
-    f, OMEGA_H_LAMBDA(Real x, Real y) { return Cubic(x, y); });
+    f, KOKKOS_LAMBDA(Real x, Real y) { return Cubic(x, y); });
 
   const std::vector<Real> pts = {0.3, -0.7, 1.1, 0.2, 1.7, 0.9, 0.55, 0.45};
   const size_t n = pts.size() / 2;
@@ -89,9 +89,9 @@ TEST_CASE("Evaluators reject fields of another function space")
   auto f = space->CreateFunction<Real>("f");
   auto g = other->CreateFunction<Real>("g");
   pcms::test::SetField(
-    f, OMEGA_H_LAMBDA(Real x, Real y) { return Cubic(x, y); });
+    f, KOKKOS_LAMBDA(Real x, Real y) { return Cubic(x, y); });
   pcms::test::SetField(
-    g, OMEGA_H_LAMBDA(Real x, Real y) { return Cubic(x, y); });
+    g, KOKKOS_LAMBDA(Real x, Real y) { return Cubic(x, y); });
 
   const std::vector<Real> pts = {0.3, -0.7, 1.1, 0.2};
   const auto bound = pcms::test::Bind(*space->GetGeometry(), pts);
@@ -114,7 +114,7 @@ TEST_CASE("Gradients fill the out-of-bounds rows")
   auto space = MakeSplineSpace();
   auto f = space->CreateFunction<Real>("f");
   pcms::test::SetField(
-    f, OMEGA_H_LAMBDA(Real x, Real y) { return Cubic(x, y); });
+    f, KOKKOS_LAMBDA(Real x, Real y) { return Cubic(x, y); });
   const std::vector<Real> pts = {0.5, 0.5, 3.0, 0.0};
   const auto bound = pcms::test::Bind(
     *space->GetGeometry(), pts,
@@ -134,7 +134,7 @@ TEST_CASE("Interpolating a field and its gradient over one localization")
   std::shared_ptr<const pcms::FunctionSpace> source = MakeSplineSpace();
   auto f = source->CreateFunction<Real>("f");
   pcms::test::SetField(
-    f, OMEGA_H_LAMBDA(Real x, Real y) { return Cubic(x, y); });
+    f, KOKKOS_LAMBDA(Real x, Real y) { return Cubic(x, y); });
 
   // Targets on a coarser grid strictly inside the source grid.
   pcms::UniformGrid<2> grid;
