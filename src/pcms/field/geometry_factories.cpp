@@ -1,11 +1,15 @@
+#include "pcms/configuration.hpp"
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/backends/point_cloud/geometry.hpp"
 #include "pcms/backends/uniform_grid/geometry.hpp"
+#ifdef PCMS_ENABLE_OMEGA_H
+#include "pcms/backends/omega_h/discretization.hpp"
+#include "pcms/backends/omega_h/entity_layout.hpp"
+#include "pcms/backends/omega_h/point_cloud_geometry.hpp"
+#endif
 
 namespace pcms
 {
-using backend::omega_h::OmegaHDiscretization;
-using backend::omega_h::OmegaHEntityLayout;
 using backend::point_cloud::PointCloudGeometry;
 using backend::point_cloud::PointCloudLayout;
 using backend::uniform_grid::UniformGridGeometry;
@@ -49,7 +53,7 @@ std::shared_ptr<Geometry> CreatePointCloudGeometry(
   DeepCopyMismatchLayouts(device_view, host_view);
   auto layout = std::make_shared<PointCloudLayout>(
     dim, device_view, coords.GetCoordinateSystem());
-  return std::make_shared<PointCloudGeometry>(std::move(layout), nullptr, -1,
+  return std::make_shared<PointCloudGeometry>(std::move(layout),
                                               std::move(options));
 }
 
@@ -66,18 +70,23 @@ std::shared_ptr<Geometry> CreatePointCloudGeometry(
   if (sites == nullptr) {
     throw pcms_error("CreatePointCloudGeometry: the sites must not be null");
   }
-  Omega_h::Mesh* mesh = nullptr;
-  int site_entity_dim = -1;
-  if (dynamic_cast<const OmegaHEntityLayout*>(sites.get()) != nullptr) {
+#ifdef PCMS_ENABLE_OMEGA_H
+  // the entities of a mesh: the mesh-sited variant, whose supports use the
+  // mesh adjacency
+  if (dynamic_cast<const backend::omega_h::OmegaHEntityLayout*>(sites.get()) !=
+      nullptr) {
     const auto discretization =
-      std::dynamic_pointer_cast<const OmegaHDiscretization>(
+      std::dynamic_pointer_cast<const backend::omega_h::OmegaHDiscretization>(
         detail::DOFHolderDiscretization(*sites));
     PCMS_ALWAYS_ASSERT(discretization != nullptr);
-    mesh = &discretization->GetMesh();
-    site_entity_dim = sites->GetDOFHolderEntityDim();
+    const int site_entity_dim = sites->GetDOFHolderEntityDim();
+    return std::make_shared<backend::omega_h::OmegaHPointCloudGeometry>(
+      std::move(sites), discretization->GetMesh(), site_entity_dim,
+      std::move(options));
   }
-  return std::make_shared<PointCloudGeometry>(
-    std::move(sites), mesh, site_entity_dim, std::move(options));
+#endif
+  return std::make_shared<PointCloudGeometry>(std::move(sites),
+                                              std::move(options));
 }
 
 } // namespace pcms
