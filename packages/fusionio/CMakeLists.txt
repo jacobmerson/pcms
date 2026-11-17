@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.23)
-project(fusionio VERSION 2.0.0 LANGUAGES CXX)
+project(fusionio2 VERSION 2.0.0 LANGUAGES CXX)
 
 # Fusion-IO 2.0 is built on PCMS and uses only its installed (public) headers.
 # It can be built against an installed PCMS or added to a PCMS build with
@@ -7,11 +7,10 @@ project(fusionio VERSION 2.0.0 LANGUAGES CXX)
 if(NOT TARGET pcms::core)
   find_package(pcms CONFIG REQUIRED)
 endif()
-# Fusion-IO 1.x evaluates the fields until PCMS evaluates them natively. Its
-# CMake package is also named fusionio; the installed configuration loads it
-# from the file found here (FUSIONIO_1X_CONFIG) rather than by name.
+# Fusion-IO 1.x reads the files and evaluates the fields until PCMS evaluates
+# them natively. It is the CMake package fusionio; this one installs as
+# fusionio2 so that both can live in one prefix.
 find_package(fusionio CONFIG REQUIRED)
-set(FUSIONIO_1X_CONFIG "${fusionio_CONFIG}")
 
 option(FUSIONIO_ENABLE_NIMROD "Evaluate NIMROD dumps with NIMROD's nimeval" OFF)
 if(FUSIONIO_ENABLE_NIMROD)
@@ -44,21 +43,21 @@ else()
   target_sources(fusionio PRIVATE src/nimrod_unavailable.cpp)
 endif()
 
-install(TARGETS fusionio EXPORT fusionio-targets)
+install(TARGETS fusionio EXPORT fusionio2-targets)
 install(FILES ${FUSIONIO_HEADERS}
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fusionio)
-install(EXPORT fusionio-targets NAMESPACE fusionio::
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fusionio)
+install(EXPORT fusionio2-targets NAMESPACE fusionio::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fusionio2)
 configure_package_config_file(
-  cmake/fusionio-config.cmake.in
-  ${CMAKE_CURRENT_BINARY_DIR}/fusionio-config.cmake
-  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fusionio)
+  cmake/fusionio2-config.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/fusionio2-config.cmake
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fusionio2)
 write_basic_package_version_file(
-  ${CMAKE_CURRENT_BINARY_DIR}/fusionio-config-version.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/fusionio2-config-version.cmake
   COMPATIBILITY SameMinorVersion)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/fusionio-config.cmake
-              ${CMAKE_CURRENT_BINARY_DIR}/fusionio-config-version.cmake
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fusionio)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/fusionio2-config.cmake
+              ${CMAKE_CURRENT_BINARY_DIR}/fusionio2-config-version.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fusionio2)
 
 option(FUSIONIO_BUILD_TOOLS "Build the Fusion-IO tools (fio_trace)" ON)
 if(FUSIONIO_BUILD_TOOLS)
