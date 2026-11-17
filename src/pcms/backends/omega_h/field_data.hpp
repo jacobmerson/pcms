@@ -77,7 +77,7 @@ public:
                    static_cast<size_t>(layout_->GetNumComponents()))
   {
     const auto* oh = dynamic_cast<const OmegaHDiscretization*>(
-      layout_->GetDiscretization().get());
+      detail::DOFHolderDiscretization(*layout_).get());
     if (oh == nullptr) {
       throw pcms_error("OmegaHFieldData: layout is not on an Omega_h mesh");
     }

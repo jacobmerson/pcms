@@ -66,7 +66,7 @@ public:
   [[nodiscard]] std::shared_ptr<const Discretization> GetDiscretization()
     const noexcept override
   {
-    return site_layout_->GetDiscretization();
+    return detail::DOFHolderDiscretization(*site_layout_);
   }
 
   [[nodiscard]] const std::shared_ptr<const CoordinateSystem>&

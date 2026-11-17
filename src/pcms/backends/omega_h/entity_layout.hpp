@@ -16,8 +16,7 @@ public:
                      std::shared_ptr<const CoordinateSystem> coordinate_system,
                      std::string global_id_name = "global");
 
-  std::shared_ptr<const Discretization> GetDiscretization()
-    const noexcept override;
+  std::shared_ptr<const Discretization> GetDiscretization() const noexcept;
 
   int GetNumComponents() const override;
   LO GetNumDofHolder() const override;

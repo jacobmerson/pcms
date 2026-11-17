@@ -1,7 +1,6 @@
 #ifndef PCMS_GEOMETRY_GEOMETRY_HPP
 #define PCMS_GEOMETRY_GEOMETRY_HPP
 
-#include "pcms/discretization/discretization.hpp"
 #include "pcms/utility/coordinate_system.hpp"
 #include "pcms/utility/coordinate_view.hpp"
 #include "pcms/field/out_of_bounds_policy.hpp"
@@ -18,7 +17,9 @@ namespace pcms
 {
 
 class CoordinateMap; // pcms/field/coordinate_map.hpp
-class FieldLayout;   // pcms/field/field_layout.hpp
+/// The topology spaces are defined on (opaque; internal to PCMS).
+class Discretization;
+class FieldLayout; // pcms/field/field_layout.hpp
 
 /// @brief Options of the containing-cell search a geometry builds.
 struct SearchOptions
@@ -79,9 +80,14 @@ public:
   Geometry(const Geometry&) = delete;
   Geometry& operator=(const Geometry&) = delete;
 
-  /// @return the topology spaces on this geometry are defined on
+  /// @return the topology shared by spaces on this geometry, or null if it has
+  ///         none; built-in kinds return one, external kinds normally keep
+  ///         the default
   [[nodiscard]] virtual std::shared_ptr<const Discretization>
-  GetDiscretization() const noexcept = 0;
+  GetDiscretization() const noexcept
+  {
+    return nullptr;
+  }
 
   /// @return the native coordinate system: Bind takes points in it
   [[nodiscard]] virtual const std::shared_ptr<const CoordinateSystem>&

@@ -76,6 +76,7 @@ XGCFieldLayout::XGCFieldLayout(
   // Copy coordinates to device
   Kokkos::deep_copy(coords_, 0.0);
   discretization_ = std::move(discretization);
+  SetDOFHolderDiscretization(discretization_);
 }
 
 std::shared_ptr<const Discretization> XGCFieldLayout::GetDiscretization()

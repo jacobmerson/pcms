@@ -89,7 +89,7 @@ Kokkos::View<T**, pcms::HostMemorySpace> ValuesWithGhostsHost(
     using TagValue = typename pcms::OmegaHFieldData<T>::tag_value_type;
     const auto& discretization =
       dynamic_cast<const pcms::OmegaHDiscretization&>(
-        *layout.GetDiscretization());
+        *pcms::detail::DOFHolderDiscretization(layout));
     const auto tag =
       Omega_h::HostRead<TagValue>(discretization.GetMesh().get_array<TagValue>(
         layout.GetDOFHolderEntityDim(), omega_h_data->GetTagName()));

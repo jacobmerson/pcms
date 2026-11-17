@@ -190,6 +190,7 @@ UniformGridFieldLayout<Dim>::UniformGridFieldLayout(
   Kokkos::deep_copy(classification_dims_host_, classification_dims_);
   Kokkos::deep_copy(classification_ids_host_, classification_ids_);
   discretization_ = std::make_shared<UniformGridDiscretization<Dim>>(grid_);
+  SetDOFHolderDiscretization(discretization_);
 }
 
 template <unsigned Dim>

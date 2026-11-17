@@ -11,7 +11,6 @@
 #include "pcms/field/out_of_bounds_policy.hpp"
 #include "pcms/field/point_evaluator.hpp"
 #include "pcms/field/point_evaluator_factory.hpp"
-#include "pcms/discretization/discretization.hpp"
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/memory_spaces.hpp"
@@ -69,16 +68,6 @@ public:
     const noexcept override
   {
     return evaluator_ != nullptr ? evaluator_->GetGeometry() : geometry_;
-  }
-
-  /// @return the geometry's discretization, or the layout's for a space
-  ///         without a geometry
-  [[nodiscard]] std::shared_ptr<const Discretization> GetDiscretization()
-    const noexcept
-  {
-    const auto geometry = GetGeometry();
-    return geometry != nullptr ? geometry->GetDiscretization()
-                               : GetLayout()->GetDiscretization();
   }
 
   [[nodiscard]] std::shared_ptr<const FieldLayout> GetLayout() const noexcept

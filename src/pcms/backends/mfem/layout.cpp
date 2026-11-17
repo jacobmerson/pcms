@@ -67,6 +67,7 @@ MFEMLayout::MFEMLayout(
   }
 
   discretization_ = MakeVertexDiscretization(dim_, coords_host);
+  SetDOFHolderDiscretization(discretization_);
 }
 
 void MFEMLayout::AssertVertexScalarSpace() const

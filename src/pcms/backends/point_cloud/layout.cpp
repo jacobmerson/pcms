@@ -78,6 +78,7 @@ PointCloudLayout::PointCloudLayout(
   classification_ids_host_ =
     Kokkos::View<LO*, HostMemorySpace>("classification_ids", n);
   discretization_ = std::move(discretization);
+  SetDOFHolderDiscretization(discretization_);
 
   Kokkos::deep_copy(owned_host_, owned_);
   Kokkos::deep_copy(gids_host_, gids_);

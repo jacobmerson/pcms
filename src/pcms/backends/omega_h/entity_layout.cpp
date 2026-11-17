@@ -70,6 +70,7 @@ OmegaHEntityLayout::OmegaHEntityLayout(
     discretization_(
       std::make_shared<OmegaHDiscretization>(mesh, global_id_name))
 {
+  SetDOFHolderDiscretization(discretization_);
   SetCoordinateSystem(
     ResolveCoordinateSystem(std::move(coordinate_system), dimension_));
   PCMS_ALWAYS_ASSERT(entity_dim_ >= 0 && entity_dim_ <= dimension_);

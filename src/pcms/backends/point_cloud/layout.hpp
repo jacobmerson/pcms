@@ -17,8 +17,7 @@ public:
                    std::shared_ptr<const Discretization> discretization,
                    int classification_entity_dim);
 
-  std::shared_ptr<const Discretization> GetDiscretization()
-    const noexcept override;
+  std::shared_ptr<const Discretization> GetDiscretization() const noexcept;
 
   int GetNumComponents() const override;
   // nodes for standard lagrange FEM

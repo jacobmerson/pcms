@@ -19,8 +19,7 @@ public:
     UniformGrid<Dim> grid, int num_components,
     std::shared_ptr<const CoordinateSystem> coordinate_system, int order = 1);
 
-  std::shared_ptr<const Discretization> GetDiscretization()
-    const noexcept override;
+  std::shared_ptr<const Discretization> GetDiscretization() const noexcept;
 
   int GetNumComponents() const override;
   LO GetNumDofHolder() const override;
