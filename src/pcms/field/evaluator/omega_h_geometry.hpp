@@ -280,14 +280,16 @@ public:
     Kokkos::View<const Real**, DeviceMemorySpace> points,
     Kokkos::View<const LO*, DeviceMemorySpace> guesses = {}) const;
 
-  /// Supports among the mesh vertices, by the mesh-adjacency search from the
-  /// element Bind's search finds for each point, which starts from the cell or
-  /// vertex hint of this geometry when there is one (verified, see
+  /// Supports among the mesh vertices (`site_dim` 0) or the centroids of its
+  /// elements (`site_dim` the mesh dimension), by the mesh-adjacency search
+  /// from the element Bind's search finds for each point, which starts from the
+  /// cell or vertex hint of this geometry when there is one (verified, see
   /// OwnerHints: a bad hint is corrected). A point outside the mesh starts from
   /// the element nearest it, so it gets supports near the boundary; a point
   /// whose search cell holds no element gets none.
+  /// @throws pcms_error if `site_dim` is neither 0 nor the mesh dimension
   [[nodiscard]] SupportResults Neighbourhood(
-    CoordinateView<DeviceMemorySpace> coords,
+    CoordinateView<DeviceMemorySpace> coords, int site_dim,
     const NeighbourhoodOptions& options,
     const OwnerHints& owners = {}) const override;
 

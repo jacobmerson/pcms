@@ -47,7 +47,7 @@ std::shared_ptr<const BoundSource> Geometry::Bind(
   // nor is a hint given with a map, as it describes the unmapped points
   const OwnerHints hint =
     map == nullptr &&
-        owners.Names(*this, static_cast<LO>(coords.GetValues().extent(0)))
+        TakesHints(owners, static_cast<LO>(coords.GetValues().extent(0)))
       ? owners
       : OwnerHints{};
   std::shared_ptr<BoundSource> bound;
@@ -63,7 +63,7 @@ std::shared_ptr<const BoundSource> Geometry::Bind(
   return bound;
 }
 
-SupportResults Geometry::Neighbourhood(CoordinateView<DeviceMemorySpace>,
+SupportResults Geometry::Neighbourhood(CoordinateView<DeviceMemorySpace>, int,
                                        const NeighbourhoodOptions&,
                                        const OwnerHints&) const
 {

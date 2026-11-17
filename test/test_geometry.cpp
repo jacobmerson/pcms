@@ -283,7 +283,7 @@ TEST_CASE("The search of a geometry is built when first needed")
   const auto coords = pcms::test::CreateDeviceCoordinateView(
     pts, geometry->GetCoordinateSystem());
   const auto supports = geometry->Neighbourhood(
-    coords.coordinate_view, pcms::NeighbourhoodOptions{.min_supports = 3});
+    coords.coordinate_view, 0, pcms::NeighbourhoodOptions{.min_supports = 3});
   const int after_all = num_grid_allocations;
   Kokkos::Tools::Experimental::set_allocate_data_callback(nullptr);
   REQUIRE(before_bind == 0);
@@ -465,7 +465,7 @@ TEST_CASE("Neighbourhood returns vertex supports")
     pcms::test::StandardEvalCoords2D(), geometry->GetCoordinateSystem());
   pcms::NeighbourhoodOptions options{.radius = 0.3, .min_supports = 6};
   const pcms::SupportResults actual =
-    geometry->Neighbourhood(coords.coordinate_view, options);
+    geometry->Neighbourhood(coords.coordinate_view, 0, options);
   Omega_h::Real radius_sq = 0.09;
   const pcms::SupportResults expected = pcms::searchNeighbors(
     mesh, 0, pcms::flatten_to_omega_h_reals(coords.coordinate_view.GetValues()),
@@ -474,25 +474,25 @@ TEST_CASE("Neighbourhood returns vertex supports")
   // a point outside the mesh starts from the element nearest it
   auto outside = pcms::test::CreateDeviceCoordinateView(
     {1.05, 0.5}, geometry->GetCoordinateSystem());
-  REQUIRE(geometry->Neighbourhood(outside.coordinate_view, options)
+  REQUIRE(geometry->Neighbourhood(outside.coordinate_view, 0, options)
             .supports_idx.size() >= 6);
   // the options matter: the defaults give other supports
   const pcms::SupportResults defaults = geometry->Neighbourhood(
-    coords.coordinate_view, pcms::NeighbourhoodOptions{});
+    coords.coordinate_view, 0, pcms::NeighbourhoodOptions{});
   REQUIRE(defaults.supports_idx.size() != actual.supports_idx.size());
 
   // other upper bounds than 3 * min_supports are not honoured yet, so they
   // are refused
   options.max_supports = 12;
   REQUIRE_THROWS_WITH(
-    geometry->Neighbourhood(coords.coordinate_view, options),
+    geometry->Neighbourhood(coords.coordinate_view, 0, options),
     ContainsSubstring(
       "max_supports must be 0 or 3 * min_supports (18), got 12"));
   // the query points must be in the geometry's coordinate system
   auto cylindrical = pcms::test::CreateDeviceCoordinateView(
     pcms::test::StandardEvalCoords2D(), pcms::csys::CylindricalRZ::Create());
   REQUIRE_THROWS_WITH(
-    geometry->Neighbourhood(cylindrical.coordinate_view, {}),
+    geometry->Neighbourhood(cylindrical.coordinate_view, 0, {}),
     ContainsSubstring("is not the geometry's coordinate system"));
 }
 
@@ -510,49 +510,102 @@ TEST_CASE("PointCloudGeometry::Neighbourhood takes the search of its sites")
   auto cloud = std::make_shared<pcms::PointCloudLayout>(
     2, pcms::ConvertCoordsTo2D(centroids, mesh.nfaces(), 2), system);
   const auto query = vertices->GetDOFHolderCoordinates();
+  const auto query_points =
+    pcms::ConvertCoordsTo2D(mesh.coords(), mesh.nverts(), 2);
   pcms::NeighbourhoodOptions options{.radius = 0.25, .min_supports = 8};
   Omega_h::Real radius_sq = options.radius * options.radius;
-  const auto distance_search = pcms::BuildPointCloudSupports(
-    centroids, mesh.coords(), 2, options.radius, 8, true);
 
-  // a point cloud, and element centroids queried at arbitrary points: the
-  // distance search
+  // a bare point cloud has no geometry to search: the distance search
   pcms::test::CheckSupportResultsEquivalent(
-    pcms::CreatePointCloudGeometry(cloud)->Neighbourhood(query, options),
-    distance_search);
+    pcms::CreatePointCloudGeometry(cloud)->Neighbourhood(query, 0, options),
+    pcms::BuildPointCloudSupports(centroids, mesh.coords(), 2, options.radius,
+                                  8, true));
+  // sites that are entities of a mesh geometry's mesh, vertices or element
+  // centroids: the adjacency search of the mesh from the element of each
+  // query point (of the entity dimension the sites are)
+  const auto start = StartElements(mesh, query_points);
+  const auto vertex_sites = pcms::CreatePointCloudGeometry(vertices);
   const auto centroid_sites = pcms::CreatePointCloudGeometry(faces);
+  const auto vertex_supports =
+    pcms::searchNeighbors(mesh, 0, mesh.coords(), 2, start, radius_sq, 8, 24);
+  const auto centroid_supports =
+    pcms::searchNeighbors(mesh, 2, mesh.coords(), 2, start, radius_sq, 8, 24);
   pcms::test::CheckSupportResultsEquivalent(
-    centroid_sites->Neighbourhood(query, options), distance_search);
-  // element centroids queried at the vertices of their mesh, given as the
-  // owners: the adjacency search from the elements around each vertex, which
-  // on this mesh finds what the distance search finds
+    vertex_sites->Neighbourhood(query, 0, options), vertex_supports);
+  pcms::test::CheckSupportResultsEquivalent(
+    centroid_sites->Neighbourhood(query, 0, options), centroid_supports);
+
+  // the DOF holders of a layout on the mesh geometry are hints for the
+  // cloud: they name the geometry its sites are entities of; the cloud takes
+  // them, and a hint naming the cloud itself, and not those of another
+  // geometry
   const auto vertex_owners = pcms::DOFHolderOwners(*vertices);
+  const auto n = static_cast<LO>(mesh.nverts());
   REQUIRE(vertex_owners.entity_dim == pcms::Vertex);
+  REQUIRE(centroid_sites->TakesHints(vertex_owners, n));
+  REQUIRE(vertex_sites->TakesHints(vertex_owners, n));
+  REQUIRE(centroid_sites->TakesHints(
+    pcms::OwnerHints{centroid_sites, 0, vertex_owners.entities}, n));
+  REQUIRE_FALSE(centroid_sites->TakesHints(
+    pcms::OwnerHints{MakeGeometry(mesh), 0, vertex_owners.entities}, n));
+  REQUIRE_FALSE(MakeGeometry(mesh)->TakesHints(vertex_owners, n));
   pcms::test::CheckSupportResultsEquivalent(
-    centroid_sites->Neighbourhood(query, options, vertex_owners),
-    distance_search);
-  // the owners are verified: a vertex far from the point is corrected by the
-  // search, and gives the supports of the unhinted search
+    centroid_sites->Neighbourhood(query, 0, options, vertex_owners),
+    centroid_supports);
+  // the owners are verified: a vertex far from the point, for the geometry or
+  // for the cloud, is corrected by the search and gives the supports of the
+  // unhinted search
   auto origin = pcms::test::CreateDeviceCoordinateView({0.0, 0.0}, system);
   Kokkos::View<LO*, DeviceMemorySpace> far("far", 1);
   Kokkos::deep_copy(far, mesh.nverts() - 1);
   const pcms::NeighbourhoodOptions fixed{
     .radius = 0.25, .min_supports = 8, .adapt_radius = false};
   const auto unhinted =
-    centroid_sites->Neighbourhood(origin.coordinate_view, fixed);
+    centroid_sites->Neighbourhood(origin.coordinate_view, 0, fixed);
   REQUIRE(unhinted.supports_idx.size() > 0);
   pcms::test::CheckSupportResultsEquivalent(
-    centroid_sites->Neighbourhood(origin.coordinate_view, fixed,
+    centroid_sites->Neighbourhood(
+      origin.coordinate_view, 0, fixed,
+      pcms::OwnerHints{mesh_geometry, pcms::Vertex, far}),
+    unhinted);
+  pcms::test::CheckSupportResultsEquivalent(
+    centroid_sites->Neighbourhood(origin.coordinate_view, 0, fixed,
                                   pcms::OwnerHints{centroid_sites, 0, far}),
     unhinted);
-  // vertices: the adjacency search from the element of each query point
+
+  // a bind of the cloud through hints of the mesh geometry's layout is the
+  // bind without them
+  const auto hinted_bind = centroid_sites->Bind(query, vertex_owners);
   pcms::test::CheckSupportResultsEquivalent(
-    pcms::CreatePointCloudGeometry(vertices)->Neighbourhood(query, options),
-    pcms::searchNeighbors(
-      mesh, 0, mesh.coords(), 2,
-      StartElements(mesh,
-                    pcms::ConvertCoordsTo2D(mesh.coords(), mesh.nverts(), 2)),
-      radius_sq, 8, 24));
+    dynamic_cast<const pcms::MLSBinding&>(*hinted_bind).Supports(),
+    dynamic_cast<const pcms::MLSBinding&>(*centroid_sites->Bind(query))
+      .Supports());
+}
+
+TEST_CASE("OmegaHGeometry::Neighbourhood searches among vertices or cells")
+{
+  auto lib = Omega_h::Library{};
+  auto mesh = pcms::test::BuildSquareMesh(lib, 6);
+  auto geometry = MakeGeometry(mesh);
+  const auto points = pcms::test::StandardEvalCoords2D();
+  const auto coords = pcms::test::CreateDeviceCoordinateView(
+    points, geometry->GetCoordinateSystem());
+  const pcms::NeighbourhoodOptions options{.radius = 0.3, .min_supports = 6};
+  const auto start = StartElements(mesh, coords.view);
+  const auto flat =
+    pcms::flatten_to_omega_h_reals(coords.coordinate_view.GetValues());
+  // the sites are the element centroids: what the adjacency search finds
+  // among them from the same elements
+  pcms::test::CheckSupportResultsEquivalent(
+    geometry->Neighbourhood(coords.coordinate_view, 2, options),
+    pcms::searchNeighbors(mesh, 2, flat, 2, start, 0.09, 6, 18));
+  pcms::test::CheckSupportResultsEquivalent(
+    geometry->Neighbourhood(coords.coordinate_view, 0, options),
+    pcms::searchNeighbors(mesh, 0, flat, 2, start, 0.09, 6, 18));
+  // other entities are not sites of the adjacency search
+  REQUIRE_THROWS_WITH(
+    geometry->Neighbourhood(coords.coordinate_view, 1, options),
+    ContainsSubstring("the sites must be the mesh vertices"));
 }
 
 TEST_CASE("Points the adjacency search cannot start from are missing")
@@ -683,9 +736,9 @@ TEST_CASE("Hinted neighbourhoods equal searched ones inside the mesh")
     Kokkos::View<LO*, DeviceMemorySpace> ids("ids", mesh.nents(dim));
     pcms::iota_view<LO>(ids);
     pcms::test::CheckSupportResultsEquivalent(
-      geometry->Neighbourhood(coords, options,
+      geometry->Neighbourhood(coords, 0, options,
                               pcms::OwnerHints{geometry, dim, ids}),
-      geometry->Neighbourhood(coords, options));
+      geometry->Neighbourhood(coords, 0, options));
   }
 }
 
@@ -822,8 +875,9 @@ TEST_CASE("DOF holder hints of an order-1 layout bind like the search",
     CheckSameBind(Summarize(geometry->Bind(dofs, owners)),
                   Summarize(geometry->Bind(dofs)));
     pcms::test::CheckSupportResultsEquivalent(
-      geometry->Neighbourhood(dofs, {.radius = 0.4, .min_supports = 6}, owners),
-      geometry->Neighbourhood(dofs, {.radius = 0.4, .min_supports = 6}));
+      geometry->Neighbourhood(dofs, 0, {.radius = 0.4, .min_supports = 6},
+                              owners),
+      geometry->Neighbourhood(dofs, 0, {.radius = 0.4, .min_supports = 6}));
   }
 }
 
@@ -838,7 +892,7 @@ TEST_CASE("Stale owner hints give the neighbourhood of the search",
   const auto pts = RandomPoints(2, n, 5);
   const auto coords = pcms::test::CreateDeviceCoordinateView(
     pts, geometry->GetCoordinateSystem());
-  const auto cold = geometry->Neighbourhood(coords.coordinate_view, options);
+  const auto cold = geometry->Neighbourhood(coords.coordinate_view, 0, options);
   std::mt19937 gen(2);
   for (const int dim : {pcms::Vertex, pcms::Face}) {
     CAPTURE(dim);
@@ -848,7 +902,7 @@ TEST_CASE("Stale owner hints give the neighbourhood of the search",
       id = any(gen);
     }
     pcms::test::CheckSupportResultsEquivalent(
-      geometry->Neighbourhood(coords.coordinate_view, options,
+      geometry->Neighbourhood(coords.coordinate_view, 0, options,
                               pcms::OwnerHints{geometry, dim, ToDevice(ids)}),
       cold);
   }

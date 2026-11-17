@@ -159,11 +159,18 @@ Kokkos::View<const LO*, DeviceMemorySpace> OmegaHGeometry::FindElementSeeds(
 }
 
 SupportResults OmegaHGeometry::Neighbourhood(
-  CoordinateView<DeviceMemorySpace> coords, const NeighbourhoodOptions& options,
-  const OwnerHints& owners) const
+  CoordinateView<DeviceMemorySpace> coords, int site_dim,
+  const NeighbourhoodOptions& options, const OwnerHints& owners) const
 {
   detail::CheckNeighbourhoodArguments(*this, coords, options,
                                       "OmegaHGeometry::Neighbourhood");
+  if (site_dim != 0 && site_dim != mesh_.dim()) {
+    throw pcms_error("OmegaHGeometry::Neighbourhood: the sites must be the "
+                     "mesh vertices (site_dim 0) or the element centroids "
+                     "(site_dim " +
+                     std::to_string(mesh_.dim()) + "), got " +
+                     std::to_string(site_dim));
+  }
   const auto flat_points = flatten_to_omega_h_reals(coords.GetValues());
   const LO n = static_cast<LO>(coords.GetValues().extent(0));
   const int dim = mesh_.dim();
@@ -175,7 +182,7 @@ SupportResults OmegaHGeometry::Neighbourhood(
     points, detail::ElementGuesses(
               mesh_, owners.Names(*this, n) ? owners : OwnerHints{},
               "OmegaHGeometry::Neighbourhood"));
-  return searchNeighbors(mesh_, /*site_dim=*/0, flat_points, dim, seeds,
+  return searchNeighbors(mesh_, site_dim, flat_points, dim, seeds,
                          options.radius * options.radius, options.min_supports,
                          3 * options.min_supports, options.adapt_radius);
 }

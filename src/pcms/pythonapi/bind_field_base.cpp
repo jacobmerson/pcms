@@ -469,9 +469,10 @@ void bind_create_field_module(py::module& m)
     "create_point_cloud_geometry",
     [](Omega_h::Mesh& mesh, int entity_dim, const SystemHolder& system,
        NeighbourhoodOptions neighbourhood) {
-      if (entity_dim < 0 || entity_dim > mesh.dim()) {
+      if (entity_dim != 0 && entity_dim != mesh.dim()) {
         throw py::value_error(
-          "create_point_cloud_geometry: entity_dim is out of range");
+          "create_point_cloud_geometry: entity_dim must be 0 (vertices) or "
+          "the mesh dimension (element centroids)");
       }
       return CreatePointCloudGeometry(
         std::make_shared<OmegaHEntityLayout>(
@@ -481,9 +482,9 @@ void bind_create_field_module(py::module& m)
     },
     py::arg("mesh"), py::arg("entity_dim"), py::arg("system") = py::none(),
     py::arg("neighbourhood") = NeighbourhoodOptions{}, py::keep_alive<0, 1>(),
-    "A point-cloud geometry whose sites are the entities of one dimension of "
-    "an Omega_h mesh (e.g. element centroids); the support search uses the "
-    "mesh adjacency.");
+    "A point-cloud geometry whose sites are the vertices (entity_dim 0) or "
+    "the element centroids (the mesh dimension) of an Omega_h mesh; the "
+    "support search uses the mesh adjacency.");
 
   m.def(
     "create_uniform_grid_from_mesh",
