@@ -6,6 +6,11 @@
 
 namespace pcms
 {
+using field::BuildSortedGidPermutation;
+} // namespace pcms
+
+namespace pcms
+{
 
 namespace detail
 {
