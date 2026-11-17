@@ -111,7 +111,11 @@ struct NativeField
   Coefficients imag;
   Real kphi = 0.;
 
-  [[nodiscard]] bool Empty() const noexcept { return real.extent(0) == 0; }
+  // called in kernels
+  [[nodiscard]] KOKKOS_INLINE_FUNCTION bool Empty() const noexcept
+  {
+    return real.extent(0) == 0;
+  }
 };
 
 /// m3dc1_field::eval or m3dc1_complex_field::eval of `field` in element e at
@@ -181,6 +185,34 @@ struct NativeQuantity
 
 using NativeFieldData = ExternalFieldData<NativeQuantity>;
 
+/// M3DC1Binding::Locate's kernels. They are free functions because nvcc
+/// does not take an extended lambda in a private member function.
+/// ProjectToPlane writes the (R, Z) and phi of the n points.
+template <typename Points, typename RZ, typename Phi>
+void ProjectToPlane(LO n, const Points& points, const RZ& rz, const Phi& phi)
+{
+  ForEach(
+    "M3DC1Binding::Project", n, KOKKOS_LAMBDA(const LO i) {
+      rz(i, 0) = points(i, 0);
+      rz(i, 1) = points(i, 2);
+      phi(i) = points(i, 1);
+    });
+}
+
+/// The found mask of n points of which `missing` are not found.
+template <typename Missing>
+Kokkos::View<bool*, DeviceMemorySpace> FoundMask(LO n, const Missing& missing)
+{
+  Kokkos::View<bool*, DeviceMemorySpace> found(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "m3dc1_found"), n);
+  ForEach(
+    "M3DC1Binding::Found", n, KOKKOS_LAMBDA(const LO i) { found(i) = true; });
+  ForEach(
+    "M3DC1Binding::Missing", static_cast<LO>(missing.extent(0)),
+    KOKKOS_LAMBDA(const LO k) { found(missing(k)) = false; });
+  return found;
+}
+
 /// Points of M3DC1Geometry: the (R, Z) projection of the points bound on the
 /// native mesh's (R, Z) geometry, and each point's phi. The found points are
 /// the projection's.
@@ -229,13 +261,7 @@ private:
     pcms::detail::ReserveRows(phi_, "m3dc1_phi", static_cast<size_t>(n));
     const auto rz =
       Kokkos::subview(rz_, Kokkos::make_pair(LO{0}, n), Kokkos::ALL);
-    const auto phi = phi_;
-    ForEach(
-      "M3DC1Binding::Project", n, KOKKOS_LAMBDA(const LO i) {
-        rz(i, 0) = points(i, 0);
-        rz(i, 1) = points(i, 2);
-        phi(i) = points(i, 1);
-      });
+    ProjectToPlane(n, points, rz, phi_);
     const CoordinateView<DeviceMemorySpace> projected(
       plane_->GetCoordinateSystem(), MakeRank2View(rz));
     plane_bound_ = plane_bound_ == nullptr
@@ -245,14 +271,7 @@ private:
     if (missing.extent(0) == 0) {
       return;
     }
-    Kokkos::View<bool*, DeviceMemorySpace> found(
-      Kokkos::view_alloc(Kokkos::WithoutInitializing, "m3dc1_found"), n);
-    ForEach(
-      "M3DC1Binding::Found", n, KOKKOS_LAMBDA(const LO i) { found(i) = true; });
-    ForEach(
-      "M3DC1Binding::Missing", static_cast<LO>(missing.extent(0)),
-      KOKKOS_LAMBDA(const LO k) { found(missing(k)) = false; });
-    SetFound(found);
+    SetFound(FoundMask(n, missing));
   }
 
   std::shared_ptr<const Geometry> plane_;
@@ -303,6 +322,114 @@ private:
   std::shared_ptr<const CoordinateSystem> system_;
 };
 
+/// The M3DC1NativeEvaluator kernel: `q` at the found points of a binding
+/// (rz and phis of every point, the element of each found one), the value
+/// (order 0), gradient (1) or Hessian (2). A free function because nvcc does
+/// not take an extended lambda in a protected member function.
+template <typename Out, typename RZ, typename Phi, typename Found,
+          typename Elements, typename Frames>
+void EvaluateNative(const NativeQuantity& q, int order, const Out& out,
+                    const RZ& rz, const Phi& phis, const Found& found,
+                    const Elements& elements, const Frames& frames)
+{
+  ForEach(
+    "M3DC1NativeEvaluator", static_cast<LO>(found.extent(0)),
+    KOKKOS_LAMBDA(const LO k) {
+      const LO i = found(k);
+      const LO e = elements(k);
+      const Real co = frames(e, FrameCo);
+      const Real sn = frames(e, FrameSn);
+      const Real R = rz(i, 0);
+      // m3dc1_mesh::global_to_local
+      const Real dx = R - frames(e, FrameX);
+      const Real dz = rz(i, 1) - frames(e, FrameZ);
+      const Real xi = dx * co + dz * sn - frames(e, FrameB);
+      const Real eta = -dx * sn + dz * co;
+      const Real phi = phis(i) - q.phase;
+      const bool eqsub = !q.equilibrium.Empty();
+      Real v1[6], p1[6], pp1;
+      Real v0[6], p0[6], pp0;
+      if (q.magnetic_field) {
+        const Real r = q.toroidal ? R : 1.;
+        Real b[3];
+        EvaluateField(q.field, e, xi, eta, co, sn, phi, 1, v1, p1, pp1);
+        b[0] = -q.linfac * v1[2] / r;
+        b[2] = q.linfac * v1[1] / r;
+        EvaluateField(q.current, e, xi, eta, co, sn, phi, 0, v1, p1, pp1);
+        b[1] = q.linfac * v1[0] / r;
+        if (!q.toroidal_term.Empty()) {
+          EvaluateField(q.toroidal_term, e, xi, eta, co, sn, phi, 1, v1, p1,
+                        pp1);
+          b[0] -= q.linfac * (q.fprime ? v1[1] : p1[1]);
+          b[2] -= q.linfac * (q.fprime ? v1[2] : p1[2]);
+        }
+        if (eqsub) {
+          EvaluateField(q.equilibrium, e, xi, eta, co, sn, phi, 1, v0, p0, pp0);
+          b[0] -= v0[2] / r;
+          b[2] += v0[1] / r;
+          EvaluateField(q.current_equilibrium, e, xi, eta, co, sn, phi, 0, v0,
+                        p0, pp0);
+          b[1] += v0[0] / r;
+        }
+        for (int c = 0; c < 3; ++c) {
+          out(i, c) = b[c] * q.factor;
+        }
+        return;
+      }
+      EvaluateField(q.field, e, xi, eta, co, sn, phi, order, v1, p1, pp1);
+      if (eqsub) {
+        EvaluateField(q.equilibrium, e, xi, eta, co, sn, phi, order, v0, p0,
+                      pp0);
+      }
+      // m3dc1_scalar_field: linfac times the field plus the equilibrium,
+      // times the factor
+      const auto scaled = [&](Real perturbed, Real equilibrium) {
+        Real v = q.linfac * perturbed;
+        if (eqsub) {
+          v += equilibrium;
+        }
+        return v * q.factor;
+      };
+      if (order == 0) {
+        Real v = q.linfac * v1[0];
+        if (eqsub) {
+          v += v0[0];
+        }
+        v -= q.offset;
+        v *= q.factor;
+        out(i, 0) = v;
+        return;
+      }
+      const Real f_r = scaled(v1[1], v0[1]);
+      const Real f_phi = scaled(p1[0], p0[0]);
+      const Real f_z = scaled(v1[2], v0[2]);
+      if (order == 1) {
+        // physical components: (1/R) d/dphi, as the wrapped evaluator
+        out(i, 0) = f_r;
+        out(i, 1) = f_phi / R;
+        out(i, 2) = f_z;
+        return;
+      }
+      // The Hessian's physical components in (R, phi, Z): the coordinate
+      // second derivatives less the connection's terms, over the scale
+      // factors (1, R, 1).
+      const Real f_rr = scaled(v1[3], v0[3]);
+      const Real f_rz = scaled(v1[4], v0[4]);
+      const Real f_zz = scaled(v1[5], v0[5]);
+      const Real f_rphi = scaled(p1[1], p0[1]);
+      const Real f_zphi = scaled(p1[2], p0[2]);
+      const Real f_phiphi = scaled(pp1, pp0);
+      const Real h_rphi = f_rphi / R - f_phi / (R * R);
+      const Real h_phiz = f_zphi / R;
+      const Real h_phiphi = f_phiphi / (R * R) + f_r / R;
+      const Real h[9] = {f_rr,   h_rphi, f_rz,   h_rphi, h_phiphi,
+                         h_phiz, f_rz,   h_phiz, f_zz};
+      for (int c = 0; c < 9; ++c) {
+        out(i, c) = h[c];
+      }
+    });
+}
+
 /// Evaluates native quantities at the points of an M3DC1Geometry binding:
 /// the value, or for scalars the gradient (d/dR, (1/R) d/dphi, d/dZ) or the
 /// Hessian (rows and columns R, phi, Z), physical cylindrical components.
@@ -350,107 +477,10 @@ protected:
     const auto phis = bound_->Phi();
     const auto found = bound_->FoundPoints();
     const auto elements = bound_->Plane().ElementIds();
-    const auto frames = frames_;
     const int order = Operator() == DifferentialOperator::Value      ? 0
                       : Operator() == DifferentialOperator::Gradient ? 1
                                                                      : 2;
-    ForEach(
-      "M3DC1NativeEvaluator", static_cast<LO>(found.extent(0)),
-      KOKKOS_LAMBDA(const LO k) {
-        const LO i = found(k);
-        const LO e = elements(k);
-        const Real co = frames(e, FrameCo);
-        const Real sn = frames(e, FrameSn);
-        const Real R = rz(i, 0);
-        // m3dc1_mesh::global_to_local
-        const Real dx = R - frames(e, FrameX);
-        const Real dz = rz(i, 1) - frames(e, FrameZ);
-        const Real xi = dx * co + dz * sn - frames(e, FrameB);
-        const Real eta = -dx * sn + dz * co;
-        const Real phi = phis(i) - q.phase;
-        const bool eqsub = !q.equilibrium.Empty();
-        Real v1[6], p1[6], pp1;
-        Real v0[6], p0[6], pp0;
-        if (q.magnetic_field) {
-          const Real r = q.toroidal ? R : 1.;
-          Real b[3];
-          EvaluateField(q.field, e, xi, eta, co, sn, phi, 1, v1, p1, pp1);
-          b[0] = -q.linfac * v1[2] / r;
-          b[2] = q.linfac * v1[1] / r;
-          EvaluateField(q.current, e, xi, eta, co, sn, phi, 0, v1, p1, pp1);
-          b[1] = q.linfac * v1[0] / r;
-          if (!q.toroidal_term.Empty()) {
-            EvaluateField(q.toroidal_term, e, xi, eta, co, sn, phi, 1, v1, p1,
-                          pp1);
-            b[0] -= q.linfac * (q.fprime ? v1[1] : p1[1]);
-            b[2] -= q.linfac * (q.fprime ? v1[2] : p1[2]);
-          }
-          if (eqsub) {
-            EvaluateField(q.equilibrium, e, xi, eta, co, sn, phi, 1, v0, p0,
-                          pp0);
-            b[0] -= v0[2] / r;
-            b[2] += v0[1] / r;
-            EvaluateField(q.current_equilibrium, e, xi, eta, co, sn, phi, 0, v0,
-                          p0, pp0);
-            b[1] += v0[0] / r;
-          }
-          for (int c = 0; c < 3; ++c) {
-            out(i, c) = b[c] * q.factor;
-          }
-          return;
-        }
-        EvaluateField(q.field, e, xi, eta, co, sn, phi, order, v1, p1, pp1);
-        if (eqsub) {
-          EvaluateField(q.equilibrium, e, xi, eta, co, sn, phi, order, v0, p0,
-                        pp0);
-        }
-        // m3dc1_scalar_field: linfac times the field plus the equilibrium,
-        // times the factor
-        const auto scaled = [&](Real perturbed, Real equilibrium) {
-          Real v = q.linfac * perturbed;
-          if (eqsub) {
-            v += equilibrium;
-          }
-          return v * q.factor;
-        };
-        if (order == 0) {
-          Real v = q.linfac * v1[0];
-          if (eqsub) {
-            v += v0[0];
-          }
-          v -= q.offset;
-          v *= q.factor;
-          out(i, 0) = v;
-          return;
-        }
-        const Real f_r = scaled(v1[1], v0[1]);
-        const Real f_phi = scaled(p1[0], p0[0]);
-        const Real f_z = scaled(v1[2], v0[2]);
-        if (order == 1) {
-          // physical components: (1/R) d/dphi, as the wrapped evaluator
-          out(i, 0) = f_r;
-          out(i, 1) = f_phi / R;
-          out(i, 2) = f_z;
-          return;
-        }
-        // The Hessian's physical components in (R, phi, Z): the coordinate
-        // second derivatives less the connection's terms, over the scale
-        // factors (1, R, 1).
-        const Real f_rr = scaled(v1[3], v0[3]);
-        const Real f_rz = scaled(v1[4], v0[4]);
-        const Real f_zz = scaled(v1[5], v0[5]);
-        const Real f_rphi = scaled(p1[1], p0[1]);
-        const Real f_zphi = scaled(p1[2], p0[2]);
-        const Real f_phiphi = scaled(pp1, pp0);
-        const Real h_rphi = f_rphi / R - f_phi / (R * R);
-        const Real h_phiz = f_zphi / R;
-        const Real h_phiphi = f_phiphi / (R * R) + f_r / R;
-        const Real h[9] = {f_rr,   h_rphi, f_rz,   h_rphi, h_phiphi,
-                           h_phiz, f_rz,   h_phiz, f_zz};
-        for (int c = 0; c < 9; ++c) {
-          out(i, c) = h[c];
-        }
-      });
+    EvaluateNative(q, order, out, rz, phis, found, elements, frames_);
   }
 
 private:

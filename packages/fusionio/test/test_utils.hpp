@@ -102,7 +102,11 @@ inline Kokkos::View<Real**, HostMemorySpace> EvaluateWith(
                                               columns);
   evaluator.Evaluate(field, pcms::ValueView<Real, DeviceMemorySpace>(
                               basis, pcms::MakeRank2View(out)));
-  return Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
+  // the device layout may differ from the host's (LayoutLeft on CUDA)
+  Kokkos::View<Real**, HostMemorySpace> host("host", out.extent(0),
+                                             out.extent(1));
+  pcms::DeepCopyMismatchLayouts(host, out);
+  return host;
 }
 
 /// `op` of `function` at `points` (row-major, in its geometry's coordinates),
