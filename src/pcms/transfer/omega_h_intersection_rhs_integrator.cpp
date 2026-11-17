@@ -237,10 +237,10 @@ OmegaHIntersectionRHSIntegrator::GetIntegrationPoints() const noexcept
     source_geometry_->GetCoordinateSystem(), MakeConstRank2View(coords_));
 }
 
-KnownOwners OmegaHIntersectionRHSIntegrator::IntegrationPointOwners() const
+OwnerHints OmegaHIntersectionRHSIntegrator::IntegrationPointOwners() const
 {
-  return KnownOwners{source_geometry_, GetMesh(*source_geometry_).dim(),
-                     source_elements_};
+  return OwnerHints{source_geometry_, GetMesh(*source_geometry_).dim(),
+                    source_elements_};
 }
 
 Vec OmegaHIntersectionRHSIntegrator::GetVector() const noexcept

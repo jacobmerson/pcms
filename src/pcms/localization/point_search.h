@@ -165,6 +165,30 @@ public:
   Kokkos::View<Result*> operator()(
     Kokkos::View<const Real* [DIM]> point) const override;
 
+  /**
+   * As operator()(points), into `results` (one per point), starting from a
+   * guess per point: the element the point is believed to lie in, or -1 for
+   * none. A guess is verified, never trusted. A point whose guessed element,
+   * or else an element sharing a facet with it (the mesh's dual graph),
+   * contains it within `tolerance` of its facets (the closure band above) is
+   * classified in that element alone: its entity and reduced coordinates are
+   * the ones the entity-of-simplex rule gives there, without a grid search.
+   * Every other point (no guess, a wrong one, a point outside the mesh) is
+   * searched for on the grid exactly as operator()(points) does, compacted so
+   * that only those points pay for it. `guesses` empty means no guesses.
+   *
+   * The result equals operator()(points) in the dimensionality, the id and the
+   * reduced coordinates (up to rounding) wherever the entity of lowest
+   * dimension within the tolerance of the point is a sub-simplex of the
+   * guessed element or its neighbour; it can differ only within about
+   * tolerance / sin(alpha / 2) of a vertex or edge of sharp angle alpha, where
+   * a simplex that does not share a facet with the guess has the point in the
+   * band of a lower-dimensional entity.
+   */
+  void operator()(Kokkos::View<const Real* [DIM]> points,
+                  Kokkos::View<const LO*> guesses,
+                  Kokkos::View<Result*> results) const;
+
 private:
   /// per entity dimension 1..DIM-1, the element-to-entity and
   /// entity-to-vertex adjacencies
@@ -174,6 +198,8 @@ private:
   CandidateMapT candidate_map_;
   Omega_h::LOs elem_verts_;
   Omega_h::Reals coords_;
+  /// the elements across each element's facets
+  Omega_h::Graph dual_;
 };
 
 class GridPointSearch3D : public PointLocalizationSearch3D
@@ -213,6 +239,30 @@ public:
   Kokkos::View<Result*> operator()(
     Kokkos::View<const Real* [DIM]> point) const override;
 
+  /**
+   * As operator()(points), into `results` (one per point), starting from a
+   * guess per point: the element the point is believed to lie in, or -1 for
+   * none. A guess is verified, never trusted. A point whose guessed element,
+   * or else an element sharing a facet with it (the mesh's dual graph),
+   * contains it within `tolerance` of its facets (the closure band above) is
+   * classified in that element alone: its entity and reduced coordinates are
+   * the ones the entity-of-simplex rule gives there, without a grid search.
+   * Every other point (no guess, a wrong one, a point outside the mesh) is
+   * searched for on the grid exactly as operator()(points) does, compacted so
+   * that only those points pay for it. `guesses` empty means no guesses.
+   *
+   * The result equals operator()(points) in the dimensionality, the id and the
+   * reduced coordinates (up to rounding) wherever the entity of lowest
+   * dimension within the tolerance of the point is a sub-simplex of the
+   * guessed element or its neighbour; it can differ only within about
+   * tolerance / sin(alpha / 2) of a vertex or edge of sharp angle alpha, where
+   * a simplex that does not share a facet with the guess has the point in the
+   * band of a lower-dimensional entity.
+   */
+  void operator()(Kokkos::View<const Real* [DIM]> points,
+                  Kokkos::View<const LO*> guesses,
+                  Kokkos::View<Result*> results) const;
+
 private:
   /// per entity dimension 1..DIM-1, the element-to-entity and
   /// entity-to-vertex adjacencies
@@ -222,6 +272,8 @@ private:
   CandidateMapT candidate_map_;
   Omega_h::LOs elem_verts_;
   Omega_h::Reals coords_;
+  /// the elements across each element's facets
+  Omega_h::Graph dual_;
 };
 
 /// A grid search of either spatial dimension, as owned by components that are
@@ -234,13 +286,19 @@ using GridPointSearchVariant =
 /// @brief Locates each query point.
 /// @param search containing-entity search over a mesh
 /// @param points query points, one row per point
+/// @param guesses an element per point to start from, or empty, see the
+///        search's operator()(points, guesses, results)
 /// @return per point, whether it is in the mesh (not outside and not
 ///         NO_INTERSECT), and the search's result
 template <typename Search>
 std::pair<Kokkos::View<bool*>, Kokkos::View<typename Search::Result*>>
-LocatePoints(const Search& search, Kokkos::View<const Real**> points)
+LocatePoints(const Search& search, Kokkos::View<const Real**> points,
+             Kokkos::View<const LO*> guesses = {})
 {
-  const auto results = search(points);
+  Kokkos::View<typename Search::Result*> results(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "point search result"),
+    points.extent(0));
+  search(points, guesses, results);
   const auto n = static_cast<LO>(points.extent(0));
   Kokkos::View<bool*> found("found_in_mesh", n);
   Kokkos::parallel_for(

@@ -10,11 +10,11 @@ std::shared_ptr<const BoundSource> Geometry::Bind(
   CoordinateView<DeviceMemorySpace> coords, OutOfBoundsPolicy policy,
   std::shared_ptr<const CoordinateMap> map) const
 {
-  return Bind(std::move(coords), KnownOwners{}, policy, std::move(map));
+  return Bind(std::move(coords), OwnerHints{}, policy, std::move(map));
 }
 
 std::shared_ptr<const BoundSource> Geometry::Bind(
-  CoordinateView<DeviceMemorySpace> coords, const KnownOwners& owners,
+  CoordinateView<DeviceMemorySpace> coords, const OwnerHints& owners,
   OutOfBoundsPolicy policy, std::shared_ptr<const CoordinateMap> map) const
 {
   const auto& query_system = coords.GetCoordinateSystem();
@@ -43,13 +43,13 @@ std::shared_ptr<const BoundSource> Geometry::Bind(
     throw pcms_error("Geometry::Bind: this geometry does not support "
                      "OutOfBoundsMode::NEAREST_BOUNDARY");
   }
-  // a hint for another geometry, or not one owner per point, is not one; nor
-  // is a hint given with a map, as it describes the unmapped points
-  const KnownOwners hint =
+  // a hint naming another geometry, or not one entity per point, is not one;
+  // nor is a hint given with a map, as it describes the unmapped points
+  const OwnerHints hint =
     map == nullptr &&
-        owners.Hints(*this, static_cast<LO>(coords.GetValues().extent(0)))
+        owners.Names(*this, static_cast<LO>(coords.GetValues().extent(0)))
       ? owners
-      : KnownOwners{};
+      : OwnerHints{};
   std::shared_ptr<BoundSource> bound;
   if (map != nullptr) {
     std::shared_ptr<const BoundCoordinateMap> bound_map = map->Bind(coords);
@@ -65,7 +65,7 @@ std::shared_ptr<const BoundSource> Geometry::Bind(
 
 SupportResults Geometry::Neighbourhood(CoordinateView<DeviceMemorySpace>,
                                        const NeighbourhoodOptions&,
-                                       const KnownOwners&) const
+                                       const OwnerHints&) const
 {
   throw pcms_error("Geometry::Neighbourhood: this geometry has no "
                    "neighbourhood search");

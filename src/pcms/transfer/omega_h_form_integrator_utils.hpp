@@ -82,7 +82,7 @@ inline OmegaHScalarSpace ResolveOmegaHScalarSpace(const FunctionSpace& space,
 // differential of the geometry's bind of the points with those owners.
 inline Kokkos::View<Real*, DeviceMemorySpace> ElementMeasuresAtPoints(
   const Geometry& geometry, CoordinateView<DeviceMemorySpace> points,
-  const KnownOwners& owners, const char* context)
+  const OwnerHints& owners, const char* context)
 {
   const auto bound = geometry.Bind(points, owners);
   const DifferentialView differential = geometry.Differential(*bound);
@@ -105,8 +105,8 @@ inline Kokkos::View<Real*, DeviceMemorySpace> ElementMeasuresAtPoints(
     "ElementMeasuresAtPoints",
     Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
     KOKKOS_LAMBDA(const LO i) {
-      // hinted points are all found, so row i of a per-point differential is
-      // point i
+      // the points lie in their elements, so they are all found and row i of
+      // a per-point differential is point i
       const LO row = per_element ? element_ids(i) : i;
       measures(i) = Kokkos::fabs(determinant(row)) * reference_measure;
     });

@@ -28,8 +28,8 @@ namespace pcms
 /// the entities of one dimension of a mesh): the identity map, located by the
 /// MLS supports of each query point. Bind finds the supports with
 /// Neighbourhood, using the options the geometry was created with. For the
-/// vertices of a mesh, construction builds the mesh's OmegaHGeometry, whose
-/// search starts the adjacency search of each point.
+/// vertices or the cells of a mesh, construction builds the mesh's
+/// OmegaHGeometry, whose search starts the adjacency search of each point.
 /// @throws pcms_error on construction if the sites' coordinate system does not
 ///         have the identity metric
 class PointCloudGeometry final : public Geometry
@@ -46,10 +46,11 @@ public:
       mesh_(mesh),
       site_entity_dim_(site_entity_dim),
       options_(std::move(options)),
-      vertex_geometry_(mesh != nullptr && site_entity_dim == Vertex
-                         ? std::make_shared<OmegaHGeometry>(
-                             *mesh, site_layout_->GetCoordinateSystem())
-                         : nullptr)
+      mesh_geometry_(mesh != nullptr && (site_entity_dim == Vertex ||
+                                         site_entity_dim == mesh->dim())
+                       ? std::make_shared<OmegaHGeometry>(
+                           *mesh, site_layout_->GetCoordinateSystem())
+                       : nullptr)
   {
     // MLS distances are based on the unweighted Euclidean measure, which is
     // valid only with the identity metric; this almost certainly should be
@@ -81,35 +82,36 @@ public:
   }
 
   /// The mesh-adjacency search for the sites of a mesh (its vertices or its
-  /// element centroids) when `owners` gives the cell or vertex of the mesh at
+  /// element centroids) when `owners` claims the cell or vertex of the mesh at
   /// each point, and for mesh-vertex sites, which otherwise locate the points
-  /// first; the distance search otherwise.
+  /// first; the distance search otherwise. The search starts from the element
+  /// the mesh geometry's search finds for each point, starting from the claim
+  /// (verified, see OwnerHints).
   [[nodiscard]] SupportResults Neighbourhood(
     CoordinateView<DeviceMemorySpace> coords,
     const NeighbourhoodOptions& options,
-    const KnownOwners& owners = {}) const override
+    const OwnerHints& owners = {}) const override
   {
     detail::CheckNeighbourhoodArguments(*this, coords, options,
                                         "PointCloudGeometry::Neighbourhood");
     const auto n = static_cast<LO>(coords.GetValues().extent(0));
-    const auto mesh_entity = [this](int dim) {
-      return dim == Vertex || dim == mesh_->dim();
-    };
     // the supports are entity ids, which are site indices only without ghosts
-    if (mesh_ != nullptr && mesh_entity(site_entity_dim_) &&
-        !site_layout_->HasGhosts() && owners.Hints(*this, n) &&
-        mesh_entity(owners.entity_dim)) {
-      detail::CheckEntityIds(owners.entities, mesh_->nents(owners.entity_dim),
-                             "PointCloudGeometry::Neighbourhood",
-                             owners.entity_dim == Vertex ? "vertex"
-                                                         : "element");
-      return searchNeighbors(
-        *mesh_, site_entity_dim_, flatten_to_omega_h_reals(coords.GetValues()),
-        owners.entity_dim, owners.entities, options.radius * options.radius,
-        options.min_supports, 3 * options.min_supports, options.adapt_radius);
+    if (mesh_geometry_ != nullptr && !site_layout_->HasGhosts() &&
+        owners.Names(*this, n) &&
+        (owners.entity_dim == Vertex || owners.entity_dim == mesh_->dim())) {
+      const int dim = mesh_->dim();
+      const auto flat_points = flatten_to_omega_h_reals(coords.GetValues());
+      const auto seeds = mesh_geometry_->FindElementSeeds(
+        ConvertCoordsTo2D(flat_points, n, dim),
+        detail::ElementGuesses(*mesh_, owners,
+                               "PointCloudGeometry::Neighbourhood"));
+      return searchNeighbors(*mesh_, site_entity_dim_, flat_points, dim, seeds,
+                             options.radius * options.radius,
+                             options.min_supports, 3 * options.min_supports,
+                             options.adapt_radius);
     }
-    if (vertex_geometry_ != nullptr) {
-      return vertex_geometry_->Neighbourhood(std::move(coords), options);
+    if (mesh_geometry_ != nullptr && site_entity_dim_ == Vertex) {
+      return mesh_geometry_->Neighbourhood(std::move(coords), options);
     }
     const auto sites = site_layout_->GetDOFHolderCoordinates().GetValues();
     return BuildPointCloudSupports(
@@ -142,9 +144,9 @@ private:
   Omega_h::Mesh* mesh_;
   int site_entity_dim_;
   NeighbourhoodOptions options_;
-  // for mesh-vertex sites, the mesh's geometry: its Neighbourhood is the
-  // adjacency search from the element its search finds for each point
-  std::shared_ptr<const OmegaHGeometry> vertex_geometry_;
+  // for mesh-vertex or cell sites, the mesh's geometry: its search finds the
+  // element the adjacency search of each point starts from
+  std::shared_ptr<const OmegaHGeometry> mesh_geometry_;
 };
 
 /// A point-cloud geometry whose sites are `coords` (copied to the device).

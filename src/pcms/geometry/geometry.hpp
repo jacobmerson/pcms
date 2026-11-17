@@ -107,22 +107,25 @@ public:
     CoordinateView<DeviceMemorySpace> coords, OutOfBoundsPolicy policy = {},
     std::shared_ptr<const CoordinateMap> map = nullptr) const;
 
-  /// @brief Bind for points whose owners are known, e.g. points generated in
-  ///        the elements of this geometry.
+  /// @brief Bind for points with claimed owners, e.g. points generated in the
+  ///        elements of this geometry.
   /// @param coords query points, as for the coordinates overload
-  /// @param owners the owner of each query point; used, instead of the
-  ///        search, by the kinds that can (a cell hint on a mesh; vertex
-  ///        and cell hints for the supports of a reconstruction geometry), and
-  ///        ignored if it is for another geometry, not one entity per point,
-  ///        or given with a map (it describes the unmapped points). The hint
-  ///        is trusted, see KnownOwners: hinted points count as found.
+  /// @param owners the claimed owner of each query point, to start from
+  ///        instead of searching for it (a cell hint on a mesh; vertex and cell
+  ///        hints for the supports of a reconstruction geometry); ignored if
+  ///        it names another geometry, is not one entity per point, or is
+  ///        given with a map (it describes the unmapped points). The kind
+  ///        verifies the hint, see OwnerHints: a wrong one costs a search for
+  ///        that point, and hinted points that lie outside the geometry are
+  ///        missing, so the out-of-bounds policy applies to them as to any
+  ///        other.
   /// @throws pcms_error as the coordinates overload, or if a used hint names
   ///         an entity the geometry does not have
   /// @param policy what to do with points outside the geometry
   /// @param map map from the query coordinate system to GetCoordinateSystem(),
   ///        or null, as for the coordinates overload
   [[nodiscard]] std::shared_ptr<const BoundSource> Bind(
-    CoordinateView<DeviceMemorySpace> coords, const KnownOwners& owners,
+    CoordinateView<DeviceMemorySpace> coords, const OwnerHints& owners,
     OutOfBoundsPolicy policy = {},
     std::shared_ptr<const CoordinateMap> map = nullptr) const;
 
@@ -132,12 +135,14 @@ public:
   ///         system does not have the identity metric (the distances are
   ///         Euclidean), or `options.max_supports` is neither 0 nor
   ///         3 * `options.min_supports` (other bounds are not honoured yet)
-  /// @param owners the owner of each query point, as for Bind: the kinds
-  ///        with an adjacency search start it there instead of locating the
-  ///        points (a vertex hint starts from the elements around the vertex)
+  /// @param owners the claimed owner of each query point, as for Bind: the
+  ///        kinds with an adjacency search start their search for the point
+  ///        there (a vertex hint starts from an element around the vertex);
+  ///        verified, so a wrong hint gives the supports of the unhinted
+  ///        search
   [[nodiscard]] virtual SupportResults Neighbourhood(
     CoordinateView<DeviceMemorySpace> coords,
-    const NeighbourhoodOptions& options, const KnownOwners& owners = {}) const;
+    const NeighbourhoodOptions& options, const OwnerHints& owners = {}) const;
 
   /// @brief Jacobian at the bound points.
   /// @param bound a bound source of this geometry
@@ -174,7 +179,7 @@ void CheckNeighbourhoodArguments(
   const NeighbourhoodOptions& options, const std::string& caller);
 
 /// @brief Checks that every id of a hint is one of `num_entities` entities.
-/// @param ids entity ids, e.g. KnownOwners::entities
+/// @param ids entity ids, e.g. OwnerHints::entities
 /// @param num_entities number of entities the ids index
 /// @param caller name of the checking function, for the message
 /// @param entity what the ids index, e.g. "element", for the message

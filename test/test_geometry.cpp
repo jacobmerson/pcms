@@ -22,7 +22,9 @@
 #include <pcms/utility/mesh_geometry.h>
 #include <pcms/utility/omega_h_array_utils.h>
 #include "field_test_utils.h"
+#include <algorithm>
 #include <memory>
+#include <random>
 #include <string>
 #include <variant>
 #include <vector>
@@ -95,6 +97,73 @@ void CheckJacobianRows(Omega_h::Mesh& mesh,
                              pcms::test::ExactTol));
     }
   }
+}
+
+std::shared_ptr<pcms::Geometry> MakeMeshGeometry(Omega_h::Mesh& mesh)
+{
+  return pcms::CreateOmegaHGeometry(mesh,
+                                    pcms::csys::Cartesian::Create(mesh.dim()));
+}
+
+/// What a bind of an Omega_h geometry found, on the host.
+struct BindSummary
+{
+  std::vector<LO> found;
+  std::vector<LO> missing;
+  std::vector<LO> elements;
+  std::vector<Real> barycentric; // [found point][vertex]
+};
+
+template <typename View>
+std::vector<typename View::non_const_value_type> ToVector(const View& view)
+{
+  const auto host =
+    Kokkos::create_mirror_view_and_copy(HostMemorySpace(), view);
+  return {host.data(), host.data() + host.size()};
+}
+
+BindSummary Summarize(const std::shared_ptr<const pcms::BoundSource>& bound)
+{
+  const auto& binding = dynamic_cast<const pcms::OmegaHMeshBinding&>(*bound);
+  return {ToVector(bound->FoundPoints()), ToVector(bound->MissingPoints()),
+          ToVector(binding.ElementIds()), ToVector(binding.Barycentric())};
+}
+
+void CheckSameBind(const BindSummary& actual, const BindSummary& expected)
+{
+  REQUIRE(actual.found == expected.found);
+  REQUIRE(actual.missing == expected.missing);
+  REQUIRE(actual.elements == expected.elements);
+  REQUIRE(actual.barycentric.size() == expected.barycentric.size());
+  for (size_t i = 0; i < expected.barycentric.size(); ++i) {
+    CAPTURE(i);
+    REQUIRE_THAT(actual.barycentric[i],
+                 WithinAbs(expected.barycentric[i], pcms::test::ExactTol));
+  }
+}
+
+Kokkos::View<LO*, DeviceMemorySpace> ToDevice(const std::vector<LO>& ids)
+{
+  Kokkos::View<LO*, DeviceMemorySpace> device("ids", ids.size());
+  auto host = Kokkos::create_mirror_view(device);
+  for (size_t i = 0; i < ids.size(); ++i) {
+    host(i) = ids[i];
+  }
+  Kokkos::deep_copy(device, host);
+  return device;
+}
+
+/// `n` random points of [-0.2, 1.2]^dim (some outside the unit box mesh),
+/// interleaved.
+std::vector<Real> RandomPoints(int dim, int n, unsigned seed)
+{
+  std::mt19937 gen(seed);
+  std::uniform_real_distribution<Real> uni(-0.2, 1.2);
+  std::vector<Real> pts(static_cast<size_t>(dim) * n);
+  for (auto& x : pts) {
+    x = uni(gen);
+  }
+  return pts;
 }
 
 KOKKOS_INLINE_FUNCTION Real Quadratic(Real x, Real y)
@@ -185,7 +254,7 @@ TEST_CASE("Spaces on a geometry share its discretization")
                       "mesh"));
 }
 
-TEST_CASE("Known owners skip the search")
+TEST_CASE("Correct owner hints give the search's bind")
 {
   auto lib = Omega_h::Library{};
   auto mesh = pcms::test::BuildSquareMesh(lib, 4);
@@ -205,7 +274,7 @@ TEST_CASE("Known owners skip the search")
   pcms::iota_view<LO>(elements);
   const auto searched = geometry->Bind(coords);
   const auto hinted =
-    geometry->Bind(coords, pcms::KnownOwners{geometry, 2, elements});
+    geometry->Bind(coords, pcms::OwnerHints{geometry, 2, elements});
   REQUIRE(hinted->FoundPoints().extent(0) == static_cast<size_t>(nelems));
   const auto element_ids = [](const auto& bound) {
     return Kokkos::create_mirror_view_and_copy(
@@ -233,14 +302,14 @@ TEST_CASE("Known owners skip the search")
   Kokkos::deep_copy(beyond, elements);
   Kokkos::deep_copy(Kokkos::subview(beyond, nelems - 1), nelems);
   REQUIRE_THROWS_WITH(
-    geometry->Bind(coords, pcms::KnownOwners{geometry, 2, beyond}),
+    geometry->Bind(coords, pcms::OwnerHints{geometry, 2, beyond}),
     ContainsSubstring("element ids span [0, " + std::to_string(nelems) +
                       "], outside [0, " + std::to_string(nelems) + ")"));
 
   // a hint for another geometry is ignored: the points are searched
   Kokkos::View<LO*, DeviceMemorySpace> wrong("wrong", nelems);
   const auto ignored =
-    geometry->Bind(coords, pcms::KnownOwners{MakeGeometry(mesh), 2, wrong});
+    geometry->Bind(coords, pcms::OwnerHints{MakeGeometry(mesh), 2, wrong});
   const auto ignored_ids = element_ids(ignored);
   for (LO e = 0; e < nelems; ++e) {
     REQUIRE(ignored_ids(e) == e);
@@ -424,19 +493,20 @@ TEST_CASE("PointCloudGeometry::Neighbourhood takes the search of its sites")
   pcms::test::CheckSupportResultsEquivalent(
     centroid_sites->Neighbourhood(query, options, vertex_owners),
     distance_search);
-  // the search starts from the owners: from a vertex far from the point, a
-  // fixed radius finds nothing
+  // the owners are verified: a vertex far from the point is corrected by the
+  // search, and gives the supports of the unhinted search
   auto origin = pcms::test::CreateDeviceCoordinateView({0.0, 0.0}, system);
   Kokkos::View<LO*, DeviceMemorySpace> far("far", 1);
   Kokkos::deep_copy(far, mesh.nverts() - 1);
   const pcms::NeighbourhoodOptions fixed{
     .radius = 0.25, .min_supports = 8, .adapt_radius = false};
-  REQUIRE(centroid_sites->Neighbourhood(origin.coordinate_view, fixed)
-            .supports_idx.size() > 0);
-  REQUIRE(centroid_sites
-            ->Neighbourhood(origin.coordinate_view, fixed,
-                            pcms::KnownOwners{centroid_sites, 0, far})
-            .supports_idx.size() == 0);
+  const auto unhinted =
+    centroid_sites->Neighbourhood(origin.coordinate_view, fixed);
+  REQUIRE(unhinted.supports_idx.size() > 0);
+  pcms::test::CheckSupportResultsEquivalent(
+    centroid_sites->Neighbourhood(origin.coordinate_view, fixed,
+                                  pcms::OwnerHints{centroid_sites, 0, far}),
+    unhinted);
   // vertices: the adjacency search from the element of each query point
   pcms::test::CheckSupportResultsEquivalent(
     pcms::CreatePointCloudGeometry(vertices)->Neighbourhood(query, options),
@@ -563,7 +633,7 @@ TEST_CASE("Hinted neighbourhoods equal searched ones inside the mesh")
     pcms::iota_view<LO>(ids);
     pcms::test::CheckSupportResultsEquivalent(
       geometry->Neighbourhood(coords, options,
-                              pcms::KnownOwners{geometry, dim, ids}),
+                              pcms::OwnerHints{geometry, dim, ids}),
       geometry->Neighbourhood(coords, options));
   }
 }
@@ -580,13 +650,157 @@ TEST_CASE("Binding with owners keeps the policy")
   auto coords = pcms::test::CreateDeviceCoordinateView(
     pts, geometry->GetCoordinateSystem());
   const auto bound =
-    geometry->Bind(coords.coordinate_view, pcms::KnownOwners{},
+    geometry->Bind(coords.coordinate_view, pcms::OwnerHints{},
                    pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::FILL, -1.0});
   REQUIRE(bound->Policy().fill_value == -1.0);
   REQUIRE(bound->MissingPoints().extent(0) == 1);
   const auto values = pcms::test::EvaluateToHost(
     *space->CreatePointEvaluator<Real>(bound), f, f.GetData().GetValueBasis());
   REQUIRE(values(1, 0) == -1.0);
+}
+
+TEST_CASE("Stale owner hints bind like the search", "[owner_hints]")
+{
+  auto lib = Omega_h::Library{};
+  for (const int dim : {2, 3}) {
+    CAPTURE(dim);
+    auto mesh = dim == 2 ? pcms::test::BuildSquareMesh(lib, 6)
+                         : pcms::test::BuildUnitCube(lib, 3);
+    auto geometry = MakeMeshGeometry(mesh);
+    const int n = 200;
+    const auto pts = RandomPoints(dim, n, 17);
+    const auto coords = pcms::test::CreateDeviceCoordinateView(
+      pts, geometry->GetCoordinateSystem(), dim);
+    const pcms::OutOfBoundsPolicy fill{pcms::OutOfBoundsMode::FILL, -1.0};
+    const auto cold = Summarize(geometry->Bind(coords.coordinate_view, fill));
+    // some of the random points are outside, some inside
+    REQUIRE(!cold.found.empty());
+    REQUIRE(!cold.missing.empty());
+
+    const auto bind_with = [&](int entity_dim, const std::vector<LO>& ids) {
+      return Summarize(geometry->Bind(
+        coords.coordinate_view,
+        pcms::OwnerHints{geometry, entity_dim, ToDevice(ids)}, fill));
+    };
+    // the elements the search finds, 0 for the points outside
+    std::vector<LO> right(n, 0);
+    for (size_t k = 0; k < cold.found.size(); ++k) {
+      right[cold.found[k]] = cold.elements[k];
+    }
+    {
+      INFO("the right elements");
+      CheckSameBind(bind_with(dim, right), cold);
+    }
+    {
+      INFO("the elements shuffled");
+      auto stale = right;
+      std::shuffle(stale.begin(), stale.end(), std::mt19937(3));
+      CheckSameBind(bind_with(dim, stale), cold);
+    }
+    {
+      INFO("one element for every point");
+      CheckSameBind(bind_with(dim, std::vector<LO>(n, mesh.nelems() - 1)),
+                    cold);
+    }
+    {
+      INFO("vertices, right or wrong");
+      std::mt19937 gen(9);
+      std::uniform_int_distribution<LO> any(0, mesh.nverts() - 1);
+      std::vector<LO> vertices(n);
+      for (auto& v : vertices) {
+        v = any(gen);
+      }
+      CheckSameBind(bind_with(pcms::Vertex, vertices), cold);
+    }
+    {
+      INFO("a hint of an unused dimension is ignored");
+      CheckSameBind(bind_with(1, right), cold);
+    }
+  }
+}
+
+TEST_CASE("Owner hints of points outside the mesh follow the policy",
+          "[owner_hints]")
+{
+  auto lib = Omega_h::Library{};
+  for (const int dim : {2, 3}) {
+    CAPTURE(dim);
+    auto mesh = dim == 2 ? pcms::test::BuildSquareMesh(lib, 4)
+                         : pcms::test::BuildUnitCube(lib, 2);
+    auto geometry = MakeMeshGeometry(mesh);
+    // an inside point and a point beyond the mesh, both hinted with element 0
+    std::vector<Real> pts(static_cast<size_t>(2 * dim), 0.0);
+    for (int d = 0; d < dim; ++d) {
+      pts[d] = 0.45;
+      pts[dim + d] = 2.5;
+    }
+    const auto coords = pcms::test::CreateDeviceCoordinateView(
+      pts, geometry->GetCoordinateSystem(), dim);
+    const pcms::OwnerHints hint{geometry, dim, ToDevice({0, 0})};
+
+    const pcms::OutOfBoundsPolicy fill{pcms::OutOfBoundsMode::FILL, -1.0};
+    const auto filled = geometry->Bind(coords.coordinate_view, hint, fill);
+    REQUIRE(ToVector(filled->FoundPoints()) == std::vector<LO>{0});
+    REQUIRE(ToVector(filled->MissingPoints()) == std::vector<LO>{1});
+    CheckSameBind(Summarize(filled),
+                  Summarize(geometry->Bind(coords.coordinate_view, fill)));
+
+    REQUIRE_THROWS_WITH(geometry->Bind(coords.coordinate_view, hint),
+                        ContainsSubstring("outside the source's domain"));
+    REQUIRE_THROWS_WITH(geometry->Bind(coords.coordinate_view),
+                        ContainsSubstring("outside the source's domain"));
+  }
+}
+
+TEST_CASE("DOF holder hints of an order-1 layout bind like the search",
+          "[owner_hints]")
+{
+  auto lib = Omega_h::Library{};
+  for (const int dim : {2, 3}) {
+    CAPTURE(dim);
+    auto mesh = dim == 2 ? pcms::test::BuildSquareMesh(lib, 5)
+                         : pcms::test::BuildUnitCube(lib, 3);
+    auto geometry = MakeMeshGeometry(mesh);
+    auto space = CreateLagrangeSpace(
+      geometry, 1, 1, LagrangeOptions{.backend = LagrangeBackend::OmegaH});
+    const auto owners = pcms::DOFHolderOwners(*space->GetLayout(), geometry);
+    REQUIRE(owners.entity_dim == pcms::Vertex);
+    const auto dofs = space->GetLayout()->GetDOFHolderCoordinates();
+    // the DOF holders are the mesh vertices, on the boundary of the domain:
+    // the points sit on the tolerance band of the elements they are hinted in
+    CheckSameBind(Summarize(geometry->Bind(dofs, owners)),
+                  Summarize(geometry->Bind(dofs)));
+    pcms::test::CheckSupportResultsEquivalent(
+      geometry->Neighbourhood(dofs, {.radius = 0.4, .min_supports = 6}, owners),
+      geometry->Neighbourhood(dofs, {.radius = 0.4, .min_supports = 6}));
+  }
+}
+
+TEST_CASE("Stale owner hints give the neighbourhood of the search",
+          "[owner_hints]")
+{
+  auto lib = Omega_h::Library{};
+  auto mesh = pcms::test::BuildSquareMesh(lib, 6);
+  auto geometry = MakeGeometry(mesh);
+  const pcms::NeighbourhoodOptions options{.radius = 0.3, .min_supports = 6};
+  const int n = 100;
+  const auto pts = RandomPoints(2, n, 5);
+  const auto coords = pcms::test::CreateDeviceCoordinateView(
+    pts, geometry->GetCoordinateSystem());
+  const auto cold = geometry->Neighbourhood(coords.coordinate_view, options);
+  std::mt19937 gen(2);
+  for (const int dim : {pcms::Vertex, pcms::Face}) {
+    CAPTURE(dim);
+    std::uniform_int_distribution<LO> any(0, mesh.nents(dim) - 1);
+    std::vector<LO> ids(n);
+    for (auto& id : ids) {
+      id = any(gen);
+    }
+    pcms::test::CheckSupportResultsEquivalent(
+      geometry->Neighbourhood(coords.coordinate_view, options,
+                              pcms::OwnerHints{geometry, dim, ToDevice(ids)}),
+      cold);
+  }
 }
 
 #ifdef PCMS_ENABLE_MESHFIELDS

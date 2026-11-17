@@ -19,21 +19,12 @@ OmegaHMeshBinding::OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
                                      Omega_h::Mesh& mesh)
   : BoundSource(std::move(geometry), request)
 {
-  const bool hinted = request.owners.entity_dim == mesh.dim() &&
-                      request.owners.entities.extent(0) > 0;
-  if (hinted) {
-    detail::CheckEntityIds(request.owners.entities, mesh.nelems(),
-                           "OmegaHMeshBinding", "element");
-  }
+  const auto guesses =
+    detail::ElementGuesses(mesh, request.owners, "OmegaHMeshBinding");
   std::visit(
     [&](const auto& s) {
       constexpr int Dim = std::decay_t<decltype(s)>::DIM;
-      if (hinted) {
-        std::tie(elem_ids_, bary_) = detail::BarycentricInElements<Dim>(
-          mesh, LocatedPointValues(), FoundPoints(), request.owners.entities);
-        return;
-      }
-      auto [found, results] = LocatePoints(s, LocatedPointValues());
+      auto [found, results] = LocatePoints(s, LocatedPointValues(), guesses);
       SetFound(found);
       const auto [lifted_elems, lifted_bary] = detail::LiftResults<Dim>(
         mesh, Kokkos::View<const typename std::decay_t<decltype(s)>::Result*,
@@ -42,6 +33,38 @@ OmegaHMeshBinding::OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
         detail::GatherFoundLifts<Dim>(FoundPoints(), lifted_elems, lifted_bary);
     },
     search);
+}
+
+Kokkos::View<const LO*, DeviceMemorySpace> detail::ElementGuesses(
+  Omega_h::Mesh& mesh, const OwnerHints& owners, const std::string& caller)
+{
+  const int dim = mesh.dim();
+  if (owners.entities.extent(0) == 0 ||
+      (owners.entity_dim != dim && owners.entity_dim != 0)) {
+    return {};
+  }
+  const bool vertices = owners.entity_dim == 0;
+  CheckEntityIds(owners.entities, mesh.nents(owners.entity_dim), caller,
+                 vertices ? "vertex" : "element");
+  if (!vertices) {
+    return owners.entities;
+  }
+  const auto vertex_elems = mesh.ask_up(0, dim);
+  const auto vertices_of = owners.entities;
+  Kokkos::View<LO*, DeviceMemorySpace> guesses(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "omega_h_element_guesses"),
+    vertices_of.extent(0));
+  Kokkos::parallel_for(
+    "ElementGuesses",
+    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(
+      0, static_cast<LO>(vertices_of.extent(0))),
+    KOKKOS_LAMBDA(const LO i) {
+      const LO begin = vertex_elems.a2ab[vertices_of(i)];
+      guesses(i) = begin < vertex_elems.a2ab[vertices_of(i) + 1]
+                     ? vertex_elems.ab2b[begin]
+                     : -1;
+    });
+  return guesses;
 }
 
 GridPointSearchVariant MakeGridSearch(Omega_h::Mesh& mesh,
@@ -100,7 +123,8 @@ std::shared_ptr<BoundSource> OmegaHGeometry::BindImpl(
 }
 
 Kokkos::View<const LO*, DeviceMemorySpace> OmegaHGeometry::FindElementSeeds(
-  Kokkos::View<const Real**, DeviceMemorySpace> points) const
+  Kokkos::View<const Real**, DeviceMemorySpace> points,
+  Kokkos::View<const LO*, DeviceMemorySpace> guesses) const
 {
   if (points.extent(1) != static_cast<std::size_t>(mesh_.dim())) {
     throw pcms_error("OmegaHGeometry::FindElementSeeds: point dimension "
@@ -109,39 +133,37 @@ Kokkos::View<const LO*, DeviceMemorySpace> OmegaHGeometry::FindElementSeeds(
   return std::visit(
     [&](const auto& s) -> Kokkos::View<const LO*, DeviceMemorySpace> {
       constexpr int Dim = std::decay_t<decltype(s)>::DIM;
+      Kokkos::View<typename std::decay_t<decltype(s)>::Result*,
+                   DeviceMemorySpace>
+        results(Kokkos::view_alloc(Kokkos::WithoutInitializing,
+                                   "point search result"),
+                points.extent(0));
+      s(points, guesses, results);
       return detail::LiftElements<Dim>(
         mesh_, Kokkos::View<const typename std::decay_t<decltype(s)>::Result*,
-                            DeviceMemorySpace>(s(points)));
+                            DeviceMemorySpace>(results));
     },
     search_);
 }
 
 SupportResults OmegaHGeometry::Neighbourhood(
   CoordinateView<DeviceMemorySpace> coords, const NeighbourhoodOptions& options,
-  const KnownOwners& owners) const
+  const OwnerHints& owners) const
 {
   detail::CheckNeighbourhoodArguments(*this, coords, options,
                                       "OmegaHGeometry::Neighbourhood");
   const auto flat_points = flatten_to_omega_h_reals(coords.GetValues());
   const LO n = static_cast<LO>(coords.GetValues().extent(0));
   const int dim = mesh_.dim();
-  int seed_dim = dim;
-  Kokkos::View<const LO*, DeviceMemorySpace> seeds;
-  if (owners.Hints(*this, n) &&
-      (owners.entity_dim == 0 || owners.entity_dim == dim)) {
-    seed_dim = owners.entity_dim;
-    seeds = owners.entities;
-    detail::CheckEntityIds(seeds, mesh_.nents(seed_dim),
-                           "OmegaHGeometry::Neighbourhood",
-                           seed_dim == 0 ? "vertex" : "element");
-  } else {
-    // the element the bind's search finds for each point (for a point outside
-    // the mesh, the element nearest it; -1, and so no supports, if its grid
-    // cell has none)
-    const auto points = ConvertCoordsTo2D(flat_points, n, dim);
-    seeds = FindElementSeeds(points);
-  }
-  return searchNeighbors(mesh_, /*site_dim=*/0, flat_points, seed_dim, seeds,
+  // the element Bind's search finds for each point, starting from the hint
+  // (for a point outside the mesh, the element nearest it; -1, and so no
+  // supports, if its grid cell has none)
+  const auto points = ConvertCoordsTo2D(flat_points, n, dim);
+  const auto seeds = FindElementSeeds(
+    points, detail::ElementGuesses(
+              mesh_, owners.Names(*this, n) ? owners : OwnerHints{},
+              "OmegaHGeometry::Neighbourhood"));
+  return searchNeighbors(mesh_, /*site_dim=*/0, flat_points, dim, seeds,
                          options.radius * options.radius, options.min_supports,
                          3 * options.min_supports, options.adapt_radius);
 }

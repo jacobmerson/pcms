@@ -637,6 +637,34 @@ KOKKOS_INLINE_FUNCTION Omega_h::Vector<Dim> reduced_coordinates(
 }
 
 /**
+ * The result of a point that lies in the closure band of simplex `elem`
+ * (SignedPlaneDistance() >= -tau, the grid search's test for a candidate):
+ * the entity of the simplex the point lies on and its reduced coordinates.
+ * Returns false, leaving `result` as it was, for a point beyond the band.
+ */
+template <int Dim, typename Result>
+KOKKOS_INLINE_FUNCTION bool classify_in_element(
+  const Omega_h::Vector<Dim>& point, Omega_h::LO elem,
+  const Omega_h::LOs& elem_verts, const Omega_h::Reals& coords,
+  const Omega_h::Few<Omega_h::Adj, Dim>& down,
+  const Omega_h::Few<Omega_h::Adj, Dim>& down_verts, Real tau, Result& result)
+{
+  const auto verts = Omega_h::gather_verts<Dim + 1>(elem_verts, elem);
+  const auto b = barycentric_with_scales<Dim>(
+    Omega_h::gather_vectors<Dim + 1, Dim>(coords, verts), point);
+  if (b.SignedPlaneDistance() < -tau) {
+    return false;
+  }
+  unsigned mask;
+  LO id;
+  const int dim =
+    entity_of_simplex<Dim>(b, tau, false, elem, verts, down, mask, id);
+  result = {static_cast<typename Result::Dimensionality>(dim), id,
+            reduced_coordinates<Dim>(b, mask, dim, id, verts, down_verts)};
+  return true;
+}
+
+/**
  * Locates points in a simplex mesh with a uniform grid of candidate simplices.
  * Each candidate of the point's grid cell is classified with
  * entity_of_simplex using the single tolerance `tau`; the entity of lowest
@@ -646,23 +674,28 @@ KOKKOS_INLINE_FUNCTION Omega_h::Vector<Dim> reduced_coordinates(
  * shared entity. If no candidate contains the point within `tau` of its facets,
  * the candidate with the largest signed plane distance is classified as
  * outside.
+ *
+ * Searches the points `misses(0..num_searched)` and writes their results; all
+ * points 0..num_searched if `misses` is empty.
  */
 template <int Dim>
-Kokkos::View<typename PointLocalizationSearch<Dim>::Result*> grid_search(
+void grid_search(
   const Kokkos::View<UniformGrid<Dim>[1]>& grid,
   const Kokkos::Crs<LO, Kokkos::DefaultExecutionSpace, void, LO>& candidate_map,
   const Omega_h::LOs& elem_verts, const Omega_h::Reals& coords,
   const Omega_h::Few<Omega_h::Adj, Dim>& down,
   const Omega_h::Few<Omega_h::Adj, Dim>& down_verts, Real tau,
-  Kokkos::View<const Real* [Dim]> points)
+  Kokkos::View<const Real* [Dim]> points, Kokkos::View<const LO*> misses,
+  LO num_searched,
+  Kokkos::View<typename PointLocalizationSearch<Dim>::Result*> results)
 {
   using Search = PointLocalizationSearch<Dim>;
   using Dimensionality = typename Search::Result::Dimensionality;
-  Kokkos::View<typename Search::Result*> results("point search result",
-                                                 points.extent(0));
   const auto num_rows = candidate_map.numRows();
+  const bool all = misses.extent(0) == 0;
   Kokkos::parallel_for(
-    points.extent(0), KOKKOS_LAMBDA(int p) {
+    num_searched, KOKKOS_LAMBDA(int k) {
+      const int p = all ? k : misses(k);
       Omega_h::Vector<Dim> point;
       for (int i = 0; i < Dim; ++i) {
         point[i] = points(p, i);
@@ -726,15 +759,102 @@ Kokkos::View<typename PointLocalizationSearch<Dim>::Result*> grid_search(
                       Omega_h::zero_vector<Dim>()};
       }
     });
-  return results;
+}
+
+/**
+ * Locates points starting from a guessed element per point. A point with a
+ * guess that lies in the closure band of the guessed element, or else of an
+ * element across one of its facets (the dual graph), takes the result of that
+ * element's classification; the others (no guess, or a wrong one, including
+ * points outside the mesh) are collected, counted first and listed only when
+ * there are some, and searched for with grid_search. Without guesses every
+ * point is searched on the grid.
+ */
+template <int Dim>
+void guessed_search(
+  const Kokkos::View<UniformGrid<Dim>[1]>& grid,
+  const Kokkos::Crs<LO, Kokkos::DefaultExecutionSpace, void, LO>& candidate_map,
+  const Omega_h::LOs& elem_verts, const Omega_h::Reals& coords,
+  const Omega_h::Few<Omega_h::Adj, Dim>& down,
+  const Omega_h::Few<Omega_h::Adj, Dim>& down_verts, const Omega_h::Graph& dual,
+  Real tau, Kokkos::View<const Real* [Dim]> points,
+  Kokkos::View<const LO*> guesses,
+  Kokkos::View<typename PointLocalizationSearch<Dim>::Result*> results)
+{
+  using Result = typename PointLocalizationSearch<Dim>::Result;
+  constexpr auto Miss = Result::Dimensionality::NO_INTERSECT;
+  const auto n = static_cast<LO>(points.extent(0));
+  if (guesses.extent(0) == 0) {
+    grid_search<Dim>(grid, candidate_map, elem_verts, coords, down, down_verts,
+                     tau, points, {}, n, results);
+    return;
+  }
+  const auto offsets = dual.a2ab;
+  const auto neighbours = dual.ab2b;
+  Kokkos::parallel_for(
+    "GridPointSearch::TryGuesses", n, KOKKOS_LAMBDA(const LO i) {
+      Omega_h::Vector<Dim> point;
+      for (int d = 0; d < Dim; ++d) {
+        point[d] = points(i, d);
+      }
+      Result result{Miss, -1, Omega_h::zero_vector<Dim>()};
+      const LO guess = guesses(i);
+      if (guess >= 0 &&
+          !classify_in_element<Dim>(point, guess, elem_verts, coords, down,
+                                    down_verts, tau, result)) {
+        for (LO a = offsets[guess]; a < offsets[guess + 1]; ++a) {
+          if (classify_in_element<Dim>(point, neighbours[a], elem_verts, coords,
+                                       down, down_verts, tau, result)) {
+            break;
+          }
+        }
+      }
+      results(i) = result;
+    });
+  LO num_misses = 0;
+  Kokkos::parallel_reduce(
+    "GridPointSearch::CountMisses", n,
+    KOKKOS_LAMBDA(const LO i, LO& count) {
+      count += (results(i).dimensionality == Miss) ? 1 : 0;
+    },
+    num_misses);
+  if (num_misses == 0) {
+    return;
+  }
+  Kokkos::View<LO*> misses(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "point search misses"),
+    num_misses);
+  Kokkos::parallel_scan(
+    "GridPointSearch::CollectMisses", n,
+    KOKKOS_LAMBDA(const LO i, LO& before, const bool final) {
+      if (results(i).dimensionality == Miss) {
+        if (final) {
+          misses(before) = i;
+        }
+        ++before;
+      }
+    });
+  grid_search<Dim>(grid, candidate_map, elem_verts, coords, down, down_verts,
+                   tau, points, misses, num_misses, results);
 }
 } // namespace
 
 Kokkos::View<GridPointSearch2D::Result*> GridPointSearch2D::operator()(
   Kokkos::View<const Real* [DIM]> points) const
 {
-  return grid_search<DIM>(grid_, candidate_map_, elem_verts_, coords_, down_,
-                          down_verts_, tolerance_, points);
+  Kokkos::View<Result*> results(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "point search result"),
+    points.extent(0));
+  (*this)(points, {}, results);
+  return results;
+}
+
+void GridPointSearch2D::operator()(Kokkos::View<const Real* [DIM]> points,
+                                   Kokkos::View<const LO*> guesses,
+                                   Kokkos::View<Result*> results) const
+{
+  guessed_search<DIM>(grid_, candidate_map_, elem_verts_, coords_, down_,
+                      down_verts_, dual_, tolerance_, points, guesses, results);
 }
 
 GridPointSearch2D::GridPointSearch2D(Omega_h::Mesh& mesh, LO Nx, LO Ny)
@@ -758,6 +878,7 @@ GridPointSearch2D::GridPointSearch2D(Omega_h::Mesh& mesh, LO Nx, LO Ny,
     mesh, grid_, grid_h(0).GetNumCells(), tolerance);
   coords_ = mesh.coords();
   elem_verts_ = mesh.ask_elem_verts();
+  dual_ = mesh.ask_dual();
   down_[1] = mesh.ask_down(Omega_h::FACE, Omega_h::EDGE);
   down_verts_[1] = mesh.ask_down(Omega_h::EDGE, Omega_h::VERT);
 }
@@ -765,8 +886,19 @@ GridPointSearch2D::GridPointSearch2D(Omega_h::Mesh& mesh, LO Nx, LO Ny,
 Kokkos::View<GridPointSearch3D::Result*> GridPointSearch3D::operator()(
   Kokkos::View<const Real* [DIM]> points) const
 {
-  return grid_search<DIM>(grid_, candidate_map_, elem_verts_, coords_, down_,
-                          down_verts_, tolerance_, points);
+  Kokkos::View<Result*> results(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "point search result"),
+    points.extent(0));
+  (*this)(points, {}, results);
+  return results;
+}
+
+void GridPointSearch3D::operator()(Kokkos::View<const Real* [DIM]> points,
+                                   Kokkos::View<const LO*> guesses,
+                                   Kokkos::View<Result*> results) const
+{
+  guessed_search<DIM>(grid_, candidate_map_, elem_verts_, coords_, down_,
+                      down_verts_, dual_, tolerance_, points, guesses, results);
 }
 
 GridPointSearch3D::GridPointSearch3D(Omega_h::Mesh& mesh, LO Nx, LO Ny, LO Nz)
@@ -798,6 +930,7 @@ GridPointSearch3D::GridPointSearch3D(Omega_h::Mesh& mesh, LO Nx, LO Ny, LO Nz,
     mesh, grid_, grid_h(0).GetNumCells(), tolerance);
   coords_ = mesh.coords();
   elem_verts_ = mesh.ask_elem_verts();
+  dual_ = mesh.ask_dual();
   down_[1] = mesh.ask_down(Omega_h::REGION, Omega_h::EDGE);
   down_[2] = mesh.ask_down(Omega_h::REGION, Omega_h::FACE);
   down_verts_[1] = mesh.ask_down(Omega_h::EDGE, Omega_h::VERT);

@@ -656,7 +656,7 @@ void CheckEvaluationWithFill(const Factory& factory, const Field<Real>& field,
 // Checks that `points` bound with `owners` on their Omega_h geometry are in
 // the elements its search finds.
 inline void CheckOwnersMatchSearch(CoordinateView<DeviceMemorySpace> points,
-                                   const KnownOwners& owners)
+                                   const OwnerHints& owners)
 {
   const auto element_ids = [](const std::shared_ptr<const BoundSource>& b) {
     return Kokkos::create_mirror_view_and_copy(

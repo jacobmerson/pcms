@@ -55,7 +55,7 @@ public:
     const noexcept override;
 
   /// @return the target element each sample lies in
-  [[nodiscard]] KnownOwners IntegrationPointOwners() const;
+  [[nodiscard]] OwnerHints IntegrationPointOwners() const;
 
   void Assemble(
     Rank2View<const Real, DeviceMemorySpace> sampled_values) override;

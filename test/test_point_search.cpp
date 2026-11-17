@@ -1303,6 +1303,140 @@ TEST_CASE("point search matches the facet-band rule on a non-uniform mesh",
   }
 }
 
+namespace
+{
+/// Searches `pts` from per-point guessed elements (none for a negative
+/// guess), on the host.
+template <int Dim, typename Search>
+auto SearchGuessed(const Search& search,
+                   const std::vector<std::array<double, Dim>>& pts,
+                   const std::vector<Omega_h::LO>& guess_values)
+{
+  const auto n = pts.size();
+  Kokkos::View<pcms::Real* [Dim]> points("points", n);
+  auto points_h = Kokkos::create_mirror_view(points);
+  Kokkos::View<Omega_h::LO*> guesses("guesses", guess_values.size());
+  auto guesses_h = Kokkos::create_mirror_view(guesses);
+  for (size_t i = 0; i < n; ++i) {
+    for (int d = 0; d < Dim; ++d) {
+      points_h(i, d) = pts[i][d];
+    }
+  }
+  for (size_t i = 0; i < guess_values.size(); ++i) {
+    guesses_h(i) = guess_values[i];
+  }
+  Kokkos::deep_copy(points, points_h);
+  Kokkos::deep_copy(guesses, guesses_h);
+  Kokkos::View<typename Search::Result*> results("results", n);
+  search(points, guesses, results);
+  return Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, results);
+}
+
+/// The sample of a mesh the guessed search is checked at: random points in a
+/// box around the mesh (inside and out), and the centroids of all entities
+/// (vertices, edge midpoints, face and element centers).
+template <int Dim>
+std::vector<std::array<double, Dim>> GuessSamplePoints(Omega_h::Mesh& mesh)
+{
+  std::mt19937 gen(11);
+  std::uniform_real_distribution<double> uni(-0.1, 1.1);
+  std::vector<std::array<double, Dim>> pts(300);
+  for (auto& p : pts) {
+    for (int d = 0; d < Dim; ++d) {
+      p[d] = uni(gen);
+    }
+  }
+  for (int dim = 0; dim <= Dim; ++dim) {
+    const auto c =
+      Omega_h::HostRead<Omega_h::Real>(pcms::get_entity_centroids(mesh, dim));
+    for (Omega_h::LO e = 0; e < mesh.nents(dim); ++e) {
+      std::array<double, Dim> p;
+      for (int d = 0; d < Dim; ++d) {
+        p[d] = c[e * Dim + d];
+      }
+      pts.push_back(p);
+    }
+  }
+  return pts;
+}
+
+/// Checks that searching from guesses gives the results of the search without
+/// guesses (the entity, the outside flag and the reduced coordinates), for
+/// the correct elements, for elements next to them, for wrong elements, for
+/// no guesses (-1 and an empty view).
+template <int Dim, typename Search>
+void CheckGuessedSearchMatchesCold(Omega_h::Mesh& mesh, const Search& search)
+{
+  const auto pts = GuessSamplePoints<Dim>(mesh);
+  const auto n = static_cast<Omega_h::LO>(pts.size());
+  Kokkos::View<pcms::Real* [Dim]> points("points", n);
+  auto points_h = Kokkos::create_mirror_view(points);
+  for (Omega_h::LO i = 0; i < n; ++i) {
+    for (int d = 0; d < Dim; ++d) {
+      points_h(i, d) = pts[i][d];
+    }
+  }
+  Kokkos::deep_copy(points, points_h);
+  const auto cold_device = search(points);
+  const auto cold =
+    Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, cold_device);
+  // the elements the cold results lift to: -1 where the grid cell has none
+  const auto correct = LiftOnHost<Dim>(mesh, cold_device).first;
+  const auto dual = mesh.ask_dual();
+  const auto offsets = Omega_h::HostRead<Omega_h::LO>(dual.a2ab);
+  const auto neighbours = Omega_h::HostRead<Omega_h::LO>(dual.ab2b);
+  std::mt19937 gen(5);
+  std::uniform_int_distribution<Omega_h::LO> any_element(0, mesh.nelems() - 1);
+
+  std::vector<Omega_h::LO> right(n), next_to(n), wrong(n), none(n, -1);
+  for (Omega_h::LO i = 0; i < n; ++i) {
+    right[i] = correct(i);
+    next_to[i] = right[i];
+    if (right[i] >= 0 && offsets[right[i] + 1] > offsets[right[i]]) {
+      next_to[i] = neighbours[offsets[right[i]] +
+                              i % (offsets[right[i] + 1] - offsets[right[i]])];
+    }
+    wrong[i] = any_element(gen);
+  }
+  const auto check = [&](const auto& results) {
+    for (Omega_h::LO i = 0; i < n; ++i) {
+      CAPTURE(i, pts[i][0], pts[i][1]);
+      REQUIRE(results(i).dimensionality == cold(i).dimensionality);
+      REQUIRE(results(i).entity == cold(i).entity);
+      REQUIRE(results(i).IsOutside() == cold(i).IsOutside());
+      for (int j = 0; j < Dim; ++j) {
+        REQUIRE(results(i).parametric[j] ==
+                Catch::Approx(cold(i).parametric[j]).margin(1e-10));
+      }
+    }
+  };
+  check(SearchGuessed<Dim>(search, pts, right));
+  check(SearchGuessed<Dim>(search, pts, next_to));
+  check(SearchGuessed<Dim>(search, pts, wrong));
+  check(SearchGuessed<Dim>(search, pts, none));
+  check(SearchGuessed<Dim>(search, pts, {}));
+}
+} // namespace
+
+TEST_CASE("point search from guessed elements gives the search's results",
+          "[point_search][guess]")
+{
+  auto lib = Omega_h::Library{};
+  const double tau = 1e-8;
+  SECTION("2D")
+  {
+    auto mesh = BuildShakenBox<2>(lib, 7, 0.3);
+    pcms::GridPointSearch2D search{mesh, 8, 8, tau};
+    CheckGuessedSearchMatchesCold<2>(mesh, search);
+  }
+  SECTION("3D")
+  {
+    auto mesh = BuildShakenBox<3>(lib, 4, 0.2);
+    GridPointSearch3D search{mesh, 6, 6, 6, tau};
+    CheckGuessedSearchMatchesCold<3>(mesh, search);
+  }
+}
+
 TEST_CASE("point search band reaches tau / sin(angle / 2) at an acute corner",
           "[point_search][band]")
 {

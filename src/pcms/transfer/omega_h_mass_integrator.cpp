@@ -96,7 +96,7 @@ Mat BuildOmegaHMassMatrixImpl(Omega_h::Mesh& mesh,
       geometry,
       CoordinateView<DeviceMemorySpace>(geometry.GetCoordinateSystem(),
                                         MakeConstRank2View(centroids)),
-      KnownOwners{geometry.shared_from_this(), Dim, elements},
+      OwnerHints{geometry.shared_from_this(), Dim, elements},
       "OmegaHMassIntegrator");
 
     const PetscInt nnz = static_cast<PetscInt>(nelems);

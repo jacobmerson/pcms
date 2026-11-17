@@ -233,9 +233,9 @@ OmegaHMonteCarloRHSIntegrator::GetIntegrationPoints() const noexcept
                                            MakeConstRank2View(coords_));
 }
 
-KnownOwners OmegaHMonteCarloRHSIntegrator::IntegrationPointOwners() const
+OwnerHints OmegaHMonteCarloRHSIntegrator::IntegrationPointOwners() const
 {
-  return KnownOwners{geometry_, GetMesh(*geometry_).dim(), elements_};
+  return OwnerHints{geometry_, GetMesh(*geometry_).dim(), elements_};
 }
 
 Vec OmegaHMonteCarloRHSIntegrator::GetVector() const noexcept

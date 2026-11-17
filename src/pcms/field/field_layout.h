@@ -190,7 +190,7 @@ private:
 /// @return the hint when the layout has one DOF holder per entity of one
 ///         dimension of the geometry's discretization and no ghosts; an
 ///         empty one otherwise
-[[nodiscard]] KnownOwners DOFHolderOwners(
+[[nodiscard]] OwnerHints DOFHolderOwners(
   const FieldLayout& layout, std::shared_ptr<const Geometry> geometry);
 
 // The geometric classification (dimension and id) of the owned DOF holders,

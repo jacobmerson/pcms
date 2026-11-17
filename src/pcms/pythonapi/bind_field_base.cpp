@@ -204,7 +204,8 @@ void bind_create_field_module(py::module& m)
       py::arg("map") = py::none(), py::keep_alive<0, 1>(),
       "Bind the DOF-holder coordinates of `space`, through `map` if given; "
       "without a map, a space whose DOF holders are entities of this geometry "
-      "binds them as known owners (with a map that hint is ignored)");
+      "binds them with owner hints, which are verified (with a map the hints "
+      "are ignored)");
 
   [[maybe_unused]] const auto omega_h_geometry =
     py::class_<OmegaHGeometry, Geometry, std::shared_ptr<OmegaHGeometry>>(

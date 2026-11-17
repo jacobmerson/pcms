@@ -6,8 +6,8 @@
 namespace pcms
 {
 
-KnownOwners DOFHolderOwners(const FieldLayout& layout,
-                            std::shared_ptr<const Geometry> geometry)
+OwnerHints DOFHolderOwners(const FieldLayout& layout,
+                           std::shared_ptr<const Geometry> geometry)
 {
   const int entity_dim = layout.GetDOFHolderEntityDim();
   const auto discretization = layout.GetDiscretization();
@@ -26,7 +26,7 @@ KnownOwners DOFHolderOwners(const FieldLayout& layout,
     "DOFHolderOwners",
     Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
     KOKKOS_LAMBDA(const LO i) { entities(i) = i - first; });
-  return KnownOwners{std::move(geometry), entity_dim, entities};
+  return OwnerHints{std::move(geometry), entity_dim, entities};
 }
 
 void FieldLayout::BuildGlobalToLocalPermutation(

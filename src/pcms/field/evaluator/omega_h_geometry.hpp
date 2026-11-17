@@ -20,45 +20,18 @@ namespace pcms
 namespace detail
 {
 
-/// Owning element and barycentric coordinates ([row][vertex]) of the points
-/// `rows` of `points`, given the owning element of each point.
-template <int Dim>
-std::pair<Kokkos::View<LO*, DeviceMemorySpace>,
-          Kokkos::View<Real**, DeviceMemorySpace>>
-BarycentricInElements(Omega_h::Mesh& mesh,
-                      Kokkos::View<const Real**, DeviceMemorySpace> points,
-                      Kokkos::View<const LO*, DeviceMemorySpace> rows,
-                      Kokkos::View<const LO*, DeviceMemorySpace> owning_ids)
-{
-  const auto n = static_cast<LO>(rows.extent(0));
-  Kokkos::View<LO*, DeviceMemorySpace> elem_ids("omega_h_elem_ids", n);
-  Kokkos::View<Real**, DeviceMemorySpace> bary("omega_h_bary", n, Dim + 1);
-  const auto elem_verts = mesh.ask_elem_verts();
-  const auto mesh_coords = mesh.coords();
-  Kokkos::parallel_for(
-    "BarycentricInElements",
-    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
-    KOKKOS_LAMBDA(const LO k) {
-      const LO i = rows(k);
-      const LO elem = owning_ids(i);
-      elem_ids(k) = elem;
-      Omega_h::Few<Omega_h::Vector<Dim>, Dim + 1> vertex_coords;
-      for (int v = 0; v < Dim + 1; ++v) {
-        vertex_coords[v] = Omega_h::get_vector<Dim>(
-          mesh_coords, elem_verts[elem * (Dim + 1) + v]);
-      }
-      Omega_h::Vector<Dim> point;
-      for (int d = 0; d < Dim; ++d) {
-        point[d] = points(i, d);
-      }
-      const auto local =
-        Omega_h::barycentric_from_global<Dim, Dim>(point, vertex_coords);
-      for (int v = 0; v < Dim + 1; ++v) {
-        bary(k, v) = local[v];
-      }
-    });
-  return {elem_ids, bary};
-}
+/// @brief The element to start the search of each point from, given owner
+///        hints: the hinted element for an element hint, an element around the
+///        hinted vertex for a vertex hint (the first of the vertex's adjacent
+///        elements); empty for no hint, or one of another dimension, and a
+///        -1 for a vertex without elements.
+/// @param owners the hints, as handed to Bind or Neighbourhood (already
+///        checked to name the mesh's geometry and one entity per point), or
+///        none
+/// @param caller name of the calling function, for the error message
+/// @throws pcms_error if a used id is not an entity of the mesh
+Kokkos::View<const LO*, DeviceMemorySpace> ElementGuesses(
+  Omega_h::Mesh& mesh, const OwnerHints& owners, const std::string& caller);
 
 /// The element a search result lifts to, and the point's barycentric
 /// coordinates in it ([vertex], in the element's vertex order). An element
@@ -212,13 +185,13 @@ GatherFoundLifts(Kokkos::View<const LO*, DeviceMemorySpace> rows,
 /// The search reports the entity a point lies on and its position on it; the
 /// binding's policy picks the element for the evaluators, which need one:
 /// shared entities (a point on an edge or vertex) take the lowest adjacent
-/// element, and a hinted bind uses the hinted element.
+/// element, hinted or not.
 class OmegaHMeshBinding final : public BoundSource
 {
 public:
-  /// Locates `request.coords` with `search`, or, if `request.owners` gives
-  /// the element of every point, takes those elements without a search (the
-  /// points then all count as found).
+  /// Locates `request.coords` with `search`, starting from the elements the
+  /// request's owner hints give (ElementGuesses); a wrong hint costs a grid
+  /// search for that point, and a hinted point can be missing.
   OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
                     const BindRequest& request,
                     const GridPointSearchVariant& search, Omega_h::Mesh& mesh);
@@ -281,23 +254,28 @@ public:
   [[nodiscard]] Omega_h::Mesh& GetMesh() const noexcept { return mesh_; }
 
   /// One source element per query point, to seed adjacency searches. Points
-  /// must be in the mesh's native coordinate system. An outside point uses
+  /// must be in the mesh's native coordinate system. `guesses`, empty or an
+  /// element per point (-1 for none), makes the search start there, see
+  /// GridPointSearch2D::operator()(points, guesses, results); they are
+  /// verified and do not change the result. An outside point uses
   /// the nearest entity reported by the grid search, lifted to an element;
   /// -1 means the search cell has no candidate. Unlike Bind, this preserves
   /// outside-point seeds: an outside target centroid can still belong to an
   /// element that overlaps the mesh.
   [[nodiscard]] Kokkos::View<const LO*, DeviceMemorySpace> FindElementSeeds(
-    Kokkos::View<const Real**, DeviceMemorySpace> points) const;
+    Kokkos::View<const Real**, DeviceMemorySpace> points,
+    Kokkos::View<const LO*, DeviceMemorySpace> guesses = {}) const;
 
   /// Supports among the mesh vertices, by the mesh-adjacency search from the
-  /// owner of each point: a cell or vertex hint of this geometry, or else the
-  /// element Bind's search finds. A point outside the mesh starts from the
-  /// element nearest it, so it gets supports near the boundary; a point whose
-  /// search cell holds no element gets none.
+  /// element Bind's search finds for each point, which starts from the cell or
+  /// vertex hint of this geometry when there is one (verified, see
+  /// OwnerHints: a bad hint is corrected). A point outside the mesh starts from
+  /// the element nearest it, so it gets supports near the boundary; a point
+  /// whose search cell holds no element gets none.
   [[nodiscard]] SupportResults Neighbourhood(
     CoordinateView<DeviceMemorySpace> coords,
     const NeighbourhoodOptions& options,
-    const KnownOwners& owners = {}) const override;
+    const OwnerHints& owners = {}) const override;
 
   /// The per-element constant Jacobian of the affine simplex map, computed
   /// for all elements on the first call.

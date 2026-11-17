@@ -15,16 +15,18 @@ class Geometry;
 class BoundCoordinateMap;
 class CoordinateMap;
 
-/// @brief Entities of a geometry the query points are known to lie in, so a
-///        bind or neighbourhood search can start from them instead of
-///        searching.
+/// @brief Claimed owners of the query points: entities of a geometry the
+///        points are believed to lie in, to start a bind or neighbourhood
+///        search from them instead of from scratch.
 ///
-/// A hint is trusted: the caller guarantees that each point lies in its
-/// entity. The ids are checked to be entities of the geometry, but a stale
-/// hint within range is not detected; the point is then evaluated by
-/// extrapolation from the given entity (OutOfBoundsMode::ERROR does not
-/// throw and FILL does not fill for it).
-struct KnownOwners
+/// A hint is a guess the kind verifies, never a fact it trusts: the kind
+/// checks that the point lies in (or at) the claimed entity and otherwise
+/// searches for that point as if it had no hint, so a wrong or stale hint
+/// costs a search for that point and never changes the result; hinted points
+/// can be missing (outside the geometry), and the out-of-bounds policy applies
+/// to them like to any other. The ids are checked to be entities of the
+/// geometry, which throws if one is not.
+struct OwnerHints
 {
   /// geometry whose entities `entities` are; a hint for another geometry is
   /// ignored
@@ -35,9 +37,9 @@ struct KnownOwners
   /// one entity per query point; empty means no hint
   Kokkos::View<const LO*, DeviceMemorySpace> entities;
 
-  /// @return whether this is a hint for each of `num_points` points on
-  ///         `on`
-  [[nodiscard]] bool Hints(const Geometry& on, LO num_points) const noexcept
+  /// @return whether this names, on the geometry `on`, an entity for each of
+  ///         `num_points` points
+  [[nodiscard]] bool Names(const Geometry& on, LO num_points) const noexcept
   {
     return geometry.get() == &on && num_points > 0 &&
            static_cast<LO>(entities.extent(0)) == num_points;
@@ -52,9 +54,9 @@ struct BindRequest
   CoordinateView<DeviceMemorySpace> coords;
   /// out-of-bounds policy of the evaluators created from the bound source
   OutOfBoundsPolicy policy;
-  /// the owner of each point, from the caller, when they are owners on this
-  /// geometry; otherwise empty, and the kind searches
-  KnownOwners owners;
+  /// the claimed owner of each point, from the caller, when it names entities
+  /// of this geometry; otherwise empty, and the kind searches
+  OwnerHints owners;
   /// the coordinate map bound to `query_coords`, or null if the query points
   /// are in the geometry's coordinate system
   std::shared_ptr<const BoundCoordinateMap> map;
