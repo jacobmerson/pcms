@@ -1,5 +1,5 @@
-#include "pcms/field/layout/empty.h"
-#include "pcms/utility/assert.h"
+#include "pcms/field/layout/empty.hpp"
+#include "pcms/utility/assert.hpp"
 
 namespace pcms
 {
@@ -42,13 +42,6 @@ EmptyFieldLayout::EmptyFieldLayout(
     throw pcms_error("EmptyFieldLayout: num_components must be positive");
   }
   SetCoordinateSystem(std::move(system));
-  discretization_ = std::make_shared<EmptyDiscretization>();
-}
-
-std::shared_ptr<const Discretization> EmptyFieldLayout::GetDiscretization()
-  const noexcept
-{
-  return discretization_;
 }
 
 int EmptyFieldLayout::GetNumComponents() const

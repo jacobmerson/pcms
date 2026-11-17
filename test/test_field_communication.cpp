@@ -8,14 +8,14 @@
 #include <Omega_h_for.hpp>
 #include <redev.h>
 #include <vector>
-#include "pcms/coupler/field_communicator.hpp"
+#include "pcms/coupler/detail/field_communicator.hpp"
 #include "pcms/coupler/coupler.hpp"
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
-#include "pcms/field/function_space/lagrange.h"
+#include "pcms/backends/omega_h/geometry.hpp"
+#include "pcms/field/function_spaces.hpp"
 #include "pcms/field/value_view.hpp"
-#include "pcms/field/data/simple.h"
-#include "test_support.h"
-#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/field/simple_field_data.hpp"
+#include "test_support.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
 
 namespace ts = test_support;
 using pcms::Real;
@@ -80,8 +80,9 @@ static void test_shared_layout(Omega_h::Library& lib,
                           redev::Partition{partition});
     auto* app = cpl.AddApplication("shared_layout");
     auto factory = pcms::CreateLagrangeSpace(
-      pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred()), 1, 1,
-      pcms::LagrangeOptions{.layout_name = "shared"});
+      pcms::backend::omega_h::CreateGeometry(mesh,
+                                             pcms::csys::Cartesian::Deferred()),
+      1, 1, pcms::LagrangeOptions{.layout_name = "shared"});
     auto f1 = app->AddField(factory->CreateFunction<Real>("field_a"));
     PCMS_ALWAYS_ASSERT(app->GetLayoutCommunicatorCount() == 1);
     auto f2 = app->AddField(factory->CreateFunction<Real>("field_b"));
@@ -99,8 +100,9 @@ static void test_shared_layout(Omega_h::Library& lib,
                           redev::Partition{});
     auto* app = cpl.AddApplication("shared_layout");
     auto factory = pcms::CreateLagrangeSpace(
-      pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred()), 1, 1,
-      pcms::LagrangeOptions{.layout_name = "shared"});
+      pcms::backend::omega_h::CreateGeometry(mesh,
+                                             pcms::csys::Cartesian::Deferred()),
+      1, 1, pcms::LagrangeOptions{.layout_name = "shared"});
     auto f1 = app->AddField(factory->CreateFunction<Real>("field_a"));
     auto f2 = app->AddField(factory->CreateFunction<Real>("field_b"));
     app->SendPhase([&]() {
@@ -121,8 +123,8 @@ void client1(MPI_Comm comm, Omega_h::Mesh& mesh, std::string comm_name,
   auto channel =
     rdv.CreateAdiosChannel("field2_chan1", params, redev::TransportType::BP4);
 
-  auto geometry =
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto geometry = pcms::backend::omega_h::CreateGeometry(
+    mesh, pcms::csys::Cartesian::Deferred());
   auto factory = pcms::CreateLagrangeSpace(geometry, order, 1);
   auto layout = factory->GetLayout();
   auto gids = layout->GetGidsHost();
@@ -154,8 +156,8 @@ void client2(MPI_Comm comm, Omega_h::Mesh& mesh, std::string comm_name,
   auto channel =
     rdv.CreateAdiosChannel("field2_chan2", params, redev::TransportType::BP4);
 
-  auto geometry =
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto geometry = pcms::backend::omega_h::CreateGeometry(
+    mesh, pcms::csys::Cartesian::Deferred());
   auto factory = pcms::CreateLagrangeSpace(geometry, order, 1);
   auto layout = factory->GetLayout();
   auto gids = layout->GetGidsHost();
@@ -211,8 +213,8 @@ void server(MPI_Comm comm, Omega_h::Mesh& mesh, std::string comm_name,
   auto channel2 =
     rdv.CreateAdiosChannel("field2_chan2", params, redev::TransportType::BP4);
 
-  auto geometry =
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto geometry = pcms::backend::omega_h::CreateGeometry(
+    mesh, pcms::csys::Cartesian::Deferred());
   auto factory = pcms::CreateLagrangeSpace(geometry, order, 1);
   auto layout = factory->GetLayout();
   const auto n = layout->GetNumDofHolder();

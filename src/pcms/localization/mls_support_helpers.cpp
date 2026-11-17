@@ -1,7 +1,7 @@
-#include "pcms/localization/mls_support_helpers.h"
-#include "pcms/localization/adj_search.hpp"
-#include "pcms/utility/assert.h"
-#include "pcms/utility/print.h"
+#include "pcms/localization/mls_support_helpers.hpp"
+#include "pcms/backends/omega_h/adj_search.hpp"
+#include "pcms/utility/assert.hpp"
+#include "pcms/utility/print.hpp"
 
 #include <Kokkos_Core.hpp>
 
@@ -222,8 +222,8 @@ SupportResults BuildPointCloudSupports(const Omega_h::Reals& source_coords,
                                              source_coords, radii2});
   Kokkos::fence();
 
-  return SupportResults{Omega_h::LOs(support_ptr), Omega_h::LOs(supports_idx),
-                        radii2};
+  return SupportResults{Omega_h::LOs(support_ptr).view(),
+                        Omega_h::LOs(supports_idx).view(), radii2.view()};
 }
 
 } // namespace pcms

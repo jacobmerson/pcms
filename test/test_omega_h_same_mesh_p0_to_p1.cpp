@@ -9,8 +9,8 @@
 #include <pcms/transfer/mass_matrix_type.hpp>
 #include <pcms/transfer/omega_h_conservative_projection.hpp>
 #include <pcms/transfer/omega_h_form_integrator_utils.hpp>
-#include <pcms/utility/arrays.h>
-#include "field_test_utils.h"
+#include <pcms/utility/arrays.hpp>
+#include "field_test_utils.hpp"
 
 #include <array>
 #include <cmath>
@@ -353,8 +353,8 @@ std::vector<double> ProjectSameMesh(Omega_h::Mesh& mesh,
                                     pcms::MassMatrixType mass_type,
                                     std::vector<double>& source_values)
 {
-  auto geometry =
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto geometry = pcms::backend::omega_h::CreateGeometry(
+    mesh, pcms::csys::Cartesian::Deferred());
   auto source_space = pcms::test::MakeP0Space(geometry);
   auto target_space = pcms::test::MakeP1Space(geometry);
   auto source = source_space->CreateFunction<pcms::Real>();

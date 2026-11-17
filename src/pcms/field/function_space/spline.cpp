@@ -1,10 +1,10 @@
-#include "pcms/field/function_space/spline.h"
+#include "pcms/field/function_spaces.hpp"
 
-#include "pcms/field/data/simple.h"
-#include "pcms/field/evaluator/uniform_grid_geometry.hpp"
-#include "pcms/field/evaluator/uniform_grid_spline.h"
-#include "pcms/field/layout/uniform_grid.h"
-#include "pcms/utility/common.h"
+#include "pcms/field/simple_field_data.hpp"
+#include "pcms/backends/uniform_grid/geometry.hpp"
+#include "pcms/backends/uniform_grid/spline_evaluator.hpp"
+#include "pcms/backends/uniform_grid/layout.hpp"
+#include "pcms/utility/detail/common.hpp"
 
 namespace pcms
 {

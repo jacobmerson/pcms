@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
-#include "pcms/field/data/xgc.h"
-#include "pcms/coupler/overlap_mask.h"
-#include "pcms/field/function_space/xgc.h"
+#include "pcms/backends/xgc/field_data.hpp"
+#include "pcms/coupler/overlap_mask.hpp"
+#include "pcms/backends/xgc/field_factory.hpp"
 #include <numeric>
 
 namespace

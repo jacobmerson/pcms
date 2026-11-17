@@ -9,33 +9,30 @@
 #include <pybind11/stl.h>
 
 #include "pcms/field/coordinate_map.hpp"
-#include "pcms/field/coordinate_system.hpp"
-#include "pcms/field/coordinate_systems/cartesian.hpp"
-#include "pcms/field/coordinate_view.hpp"
+#include "pcms/utility/coordinate_system.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_view.hpp"
 #include "pcms/geometry/bound_source.hpp"
 #include "pcms/field/differential_operator.hpp"
-#include "pcms/field/evaluator/mls_options.h"
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
-#include "pcms/field/evaluator/uniform_grid_geometry.hpp"
-#include "pcms/field/field.h"
-#include "pcms/field/field_data.h"
-#include "pcms/field/field_layout.h"
-#include "pcms/field/function_space.h"
-#include "pcms/field/function_space/lagrange.h"
-#include "pcms/field/function_space/spline.h"
-#include "pcms/field/function_space/polynomial_reconstruction.hpp"
-#include "pcms/field/evaluator/point_cloud_geometry.hpp"
-#include "pcms/field/layout/omega_h_entity.h"
+#include "pcms/localization/mls_options.hpp"
+#include "pcms/backends/omega_h/geometry.hpp"
+#include "pcms/backends/omega_h/omega_h.hpp"
+#include "pcms/backends/uniform_grid/geometry.hpp"
+#include "pcms/field/field.hpp"
+#include "pcms/field/field_data.hpp"
+#include "pcms/field/field_layout.hpp"
+#include "pcms/field/function_space.hpp"
+#include "pcms/field/function_spaces.hpp"
+#include "pcms/backends/point_cloud/geometry.hpp"
 #include "pcms/field/gradient_source.hpp"
 #include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/field/query_points.hpp"
-#include "pcms/field/uniform_grid_binary_field.h"
 #include "pcms/field/value_view.hpp"
 #include "pcms/geometry/geometry.hpp"
-#include "pcms/utility/arrays.h"
-#include "pcms/utility/uniform_grid.h"
-#include "numpy_array_transform.h"
-#include "py_value_types.h"
+#include "pcms/utility/arrays.hpp"
+#include "pcms/utility/uniform_grid.hpp"
+#include "pcms/pythonapi/numpy_array_transform.hpp"
+#include "pcms/pythonapi/py_value_types.hpp"
 
 namespace py = pybind11;
 
@@ -58,9 +55,9 @@ void SetDOFHolderData(Field<Real>& self, const PyValueView& v)
 }
 
 /// The Python object of `geometry`. An Omega_h geometry refers to its mesh, so
-/// the object keeps the mesh alive, as create_omega_h_geometry does; it does
-/// not keep the caller alive, which would form a cycle with the spaces that
-/// keep their geometry alive.
+/// the object keeps the mesh alive, as backend.omega_h.create_geometry does; it
+/// does not keep the caller alive, which would form a cycle with the spaces
+/// that keep their geometry alive.
 py::object GeometryToPython(const std::shared_ptr<const Geometry>& geometry)
 {
   py::object result = py::cast(ToPyHolder(geometry));
@@ -71,6 +68,30 @@ py::object GeometryToPython(const std::shared_ptr<const Geometry>& geometry)
     py::detail::keep_alive_impl(result, mesh);
   }
   return result;
+}
+
+std::shared_ptr<Geometry> CreateOmegaHGeometryFromPython(
+  Omega_h::Mesh& mesh, const SystemHolder& system, int divisions,
+  std::string global_id_name,
+  const std::optional<
+    py::array_t<std::int8_t, py::array::c_style | py::array::forcecast>>&
+    owned_mask)
+{
+  backend::omega_h::OmegaHGeometryOptions options;
+  options.search.divisions = divisions;
+  options.global_id_name = std::move(global_id_name);
+  if (owned_mask) {
+    if (owned_mask->ndim() != 1) {
+      throw py::value_error("create_geometry: owned_mask must be a 1D array");
+    }
+    Omega_h::HostWrite<Omega_h::I8> host(
+      static_cast<Omega_h::LO>(owned_mask->size()));
+    std::copy(owned_mask->data(), owned_mask->data() + owned_mask->size(),
+              host.data());
+    options.owned_mask = Omega_h::Read<Omega_h::I8>(host.write());
+  }
+  return backend::omega_h::CreateGeometry(mesh, CartesianIfNone(system),
+                                          std::move(options));
 }
 
 } // namespace
@@ -210,38 +231,6 @@ void bind_create_field_module(py::module& m)
   [[maybe_unused]] const auto omega_h_geometry =
     py::class_<OmegaHGeometry, Geometry, std::shared_ptr<OmegaHGeometry>>(
       m, "OmegaHGeometry", "The geometry of an Omega_h simplex mesh");
-
-  m.def(
-    "create_omega_h_geometry",
-    [](Omega_h::Mesh& mesh, const SystemHolder& system, int divisions,
-       std::string global_id_name,
-       const std::optional<py::array_t<
-         std::int8_t, py::array::c_style | py::array::forcecast>>& owned_mask) {
-      OmegaHGeometryOptions options;
-      options.search.divisions = divisions;
-      options.global_id_name = std::move(global_id_name);
-      if (owned_mask) {
-        if (owned_mask->ndim() != 1) {
-          throw py::value_error(
-            "create_omega_h_geometry: owned_mask must be a 1D array");
-        }
-        Omega_h::HostWrite<Omega_h::I8> host(
-          static_cast<Omega_h::LO>(owned_mask->size()));
-        std::copy(owned_mask->data(), owned_mask->data() + owned_mask->size(),
-                  host.data());
-        options.owned_mask = Omega_h::Read<Omega_h::I8>(host.write());
-      }
-      return CreateOmegaHGeometry(mesh, CartesianIfNone(system),
-                                  std::move(options));
-    },
-    py::arg("mesh"), py::arg("system") = py::none(), py::arg("divisions") = 0,
-    py::arg("global_id_name") = "global", py::arg("owned_mask") = py::none(),
-    py::keep_alive<0, 1>(),
-    "Create the geometry of an Omega_h mesh: its coordinate system (default "
-    "Cartesian) and point search (`divisions` grid divisions per axis, 0 to "
-    "derive them from the element count); `global_id_name` names the tag "
-    "that holds the global entity ids; `owned_mask` is a per-vertex (int8) "
-    "ownership override, by default the mesh's ownership");
 
   m.def(
     "create_uniform_grid_geometry",
@@ -565,7 +554,31 @@ void bind_create_field_module(py::module& m)
     "Create a point-cloud geometry whose sites are the DOF holders of a "
     "layout; `neighbourhood` is its support search");
 
-  m.def(
+  // Omega_h backend entry points
+  auto omega_h_module =
+    m.def_submodule("backend", "Backend-specific entry points")
+      .def_submodule("omega_h", "Omega_h backend");
+  omega_h_module.def(
+    "create_geometry", &CreateOmegaHGeometryFromPython, py::arg("mesh"),
+    py::arg("system") = py::none(), py::arg("divisions") = 0,
+    py::arg("global_id_name") = "global", py::arg("owned_mask") = py::none(),
+    py::keep_alive<0, 1>(),
+    "Create the geometry of an Omega_h mesh: its coordinate system (default "
+    "Cartesian) and point search (`divisions` grid divisions per axis, 0 to "
+    "derive them from the element count); `global_id_name` names the tag "
+    "that holds the global entity ids; `owned_mask` is a per-vertex (int8) "
+    "ownership override, by default the mesh's ownership");
+  omega_h_module.def(
+    "get_mesh",
+    [](const Geometry& geometry) -> Omega_h::Mesh& {
+      return pcms::backend::omega_h::GetMesh(geometry);
+    },
+    // no keep_alive: the mesh is the Python object the geometry was created
+    // from, and the geometry keeps it alive (keeping the geometry alive from
+    // the mesh as well would be a reference cycle)
+    py::arg("geometry"), py::return_value_policy::reference,
+    "The Omega_h mesh of an Omega_h geometry");
+  omega_h_module.def(
     "create_point_cloud_geometry",
     [](Omega_h::Mesh& mesh, int entity_dim, const SystemHolder& system,
        NeighbourhoodOptions neighbourhood) {
@@ -573,40 +586,40 @@ void bind_create_field_module(py::module& m)
         throw py::value_error(
           "create_point_cloud_geometry: entity_dim is out of range");
       }
-      return CreatePointCloudGeometry(
-        std::make_shared<OmegaHEntityLayout>(mesh, entity_dim, 1,
-                                             CartesianIfNone(system)),
-        std::move(neighbourhood));
+      return pcms::backend::omega_h::CreatePointCloudGeometry(
+        mesh, entity_dim, CartesianIfNone(system), std::move(neighbourhood));
     },
     py::arg("mesh"), py::arg("entity_dim"), py::arg("system") = py::none(),
     py::arg("neighbourhood") = NeighbourhoodOptions{}, py::keep_alive<0, 1>(),
     "A point-cloud geometry whose sites are the entities of one dimension of "
     "an Omega_h mesh (e.g. element centroids); the support search uses the "
     "mesh adjacency.");
+  omega_h_module.def(
+    "create_uniform_grid_binary_field",
+    [](Omega_h::Mesh& mesh, const std::array<LO, 2>& divisions) {
+      return pcms::backend::omega_h::CreateUniformGridBinaryField(mesh,
+                                                                  divisions);
+    },
+    py::arg("mesh"), py::arg("divisions"),
+    "Create a 2D vertex mask field indicating inside/outside mesh");
 
-  m.def(
+  omega_h_module.def(
     "create_uniform_grid_from_mesh",
     [](Omega_h::Mesh& mesh, const std::array<LO, 2>& divisions) {
-      return CreateUniformGridFromMesh<2>(mesh, divisions);
+      return pcms::backend::omega_h::CreateUniformGridFromMesh<2>(mesh,
+                                                                  divisions);
     },
     py::arg("mesh"), py::arg("divisions"),
     "Create a 2D uniform grid from an Omega_h mesh");
 
-  m.def(
+  omega_h_module.def(
     "create_uniform_grid_from_mesh",
     [](Omega_h::Mesh& mesh, const std::array<LO, 3>& divisions) {
-      return CreateUniformGridFromMesh<3>(mesh, divisions);
+      return pcms::backend::omega_h::CreateUniformGridFromMesh<3>(mesh,
+                                                                  divisions);
     },
     py::arg("mesh"), py::arg("divisions"),
     "Create a 3D uniform grid from an Omega_h mesh");
-
-  m.def(
-    "create_uniform_grid_binary_field",
-    [](Omega_h::Mesh& mesh, const std::array<LO, 2>& divisions) {
-      return CreateUniformGridBinaryField<2>(mesh, divisions).second;
-    },
-    py::arg("mesh"), py::arg("divisions"),
-    "Create a 2D vertex mask field indicating inside/outside mesh");
 }
 
 } // namespace pcms

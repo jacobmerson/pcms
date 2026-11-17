@@ -3,12 +3,13 @@
 #include <Omega_h_build.hpp>
 #include <Omega_h_library.hpp>
 #include <Omega_h_mesh.hpp>
-#include <pcms/field/function_space/lagrange.h>
-#include <pcms/field/layout/omega_h_lagrange.h>
+#include <pcms/field/function_spaces.hpp>
+#include <pcms/backends/omega_h/lagrange_layout.hpp>
 #include <pcms/transfer/omega_h_mass_integrator.hpp>
 #include <pcms/transfer/omega_h_conservative_projection.hpp>
-#include "field_test_utils.h"
+#include "field_test_utils.hpp"
 #include <petscksp.h>
+#include "pcms/backends/omega_h/omega_h.hpp"
 
 // Reference corner tet:
 //   v0=(0,0,0), v1=(1,0,0), v2=(0,1,0), v3=(0,0,1)
@@ -125,7 +126,7 @@ TEST_CASE("OmegaHConservativeProjection (3D): same-mesh reference tet is "
     const auto values =
       pcms::FlattenToRank1View(target.GetDOFHolderDataHost().GetValues());
     const auto coords_h = pcms::test::CopyCoordinatesToHost(
-      pcms::MakeConstRank2View(mesh.coords(), 3));
+      pcms::backend::omega_h::MakeConstRank2View(mesh.coords(), 3));
     for (Omega_h::LO i = 0; i < 4; ++i) {
       const double expected =
         1.0 + coords_h(i, 0) + 2.0 * coords_h(i, 1) + 3.0 * coords_h(i, 2);

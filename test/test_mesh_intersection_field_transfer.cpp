@@ -7,12 +7,13 @@
 #include <Omega_h_shape.hpp>
 
 #include <pcms/transfer/omega_h_conservative_projection.hpp>
-#include <pcms/field/function_space/lagrange.h>
-#include <pcms/utility/mesh_geometry.h>
-#include "field_test_utils.h"
+#include <pcms/field/function_spaces.hpp>
+#include <pcms/utility/mesh_geometry.hpp>
+#include "field_test_utils.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include "pcms/backends/omega_h/omega_h.hpp"
 
 namespace
 {
@@ -85,7 +86,7 @@ TEST_CASE("OmegaHConservativeProjection reproduces constant and linear fields",
     const auto target_values =
       pcms::FlattenToRank1View(target.GetDOFHolderDataHost().GetValues());
     const auto tgt_coords_h = pcms::test::CopyCoordinatesToHost(
-      pcms::MakeConstRank2View(target_mesh.coords(), 2));
+      pcms::backend::omega_h::MakeConstRank2View(target_mesh.coords(), 2));
     for (Omega_h::LO i = 0; i < target_mesh.nverts(); ++i) {
       const double expected = tgt_coords_h(i, 0) + tgt_coords_h(i, 1);
       REQUIRE(target_values[i] == Catch::Approx(expected).margin(1e-9));

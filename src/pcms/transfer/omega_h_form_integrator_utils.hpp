@@ -1,13 +1,13 @@
 #ifndef PCMS_TRANSFER_OMEGA_H_FORM_INTEGRATOR_UTILS_HPP
 #define PCMS_TRANSFER_OMEGA_H_FORM_INTEGRATOR_UTILS_HPP
 
-#include "pcms/field/coordinate_systems/cartesian.hpp"
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
-#include "pcms/field/function_space.h"
-#include "pcms/field/layout/omega_h_lagrange.h"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
+#include "pcms/backends/omega_h/geometry.hpp"
+#include "pcms/field/function_space.hpp"
+#include "pcms/backends/omega_h/lagrange_layout.hpp"
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/transfer/mesh_intersection.hpp"
-#include "pcms/utility/assert.h"
+#include "pcms/utility/assert.hpp"
 #include <MeshField_Integrate.hpp>
 #include <MeshField_Shape.hpp>
 #include <MeshField_Config.hpp>
@@ -48,12 +48,13 @@ inline OmegaHScalarSpace ResolveOmegaHScalarSpace(const FunctionSpace& space,
   }
   auto geometry =
     std::dynamic_pointer_cast<const OmegaHGeometry>(space.GetGeometry());
-  if (geometry == nullptr || &GetMesh(*geometry) != &layout->GetMesh()) {
+  if (geometry == nullptr ||
+      &backend::omega_h::GetMesh(*geometry) != &layout->GetMesh()) {
     throw pcms_error(prefix +
                      "space must be on the Omega_h geometry of its layout's "
                      "mesh");
   }
-  const Omega_h::Mesh& mesh = GetMesh(*geometry);
+  const Omega_h::Mesh& mesh = backend::omega_h::GetMesh(*geometry);
   if (mesh.dim() != 2 && mesh.dim() != 3) {
     throw pcms_error(prefix + "mesh must be 2D or 3D");
   }

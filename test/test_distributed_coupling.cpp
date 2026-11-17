@@ -4,16 +4,16 @@
 #include <Omega_h_for.hpp>
 #include <Omega_h_mesh.hpp>
 
-#include "pcms/coupler/field_exchange_planner.h"
-#include "pcms/coupler/field_serializer.h"
-#include "pcms/coupler/overlap_mask.h"
-#include "pcms/field/data/simple.h"
-#include "distributed_test_utils.h"
-#include "pcms/field/coordinate_systems/cartesian.hpp"
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
-#include "pcms/field/function_space/lagrange.h"
-#include "pcms/utility/arrays.h"
-#include "pcms/utility/types.h"
+#include "pcms/coupler/detail/field_exchange_planner.hpp"
+#include "pcms/coupler/detail/field_serializer.hpp"
+#include "pcms/coupler/overlap_mask.hpp"
+#include "pcms/field/simple_field_data.hpp"
+#include "distributed_test_utils.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
+#include "pcms/backends/omega_h/geometry.hpp"
+#include "pcms/field/function_spaces.hpp"
+#include "pcms/utility/arrays.hpp"
+#include "pcms/utility/types.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -442,8 +442,8 @@ int main(int argc, char** argv)
                                               /*symmetric=*/false);
       mesh.set_parting(OMEGA_H_GHOSTED, 1, false);
 
-      auto geometry =
-        pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+      auto geometry = pcms::backend::omega_h::CreateGeometry(
+        mesh, pcms::csys::Cartesian::Deferred());
       auto space = pcms::CreateLagrangeSpace(
         geometry, /*order=*/1, /*num_components=*/1,
         pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});

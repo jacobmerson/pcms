@@ -5,23 +5,23 @@
 #include <Omega_h_build.hpp>
 #include <Omega_h_library.hpp>
 #include <Omega_h_shape.hpp>
-#include <pcms/configuration.h>
-#include <pcms/field/coordinate_systems/cartesian.hpp>
-#include <pcms/field/coordinate_systems/cylindrical.hpp>
-#include <pcms/field/evaluator/omega_h_geometry.hpp>
-#include <pcms/field/evaluator/point_cloud_geometry.hpp>
-#include <pcms/field/evaluator/uniform_grid_geometry.hpp>
-#include <pcms/field/function_space/lagrange.h>
-#include <pcms/field/function_space/polynomial_reconstruction.hpp>
-#include <pcms/field/layout/omega_h_entity.h>
-#include <pcms/field/layout/omega_h_lagrange.h>
-#include <pcms/field/layout/point_cloud.h>
+#include <pcms/configuration.hpp>
+#include <pcms/utility/coordinate_systems/cartesian.hpp>
+#include <pcms/utility/coordinate_systems/cylindrical.hpp>
+#include <pcms/backends/omega_h/geometry.hpp>
+#include <pcms/backends/point_cloud/geometry.hpp>
+#include <pcms/backends/uniform_grid/geometry.hpp>
+#include <pcms/field/function_spaces.hpp>
+#include <pcms/backends/omega_h/entity_layout.hpp>
+#include <pcms/backends/omega_h/lagrange_layout.hpp>
+#include <pcms/backends/point_cloud/layout.hpp>
+#include <pcms/discretization/discretization.hpp>
 #include <pcms/geometry/geometry.hpp>
-#include <pcms/localization/adj_search.hpp>
-#include <pcms/localization/mls_support_helpers.h>
-#include <pcms/utility/mesh_geometry.h>
-#include <pcms/utility/omega_h_array_utils.h>
-#include "field_test_utils.h"
+#include <pcms/backends/omega_h/adj_search.hpp>
+#include <pcms/localization/mls_support_helpers.hpp>
+#include <pcms/utility/mesh_geometry.hpp>
+#include <pcms/utility/omega_h_array_utils.hpp>
+#include "field_test_utils.hpp"
 #include <memory>
 #include <string>
 #include <variant>
@@ -43,9 +43,9 @@ namespace
 std::shared_ptr<pcms::Geometry> MakeGeometry(Omega_h::Mesh& mesh,
                                              pcms::SearchOptions options = {})
 {
-  return pcms::CreateOmegaHGeometry(
+  return pcms::backend::omega_h::CreateGeometry(
     mesh, pcms::csys::Cartesian::Create(2),
-    pcms::OmegaHGeometryOptions{.search = options});
+    pcms::backend::omega_h::OmegaHGeometryOptions{.search = options});
 }
 
 /// The element the grid search of `mesh` finds for each point, lifted from the
@@ -160,20 +160,24 @@ TEST_CASE("Spaces on a geometry share its discretization")
   const auto discretization = geometry->GetDiscretization();
   auto scalars = MakeSpace(geometry, 1, 1);
   auto cells = MakeSpace(geometry, 0, 1);
-  REQUIRE(scalars->GetLayout()->GetDiscretization() == discretization);
-  REQUIRE(cells->GetLayout()->GetDiscretization() == discretization);
-  REQUIRE(scalars->GetDiscretization() == discretization);
+  REQUIRE(pcms::detail::DOFHolderDiscretization(*scalars->GetLayout()) ==
+          discretization);
+  REQUIRE(pcms::detail::DOFHolderDiscretization(*cells->GetLayout()) ==
+          discretization);
+  REQUIRE(scalars->GetGeometry()->GetDiscretization() == discretization);
 #ifdef PCMS_ENABLE_MESHFIELDS
   auto p2 = CreateLagrangeSpace(
     geometry, 2, 1, LagrangeOptions{.backend = LagrangeBackend::MeshFields});
-  REQUIRE(p2->GetLayout()->GetDiscretization() == discretization);
+  REQUIRE(pcms::detail::DOFHolderDiscretization(*p2->GetLayout()) ==
+          discretization);
 #endif
   // a space on another geometry of the same mesh has the same entities, but
   // not the same discretization object
   auto other = MakeSpace(MakeGeometry(mesh), 1, 1);
-  REQUIRE(other->GetLayout()->GetDiscretization() != discretization);
-  REQUIRE(
-    other->GetLayout()->GetDiscretization()->SameEntities(*discretization));
+  REQUIRE(pcms::detail::DOFHolderDiscretization(*other->GetLayout()) !=
+          discretization);
+  REQUIRE(pcms::detail::DOFHolderDiscretization(*other->GetLayout())
+            ->SameEntities(*discretization));
   // a layout refuses a discretization of another mesh
   auto other_mesh = pcms::test::BuildSquareMesh(lib, 2);
   REQUIRE_THROWS_WITH(
@@ -277,8 +281,8 @@ TEST_CASE("Differential gives the element measure")
   SECTION("tetrahedra")
   {
     auto mesh = pcms::test::BuildUnitCube(lib, 2);
-    auto geometry =
-      pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Create(3));
+    auto geometry = pcms::backend::omega_h::CreateGeometry(
+      mesh, pcms::csys::Cartesian::Create(3));
     const auto differential =
       geometry->Differential(*pcms::test::Bind(*geometry, {0.5, 0.5, 0.5}));
     const auto det = Kokkos::create_mirror_view_and_copy(
@@ -537,9 +541,10 @@ TEST_CASE("DOFHolderOwners gives the entity of each DOF holder")
   Omega_h::Write<Omega_h::I8> mask(mesh.nverts(), 1);
   Kokkos::deep_copy(Kokkos::View<Omega_h::I8*>(mask.data(), 1), 0);
   const auto ghosted = CreateLagrangeSpace(
-    pcms::CreateOmegaHGeometry(
+    pcms::backend::omega_h::CreateGeometry(
       mesh, pcms::csys::Cartesian::Create(2),
-      pcms::OmegaHGeometryOptions{.owned_mask = Omega_h::Read(mask)}),
+      pcms::backend::omega_h::OmegaHGeometryOptions{.owned_mask =
+                                                      Omega_h::Read(mask)}),
     1, 1, LagrangeOptions{.backend = LagrangeBackend::OmegaH});
   REQUIRE(ghosted->GetLayout()->HasGhosts());
   REQUIRE(

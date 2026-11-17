@@ -2,14 +2,14 @@
 #include <Omega_h_build.hpp>
 #include <Omega_h_for.hpp>
 #include <Omega_h_mesh.hpp>
-#include "pcms/field/function_space/lagrange.h"
+#include "pcms/field/function_spaces.hpp"
 #include "pcms/field/value_view.hpp"
-#include "pcms/utility/assert.h"
-#include "field_test_utils.h"
+#include "pcms/utility/assert.hpp"
+#include "field_test_utils.hpp"
 #include <array>
 #include <cmath>
 #include <vector>
-#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
 
 using pcms::Real;
 
@@ -31,8 +31,8 @@ TEST_CASE("evaluate linear 2d omega_h_field")
   auto lib = Omega_h::Library{};
   auto mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1, 1, 0, 100,
                                  100, 0, false);
-  auto geometry =
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto geometry = pcms::backend::omega_h::CreateGeometry(
+    mesh, pcms::csys::Cartesian::Deferred());
   auto factory = pcms::CreateLagrangeSpace(geometry, 1, 1);
   auto field = factory->CreateFunction<Real>();
 
@@ -50,8 +50,8 @@ TEST_CASE("evaluate quadratic 2d meshfields_field")
   auto lib = Omega_h::Library{};
   auto mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1, 1, 0, 100,
                                  100, 0, false);
-  auto geometry =
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto geometry = pcms::backend::omega_h::CreateGeometry(
+    mesh, pcms::csys::Cartesian::Deferred());
   auto factory = pcms::CreateLagrangeSpace(
     geometry, 2, 1,
     pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::MeshFields});
@@ -119,8 +119,8 @@ static void CheckMeshFieldsDofHolderCoordsAgainstManual(Omega_h::Library& lib,
   else if (order == 2)
     nodes_per_dim = {1, 1, 0, 0};
 
-  auto geometry =
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto geometry = pcms::backend::omega_h::CreateGeometry(
+    mesh, pcms::csys::Cartesian::Deferred());
   auto factory = pcms::CreateLagrangeSpace(
     geometry, order, 1,
     pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::MeshFields});
@@ -175,7 +175,8 @@ TEST_CASE("evaluate quadratic 2d omega_h_field throws")
 
   REQUIRE_THROWS_AS(
     pcms::CreateLagrangeSpace(
-      pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred()), 2, 1,
-      pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH}),
+      pcms::backend::omega_h::CreateGeometry(mesh,
+                                             pcms::csys::Cartesian::Deferred()),
+      2, 1, pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH}),
     pcms::pcms_error);
 }

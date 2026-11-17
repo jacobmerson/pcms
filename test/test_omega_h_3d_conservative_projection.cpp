@@ -8,14 +8,15 @@
 
 #include <pcms/transfer/omega_h_conservative_projection.hpp>
 #include <pcms/transfer/omega_h_control_variate_projection.hpp>
-#include <pcms/transfer/copy.h>
-#include <pcms/transfer/interpolator.h>
-#include <pcms/field/coordinate_systems/cylindrical.hpp>
-#include <pcms/field/function_space/lagrange.h>
-#include <pcms/utility/arrays.h>
-#include "field_test_utils.h"
+#include <pcms/transfer/copy.hpp>
+#include <pcms/transfer/interpolator.hpp>
+#include <pcms/utility/coordinate_systems/cylindrical.hpp>
+#include <pcms/field/function_spaces.hpp>
+#include <pcms/utility/arrays.hpp>
+#include "field_test_utils.hpp"
 
 #include <vector>
+#include "pcms/backends/omega_h/omega_h.hpp"
 
 TEST_CASE("OmegaHConservativeProjection (3D tets) reproduces constant and "
           "linear fields",
@@ -67,7 +68,7 @@ TEST_CASE("OmegaHConservativeProjection (3D tets) reproduces constant and "
     const auto target_values =
       pcms::FlattenToRank1View(target.GetDOFHolderDataHost().GetValues());
     const auto tgt_coords_h = pcms::test::CopyCoordinatesToHost(
-      pcms::MakeConstRank2View(target_mesh.coords(), 3));
+      pcms::backend::omega_h::MakeConstRank2View(target_mesh.coords(), 3));
     for (Omega_h::LO i = 0; i < target_mesh.nverts(); ++i) {
       const double expected = 1.0 + tgt_coords_h(i, 0) +
                               2.0 * tgt_coords_h(i, 1) +
@@ -92,11 +93,11 @@ TEST_CASE("OmegaHConservativeProjection (3D tets) refuses spaces in "
   Omega_h::Mesh target_mesh = pcms::test::BuildUnitCube(lib, 2);
   const auto cylindrical = pcms::csys::CylindricalRThetaZ::Create();
   auto source_space = pcms::CreateLagrangeSpace(
-    pcms::CreateOmegaHGeometry(source_mesh, cylindrical), 1, 1,
+    pcms::backend::omega_h::CreateGeometry(source_mesh, cylindrical), 1, 1,
     pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
   auto cartesian_source = pcms::test::MakeP1Space(source_mesh);
   auto target_space = pcms::CreateLagrangeSpace(
-    pcms::CreateOmegaHGeometry(target_mesh, cylindrical), 1, 1,
+    pcms::backend::omega_h::CreateGeometry(target_mesh, cylindrical), 1, 1,
     pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
   auto cartesian_target = pcms::test::MakeP1Space(target_mesh);
 
@@ -191,7 +192,7 @@ TEST_CASE("Interpolation transfer (3D tets) reproduces a linear field",
   const auto target_values =
     pcms::FlattenToRank1View(target.GetDOFHolderDataHost().GetValues());
   const auto tgt_coords_h = pcms::test::CopyCoordinatesToHost(
-    pcms::MakeConstRank2View(target_mesh.coords(), 3));
+    pcms::backend::omega_h::MakeConstRank2View(target_mesh.coords(), 3));
   for (Omega_h::LO i = 0; i < target_mesh.nverts(); ++i) {
     const double expected = 1.0 + tgt_coords_h(i, 0) +
                             2.0 * tgt_coords_h(i, 1) + 3.0 * tgt_coords_h(i, 2);
@@ -230,7 +231,7 @@ TEST_CASE("OmegaHControlVariateProjection (3D tets) is exact for target-space "
   const auto target_values =
     pcms::FlattenToRank1View(target.GetDOFHolderDataHost().GetValues());
   const auto tgt_coords_h = pcms::test::CopyCoordinatesToHost(
-    pcms::MakeConstRank2View(target_mesh.coords(), 3));
+    pcms::backend::omega_h::MakeConstRank2View(target_mesh.coords(), 3));
   for (Omega_h::LO i = 0; i < target_mesh.nverts(); ++i) {
     const double expected = 1.0 + tgt_coords_h(i, 0) +
                             2.0 * tgt_coords_h(i, 1) + 3.0 * tgt_coords_h(i, 2);

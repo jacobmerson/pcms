@@ -4,15 +4,14 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <Kokkos_Core.hpp>
 #include <Omega_h_library.hpp>
-#include <pcms/discretization/discretization/empty.hpp>
 #include <pcms/field/coordinate_map.hpp>
-#include <pcms/field/coordinate_systems/cylindrical.hpp>
-#include <pcms/field/function_space.h>
-#include <pcms/field/function_space/lagrange.h>
-#include <pcms/field/layout/empty.h>
+#include <pcms/utility/coordinate_systems/cylindrical.hpp>
+#include <pcms/field/function_space.hpp>
+#include <pcms/field/function_spaces.hpp>
+#include <pcms/field/layout/empty.hpp>
 #include <pcms/geometry/geometry.hpp>
-#include <pcms/transfer/interpolator.h>
-#include "field_test_utils.h"
+#include <pcms/transfer/interpolator.hpp>
+#include "field_test_utils.hpp"
 
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
@@ -66,17 +65,7 @@ protected:
 class AnalyticGeometry final : public pcms::Geometry
 {
 public:
-  AnalyticGeometry()
-    : discretization_(std::make_shared<pcms::EmptyDiscretization>()),
-      system_(pcms::csys::CylindricalRThetaZ::Create())
-  {
-  }
-
-  std::shared_ptr<const pcms::Discretization> GetDiscretization()
-    const noexcept override
-  {
-    return discretization_;
-  }
+  AnalyticGeometry() : system_(pcms::csys::CylindricalRThetaZ::Create()) {}
 
   const std::shared_ptr<const pcms::CoordinateSystem>& GetCoordinateSystem()
     const noexcept override
@@ -92,7 +81,6 @@ protected:
   }
 
 private:
-  std::shared_ptr<const pcms::Discretization> discretization_;
   std::shared_ptr<const pcms::CoordinateSystem> system_;
 };
 
@@ -181,8 +169,9 @@ std::shared_ptr<pcms::FunctionSpace> MakePoloidalTarget(Omega_h::Mesh& mesh,
                                                         int num_components)
 {
   return pcms::CreateLagrangeSpace(
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::CylindricalRZ::Create()), 1,
-    num_components,
+    pcms::backend::omega_h::CreateGeometry(mesh,
+                                           pcms::csys::CylindricalRZ::Create()),
+    1, num_components,
     pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
 }
 

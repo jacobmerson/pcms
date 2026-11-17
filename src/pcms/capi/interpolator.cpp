@@ -3,15 +3,15 @@
 //
 #include <pcms/capi/kokkos.h>
 #include <pcms/capi/interpolator.h>
-#include <pcms/field/coordinate_systems/cartesian.hpp>
-#include <pcms/field/evaluator/point_cloud_geometry.hpp>
-#include <pcms/field/function_space/polynomial_reconstruction.hpp>
-#include <pcms/field/point_evaluator.h>
-#include <pcms/field/layout/omega_h_entity.h>
-#include <pcms/utility/arrays.h>
-#include <pcms/utility/entity_types.h>
-#include <pcms/utility/mesh_geometry.h>
-#include <pcms/utility/print.h>
+#include <pcms/utility/coordinate_systems/cartesian.hpp>
+#include <pcms/backends/point_cloud/geometry.hpp>
+#include <pcms/field/function_spaces.hpp>
+#include <pcms/field/point_evaluator.hpp>
+#include <pcms/backends/omega_h/entity_layout.hpp>
+#include <pcms/utility/arrays.hpp>
+#include <pcms/utility/entity_types.hpp>
+#include <pcms/utility/mesh_geometry.hpp>
+#include <pcms/utility/print.hpp>
 #include <Omega_h_file.hpp>
 #include <Omega_h_library.hpp>
 #include <Omega_h_mesh.hpp>

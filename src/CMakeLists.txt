@@ -1,15 +1,6 @@
-# TODO split out the field transfer library
-set(
-  PCMS_HEADERS
-  pcms.h
-)
+find_package(perfstubs REQUIRED)
 
-set(
-  PCMS_SOURCES
-  pcms.cpp
-)
-
-# The version comes from git describe, so version.h is regenerated on every
+# The version comes from git describe, so version.hpp is regenerated on every
 # build, and once now so it exists after configure. See PcmsVersion.cmake.
 find_package(Git QUIET)
 set(
@@ -18,20 +9,21 @@ set(
   -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
   -DPROJECT_VERSION=${PROJECT_VERSION}
   -DVERSION_OVERRIDE=${SKBUILD_PROJECT_VERSION_FULL}
-  -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/pcms/version.h.in
-  -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/pcms/version.h
+  -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/pcms/version.hpp.in
+  -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/pcms/version.hpp
   -P ${PROJECT_SOURCE_DIR}/cmake/PcmsVersion.cmake
 )
 execute_process(COMMAND ${CMAKE_COMMAND} ${PCMS_VERSION_ARGS})
 add_custom_target(
   pcms_version_header
   COMMAND ${CMAKE_COMMAND} ${PCMS_VERSION_ARGS}
-  BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/pcms/version.h
+  BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/pcms/version.hpp
 )
-configure_file(pcms/configuration.h.in pcms/configuration.h)
-list(APPEND PCMS_HEADERS ${CMAKE_CURRENT_BINARY_DIR}/pcms/version.h ${CMAKE_CURRENT_BINARY_DIR}/pcms/configuration.h)
+configure_file(pcms/configuration.hpp.in pcms/configuration.hpp)
 
 add_subdirectory(pcms/utility)
+# the generated version.hpp is found through pcms::utility's include directories
+add_dependencies(pcms_utility pcms_version_header)
 if(PCMS_ENABLE_TRANSIENT)
   add_subdirectory(pcms/transient)
 endif()
@@ -39,51 +31,18 @@ add_subdirectory(pcms/discretization)
 add_subdirectory(pcms/geometry)
 add_subdirectory(pcms/localization)
 add_subdirectory(pcms/field)
-add_subdirectory(pcms/coupler)
-
-
-
-find_package(Kokkos REQUIRED)
-find_package(perfstubs REQUIRED)
-
-add_library(pcms_core ${PCMS_SOURCES})
-set_target_properties(
-  pcms_core PROPERTIES OUTPUT_NAME pcmscore EXPORT_NAME
-  core
-)
-add_library(pcms::core ALIAS pcms_core)
-add_dependencies(pcms_core pcms_version_header)
-target_compile_features(pcms_core PUBLIC cxx_std_20)
-target_link_libraries(
-  pcms_core PUBLIC redev::redev
-  MPI::MPI_CXX Kokkos::kokkos perfstubs pcms::utility pcms::localization pcms::field pcms::coupler
-)
-
-if(PCMS_HAS_ASAN)
-  target_compile_options(
-    pcms_core PRIVATE -fsanitize=address
-    -fno-omit-frame-pointer
-  )
+if(PCMS_ENABLE_COUPLER)
+  add_subdirectory(pcms/coupler)
 endif()
+# backend adapters; each adds its files to the core targets above
+add_subdirectory(pcms/backends)
 
-# export the library
-set_target_properties(pcms_core PROPERTIES PUBLIC_HEADER "${PCMS_HEADERS}")
-target_include_directories(
-  pcms_core
-  PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>"
-  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>"
-  "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
-)
+# Top-level and generated headers. They are found through pcms::utility's
+# include directories (source and binary src/ directories).
 install(
-  TARGETS pcms_core
-  EXPORT pcms_core-targets
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  INCLUDES
-  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-  PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pcms
-)
+  FILES ../include/pcms/pcms.hpp ${CMAKE_CURRENT_BINARY_DIR}/pcms/version.hpp
+        ${CMAKE_CURRENT_BINARY_DIR}/pcms/configuration.hpp
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/pcms)
 
 configure_package_config_file(
   "${CMAKE_SOURCE_DIR}/config.cmake.in" "${CMAKE_BINARY_DIR}/pcms-config.cmake"
@@ -103,19 +62,22 @@ install(
 install(FILES "${CMAKE_SOURCE_DIR}/cmake/FindPETSc.cmake"
           DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pcms)
 
-install(
-  EXPORT pcms_core-targets
-  NAMESPACE pcms::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pcms
-)
 
+# pcms::pcms links every PCMS library that was built; downstream codes
+# should link it.
 add_library(pcms_pcms INTERFACE)
-target_link_libraries(pcms_pcms INTERFACE pcms::core)
+add_library(pcms::pcms ALIAS pcms_pcms)
+target_link_libraries(
+  pcms_pcms INTERFACE pcms::utility pcms::discretization pcms::localization
+                      pcms::field)
+if(TARGET pcms::coupler)
+  target_link_libraries(pcms_pcms INTERFACE pcms::coupler)
+endif()
 if(PCMS_ENABLE_TRANSIENT)
   target_link_libraries(pcms_pcms INTERFACE pcms::transient)
 endif()
 set_target_properties(pcms_pcms PROPERTIES EXPORT_NAME pcms)
-if (PCMS_ENABLE_Python)
+if (PCMS_ENABLE_PYTHON)
   # Disable LTO/IPO before adding Python subdirectory to avoid fatbinData conflicts
   set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
   add_subdirectory(pcms/pythonapi)
@@ -124,13 +86,27 @@ if(PCMS_ENABLE_C)
   add_subdirectory(pcms/capi)
   target_link_libraries(pcms_pcms INTERFACE pcms::capi)
 endif()
-if(PCMS_ENABLE_Fortran)
+if(PCMS_ENABLE_FORTRAN)
   add_subdirectory(pcms/fortranapi)
   target_link_libraries(pcms_pcms INTERFACE pcms::fortranapi)
 endif()
 
 add_subdirectory(pcms/transfer)
 target_link_libraries(pcms_pcms INTERFACE pcms::transfer)
+
+# Deprecated: pcms::core used to be the coupler plus everything else. Kept
+# for one release as an alias of pcms::pcms.
+add_library(pcms_core INTERFACE)
+add_library(pcms::core ALIAS pcms_core)
+target_link_libraries(pcms_core INTERFACE pcms_pcms)
+set_target_properties(
+  pcms_core PROPERTIES EXPORT_NAME core DEPRECATION
+                       "pcms::core is deprecated; link pcms::pcms instead.")
+install(TARGETS pcms_core EXPORT pcms_core-targets)
+install(
+  EXPORT pcms_core-targets
+  NAMESPACE pcms::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pcms)
 
 install(
   TARGETS pcms_pcms

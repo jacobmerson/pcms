@@ -1,19 +1,19 @@
 #include <iostream>
-#include <pcms.h>
-#include <pcms/utility/types.h>
+#include <pcms/pcms.hpp>
+#include <pcms/utility/types.hpp>
 #include <Omega_h_file.hpp>
 #include <Omega_h_for.hpp>
-#include <data/omega_h.h>
+#include <pcms/backends/omega_h/field_data.hpp>
 
-#include "test_support.h"
-#include "pcms/field/function_space/xgc.h"
-#include "pcms/field/layout/xgc.h"
+#include "test_support.hpp"
+#include "pcms/backends/xgc/field_factory.hpp"
+#include "pcms/backends/xgc/layout.hpp"
 #include "pcms/coupler/coupler.hpp"
-#include "pcms/coupler/overlap_mask.h"
+#include "pcms/coupler/overlap_mask.hpp"
 #include "pcms/field/value_view.hpp"
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
-#include "pcms/field/function_space/lagrange.h"
-#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/backends/omega_h/geometry.hpp"
+#include "pcms/field/function_spaces.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
 
 using pcms::ConstructRCFromOmegaHMesh;
 using pcms::GO;
@@ -170,9 +170,10 @@ void omegah_coupler_with_overlap(MPI_Comm comm, Omega_h::Mesh& mesh,
 
     application->SetLayoutOverlapMask(ss.str(), std::move(overlap_mask));
 
-    auto geometry = pcms::CreateOmegaHGeometry(
+    auto geometry = pcms::backend::omega_h::CreateGeometry(
       mesh, pcms::csys::Cartesian::Deferred(),
-      pcms::OmegaHGeometryOptions{.global_id_name = numbering});
+      pcms::backend::omega_h::OmegaHGeometryOptions{.global_id_name =
+                                                      numbering});
     auto factory = pcms::CreateLagrangeSpace(
       geometry, 1, 1,
       pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH,

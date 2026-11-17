@@ -1,19 +1,18 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "pcms/field/function_space/polynomial_reconstruction.hpp"
-#include <pcms/field/evaluator/point_cloud_geometry.hpp>
+#include "pcms/field/function_spaces.hpp"
+#include <pcms/backends/point_cloud/geometry.hpp>
 #include "pcms/field/value_view.hpp"
-#include "pcms/discretization/discretization.h"
-#include "pcms/field/function_space/lagrange.h"
-#include "pcms/field/layout/omega_h_entity.h"
-#include "pcms/field/layout/point_cloud.h"
-#include "field_test_utils.h"
+#include "pcms/discretization/discretization.hpp"
+#include "pcms/backends/omega_h/entity_layout.hpp"
+#include "pcms/backends/point_cloud/layout.hpp"
+#include "field_test_utils.hpp"
 
 #include <Omega_h_build.hpp>
 #include <Omega_h_library.hpp>
 #include <vector>
-#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
 
 using pcms::CoordinateSystem;
 using pcms::HostMemorySpace;
@@ -137,12 +136,13 @@ TEST_CASE("Different layouts on the same mesh report SameEntities")
 
   auto nodal = std::make_shared<pcms::OmegaHEntityLayout>(
     mesh, pcms::Face, 1, pcms::csys::Cartesian::Deferred());
-  auto geometry =
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto geometry = pcms::backend::omega_h::CreateGeometry(
+    mesh, pcms::csys::Cartesian::Deferred());
   auto lagrange = pcms::CreateLagrangeSpace(geometry, 1, 1);
 
   auto nodal_disc = nodal->GetDiscretization();
-  auto lagrange_disc = lagrange->GetLayout()->GetDiscretization();
+  auto lagrange_disc =
+    pcms::detail::DOFHolderDiscretization(*lagrange->GetLayout());
 
   REQUIRE(nodal_disc != nullptr);
   REQUIRE(lagrange_disc != nullptr);
@@ -180,8 +180,8 @@ TEST_CASE(
   auto mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1.0, 1.0, 0.0, 2,
                                  2, 0, false);
 
-  auto geometry =
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto geometry = pcms::backend::omega_h::CreateGeometry(
+    mesh, pcms::csys::Cartesian::Deferred());
   auto lagrange = pcms::CreateLagrangeSpace(geometry, 1, 1);
 
   auto coords = MakeCoords2D();
@@ -190,8 +190,10 @@ TEST_CASE(
     pcms::CreatePointCloudGeometry(pcms::CoordinateView<HostMemorySpace>(
       pcms::csys::Cartesian::Deferred(), coords_view)));
 
-  auto mesh_disc = lagrange->GetLayout()->GetDiscretization();
-  auto point_cloud_disc = standalone->GetLayout()->GetDiscretization();
+  auto mesh_disc =
+    pcms::detail::DOFHolderDiscretization(*lagrange->GetLayout());
+  auto point_cloud_disc =
+    pcms::detail::DOFHolderDiscretization(*standalone->GetLayout());
 
   REQUIRE_FALSE(mesh_disc->SameEntities(*point_cloud_disc));
   REQUIRE_FALSE(point_cloud_disc->SameEntities(*mesh_disc));

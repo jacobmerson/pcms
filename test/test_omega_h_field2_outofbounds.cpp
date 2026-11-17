@@ -3,15 +3,14 @@
 #include <Omega_h_mesh.hpp>
 #include <Omega_h_build.hpp>
 #include <Omega_h_for.hpp>
-#include "pcms/field/function_space/lagrange.h"
-#include "pcms/field/evaluator/uniform_grid_geometry.hpp"
-#include "pcms/field/function_space/spline.h"
+#include "pcms/field/function_spaces.hpp"
+#include "pcms/backends/uniform_grid/geometry.hpp"
 #include "pcms/field/value_view.hpp"
-#include "pcms/utility/uniform_grid.h"
-#include "field_test_utils.h"
+#include "pcms/utility/uniform_grid.hpp"
+#include "field_test_utils.hpp"
 #include <Kokkos_Core.hpp>
 #include <vector>
-#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
 
 using pcms::Real;
 
@@ -21,8 +20,8 @@ TEST_CASE("omega_h_field2 out of bounds FILL mode")
   auto world = lib.world();
   auto mesh =
     Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 10, 10, 0, false);
-  auto geometry =
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+  auto geometry = pcms::backend::omega_h::CreateGeometry(
+    mesh, pcms::csys::Cartesian::Deferred());
   auto factory = pcms::CreateLagrangeSpace(geometry, 1, 1);
   auto field = factory->CreateFunction<Real>();
   pcms::test::SetField(field, OMEGA_H_LAMBDA(Real x, Real y) { return x + y; });

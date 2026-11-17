@@ -4,13 +4,13 @@
 #include <Kokkos_Core.hpp>
 #include <Omega_h_build.hpp>
 #include <Omega_h_library.hpp>
-#include <pcms/field/function_space/lagrange.h>
-#include <pcms/transfer/interpolator.h>
-#include "field_test_utils.h"
+#include <pcms/field/function_spaces.hpp>
+#include <pcms/transfer/interpolator.hpp>
+#include "field_test_utils.hpp"
 #include <memory>
 #include <vector>
-#include "pcms/field/coordinate_systems/cartesian.hpp"
-#include "pcms/field/coordinate_systems/cylindrical.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/cylindrical.hpp"
 
 using Catch::Matchers::ContainsSubstring;
 using pcms::DeviceMemorySpace;
@@ -42,7 +42,8 @@ std::shared_ptr<FunctionSpace> BuildCylindricalSpace(Omega_h::Mesh& mesh,
                                                      int num_components)
 {
   return CreateLagrangeSpace(
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::CylindricalRThetaZ::Create()),
+    pcms::backend::omega_h::CreateGeometry(
+      mesh, pcms::csys::CylindricalRThetaZ::Create()),
     1, num_components, LagrangeOptions{.backend = LagrangeBackend::OmegaH});
 }
 

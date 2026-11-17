@@ -1,5 +1,5 @@
 #include "mdspan/mdspan.hpp"
-#include "pcms.h"
+#include "pcms/pcms.hpp"
 #include <Kokkos_Core.hpp>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_template_test_macros.hpp>
@@ -12,8 +12,8 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-#include "pcms/field/evaluator/spline_interpolator.hpp"
-#include "field_test_utils.h"
+#include "pcms/backends/uniform_grid/spline_interpolator.hpp"
+#include "field_test_utils.hpp"
 
 using namespace pcms;
 using pcms::test::CreateDeviceRank1View;

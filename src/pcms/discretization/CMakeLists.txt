@@ -1,34 +1,22 @@
 set(
         PCMS_DISCRETIZATION_HEADERS
-        discretization.h
-        discretization/xgc_reverse_classification.h
-        discretization/empty.hpp
-        discretization/point_cloud.hpp
-        discretization/uniform_grid.hpp
-        discretization/xgc.hpp
+        discretization.hpp
 )
-if (PCMS_ENABLE_OMEGA_H)
-  list(APPEND PCMS_DISCRETIZATION_HEADERS discretization/omega_h.hpp)
-endif()
 
-set(
-        PCMS_DISCRETIZATION_SOURCES
-        discretization/empty.cpp
-        discretization/point_cloud.cpp
-        discretization/xgc_reverse_classification.cpp
-        discretization/xgc.cpp
-)
-if (PCMS_ENABLE_OMEGA_H)
-  list(APPEND PCMS_DISCRETIZATION_SOURCES discretization/omega_h.cpp)
-endif()
-
-add_library(pcms_discretization ${PCMS_DISCRETIZATION_SOURCES})
+# The sources are the backends' discretizations (src/pcms/backends/*), which
+# add themselves to this target.
+add_library(pcms_discretization)
 add_library(pcms::discretization ALIAS pcms_discretization)
-target_sources(pcms_discretization PUBLIC
-        FILE_SET field_discretization
-        TYPE HEADERS
-        BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/..
-        FILES ${PCMS_DISCRETIZATION_HEADERS})
+# Only the public headers (include/pcms/...) are installed; the private
+# headers next to the sources are private sources of the target.
+set(PCMS_DISCRETIZATION_HEADERS_PUBLIC ${PCMS_DISCRETIZATION_HEADERS})
+list(FILTER PCMS_DISCRETIZATION_HEADERS_PUBLIC INCLUDE REGEX "/include/pcms/")
+set(PCMS_DISCRETIZATION_HEADERS_PRIVATE ${PCMS_DISCRETIZATION_HEADERS})
+list(FILTER PCMS_DISCRETIZATION_HEADERS_PRIVATE EXCLUDE REGEX "/include/pcms/")
+target_sources(pcms_discretization
+  PUBLIC FILE_SET field_discretization TYPE HEADERS BASE_DIRS ${PROJECT_SOURCE_DIR}/include/pcms
+         FILES ${PCMS_DISCRETIZATION_HEADERS_PUBLIC}
+  PRIVATE ${PCMS_DISCRETIZATION_HEADERS_PRIVATE})
 target_include_directories(
         pcms_discretization
         PUBLIC

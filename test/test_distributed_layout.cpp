@@ -10,13 +10,13 @@
 #include <Omega_h_library.hpp>
 #include <Omega_h_mesh.hpp>
 
-#include "distributed_test_utils.h"
-#include "pcms/configuration.h"
-#include "pcms/field/coordinate_systems/cartesian.hpp"
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
-#include "pcms/field/function_space/lagrange.h"
-#include "pcms/utility/arrays.h"
-#include "pcms/utility/types.h"
+#include "distributed_test_utils.hpp"
+#include "pcms/configuration.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
+#include "pcms/backends/omega_h/geometry.hpp"
+#include "pcms/field/function_spaces.hpp"
+#include "pcms/utility/arrays.hpp"
+#include "pcms/utility/types.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -242,8 +242,8 @@ int main(int argc, char** argv)
                                      n, 0, false);
       mesh.set_parting(OMEGA_H_GHOSTED, 1, false);
 
-      auto geometry =
-        pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred());
+      auto geometry = pcms::backend::omega_h::CreateGeometry(
+        mesh, pcms::csys::Cartesian::Deferred());
       for (int nc : {1, 2}) {
         const std::string suffix = " (" + std::to_string(nc) + " components)";
         CheckLayout(

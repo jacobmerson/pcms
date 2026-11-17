@@ -1,14 +1,14 @@
-#include "pcms/field/function_space.h"
-#include "pcms/configuration.h"
-#include "pcms/utility/assert.h"
-#include "pcms/utility/common.h"
+#include "pcms/field/function_space.hpp"
+#include "pcms/configuration.hpp"
+#include "pcms/utility/assert.hpp"
+#include "pcms/utility/detail/common.hpp"
 #ifdef PCMS_ENABLE_MESHFIELDS
-#include "pcms/field/layout/mesh_fields.h"
-#include "pcms/field/data/mesh_fields.h"
+#include "pcms/backends/omega_h_meshfields/layout.hpp"
+#include "pcms/backends/omega_h_meshfields/field_data.hpp"
 #endif
 #ifdef PCMS_ENABLE_OMEGA_H
-#include "pcms/field/layout/omega_h_lagrange.h"
-#include "pcms/field/data/omega_h.h"
+#include "pcms/backends/omega_h/lagrange_layout.hpp"
+#include "pcms/backends/omega_h/field_data.hpp"
 #endif
 
 namespace pcms
