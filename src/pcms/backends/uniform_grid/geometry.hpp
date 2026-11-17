@@ -1,5 +1,5 @@
-#ifndef PCMS_FIELD_EVALUATOR_UNIFORM_GRID_GEOMETRY_HPP
-#define PCMS_FIELD_EVALUATOR_UNIFORM_GRID_GEOMETRY_HPP
+#ifndef PCMS_BACKENDS_UNIFORM_GRID_GEOMETRY_HPP
+#define PCMS_BACKENDS_UNIFORM_GRID_GEOMETRY_HPP
 
 #include "pcms/backends/uniform_grid/discretization.hpp"
 #include "pcms/utility/coordinate_system.hpp"
@@ -11,7 +11,6 @@
 #include "pcms/utility/types.hpp"
 #include "pcms/utility/uniform_grid.hpp"
 #include <Kokkos_Core.hpp>
-#include <Omega_h_vector.hpp>
 #include <memory>
 #include <string>
 #include <utility>
@@ -167,4 +166,4 @@ private:
 
 } // namespace pcms::backend::uniform_grid
 
-#endif // PCMS_FIELD_EVALUATOR_UNIFORM_GRID_GEOMETRY_HPP
+#endif // PCMS_BACKENDS_UNIFORM_GRID_GEOMETRY_HPP

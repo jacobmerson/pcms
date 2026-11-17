@@ -128,14 +128,14 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: reproduces "
 
   for (auto basis : bases) {
     CheckPolynomialReproduction(
-      0, basis, OMEGA_H_LAMBDA(Real, Real) { return 3.14; }, 5e-3);
+      0, basis, KOKKOS_LAMBDA(Real, Real) { return 3.14; }, 5e-3);
     CheckPolynomialReproduction(
       1, basis,
-      OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); },
+      KOKKOS_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); },
       5e-3);
     CheckPolynomialReproduction(
       2, basis,
-      OMEGA_H_LAMBDA(Real x, Real y) { return x * x + x * y + 2.0 * y * y; },
+      KOKKOS_LAMBDA(Real x, Real y) { return x * x + x * y + 2.0 * y * y; },
       5e-3);
   }
 }
@@ -162,9 +162,9 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: same PointEvaluator "
 
   pcms::test::SetField(
     field_a,
-    OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); });
+    KOKKOS_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); });
   const Real cval = 7.0;
-  pcms::test::SetField(field_b, OMEGA_H_LAMBDA(Real, Real) { return cval; });
+  pcms::test::SetField(field_b, KOKKOS_LAMBDA(Real, Real) { return cval; });
 
   auto pts = pcms::test::StandardEvalCoords2D();
   // Create the PointEvaluator once and reuse it for both fields.
@@ -173,11 +173,9 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: same PointEvaluator "
 
   pcms::test::CheckEvaluation(
     *evaluator, field_a, pts,
-    OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); },
-    5e-3);
+    KOKKOS_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); }, 5e-3);
   pcms::test::CheckEvaluation(
-    *evaluator, field_b, pts, OMEGA_H_LAMBDA(Real, Real) { return cval; },
-    5e-3);
+    *evaluator, field_b, pts, KOKKOS_LAMBDA(Real, Real) { return cval; }, 5e-3);
 }
 
 // ============================================================================
@@ -221,7 +219,7 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: default MLSOptions — "
     pcms::CreatePointCloudGeometry(pcms::CoordinateView<HostMemorySpace>(
       pcms::csys::Cartesian::Deferred(), coords_view)));
   auto field = fs->CreateFunction<Real>();
-  pcms::test::SetField(field, OMEGA_H_LAMBDA(Real, Real) { return Real(1.0); });
+  pcms::test::SetField(field, KOKKOS_LAMBDA(Real, Real) { return Real(1.0); });
 
   auto pts = pcms::test::StandardEvalCoords2D();
   int n = static_cast<int>(pts.size()) / 2;

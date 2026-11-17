@@ -2,18 +2,20 @@
 #include "pcms/configuration.hpp"
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/detail/common.hpp"
+#ifdef PCMS_ENABLE_OMEGA_H
 #ifdef PCMS_ENABLE_MESHFIELDS
 #include "pcms/backends/omega_h_meshfields/layout.hpp"
 #include "pcms/backends/omega_h_meshfields/evaluator.hpp"
 #include "pcms/backends/omega_h_meshfields/field_data.hpp"
 #endif
 #include "pcms/backends/omega_h/geometry.hpp"
-#include "pcms/backends/uniform_grid/geometry.hpp"
 #include "pcms/backends/omega_h/lagrange_layout.hpp"
 #include "pcms/backends/omega_h/lagrange_evaluator.hpp"
+#include "pcms/backends/omega_h/field_data.hpp"
+#endif
+#include "pcms/backends/uniform_grid/geometry.hpp"
 #include "pcms/backends/uniform_grid/layout.hpp"
 #include "pcms/backends/uniform_grid/evaluator.hpp"
-#include "pcms/backends/omega_h/field_data.hpp"
 #include "pcms/field/simple_field_data.hpp"
 #include "pcms/utility/uniform_grid.hpp"
 
@@ -23,11 +25,13 @@
 
 namespace pcms
 {
+#ifdef PCMS_ENABLE_OMEGA_H
 using backend::omega_h::OmegaHDiscretization;
 using backend::omega_h::OmegaHFieldData;
 using backend::omega_h::OmegaHGeometry;
 using backend::omega_h::OmegaHLagrangeEvaluatorFactory;
 using backend::omega_h::OmegaHLagrangeLayout;
+#endif
 using backend::uniform_grid::UniformGridEvaluatorFactory;
 using backend::uniform_grid::UniformGridFieldLayout;
 using backend::uniform_grid::UniformGridGeometry;
@@ -39,6 +43,7 @@ namespace pcms
 namespace
 {
 
+#ifdef PCMS_ENABLE_OMEGA_H
 // The discretization of an Omega_h geometry, which the layouts of the spaces
 // on it share (OmegaHGeometry creates an OmegaHDiscretization).
 std::shared_ptr<const OmegaHDiscretization> GeometryDiscretization(
@@ -151,6 +156,8 @@ std::shared_ptr<FunctionSpace> CreateOmegaHLagrangeSpace(
     std::move(eval_factory));
 }
 
+#endif // PCMS_ENABLE_OMEGA_H
+
 /// A Lagrange space of order 0 or 1 on the grid of a uniform-grid geometry.
 template <unsigned Dim>
 std::shared_ptr<FunctionSpace> CreateUniformGridLagrangeSpace(
@@ -191,11 +198,13 @@ std::shared_ptr<FunctionSpace> CreateLagrangeSpace(
   if (geometry == nullptr) {
     throw pcms_error("CreateLagrangeSpace: the geometry must not be null");
   }
+#ifdef PCMS_ENABLE_OMEGA_H
   if (auto omega_h =
         std::dynamic_pointer_cast<const OmegaHGeometry>(geometry)) {
     return CreateOmegaHLagrangeSpace(std::move(omega_h), order, num_components,
                                      options);
   }
+#endif
   if (auto grid =
         std::dynamic_pointer_cast<const UniformGridGeometry<2>>(geometry)) {
     return CreateUniformGridLagrangeSpace<2>(std::move(grid), order,
