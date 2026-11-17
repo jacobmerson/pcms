@@ -24,15 +24,38 @@ namespace
 {
 
 /// The element and barycentric coordinates ([point][vertex]) of the results,
-/// lifted as the Omega_h binding does, on the host.
+/// as an evaluator takes them: the lowest element adjacent to the entity of the
+/// result, with the result's weights on the entity's vertices and zero on the
+/// others, on the host.
 template <int Dim, typename Result>
 auto LiftOnHost(Omega_h::Mesh& mesh, Kokkos::View<Result*> results)
 {
-  auto lifted = pcms::detail::LiftResults<Dim>(
-    mesh, Kokkos::View<const Result*, pcms::DeviceMemorySpace>(results));
-  return std::make_pair(
-    Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, lifted.first),
-    Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, lifted.second));
+  const auto host =
+    Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, results);
+  const auto n = host.extent(0);
+  const auto up = pcms::detail::UpAdjacencies<Dim>(mesh);
+  const auto verts_of = pcms::detail::VerticesOfEntities<Dim>(mesh);
+  Kokkos::View<Omega_h::LO*, Kokkos::HostSpace> elems("elems", n);
+  Kokkos::View<pcms::Real**, Kokkos::HostSpace> bary("bary", n, Dim + 1);
+  for (size_t i = 0; i < n; ++i) {
+    const auto elem = pcms::detail::ElementOfResult<Dim>(up, host(i));
+    elems(i) = elem;
+    Omega_h::LO vertices[Dim + 1];
+    pcms::Real weights[Dim + 1];
+    const int nv = pcms::detail::EntityVertexWeights<Dim>(verts_of, host(i),
+                                                          vertices, weights);
+    for (int k = 0; k <= Dim; ++k) {
+      bary(i, k) = 0.0;
+    }
+    for (int j = 0; elem >= 0 && j < nv; ++j) {
+      for (int k = 0; k <= Dim; ++k) {
+        if (verts_of[Dim][elem * (Dim + 1) + k] == vertices[j]) {
+          bary(i, k) = weights[j];
+        }
+      }
+    }
+  }
+  return std::make_pair(elems, bary);
 }
 
 /// Whether `elem` has all of `verts` among its vertices.
