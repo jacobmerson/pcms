@@ -55,17 +55,17 @@ PcmsInterpolatorHandle pcms_create_interpolator(PcmsOmegaHMeshHandle oh_mesh,
   auto& mesh = *reinterpret_cast<Omega_h::Mesh*>(oh_mesh.mesh_handle);
   OMEGA_H_CHECK_PRINTF(
     mesh.dim() == 2, "Only 2D meshes are supported but found %d\n", mesh.dim());
-  const auto system = pcms::csys::Cartesian::Create(2);
+  const auto mesh_geometry = std::make_shared<pcms::OmegaHGeometry>(
+    mesh, pcms::csys::Cartesian::Create(2));
   auto space =
     pcms::CreatePolynomialReconstructionSpace(pcms::CreatePointCloudGeometry(
-      std::make_shared<pcms::OmegaHEntityLayout>(mesh, pcms::Face, 1, system),
+      std::make_shared<pcms::OmegaHEntityLayout>(mesh_geometry, pcms::Face, 1),
       Supports(radius, 10)));
   // the vertices of the same mesh, whose supports follow from its adjacency
-  const pcms::OmegaHEntityLayout vertices(mesh, pcms::Vertex, 1, system);
-  const auto geometry = space->GetGeometry();
-  return MakeHandle(*space,
-                    geometry->Bind(vertices.GetDOFHolderCoordinates(),
-                                   pcms::DOFHolderOwners(vertices, geometry)));
+  const pcms::OmegaHEntityLayout vertices(mesh_geometry, pcms::Vertex, 1);
+  return MakeHandle(
+    *space, space->GetGeometry()->Bind(vertices.GetDOFHolderCoordinates(),
+                                       pcms::DOFHolderOwners(vertices)));
 }
 
 PcmsInterpolatorHandle pcms_create_point_based_interpolator(

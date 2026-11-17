@@ -72,28 +72,30 @@ Kokkos::View<bool*, DeviceMemorySpace> BuildOwned(
   return owned;
 }
 
+Omega_h::Mesh& MeshOf(const std::shared_ptr<const OmegaHGeometry>& geometry)
+{
+  if (geometry == nullptr) {
+    throw pcms_error("OmegaHLagrangeLayout: the geometry must not be null");
+  }
+  return geometry->GetMesh();
+}
+
 } // namespace
 
 OmegaHLagrangeLayout::OmegaHLagrangeLayout(
-  Omega_h::Mesh& mesh, int order, int num_components,
-  std::shared_ptr<const CoordinateSystem> coordinate_system,
-  std::shared_ptr<const OmegaHDiscretization> discretization)
-  : mesh_(mesh), order_(order), num_components_(num_components)
+  std::shared_ptr<const OmegaHGeometry> geometry, int order, int num_components)
+  : mesh_(MeshOf(geometry)), order_(order), num_components_(num_components)
 {
   PCMS_FUNCTION_TIMER;
-  SetCoordinateSystem(
-    ResolveCoordinateSystem(std::move(coordinate_system), mesh_.dim()));
+  SetCoordinateSystem(geometry->GetCoordinateSystem());
   int entity_dim = EntityDimForOrder(order_, mesh_.dim());
 
-  const auto checked = detail::CheckDiscretizationOf(
-    mesh_, std::move(discretization), "OmegaHLagrangeLayout");
-  discretization_ = checked;
   // the mask is per vertex: it applies to the DOF holders of an order-1
   // layout only
-  const auto owned_mask = checked->GetOwnedMask();
+  const auto owned_mask = geometry->GetOwnedMask();
 
   EnsureClassification(mesh_);
-  gids_ = BuildGids(mesh_, entity_dim, checked->GetGlobalIdName());
+  gids_ = BuildGids(mesh_, entity_dim, geometry->GetGlobalIdName());
   coords_ = get_entity_centroids(mesh_, entity_dim);
   coords_2d_ = ConvertCoordsTo2D(coords_, mesh_.nents(entity_dim), mesh_.dim());
   owned_ = entity_dim == 0 && owned_mask.size() > 0
@@ -114,12 +116,7 @@ OmegaHLagrangeLayout::OmegaHLagrangeLayout(
   BuildGlobalToLocalPermutation(
     Kokkos::View<const GO*, DeviceMemorySpace>(gids_.data(), gids_.size()),
     EntOffsetsWithGhosts());
-}
-
-std::shared_ptr<const Discretization> OmegaHLagrangeLayout::GetDiscretization()
-  const noexcept
-{
-  return discretization_;
+  SetGeometry(std::move(geometry));
 }
 
 int OmegaHLagrangeLayout::GetNumComponents() const

@@ -20,47 +20,40 @@
 
 using pcms::CreateUniformGridFromMesh;
 
-TEST_CASE("UniformGridDiscretization SameEntities: identical grids")
+namespace
+{
+/// The layout of order `order` on the grid of a new uniform-grid geometry.
+std::shared_ptr<pcms::UniformGridFieldLayout<2>> MakeUniformGridLayout(
+  const pcms::UniformGrid<2>& grid, int num_components, int order = 1)
+{
+  return std::make_shared<pcms::UniformGridFieldLayout<2>>(
+    std::make_shared<pcms::UniformGridGeometry<2>>(
+      grid, pcms::csys::Cartesian::Deferred()),
+    num_components, order);
+}
+} // namespace
+
+TEST_CASE("A uniform-grid layout is on the geometry it is built from")
 {
   pcms::UniformGrid<2> grid;
   grid.bot_left = {0.0, 0.0};
   grid.edge_length = {1.0, 1.0};
   grid.divisions = {4, 4};
 
-  pcms::UniformGridFieldLayout<2> layout_a(grid, 1,
-                                           pcms::csys::Cartesian::Deferred());
-  pcms::UniformGridFieldLayout<2> layout_b(grid, 1,
-                                           pcms::csys::Cartesian::Deferred());
+  const auto geometry = std::make_shared<pcms::UniformGridGeometry<2>>(
+    grid, pcms::csys::Cartesian::Deferred());
+  const pcms::UniformGridFieldLayout<2> layout_a(geometry, 1);
+  const pcms::UniformGridFieldLayout<2> layout_b(geometry, 1, 0);
+  const auto other = MakeUniformGridLayout(grid, 1);
 
-  auto disc_a = layout_a.GetDiscretization();
-  auto disc_b = layout_b.GetDiscretization();
-
-  REQUIRE(disc_a != nullptr);
-  REQUIRE(disc_b != nullptr);
-  REQUIRE(disc_a->SameEntities(*disc_b));
-}
-
-TEST_CASE("UniformGridDiscretization SameEntities: different grids")
-{
-  pcms::UniformGrid<2> grid_a;
-  grid_a.bot_left = {0.0, 0.0};
-  grid_a.edge_length = {1.0, 1.0};
-  grid_a.divisions = {4, 4};
-
-  pcms::UniformGrid<2> grid_b;
-  grid_b.bot_left = {0.0, 0.0};
-  grid_b.edge_length = {1.0, 1.0};
-  grid_b.divisions = {8, 8};
-
-  pcms::UniformGridFieldLayout<2> layout_a(grid_a, 1,
-                                           pcms::csys::Cartesian::Deferred());
-  pcms::UniformGridFieldLayout<2> layout_b(grid_b, 1,
-                                           pcms::csys::Cartesian::Deferred());
-
-  auto disc_a = layout_a.GetDiscretization();
-  auto disc_b = layout_b.GetDiscretization();
-
-  REQUIRE_FALSE(disc_a->SameEntities(*disc_b));
+  REQUIRE(layout_a.GetGeometry() == geometry);
+  REQUIRE(layout_b.GetGeometry() == geometry);
+  REQUIRE(other->GetGeometry() != geometry);
+  REQUIRE(layout_a.GetCoordinateSystem() == geometry->GetCoordinateSystem());
+  REQUIRE(layout_a.GetNumDofHolder() == 25);
+  REQUIRE(layout_b.GetNumDofHolder() == 16);
+  REQUIRE_THROWS_AS(pcms::UniformGridFieldLayout<2>(nullptr, 1),
+                    pcms::pcms_error);
 }
 
 // Helper to verify ug_field values against f(x,y) = x + 2*y.
@@ -102,8 +95,7 @@ TEST_CASE("UniformGrid field creation")
   grid.edge_length = {10.0, 10.0};
   grid.divisions = {5, 5};
 
-  auto layout = std::make_shared<pcms::UniformGridFieldLayout<2>>(
-    grid, 1, pcms::csys::Cartesian::Deferred());
+  auto layout = MakeUniformGridLayout(grid, 1);
 
   REQUIRE(layout->GetNumComponents() == 1);
   REQUIRE(layout->GetNumDofHolder() == 36); // (5+1)x(5+1) = 36 vertices
@@ -125,8 +117,7 @@ TEST_CASE("UniformGrid order-0 field creation and evaluation")
   grid.edge_length = {10.0, 10.0};
   grid.divisions = {2, 2};
 
-  auto layout = std::make_shared<pcms::UniformGridFieldLayout<2>>(
-    grid, 1, pcms::csys::Cartesian::Deferred(), 0);
+  auto layout = MakeUniformGridLayout(grid, 1, 0);
   auto field_space = pcms::CreateLagrangeSpace(
     pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Deferred()), 0,
     1);
@@ -172,8 +163,7 @@ TEST_CASE("UniformGrid field data operations", "[uniform_grid_field]")
   grid.edge_length = {10.0, 10.0};
   grid.divisions = {4, 4};
 
-  auto layout = std::make_shared<pcms::UniformGridFieldLayout<2>>(
-    grid, 1, pcms::csys::Cartesian::Deferred());
+  auto layout = MakeUniformGridLayout(grid, 1);
   auto field_space = pcms::CreateLagrangeSpace(
     pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Deferred()), 1,
     1);
@@ -201,8 +191,7 @@ TEST_CASE("UniformGrid field evaluation - piecewise constant")
   grid.edge_length = {10.0, 10.0};
   grid.divisions = {2, 2};
 
-  auto layout = std::make_shared<pcms::UniformGridFieldLayout<2>>(
-    grid, 1, pcms::csys::Cartesian::Deferred());
+  auto layout = MakeUniformGridLayout(grid, 1);
   auto field_space = pcms::CreateLagrangeSpace(
     pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Deferred()), 1,
     1);
@@ -257,8 +246,7 @@ TEST_CASE("UniformGrid field copy")
   grid.edge_length = {10.0, 10.0};
   grid.divisions = {2, 2};
 
-  auto layout = std::make_shared<pcms::UniformGridFieldLayout<2>>(
-    grid, 1, pcms::csys::Cartesian::Deferred());
+  auto layout = MakeUniformGridLayout(grid, 1);
 
   // Set vertex values with f(x,y) = x + y at 3x3 vertex positions
   // Vertices at: (0,0), (5,0), (10,0), (0,5), (5,5), (10,5), (0,10), (5,10),
@@ -668,8 +656,7 @@ TEST_CASE("UniformGrid Order-1 multi-component field evaluation")
   // symmetric cell-center samples would hide.
   const int num_components = 4;
 
-  auto layout = std::make_shared<pcms::UniformGridFieldLayout<2>>(
-    grid, num_components, pcms::csys::Cartesian::Deferred());
+  auto layout = MakeUniformGridLayout(grid, num_components);
   auto field_space = pcms::CreateLagrangeSpace(
     pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Deferred()), 1,
     num_components);
@@ -746,8 +733,7 @@ TEST_CASE("UniformGrid Order-0 multi-component field (regression)")
 
   const int num_components = 2;
 
-  auto layout = std::make_shared<pcms::UniformGridFieldLayout<2>>(
-    grid, num_components, pcms::csys::Cartesian::Deferred(), 0); // Order 0
+  auto layout = MakeUniformGridLayout(grid, num_components, 0); // Order 0
   auto field_space = pcms::CreateLagrangeSpace(
     pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Deferred()), 0,
     num_components);

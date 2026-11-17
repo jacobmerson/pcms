@@ -90,11 +90,24 @@ OmegaHGeometry::OmegaHGeometry(Omega_h::Mesh& mesh,
                                std::shared_ptr<const CoordinateSystem> system,
                                OmegaHGeometryOptions options)
   : mesh_(mesh),
-    discretization_(std::make_shared<OmegaHDiscretization>(
-      mesh, std::move(options.global_id_name), std::move(options.owned_mask))),
+    global_id_name_(std::move(options.global_id_name)),
+    owned_mask_(std::move(options.owned_mask)),
     system_(ResolveCoordinateSystem(std::move(system), mesh.dim())),
-    search_(MakeGridSearch(mesh, options.search))
+    search_options_(options.search)
 {
+  if (owned_mask_.size() != 0 && owned_mask_.size() != mesh_.nverts()) {
+    throw pcms_error("OmegaHGeometry: the owned mask must have one entry per "
+                     "mesh vertex");
+  }
+}
+
+const GridPointSearchVariant& OmegaHGeometry::Search() const
+{
+  std::call_once(search_once_, [this] {
+    search_ = std::make_unique<GridPointSearchVariant>(
+      MakeGridSearch(mesh_, search_options_));
+  });
+  return *search_;
 }
 
 std::shared_ptr<Geometry> CreateOmegaHGeometry(
@@ -119,7 +132,7 @@ std::shared_ptr<BoundSource> OmegaHGeometry::BindImpl(
 {
   PCMS_FUNCTION_TIMER;
   return std::make_shared<OmegaHMeshBinding>(shared_from_this(), request,
-                                             search_, mesh_);
+                                             Search(), mesh_);
 }
 
 Kokkos::View<const LO*, DeviceMemorySpace> OmegaHGeometry::FindElementSeeds(
@@ -143,7 +156,7 @@ Kokkos::View<const LO*, DeviceMemorySpace> OmegaHGeometry::FindElementSeeds(
         mesh_, Kokkos::View<const typename std::decay_t<decltype(s)>::Result*,
                             DeviceMemorySpace>(results));
     },
-    search_);
+    Search());
 }
 
 SupportResults OmegaHGeometry::Neighbourhood(

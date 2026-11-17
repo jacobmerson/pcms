@@ -1,7 +1,6 @@
 #ifndef PCMS_FIELD_EVALUATOR_UNIFORM_GRID_GEOMETRY_HPP
 #define PCMS_FIELD_EVALUATOR_UNIFORM_GRID_GEOMETRY_HPP
 
-#include "pcms/discretization/discretization/uniform_grid.hpp"
 #include "pcms/field/coordinate_system.hpp"
 #include "pcms/field/out_of_bounds_policy.h"
 #include "pcms/geometry/geometry.hpp"
@@ -105,16 +104,8 @@ public:
   /// shared_from_this().
   UniformGridGeometry(UniformGrid<Dim> grid,
                       std::shared_ptr<const CoordinateSystem> system)
-    : grid_(grid),
-      discretization_(std::make_shared<UniformGridDiscretization<Dim>>(grid)),
-      system_(ResolveCoordinateSystem(std::move(system), Dim))
+    : grid_(grid), system_(ResolveCoordinateSystem(std::move(system), Dim))
   {
-  }
-
-  [[nodiscard]] std::shared_ptr<const Discretization> GetDiscretization()
-    const noexcept override
-  {
-    return discretization_;
   }
 
   [[nodiscard]] const std::shared_ptr<const CoordinateSystem>&
@@ -144,7 +135,6 @@ protected:
 
 private:
   UniformGrid<Dim> grid_;
-  std::shared_ptr<const Discretization> discretization_;
   std::shared_ptr<const CoordinateSystem> system_;
 };
 

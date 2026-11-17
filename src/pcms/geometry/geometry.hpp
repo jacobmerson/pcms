@@ -1,7 +1,6 @@
 #ifndef PCMS_GEOMETRY_GEOMETRY_HPP
 #define PCMS_GEOMETRY_GEOMETRY_HPP
 
-#include "pcms/discretization/discretization.h"
 #include "pcms/field/coordinate_system.hpp"
 #include "pcms/field/coordinate_view.hpp"
 #include "pcms/field/out_of_bounds_policy.h"
@@ -51,13 +50,15 @@ struct DifferentialView
   [[nodiscard]] bool Empty() const noexcept { return jacobian.extent(0) == 0; }
 };
 
-/// @brief The coordinate function of a discretization and its inverse.
+/// @brief The coordinate function of a set of entities (a mesh, a grid, a
+///        point cloud) and its inverse.
 ///
-/// A Geometry owns one Discretization (the topology spaces are defined on),
-/// a native coordinate system, the search that locates physical points in
-/// the discretization, and, when the kind has one, the Jacobian of the map
-/// from parametric to physical coordinates. Function spaces are created on a
-/// geometry; Bind produces bound sources every space on the geometry accepts.
+/// A Geometry has a native coordinate system, the search that locates
+/// physical points among its entities and, when the kind has one, the
+/// Jacobian of the map from parametric to physical coordinates. Function
+/// spaces are created on a geometry, and their layouts carry it
+/// (FieldLayout::GetGeometry); Bind produces bound sources every space on the
+/// geometry accepts.
 ///
 /// Lifetime: bound sources and the spaces created on a geometry hold it by
 /// std::shared_ptr, so it outlives them; what the geometry refers to (e.g. a
@@ -65,19 +66,14 @@ struct DifferentialView
 /// stays valid after later binds on the same geometry; evaluators hold their
 /// bound source. Bind uses shared_from_this(), so a geometry must be owned by
 /// a std::shared_ptr (create it with the kind's Create or std::make_shared).
-/// Compatibility of spaces is decided by the discretization (SameEntities):
-/// the Lagrange spaces created on a mesh geometry share its
-/// Discretization object, so the test is pointer equality for them.
+/// Spaces and layouts are on the same entities when they are on the same
+/// Geometry object: OwnerHints name entities by the geometry's identity.
 class Geometry : public std::enable_shared_from_this<Geometry>
 {
 public:
   virtual ~Geometry() noexcept = default;
   Geometry(const Geometry&) = delete;
   Geometry& operator=(const Geometry&) = delete;
-
-  /// @return the topology spaces on this geometry are defined on
-  [[nodiscard]] virtual std::shared_ptr<const Discretization>
-  GetDiscretization() const noexcept = 0;
 
   /// @return the native coordinate system: Bind takes points in it
   [[nodiscard]] virtual const std::shared_ptr<const CoordinateSystem>&

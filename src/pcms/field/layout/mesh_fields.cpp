@@ -200,11 +200,21 @@ struct CopyClassInfoFunctor
   }
 };
 
+namespace
+{
+Omega_h::Mesh& MeshOf(const std::shared_ptr<const OmegaHGeometry>& geometry)
+{
+  if (geometry == nullptr) {
+    throw pcms_error("MeshFieldsAdapterLayout: the geometry must not be null");
+  }
+  return geometry->GetMesh();
+}
+} // namespace
+
 MeshFieldsAdapterLayout::MeshFieldsAdapterLayout(
-  Omega_h::Mesh& mesh, std::array<int, 4> nodes_per_dim, int num_components,
-  std::shared_ptr<const CoordinateSystem> coordinate_system,
-  std::shared_ptr<const OmegaHDiscretization> discretization)
-  : mesh_(mesh),
+  std::shared_ptr<const OmegaHGeometry> geometry,
+  std::array<int, 4> nodes_per_dim, int num_components)
+  : mesh_(MeshOf(geometry)),
     num_components_(num_components),
     nodes_per_dim_(nodes_per_dim),
     dof_holder_coords_("", GetNumDofHolderWithGhosts(), mesh_.dim()),
@@ -214,20 +224,16 @@ MeshFieldsAdapterLayout::MeshFieldsAdapterLayout(
     owned_host_("", class_dims_.size())
 {
   PCMS_FUNCTION_TIMER;
-  SetCoordinateSystem(
-    ResolveCoordinateSystem(std::move(coordinate_system), mesh_.dim()));
+  SetCoordinateSystem(geometry->GetCoordinateSystem());
   LO total_ents = GetNumEnts();
 
-  const auto checked = detail::CheckDiscretizationOf(
-    mesh_, std::move(discretization), "MeshFieldsAdapterLayout");
-  discretization_ = checked;
-  const std::string& global_id_name = checked->GetGlobalIdName();
+  const std::string& global_id_name = geometry->GetGlobalIdName();
 
   auto tag = mesh_.get_tagbase(0, global_id_name);
   if (Omega_h::is<GO>(tag)) {
-    gids_ = GetGidsHelper<GO>(total_ents, nodes_per_dim, mesh, global_id_name);
+    gids_ = GetGidsHelper<GO>(total_ents, nodes_per_dim, mesh_, global_id_name);
   } else if (Omega_h::is<LO>(tag)) {
-    gids_ = GetGidsHelper<LO>(total_ents, nodes_per_dim, mesh, global_id_name);
+    gids_ = GetGidsHelper<LO>(total_ents, nodes_per_dim, mesh_, global_id_name);
   } else {
     std::cerr << "Weird tag type for global arrays.\n";
     std::abort();
@@ -247,18 +253,13 @@ MeshFieldsAdapterLayout::MeshFieldsAdapterLayout(
       CopyClassInfoFunctor functor(class_ids_, class_dims_, owned_, ids, dims,
                                    owned, offset);
       Omega_h::parallel_for(mesh_.nents(i), functor);
-      offset += mesh.nents(i);
+      offset += mesh_.nents(i);
     }
   }
   BuildOwnedViews();
 
   BuildOwnedClassification();
-}
-
-std::shared_ptr<const Discretization>
-MeshFieldsAdapterLayout::GetDiscretization() const noexcept
-{
-  return discretization_;
+  SetGeometry(std::move(geometry));
 }
 
 int MeshFieldsAdapterLayout::GetNumComponents() const

@@ -6,14 +6,10 @@
 namespace pcms
 {
 
-OwnerHints DOFHolderOwners(const FieldLayout& layout,
-                           std::shared_ptr<const Geometry> geometry)
+OwnerHints DOFHolderOwners(const FieldLayout& layout)
 {
   const int entity_dim = layout.GetDOFHolderEntityDim();
-  const auto discretization = layout.GetDiscretization();
-  if (geometry == nullptr || entity_dim < 0 || layout.HasGhosts() ||
-      discretization == nullptr || geometry->GetDiscretization() == nullptr ||
-      !geometry->GetDiscretization()->SameEntities(*discretization)) {
+  if (layout.GetGeometry() == nullptr || entity_dim < 0 || layout.HasGhosts()) {
     return {};
   }
   // without ghosts, DOF holder i is the i-th DOF holder of the layout's one
@@ -26,7 +22,7 @@ OwnerHints DOFHolderOwners(const FieldLayout& layout,
     "DOFHolderOwners",
     Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
     KOKKOS_LAMBDA(const LO i) { entities(i) = i - first; });
-  return OwnerHints{std::move(geometry), entity_dim, entities};
+  return OwnerHints{layout.GetGeometry(), entity_dim, entities};
 }
 
 void FieldLayout::BuildGlobalToLocalPermutation(

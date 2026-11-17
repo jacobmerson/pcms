@@ -170,8 +170,8 @@ void bind_create_field_module(py::module& m)
 
   py::class_<Geometry, std::shared_ptr<Geometry>>(
     m, "Geometry",
-    "A discretization's coordinates and point search; function spaces are "
-    "created on it")
+    "The coordinates of a set of entities (a mesh, a grid, a point cloud) and "
+    "the point search; function spaces are created on it")
     .def("get_coordinate_system",
          [](const Geometry& g) { return ToPyHolder(g.GetCoordinateSystem()); })
     .def(
@@ -196,9 +196,8 @@ void bind_create_field_module(py::module& m)
          OutOfBoundsPolicy policy, std::shared_ptr<CoordinateMap> map) {
         auto layout = space.GetLayout();
         return std::const_pointer_cast<BoundSource>(
-          g.Bind(layout->GetDOFHolderCoordinates(),
-                 DOFHolderOwners(*layout, g.shared_from_this()), policy,
-                 std::move(map)));
+          g.Bind(layout->GetDOFHolderCoordinates(), DOFHolderOwners(*layout),
+                 policy, std::move(map)));
       },
       py::arg("space"), py::arg("policy") = OutOfBoundsPolicy{},
       py::arg("map") = py::none(), py::keep_alive<0, 1>(),
@@ -475,8 +474,9 @@ void bind_create_field_module(py::module& m)
           "create_point_cloud_geometry: entity_dim is out of range");
       }
       return CreatePointCloudGeometry(
-        std::make_shared<OmegaHEntityLayout>(mesh, entity_dim, 1,
-                                             CartesianIfNone(system)),
+        std::make_shared<OmegaHEntityLayout>(
+          std::make_shared<OmegaHGeometry>(mesh, CartesianIfNone(system)),
+          entity_dim, 1),
         std::move(neighbourhood));
     },
     py::arg("mesh"), py::arg("entity_dim"), py::arg("system") = py::none(),
