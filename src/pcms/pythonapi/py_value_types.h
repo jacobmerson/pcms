@@ -7,17 +7,20 @@
 // or keeps alive that memory, and are converted to the C++ view at each call.
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
 #include <Kokkos_Core.hpp>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
 #include "numpy_view.h"
 #include "pcms/configuration.h"
 #include "pcms/field/coordinate_system.hpp"
 #include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/field/coordinate_systems/cylindrical.hpp"
 #include "pcms/field/coordinate_view.hpp"
 #include "pcms/field/value_view.hpp"
 #include "pcms/utility/arrays.h"
@@ -29,22 +32,74 @@ namespace pcms
 
 namespace py = pybind11;
 
-// pybind11 holders cannot be shared_ptr<const T>. Python only reaches the
-// const interface of these objects, so they are held as shared_ptr<T> and
-// converted at the boundary.
+// Handle of an object that is immutable once built: Python holds it through
+// the const pointer, so the const interface is the only one the bindings can
+// reach, and the compiler enforces that. pybind11 cannot bind this directly:
+// a bound class and its holder cannot be const, so the class is the handle.
 template <typename T>
-std::shared_ptr<T> ToPyHolder(const std::shared_ptr<const T>& p)
+struct Immutable
 {
-  return std::const_pointer_cast<T>(p);
+  std::shared_ptr<const T> ptr;
+};
+
+// The Python class of a handle of T. Two handles to one object are two Python
+// objects, so they compare equal, and hash alike, when they hold the same
+// object (not when they are the same Python object, `is`).
+template <typename T>
+py::class_<Immutable<T>> ImmutableClass(py::handle scope, const char* name,
+                                        const char* doc = nullptr)
+{
+  py::class_<Immutable<T>> cls(scope, name, doc);
+  cls
+    .def(
+      "__eq__",
+      [](const Immutable<T>& a, const Immutable<T>& b) {
+        return a.ptr.get() == b.ptr.get();
+      },
+      py::is_operator())
+    .def("__hash__", [](const Immutable<T>& self) {
+      return std::hash<const T*>{}(self.ptr.get());
+    });
+  return cls;
+}
+
+// The Python classes of the concrete coordinate systems derive from
+// CoordinateSystem, so Python sees the kind of any system pcms returns
+// (isinstance(cs, pcms.csys.Cartesian)); their handles derive likewise.
+struct CartesianHandle : Immutable<CoordinateSystem>
+{};
+struct CylindricalRThetaZHandle : Immutable<CoordinateSystem>
+{};
+struct CylindricalRZHandle : Immutable<CoordinateSystem>
+{};
+
+// The Python object of a coordinate system, of the class of its kind; None for
+// null.
+inline py::object ToPython(
+  const std::shared_ptr<const CoordinateSystem>& system)
+{
+  if (system == nullptr) {
+    return py::none();
+  }
+  if (dynamic_cast<const csys::Cartesian*>(system.get()) != nullptr) {
+    return py::cast(CartesianHandle{{system}});
+  }
+  if (dynamic_cast<const csys::CylindricalRThetaZ*>(system.get()) != nullptr) {
+    return py::cast(CylindricalRThetaZHandle{{system}});
+  }
+  if (dynamic_cast<const csys::CylindricalRZ*>(system.get()) != nullptr) {
+    return py::cast(CylindricalRZHandle{{system}});
+  }
+  return py::cast(Immutable<CoordinateSystem>{system});
 }
 
 // Coordinate system arguments default to None in Python, meaning Cartesian in
 // the dimension of the data they are used with. C++ resolves that dimension
 // from a deferred Cartesian system, which Python never sees.
 inline std::shared_ptr<const CoordinateSystem> CartesianIfNone(
-  std::shared_ptr<const CoordinateSystem> system)
+  const std::optional<Immutable<CoordinateSystem>>& system)
 {
-  return system ? std::move(system) : csys::Cartesian::Deferred();
+  return system ? system->ptr : csys::Cartesian::Deferred();
 }
 
 // Coordinates tagged with the coordinate system that gives them meaning.
@@ -83,6 +138,19 @@ PyValueView ToPyValueView(const ValueView<Element, MemorySpace, Layout>& view,
                           py::handle owner)
 {
   return PyValueView{view.GetBasis(), ViewToNumpy(view.GetValues(), owner)};
+}
+
+/// @brief Read-only NumPy array over device point indices.
+/// @param indices indices to expose
+/// @param owner Python object that keeps `indices` alive
+/// @return the array (empty if there are no indices)
+inline py::array_t<LO> IndicesToNumpy(
+  Kokkos::View<const LO*, DeviceMemorySpace> indices, py::object owner)
+{
+  if (indices.extent(0) == 0) {
+    return py::array_t<LO>(0);
+  }
+  return ViewToNumpy(MakeRank1View(indices), owner);
 }
 
 // Device copy of the coordinates together with the CoordinateView over it.

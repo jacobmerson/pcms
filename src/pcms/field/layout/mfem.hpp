@@ -16,10 +16,8 @@ class MFEMLayout : public FieldLayout
 {
 public:
   MFEMLayout(mfem::ParMesh& pmesh, mfem::ParFiniteElementSpace& pfes,
-             std::shared_ptr<const CoordinateSystem> coordinate_system);
-
-  std::shared_ptr<const Discretization> GetDiscretization()
-    const noexcept override;
+             std::shared_ptr<const CoordinateSystem> coordinate_system,
+             std::string name = "");
 
   int GetNumComponents() const override;
   LO GetNumDofHolder() const override;
@@ -58,7 +56,6 @@ private:
   Kokkos::View<GO*, HostMemorySpace> gids_host_;
   Kokkos::View<LO*, HostMemorySpace> classification_dims_host_;
   Kokkos::View<LO*, HostMemorySpace> classification_ids_host_;
-  std::shared_ptr<const Discretization> discretization_;
 };
 
 } // namespace pcms

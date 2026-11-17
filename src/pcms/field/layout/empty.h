@@ -1,7 +1,6 @@
 #ifndef PCMS_EMPTY_FIELD_LAYOUT_H
 #define PCMS_EMPTY_FIELD_LAYOUT_H
 
-#include "pcms/discretization/discretization/empty.hpp"
 #include "pcms/field/field_layout.h"
 #include <Kokkos_Core.hpp>
 
@@ -14,11 +13,9 @@ public:
   /// @param system coordinate system of the (absent) DOF holders
   /// @param num_components components per value of fields on this layout;
   ///        fields whose values live outside PCMS still declare their width
+  /// @param name the layout's name (FieldLayout::GetName)
   explicit EmptyFieldLayout(std::shared_ptr<const CoordinateSystem> system,
-                            int num_components = 1);
-
-  std::shared_ptr<const Discretization> GetDiscretization()
-    const noexcept override;
+                            int num_components = 1, std::string name = "");
 
   int GetNumComponents() const override;
   LO GetNumDofHolder() const override;
@@ -44,7 +41,6 @@ private:
   Kokkos::View<LO*, HostMemorySpace> classification_dims_host_;
   Kokkos::View<LO*, HostMemorySpace> classification_ids_host_;
   Kokkos::View<Real**, DeviceMemorySpace> coords_;
-  std::shared_ptr<const Discretization> discretization_;
   int num_components_;
 };
 
