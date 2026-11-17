@@ -525,6 +525,18 @@ public:
     return period;
   }
 
+  [[nodiscard]] std::optional<Box> BoundingBox() const override
+  {
+    const m3dc1_mesh* mesh = source_->DomainMesh();
+    Box box{};
+    if (mesh == nullptr ||
+        !mesh->extent(&box.min[0], &box.max[0], &box.min[1], &box.max[1],
+                      &box.min[2], &box.max[2])) {
+      return std::nullopt;
+    }
+    return box;
+  }
+
   [[nodiscard]] std::optional<Real> EvaluateSeries(Series series,
                                                    Real time) const override
   {

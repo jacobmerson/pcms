@@ -10,9 +10,10 @@ set(FUSIONIO_TEST_NIMROD_DIR "" CACHE PATH "NIMROD case for the NIMROD tests")
 set(FUSIONIO_TEST_SOURCES)
 if(FUSIONIO_TEST_DATA_DIR)
   list(APPEND FUSIONIO_TEST_SOURCES test_fusion_io.cpp test_source.cpp
-       test_m3dc1_native.cpp bench_transfer.cpp)
+       test_m3dc1_native.cpp test_utilities.cpp bench_transfer.cpp)
   set_source_files_properties(
-    test_fusion_io.cpp test_source.cpp test_m3dc1_native.cpp bench_transfer.cpp
+    test_fusion_io.cpp test_source.cpp test_m3dc1_native.cpp
+    test_utilities.cpp bench_transfer.cpp
     PROPERTIES COMPILE_DEFINITIONS
                "FUSIONIO_TEST_DATA_DIR=\"${FUSIONIO_TEST_DATA_DIR}\"")
 else()

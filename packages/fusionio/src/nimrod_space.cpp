@@ -517,6 +517,11 @@ public:
     return 2 * std::numbers::pi;
   }
 
+  [[nodiscard]] std::optional<Box> BoundingBox() const override
+  {
+    return std::nullopt;
+  }
+
   [[nodiscard]] std::optional<Real> EvaluateSeries(Series /*series*/,
                                                    Real /*time*/) const override
   {

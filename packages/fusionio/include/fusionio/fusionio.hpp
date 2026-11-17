@@ -14,6 +14,7 @@
 
 #include <pcms/field/field.h>
 #include <pcms/geometry/geometry.hpp>
+#include <array>
 #include <memory>
 #include <optional>
 #include <string>
@@ -24,6 +25,16 @@ namespace fusionio
 {
 
 using Real = pcms::Real;
+
+/// A point (R, phi, Z).
+using Point = std::array<Real, 3>;
+
+/// The box from `min` to `max` in (R, phi, Z).
+struct Box
+{
+  Point min;
+  Point max;
+};
 
 /// File formats read through Fusion-IO 1.x.
 enum class Format
@@ -138,6 +149,12 @@ public:
 
   /// Toroidal period in radians (2 pi for a full torus).
   [[nodiscard]] virtual Real ToroidalPeriod() const = 0;
+
+  /// The extent of the source's domain (1.x's get_bounding_box): the (R, Z)
+  /// box of an M3D-C1 mesh's elements, phi from 0 to ToroidalPeriod();
+  /// nullopt where 1.x has none (other formats, stellarator meshes and
+  /// NIMROD).
+  [[nodiscard]] virtual std::optional<Box> BoundingBox() const = 0;
 
   /// Value of a time series at `time`, or nullopt if the source has none.
   [[nodiscard]] virtual std::optional<Real> EvaluateSeries(Series series,

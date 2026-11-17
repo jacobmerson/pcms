@@ -691,6 +691,11 @@ public:
     return wrapped_->ToroidalPeriod();
   }
 
+  [[nodiscard]] std::optional<Box> BoundingBox() const override
+  {
+    return wrapped_->BoundingBox();
+  }
+
   [[nodiscard]] std::optional<Real> EvaluateSeries(Series series,
                                                    Real time) const override
   {
