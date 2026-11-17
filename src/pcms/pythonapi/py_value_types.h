@@ -31,7 +31,10 @@ namespace py = pybind11;
 
 // pybind11 holders cannot be shared_ptr<const T>. Python only reaches the
 // const interface of these objects, so they are held as shared_ptr<T> and
-// converted at the boundary.
+// converted at the boundary. Casting const away is sound because the bindings
+// expose only const members of these types, and the objects are created
+// non-const; a non-const member must never be bound through a holder obtained
+// this way.
 template <typename T>
 std::shared_ptr<T> ToPyHolder(const std::shared_ptr<const T>& p)
 {

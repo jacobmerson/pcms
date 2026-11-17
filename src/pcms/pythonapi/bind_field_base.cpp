@@ -230,8 +230,8 @@ void bind_create_field_module(py::module& m)
                   host.data());
         options.owned_mask = Omega_h::Read<Omega_h::I8>(host.write());
       }
-      return CreateOmegaHGeometry(mesh, CartesianIfNone(system),
-                                  std::move(options));
+      return ToPyHolder<Geometry>(CreateOmegaHGeometry(
+        mesh, CartesianIfNone(system), std::move(options)));
     },
     py::arg("mesh"), py::arg("system") = py::none(), py::arg("divisions") = 0,
     py::arg("global_id_name") = "global", py::arg("owned_mask") = py::none(),
@@ -245,7 +245,8 @@ void bind_create_field_module(py::module& m)
   m.def(
     "create_uniform_grid_geometry",
     [](const UniformGrid<2>& grid, const SystemHolder& system) {
-      return CreateUniformGridGeometry(grid, CartesianIfNone(system));
+      return ToPyHolder<Geometry>(
+        CreateUniformGridGeometry(grid, CartesianIfNone(system)));
     },
     py::arg("grid"), py::arg("system") = py::none(),
     "Create the geometry of a 2D uniform grid; the coordinate system defaults "
@@ -254,7 +255,8 @@ void bind_create_field_module(py::module& m)
   m.def(
     "create_uniform_grid_geometry",
     [](const UniformGrid<3>& grid, const SystemHolder& system) {
-      return CreateUniformGridGeometry(grid, CartesianIfNone(system));
+      return ToPyHolder<Geometry>(
+        CreateUniformGridGeometry(grid, CartesianIfNone(system)));
     },
     py::arg("grid"), py::arg("system") = py::none(),
     "Create the geometry of a 3D uniform grid; the coordinate system defaults "
@@ -445,10 +447,10 @@ void bind_create_field_module(py::module& m)
     "create_point_cloud_geometry",
     [](const PyCoordinateView& coords, NeighbourhoodOptions neighbourhood) {
       auto values = NumpyInput<Real>::ensure(coords.values);
-      return CreatePointCloudGeometry(
+      return ToPyHolder<Geometry>(CreatePointCloudGeometry(
         CoordinateView<HostMemorySpace>(coords.system,
                                         NumpyToHostView<2, Real>(values)),
-        std::move(neighbourhood));
+        std::move(neighbourhood)));
     },
     py::arg("coords"), py::arg("neighbourhood") = NeighbourhoodOptions{},
     "Create a point-cloud geometry whose sites are the points of a "
@@ -457,8 +459,8 @@ void bind_create_field_module(py::module& m)
   m.def(
     "create_point_cloud_geometry",
     [](std::shared_ptr<FieldLayout> sites, NeighbourhoodOptions neighbourhood) {
-      return CreatePointCloudGeometry(std::move(sites),
-                                      std::move(neighbourhood));
+      return ToPyHolder<Geometry>(
+        CreatePointCloudGeometry(std::move(sites), std::move(neighbourhood)));
     },
     py::arg("sites").none(false),
     py::arg("neighbourhood") = NeighbourhoodOptions{}, py::keep_alive<0, 1>(),
@@ -480,9 +482,9 @@ void bind_create_field_module(py::module& m)
           "create_point_cloud_geometry: entity_dim must be 0 (vertices) or "
           "the mesh dimension (element centroids)");
       }
-      return CreatePointCloudGeometry(
+      return ToPyHolder<Geometry>(CreatePointCloudGeometry(
         std::make_shared<OmegaHEntityLayout>(omega_h, entity_dim, 1),
-        std::move(neighbourhood));
+        std::move(neighbourhood)));
     },
     py::arg("geometry").none(false), py::arg("entity_dim"),
     py::arg("neighbourhood") = NeighbourhoodOptions{}, py::keep_alive<0, 1>(),

@@ -55,8 +55,8 @@ PcmsInterpolatorHandle pcms_create_interpolator(PcmsOmegaHMeshHandle oh_mesh,
   auto& mesh = *reinterpret_cast<Omega_h::Mesh*>(oh_mesh.mesh_handle);
   OMEGA_H_CHECK_PRINTF(
     mesh.dim() == 2, "Only 2D meshes are supported but found %d\n", mesh.dim());
-  const auto mesh_geometry = std::make_shared<pcms::OmegaHGeometry>(
-    mesh, pcms::csys::Cartesian::Create(2));
+  const auto mesh_geometry =
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Create(2));
   auto space =
     pcms::CreatePolynomialReconstructionSpace(pcms::CreatePointCloudGeometry(
       std::make_shared<pcms::OmegaHEntityLayout>(mesh_geometry, pcms::Face, 1),

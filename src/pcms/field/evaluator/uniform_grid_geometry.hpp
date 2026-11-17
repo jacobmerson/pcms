@@ -141,7 +141,7 @@ private:
 /// The geometry of a 2D uniform grid.
 /// @param grid the grid
 /// @param system the grid's coordinate system, or null for Cartesian
-inline std::shared_ptr<Geometry> CreateUniformGridGeometry(
+inline std::shared_ptr<const UniformGridGeometry<2>> CreateUniformGridGeometry(
   UniformGrid<2> grid, std::shared_ptr<const CoordinateSystem> system)
 {
   return std::make_shared<UniformGridGeometry<2>>(grid, std::move(system));
@@ -150,7 +150,7 @@ inline std::shared_ptr<Geometry> CreateUniformGridGeometry(
 /// The geometry of a 3D uniform grid.
 /// @param grid the grid
 /// @param system the grid's coordinate system, or null for Cartesian
-inline std::shared_ptr<Geometry> CreateUniformGridGeometry(
+inline std::shared_ptr<const UniformGridGeometry<3>> CreateUniformGridGeometry(
   UniformGrid<3> grid, std::shared_ptr<const CoordinateSystem> system)
 {
   return std::make_shared<UniformGridGeometry<3>>(grid, std::move(system));

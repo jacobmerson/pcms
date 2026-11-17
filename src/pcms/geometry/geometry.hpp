@@ -67,7 +67,9 @@ struct DifferentialView
 /// bound source. Bind uses shared_from_this(), so a geometry must be owned by
 /// a std::shared_ptr (create it with the kind's Create or std::make_shared).
 /// Spaces and layouts are on the same entities when they are on the same
-/// Geometry object: OwnerHints name entities by the geometry's identity.
+/// Geometry object: OwnerHints name entities by the geometry's identity. A
+/// kind's factory (CreateOmegaHGeometry, ...) returns the most specific type it
+/// knows, as a pointer to const since a geometry is immutable once built.
 class Geometry : public std::enable_shared_from_this<Geometry>
 {
 public:

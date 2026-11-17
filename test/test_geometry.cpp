@@ -43,8 +43,8 @@ using pcms::Real;
 namespace
 {
 
-std::shared_ptr<pcms::Geometry> MakeGeometry(Omega_h::Mesh& mesh,
-                                             pcms::SearchOptions options = {})
+std::shared_ptr<const pcms::Geometry> MakeGeometry(
+  Omega_h::Mesh& mesh, pcms::SearchOptions options = {})
 {
   return pcms::CreateOmegaHGeometry(
     mesh, pcms::csys::Cartesian::Create(2),
@@ -70,7 +70,7 @@ Kokkos::View<LO*> StartElements(Omega_h::Mesh& mesh,
 }
 
 std::shared_ptr<FunctionSpace> MakeSpace(
-  const std::shared_ptr<pcms::Geometry>& geometry, int order,
+  const std::shared_ptr<const pcms::Geometry>& geometry, int order,
   int num_components)
 {
   return CreateLagrangeSpace(
@@ -100,7 +100,7 @@ void CheckJacobianRows(Omega_h::Mesh& mesh,
   }
 }
 
-std::shared_ptr<pcms::Geometry> MakeMeshGeometry(Omega_h::Mesh& mesh)
+std::shared_ptr<const pcms::Geometry> MakeMeshGeometry(Omega_h::Mesh& mesh)
 {
   return pcms::CreateOmegaHGeometry(mesh,
                                     pcms::csys::Cartesian::Create(mesh.dim()));
@@ -241,6 +241,12 @@ TEST_CASE("Spaces on a geometry share it")
   // is on another geometry: owner hints name geometries by identity
   auto other = MakeSpace(MakeGeometry(mesh), 1, 1);
   REQUIRE(other->GetLayout()->GetGeometry() != geometry);
+  // the factory of a kind returns the kind's type, which a layout takes
+  // directly
+  const pcms::OmegaHEntityLayout direct(
+    pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Create(2)),
+    pcms::Vertex, 1);
+  REQUIRE(direct.GetGeometry() != nullptr);
   // a layout needs its geometry
   REQUIRE_THROWS_WITH(pcms::OmegaHLagrangeLayout(nullptr, 1, 1),
                       ContainsSubstring("the geometry must not be null"));
