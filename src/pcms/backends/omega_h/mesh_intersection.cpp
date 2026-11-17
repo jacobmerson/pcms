@@ -1,4 +1,4 @@
-#include "pcms/transfer/mesh_intersection.hpp"
+#include "pcms/backends/omega_h/mesh_intersection.hpp"
 #include "pcms/backends/omega_h/geometry.hpp"
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/mesh_geometry.hpp"
