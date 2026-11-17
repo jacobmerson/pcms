@@ -129,6 +129,23 @@ GriddedSurface GriddedIsosurface(const pcms::Function<Real>& f, Real val,
                                  Real dl_pol, Real tol, Real max_step, int nphi,
                                  int ntheta);
 
+/// fio_find_rho_hybrid: for each ray from `axis` at angle (cos, sin) =
+/// (ct[k], st[k]) in the plane `phi`, moves rho[k] to the distance where the
+/// scalar `f` equals `target`: Newton steps, then a bracket and bisection.
+std::vector<SearchResult> FindRhoHybrid(const pcms::Function<Real>& f,
+                                        Real target, std::span<Real> rho,
+                                        std::span<const Real> ct,
+                                        std::span<const Real> st, Real phi,
+                                        const Point& axis, Real tol);
+
+/// fio_gridded_isosurface_hybrid: in each of `nphi` planes, the axis
+/// (FindMax, dim 2, from the previous plane's) and the distance to the
+/// surface at `val` along `ntheta` rays (FindRhoHybrid) from it.
+GriddedSurface GriddedIsosurfaceHybrid(const pcms::Function<Real>& f, Real val,
+                                       const Point& guess, const Point& axis,
+                                       Real tol, Real max_step, int nphi,
+                                       int ntheta);
+
 } // namespace fusionio
 
 #endif // FUSIONIO_UTILITIES_HPP

@@ -428,3 +428,60 @@ TEST_CASE("fusionio::GriddedIsosurface matches fio_gridded_isosurface")
     }
   }
 }
+
+TEST_CASE("fusionio hybrid searches match 1.x's")
+{
+  Flux flux;
+  const Real val = flux.Psi1x({1.9, 0., 0.});
+  const Real tol = 1e-10 * std::abs(val);
+  const Point axis{1.7537, 0., 0.0172};
+
+  SECTION("FindRhoHybrid: rays together")
+  {
+    std::vector<Real> ct, st, rho;
+    for (int j = 0; j < 8; ++j) {
+      ct.push_back(std::cos(0.8 * j));
+      st.push_back(std::sin(0.8 * j));
+      rho.push_back(0.05 + 0.02 * j);
+    }
+    const auto start = rho;
+    const auto result =
+      fusionio::FindRhoHybrid(flux.psi, val, rho, ct, st, 0.5, axis, tol);
+    for (size_t j = 0; j < rho.size(); ++j) {
+      CAPTURE(j);
+      double rho1x = start[j];
+      const int result1x =
+        fio_find_rho_hybrid(flux.psi1x.get(), val, rho1x, ct[j], st[j], 0.5,
+                            axis.data(), tol, nullptr);
+      REQUIRE(result[j] == Result1x(result1x));
+      REQUIRE_THAT(rho[j], WithinAbs(rho1x, 1e-12));
+    }
+  }
+
+  SECTION("GriddedIsosurfaceHybrid")
+  {
+    constexpr int NPhi = 2, NTheta = 16;
+    const Point guess{1.9, 0., 0.};
+    const auto surface = fusionio::GriddedIsosurfaceHybrid(
+      flux.psi, val, guess, axis, tol, 0.1, NPhi, NTheta);
+    REQUIRE(surface.result == SearchResult::Success);
+    Arrays1x axis1x(std::vector<Point>(NPhi, axis)), path1x(NPhi * NTheta);
+    std::vector<double> phi1x(NPhi), theta1x(NTheta);
+    REQUIRE(fio_gridded_isosurface_hybrid(
+              flux.psi1x.get(), val, guess.data(), axis1x.rows, 0.02, 0.02, tol,
+              0.1, NPhi, NTheta, phi1x.data(), theta1x.data(), path1x.rows,
+              nullptr) == FIO_SUCCESS);
+    // The axes are 1.x's search. 1.x starts each angle from the radius just
+    // found at the previous angle, this from the previous plane's: both
+    // stop within the searches' tolerances (|psi - val| < tol or a Newton
+    // step below 1e-8 m).
+    for (int i = 0; i < NPhi; ++i) {
+      CAPTURE(i);
+      RequirePoint(surface.axis[i], axis1x.At(i), 1e-12);
+    }
+    for (int k = 0; k < NPhi * NTheta; ++k) {
+      CAPTURE(k);
+      RequirePoint(surface.path[k], path1x.At(k), 1e-7);
+    }
+  }
+}

@@ -767,4 +767,229 @@ GriddedSurface GriddedIsosurface(const pcms::Function<Real>& f, Real val,
   return surface;
 }
 
+namespace
+{
+
+std::vector<SearchResult> FindRhoHybrid(Probe& probe, Real target,
+                                        std::span<Real> rho,
+                                        std::span<const Real> ct,
+                                        std::span<const Real> st, Real phi,
+                                        const Point& axis, Real tol)
+{
+  constexpr int NewtonIterations = 10;
+  constexpr int HuntIterations = 40;
+  constexpr int BisectionIterations = 40;
+  enum class Phase
+  {
+    Newton,
+    Hunt,
+    Bisection,
+    Done
+  };
+  struct Ray
+  {
+    Phase phase = Phase::Newton;
+    int iteration = 0;
+    Real low = 0, high = 0, v_low = NaN, v_high = NaN;
+  };
+  const size_t num = rho.size();
+  std::vector<SearchResult> result(num, SearchResult::Diverged);
+  std::vector<Ray> rays(num);
+  const auto at = [&](size_t k, Real r) {
+    return Point{axis[0] + r * ct[k], phi, axis[2] + r * st[k]};
+  };
+  const auto bisect = [&](size_t k) {
+    rays[k] = {Phase::Hunt, 0, rho[k] * 0.5, rho[k] * 1.2, NaN, NaN};
+  };
+  for (size_t k = 0; k < num; ++k) {
+    if (rho[k] < 1e-4) {
+      rho[k] = 0.01; // no zero or negative start
+    }
+  }
+  std::vector<Point> points;
+  // per ray, the index of its first point in `points`, or -1
+  std::vector<long> first(num);
+  for (;;) {
+    points.clear();
+    for (size_t k = 0; k < num; ++k) {
+      Ray& ray = rays[k];
+      first[k] =
+        ray.phase == Phase::Done ? -1 : static_cast<long>(points.size());
+      if (ray.phase == Phase::Newton) {
+        points.push_back(at(k, rho[k]));
+      } else if (ray.phase == Phase::Hunt) {
+        points.push_back(at(k, ray.low));
+        points.push_back(at(k, ray.high));
+      } else if (ray.phase == Phase::Bisection) {
+        points.push_back(at(k, 0.5 * (ray.low + ray.high)));
+      }
+    }
+    if (points.empty()) {
+      return result;
+    }
+    probe.At(points);
+    for (size_t k = 0; k < num; ++k) {
+      Ray& ray = rays[k];
+      const auto p = static_cast<size_t>(first[k]);
+      const auto finish = [&](SearchResult r) {
+        result[k] = r;
+        ray.phase = Phase::Done;
+      };
+      switch (ray.phase) {
+        case Phase::Newton: {
+          ++ray.iteration;
+          if (!probe.Found(p)) {
+            rho[k] *= 0.5; // retreat out of bounds
+            if (rho[k] < 1e-5) {
+              finish(SearchResult::OutOfBounds);
+            } else if (ray.iteration == NewtonIterations) {
+              bisect(k);
+            }
+            break;
+          }
+          const Real error = probe.Value(p) - target;
+          if (std::abs(error) < tol) {
+            finish(SearchResult::Success);
+            break;
+          }
+          const Point& grad = probe.Gradient(p);
+          const Real df_dr = grad[0] * ct[k] + grad[2] * st[k];
+          if (std::abs(df_dr) < 1e-12) {
+            bisect(k);
+            break;
+          }
+          const Real max_step = 0.2 * rho[k];
+          const Real step = std::clamp(error / df_dr, -max_step, max_step);
+          rho[k] -= step;
+          if (std::abs(step) < 1e-8) {
+            finish(SearchResult::Success);
+          } else if (rho[k] < 1e-5) {
+            rho[k] = 1e-4;
+            bisect(k);
+          } else if (ray.iteration == NewtonIterations) {
+            bisect(k);
+          }
+          break;
+        }
+        case Phase::Hunt: {
+          // widen the bracket until target lies between its ends
+          ++ray.iteration;
+          ray.v_low = probe.Value(p);
+          if (!probe.Found(p + 1)) {
+            ray.high *= 0.95;
+          } else {
+            ray.v_high = probe.Value(p + 1);
+            if ((ray.v_low - target) * (ray.v_high - target) <= 0.) {
+              ray.phase = Phase::Bisection;
+              ray.iteration = 0;
+              break;
+            }
+            if (ray.v_high > target) {
+              ray.high *= 1.05;
+            } else {
+              ray.low *= 0.9;
+            }
+          }
+          if (ray.iteration == HuntIterations) {
+            finish(SearchResult::Diverged);
+          }
+          break;
+        }
+        case Phase::Bisection: {
+          ++ray.iteration;
+          const Real mid = 0.5 * (ray.low + ray.high);
+          if (!probe.Found(p)) {
+            ray.high = mid;
+          } else if (ray.high - ray.low < 1e-8) {
+            rho[k] = mid;
+            finish(SearchResult::Success);
+            break;
+          } else if ((probe.Value(p) - target) * (ray.v_low - target) > 0.) {
+            ray.low = mid;
+            ray.v_low = probe.Value(p);
+          } else {
+            ray.high = mid;
+            ray.v_high = probe.Value(p);
+          }
+          if (ray.iteration == BisectionIterations) {
+            // best effort
+            rho[k] = 0.5 * (ray.low + ray.high);
+            finish(ray.high - ray.low > 1e-4 ? SearchResult::Diverged
+                                             : SearchResult::Success);
+          }
+          break;
+        }
+        case Phase::Done: break;
+      }
+    }
+  }
+}
+
+} // namespace
+
+std::vector<SearchResult> FindRhoHybrid(const pcms::Function<Real>& f,
+                                        Real target, std::span<Real> rho,
+                                        std::span<const Real> ct,
+                                        std::span<const Real> st, Real phi,
+                                        const Point& axis, Real tol)
+{
+  RequireScalar(f, "FindRhoHybrid");
+  Probe probe(f, true);
+  return FindRhoHybrid(probe, target, rho, ct, st, phi, axis, tol);
+}
+
+GriddedSurface GriddedIsosurfaceHybrid(const pcms::Function<Real>& f, Real val,
+                                       const Point& guess, const Point& axis,
+                                       Real tol, Real max_step, int nphi,
+                                       int ntheta)
+{
+  RequireScalar(f, "GriddedIsosurfaceHybrid");
+  Probe probe(f, true);
+  const auto planes = static_cast<size_t>(nphi);
+  const auto angles = static_cast<size_t>(ntheta);
+  GriddedSurface surface{SearchResult::Success, std::vector<Real>(planes),
+                         std::vector<Real>(angles), std::vector<Point>(planes),
+                         std::vector<Point>(planes * angles)};
+  std::vector<Real> ct(angles), st(angles);
+  for (size_t j = 0; j < angles; ++j) {
+    surface.theta[j] = TwoPi * j / ntheta;
+    ct[j] = std::cos(surface.theta[j]);
+    st[j] = std::sin(surface.theta[j]);
+  }
+  Point a = axis;
+  Real rho0 = std::hypot(guess[0] - a[0], guess[2] - a[2]);
+  if (rho0 < 1e-4) {
+    rho0 = 0.05;
+  }
+  std::vector<Real> rho_grid(angles, rho0), rho(angles);
+  for (size_t i = 0; i < planes; ++i) {
+    surface.phi[i] = TwoPi * i / nphi;
+    // the axis, from the previous plane's (kept where the search fails)
+    std::array<Point, 1> axis_point{Point{a[0], surface.phi[i], a[2]}};
+    std::array<Real, 1> max_val{NaN};
+    if (FindMax(probe, max_val, axis_point, tol, max_step, 2,
+                {0., 1., 0.})[0] == SearchResult::Success) {
+      a = axis_point[0];
+    }
+    a[1] = surface.phi[i];
+    surface.axis[i] = a;
+    // every angle at once, each starting from the radii the previous plane
+    // found at it and the angle before it
+    for (size_t j = 0; j < angles; ++j) {
+      rho[j] = j > 0 ? 0.5 * (rho_grid[j] + rho_grid[j - 1]) : rho_grid[j];
+    }
+    const auto found =
+      FindRhoHybrid(probe, val, rho, ct, st, surface.phi[i], a, tol);
+    for (size_t j = 0; j < angles; ++j) {
+      if (found[j] != SearchResult::Success && j > 0) {
+        rho[j] = rho_grid[j - 1]; // a neighbour's radius against spikes
+      }
+      rho_grid[j] = rho[j];
+      surface.path[i * angles + j] = {a[0] + rho[j] * ct[j], surface.phi[i],
+                                      a[2] + rho[j] * st[j]};
+    }
+  }
+  return surface;
+}
+
 } // namespace fusionio
