@@ -6,7 +6,7 @@
 #include "pcms/field/function_space.hpp"
 #include "pcms/backends/omega_h/lagrange_layout.hpp"
 #include "pcms/geometry/geometry.hpp"
-#include "pcms/transfer/mesh_intersection.hpp"
+#include "pcms/backends/omega_h/mesh_intersection.hpp"
 #include "pcms/utility/assert.hpp"
 #include <MeshField_Integrate.hpp>
 #include <MeshField_Shape.hpp>
