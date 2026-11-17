@@ -34,8 +34,8 @@ void BarycentricInElements(
   Kokkos::View<Real**, DeviceMemorySpace>& bary)
 {
   const auto n = static_cast<LO>(rows.extent(0));
-  ReserveRows(elem_ids, "omega_h_elem_ids", n);
-  ReserveRows(bary, "omega_h_bary", n, Dim + 1);
+  pcms::detail::ReserveRows(elem_ids, "omega_h_elem_ids", n);
+  pcms::detail::ReserveRows(bary, "omega_h_bary", n, Dim + 1);
   const auto elem_verts = mesh.ask_elem_verts();
   const auto mesh_coords = mesh.coords();
   ForEach(
@@ -192,8 +192,8 @@ void GatherFoundLifts(Kokkos::View<const LO*, DeviceMemorySpace> rows,
                       Kokkos::View<Real**, DeviceMemorySpace>& bary)
 {
   const auto n = static_cast<LO>(rows.extent(0));
-  ReserveRows(elem_ids, "omega_h_elem_ids", n);
-  ReserveRows(bary, "omega_h_bary", n, Dim + 1);
+  pcms::detail::ReserveRows(elem_ids, "omega_h_elem_ids", n);
+  pcms::detail::ReserveRows(bary, "omega_h_bary", n, Dim + 1);
   const auto elem_out = elem_ids;
   const auto bary_out = bary;
   ForEach(
