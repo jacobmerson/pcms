@@ -39,7 +39,10 @@ existing interfaces do not change.
 
 - Public headers contain **interfaces** and **free-function factories** only.
   All concrete implementation classes are private (stay in `src/`, not
-  installed). In-tree targets and tests may still include private headers.
+  installed), except the geometry kinds (`OmegaHGeometry`,
+  `UniformGridGeometry<Dim>`, `PointCloudGeometry`), which are public types so
+  that their factories can return them. In-tree targets and tests may still
+  include private headers.
 - Function spaces are created **by space type, on a `Geometry`**, which owns
   (layouts hold it, `GetGeometry()`) the coordinate system and the point search. Mesh sources
   produce geometries.
@@ -67,7 +70,10 @@ maps), coupler types, `Timestepper`.
 
 Backend-free types users construct directly: `Interpolator<T>` (also from a
 source, a target and a bound source), `Copy<T>`, `QueryPoints` (and
-`QueryPoints::Bound()`), coordinate systems and maps, `FixedTimestepper`.
+`QueryPoints::Bound()`), coordinate systems and maps, `FixedTimestepper`, and
+the geometry kinds `backend::omega_h::OmegaHGeometry`,
+`backend::uniform_grid::UniformGridGeometry<Dim>` and
+`backend::point_cloud::PointCloudGeometry` (the factories return them).
 
 The types that only code implementing a source, a geometry kind, a layout or
 field data needs are the **implementer API**, and the helpers the public
@@ -77,17 +83,21 @@ templates call are in `pcms::detail`: see "The public surface (0.4 trim)".
 
 ```cpp
 // Geometries (core)
-std::shared_ptr<const Geometry>    CreateUniformGridGeometry(UniformGrid<Dim>, csys);
-std::shared_ptr<const Geometry>    CreatePointCloudGeometry(coords | layout, NeighbourhoodOptions = {});
+namespace pcms::backend::uniform_grid {
+std::shared_ptr<const UniformGridGeometry<Dim>> CreateUniformGridGeometry(UniformGrid<Dim>, csys);
+}
+namespace pcms::backend::point_cloud {
+std::shared_ptr<const PointCloudGeometry>       CreatePointCloudGeometry(coords | layout, NeighbourhoodOptions = {});
+}
 std::shared_ptr<const FieldLayout> CreateEmptyLayout(csys, ncomp);   // for out-of-tree evaluation-only spaces
 
 // Geometries (backend)
 namespace pcms::backend::omega_h {
-std::shared_ptr<const Geometry>
+std::shared_ptr<const OmegaHGeometry>
 CreateGeometry(::Omega_h::Mesh& mesh, csys, OmegaHGeometryOptions = {});  // borrows mesh; options: search, global id tag, owned mask
-std::shared_ptr<const Geometry>
-CreatePointCloudGeometry(std::shared_ptr<const Geometry> omega_h_geometry, int entity_dim, NeighbourhoodOptions = {});
-::Omega_h::Mesh& GetMesh(const Geometry&);
+std::shared_ptr<const point_cloud::PointCloudGeometry>
+CreatePointCloudGeometry(std::shared_ptr<const OmegaHGeometry> geometry, int entity_dim, NeighbourhoodOptions = {});  // sites: vertices or element centroids
+// the mesh: OmegaHGeometry::GetMesh()
 }
 
 // Function spaces, by type (core)
@@ -108,29 +118,25 @@ std::unique_ptr<TransferOperator<Real>> CreateControlVariateProjection(src_space
 ```
 
 The space factories dispatch on the concrete geometry kind (Omega_h, uniform
-grid, point cloud); the kinds are private classes with public constructors for
-in-tree use. A layout holds its geometry (`GetGeometry()`),
+grid, point cloud); the kinds are public classes (factories return them). A layout holds its geometry (`GetGeometry()`),
 so there are no discretization factories (`Discretization` is gone).
 There is one concrete `FunctionSpace`.
 
 Unsupported combinations (e.g. a Lagrange space on a point-cloud geometry)
 throw `pcms_error`.
 
-**Factory return types.** A factory returns the most specific type it knows statically, and
-geometry and space pointers are `const`. In-tree, the kind-named factories return the
-concrete type (`CreateUniformGridGeometry`: `std::shared_ptr<const UniformGridGeometry<Dim>>`,
-`CreatePointCloudGeometry`: `std::shared_ptr<const PointCloudGeometry>`,
-`CreateOmegaHGeometry`: `std::shared_ptr<const OmegaHGeometry>`), and the coordinate systems'
-`Create` (`Cartesian::Create`, ...) a `std::shared_ptr<const Cartesian>` (and so on). The
-kinds are private, so the public factories declared in the installed headers
-(`CreateUniformGridGeometry`, `CreatePointCloudGeometry`, `backend::omega_h::CreateGeometry`)
-return `std::shared_ptr<const Geometry>`, and the space factories
-`std::shared_ptr<const FunctionSpace>`; a layout's name is given at construction
-(`LagrangeOptions::layout_name`, the XGC and MFEM factories' name argument), there is no
-`SetName`. The C API and the Python bindings call the factories (no `make_shared`; Python
-holds immutable objects through `Immutable<T>` handles). The Python
-`backend.omega_h.create_point_cloud_geometry(geometry, entity_dim, neighbourhood)` takes the
-Omega_h geometry whose vertices (entity_dim 0) or element centroids are the sites.
+**Factory return types.** A factory returns the most specific type it knows statically; geometry
+pointers are const. The kind-named factories return the kind: `backend::omega_h::CreateGeometry`
+`std::shared_ptr<const OmegaHGeometry>`, `backend::uniform_grid::CreateUniformGridGeometry`
+`std::shared_ptr<const UniformGridGeometry<Dim>>`, `backend::point_cloud::CreatePointCloudGeometry`
+`std::shared_ptr<const PointCloudGeometry>`, the coordinate systems' `Create` a pointer to their own
+type; each converts to `std::shared_ptr<const Geometry>` / `std::shared_ptr<const CoordinateSystem>`. The space
+factories return `std::shared_ptr<const FunctionSpace>`, a layout's name is given at construction
+(`LagrangeOptions::layout_name`, the XGC and MFEM factories' name argument; there is no `SetName`). The C API and
+the Python bindings call the factories (no `make_shared`; Python holds immutable objects through `Immutable<T>`
+handles, and `backend.omega_h.create_geometry` returns the handle of the Omega_h kind). The Python
+`backend.omega_h.create_point_cloud_geometry(geometry, entity_dim, neighbourhood)` takes the Omega_h geometry
+whose vertices (entity_dim 0) or element centroids are the sites.
 
 ### The public surface (0.4 trim)
 
@@ -158,6 +164,7 @@ Implementer API:
 | `BindRequest`, `BoundSource::RebindKey`, `Geometry::RebindKey` | `geometry/bound_source.hpp`, `geometry/geometry.hpp` | geometry kinds (`BindImpl`, `RebindImpl`) |
 | `DifferentialView` | `geometry/geometry.hpp` | geometry kinds (`Differential`) |
 | `SupportResults` | `geometry/supports.hpp` | geometry kinds (`Neighbourhood`) and MLS |
+| the members of the geometry kinds that users do not call (`FindElementSeeds`, `Differential`, `BindImpl`, `TakesHints`), their bound sources (`OmegaHMeshBinding`, `UniformGridBinding`, `MLSBinding`, `MLSPointEvaluator`), the point searches, the MLS helpers and `PointCloudLayout` | `backends/*/geometry.hpp` and the headers they include | geometry kinds and layouts implemented outside PCMS, and PCMS's own backends |
 | `OwnerHints`, `DOFHolderOwners` | `geometry/bound_source.hpp`, `field/field_layout.hpp` | geometry kinds and layouts naming the entities of a bind |
 | `Apply`, `Gradient`, `Divergence`, `Curl` | `field/gradient_source.hpp` | wrappers of a `PointEvaluatorFactory` |
 | `FieldData<T>`, `DOFAccess<T>`, `SimpleFieldData<T>`, `FieldFactory` | `field/field_data.hpp`, `field/simple_field_data.hpp`, `field/field_factory.hpp` | backends and sources with their own field storage |
@@ -292,11 +299,13 @@ had no guard (or `#pragma once`) are fixed.
   `GetGeometry()`, `DOFHolderOwners(layout)` reads it, and the XGC
   classification lives in the XGC layout; `src/pcms/discretization/` and the
   `pcms::discretization` target do not exist.
-- The geometry kinds are private: the Omega_h kind is in
-  `backends/omega_h/geometry.{hpp,cpp}`, the uniform-grid and point-cloud kinds
-  in `backends/uniform_grid/geometry.hpp` and `backends/point_cloud/geometry.hpp`.
-  Their factories are declared in `geometry/geometry.hpp` and
-  `backends/omega_h/omega_h.hpp`.
+- The geometry kinds are public (stage 7): the Omega_h kind is in
+  `include/pcms/backends/omega_h/geometry.hpp` (with `point_search.hpp`), the
+  uniform-grid and point-cloud kinds in `include/pcms/backends/uniform_grid/geometry.hpp` and
+  `include/pcms/backends/point_cloud/geometry.hpp` (with the headers they include: the point
+  layout, the MLS evaluator, `field/evaluator/mls_interpolation.hpp`, `localization/mls_support_helpers.hpp`
+  and `localization/uniform_grid_search.hpp`). Each factory is defined next to its class; the one for
+  Omega_h is declared in `backends/omega_h/omega_h.hpp`.
 - `transfer/linear_interpolant.hpp` and `transfer/multidimarray.hpp` moved to
   `backends/uniform_grid/` (only the uniform-grid evaluator uses them; field
   must not include transfer headers).
