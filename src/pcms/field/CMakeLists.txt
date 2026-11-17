@@ -21,6 +21,7 @@ set(PCMS_FIELD_HEADERS
         query_points.hpp
         differential_operator.hpp
         gradient_source.hpp
+        linear_combination.hpp
         transformed_point_evaluator.hpp
         data/simple.h
         function_space/polynomial_reconstruction.hpp
