@@ -11,7 +11,6 @@
 #include "pcms/utility/types.hpp"
 #include "pcms/utility/uniform_grid.hpp"
 #include <Kokkos_Core.hpp>
-#include <Omega_h_vector.hpp>
 #include <memory>
 #include <string>
 #include <utility>
