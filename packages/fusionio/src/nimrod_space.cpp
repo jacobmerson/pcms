@@ -512,7 +512,10 @@ public:
 
   [[nodiscard]] std::vector<Real> Times() const override { return {}; }
 
-  [[nodiscard]] Real Period() const override { return 2 * std::numbers::pi; }
+  [[nodiscard]] Real ToroidalPeriod() const override
+  {
+    return 2 * std::numbers::pi;
+  }
 
   [[nodiscard]] std::optional<Real> EvaluateSeries(Series /*series*/,
                                                    Real /*time*/) const override

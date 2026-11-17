@@ -518,7 +518,7 @@ public:
     return times;
   }
 
-  [[nodiscard]] Real Period() const override
+  [[nodiscard]] Real ToroidalPeriod() const override
   {
     Real period = 2 * std::numbers::pi;
     source_->Get().get_real_parameter(FIO_PERIOD, &period);

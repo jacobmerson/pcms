@@ -481,5 +481,6 @@ TEST_CASE("Native M3D-C1 sources refuse what they do not evaluate")
                       ContainsSubstring("needs the species option"));
   // the wrapped source's description
   REQUIRE(native->Times().size() == 2);
-  REQUIRE_THAT(native->Period(), WithinRel(2 * std::numbers::pi, 1e-14));
+  REQUIRE_THAT(native->ToroidalPeriod(),
+               WithinRel(2 * std::numbers::pi, 1e-14));
 }

@@ -641,7 +641,7 @@ int Run(int argc, char* argv[], int rank, int size)
   }
   // fusionio sources are cylindrical, which trace calls toroidal.
   std::cerr << "Geometry: toroidal" << std::endl;
-  const Real period = sources[0].source->Period();
+  const Real period = sources[0].source->ToroidalPeriod();
   std::cerr << "Period: " << period << std::endl;
   const Real R_axis = sources[0].magaxis[0];
   const Real Z_axis = sources[0].magaxis[1];

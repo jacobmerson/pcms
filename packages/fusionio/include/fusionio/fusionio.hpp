@@ -137,7 +137,7 @@ public:
   [[nodiscard]] virtual std::vector<Real> Times() const = 0;
 
   /// Toroidal period in radians (2 pi for a full torus).
-  [[nodiscard]] virtual Real Period() const = 0;
+  [[nodiscard]] virtual Real ToroidalPeriod() const = 0;
 
   /// Value of a time series at `time`, or nullopt if the source has none.
   [[nodiscard]] virtual std::optional<Real> EvaluateSeries(Series series,

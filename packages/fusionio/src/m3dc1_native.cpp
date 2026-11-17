@@ -686,7 +686,10 @@ public:
     return wrapped_->Times();
   }
 
-  [[nodiscard]] Real Period() const override { return wrapped_->Period(); }
+  [[nodiscard]] Real ToroidalPeriod() const override
+  {
+    return wrapped_->ToroidalPeriod();
+  }
 
   [[nodiscard]] std::optional<Real> EvaluateSeries(Series series,
                                                    Real time) const override

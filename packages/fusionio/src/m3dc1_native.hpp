@@ -58,7 +58,7 @@ public:
   }
 
   /// The toroidal period of the file's mesh (m3dc1_mesh::period).
-  [[nodiscard]] pcms::Real Period() const noexcept { return period_; }
+  [[nodiscard]] pcms::Real ToroidalPeriod() const noexcept { return period_; }
 
 private:
   // declared in destruction order: the geometry refers to the mesh, and the

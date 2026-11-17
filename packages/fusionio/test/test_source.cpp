@@ -52,7 +52,8 @@ TEST_CASE("fusionio::Open describes an M3D-C1 source")
   REQUIRE(ComponentsOf(*source, Quantity::MagneticField) == 3);
   REQUIRE(ComponentsOf(*source, Quantity::PoloidalFlux) == 1);
   REQUIRE(source->Times().size() == 2);
-  REQUIRE_THAT(source->Period(), WithinRel(2 * std::numbers::pi, 1e-14));
+  REQUIRE_THAT(source->ToroidalPeriod(),
+               WithinRel(2 * std::numbers::pi, 1e-14));
 
   // The magnetic axis lies inside the domain.
   const auto axis_r =
