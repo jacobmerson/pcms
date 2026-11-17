@@ -26,3 +26,6 @@ batched evaluation per iteration where 1.x evaluates point by point.
 | `f->find_val_on_line(f0, x0, x1, x, h, tol)` | `FindValOnLine(f, f0, x0, x1, x, tol)`: one segment and guess per point |
 | `fio_gridify_loop(m0, path0, axis, m, path, theta, param)` | `GridifyLoop(path0, axis, path, theta, param)`: `param` a `LoopParameter`, m = path.size() |
 | `fio_gridify_surface(m0, path0, axis, nphi, ntheta, path, phi, theta)` | `GridifySurface(path0, axis, nphi, ntheta, path, phi, theta)`: `Diverged` if `path0` does not hold `nphi` loops (1.x prints and succeeds) |
+| `fio_isosurface_2d(f, val, guess, axis, norm, dd, dl, tol, max_step, &n, &path)` | `Isosurface2D(f, val, guess, norm, dd, dl, tol, max_step)`: one `Path` per guess; `axis` (unused by 1.x) dropped; no dump file when a contour does not close |
+| `fio_isosurface(f, val, guess, enclose, dl, tol, max_step, nphi, &n, &path)` | `Isosurface(f, val, guess, enclose, dl, tol, max_step, nphi)`: one `Path` per guess |
+| `fio_geom_isosurface(f, val, guess, axis, tol, max_step, nphi, ntheta, &path)` | `GeomIsosurface(f, val, guess, axis, tol, max_step, nphi, ntheta)`: the planes together, each starting from the guess's distance to the axis (1.x: the previous plane's last) |

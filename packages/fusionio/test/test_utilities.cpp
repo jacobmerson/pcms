@@ -294,3 +294,100 @@ TEST_CASE("fusionio::GridifyLoop and GridifySurface match 1.x")
   }
   REQUIRE(phi == std::vector<Real>(phi1x.begin(), phi1x.end()));
 }
+
+// fio_isosurface as isosurface.cpp defines it (isosurface.h declares a
+// double where the definition takes the number of planes)
+int fio_isosurface(fio_field* f, double val, const double* guess,
+                   const double* enclose, double dl, double tol,
+                   double max_step, int nphi, int* n, double*** path,
+                   fio_hint h);
+
+// 1.x's path arrays (path[c][i], allocated by 1.x) as points, freed
+std::vector<Point> TakePath1x(double** path, int n)
+{
+  std::vector<Point> points(n);
+  for (int i = 0; i < n; ++i) {
+    points[i] = {path[0][i], path[1][i], path[2][i]};
+  }
+  for (int c = 0; c < 3; ++c) {
+    delete[] path[c];
+  }
+  delete[] path;
+  return points;
+}
+
+void RequirePath(const std::vector<Point>& actual,
+                 const std::vector<Point>& expected, Real tol)
+{
+  REQUIRE(actual.size() == expected.size());
+  for (size_t i = 0; i < actual.size(); ++i) {
+    CAPTURE(i);
+    RequirePoint(actual[i], expected[i], tol);
+  }
+}
+
+TEST_CASE("fusionio isosurfaces match 1.x's")
+{
+  Flux flux;
+  const Real val = flux.Psi1x({1.9, 0., 0.});
+  const Real tol = 1e-10 * std::abs(val);
+  const Point axis{1.7537, 0., 0.0172};
+  // The R and Z partials are 1.x's, and the phi one is zero (the field is
+  // axisymmetric), so the steps are 1.x's to the last bit but for the
+  // compiler's contractions.
+  constexpr Real Exact = 1e-12;
+
+  SECTION("Isosurface2D: one contour per guess, together")
+  {
+    const std::vector<Point> guess = {{1.9, 0., 0.}, {1.95, 1., 0.05}};
+    const Point norm{0., 1., 0.};
+    const auto paths = fusionio::Isosurface2D(flux.psi, val, guess, norm,
+                                              std::nullopt, 0.02, tol, 0.1);
+    for (size_t k = 0; k < guess.size(); ++k) {
+      CAPTURE(k);
+      REQUIRE(paths[k].result == SearchResult::Success);
+      RequirePath(paths[k].points, Contour1x(flux, val, guess[k], 0.02, tol),
+                  Exact);
+    }
+  }
+
+  SECTION("Isosurface: loops in two planes")
+  {
+    const std::vector<Point> guess = {{1.9, 0., 0.}};
+    const auto paths =
+      fusionio::Isosurface(flux.psi, val, guess, axis, 0.02, tol, 0.1, 2);
+    int n = 0;
+    double** path = nullptr;
+    REQUIRE(fio_isosurface(flux.psi1x.get(), val, guess[0].data(), axis.data(),
+                           0.02, tol, 0.1, 2, &n, &path,
+                           nullptr) == FIO_SUCCESS);
+    REQUIRE(paths[0].result == SearchResult::Success);
+    RequirePath(paths[0].points, TakePath1x(path, n), Exact);
+  }
+
+  SECTION("GeomIsosurface: a grid of geometric angles")
+  {
+    constexpr int NPhi = 2, NTheta = 16;
+    const Point guess{1.9, 0., 0.};
+    const auto path = fusionio::GeomIsosurface(flux.psi, val, guess, axis, tol,
+                                               0.1, NPhi, NTheta);
+    REQUIRE(path.result == SearchResult::Success);
+    Arrays1x path1x(NPhi * NTheta);
+    double** rows = path1x.rows;
+    REQUIRE(fio_geom_isosurface(flux.psi1x.get(), val, guess.data(),
+                                axis.data(), tol, 0.1, NPhi, NTheta,
+                                &rows) == FIO_SUCCESS);
+    // the first plane searches as 1.x does
+    for (int j = 0; j < NTheta; ++j) {
+      CAPTURE(j);
+      RequirePoint(path.points[j], path1x.At(j), Exact);
+    }
+    // 1.x starts the second plane from the first's last distance, this from
+    // the guess's: other points of the same surface
+    for (int j = NTheta; j < NPhi * NTheta; ++j) {
+      CAPTURE(j);
+      REQUIRE_THAT(flux.Psi1x(path.points[j]), WithinAbs(val, tol));
+      REQUIRE(path.points[j][1] == path1x.At(j)[1]);
+    }
+  }
+}

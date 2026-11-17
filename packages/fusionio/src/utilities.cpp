@@ -493,4 +493,221 @@ SearchResult GridifySurface(std::span<const Point> path0, const Point& axis,
   return iphi == nphi ? SearchResult::Success : SearchResult::Diverged;
 }
 
+namespace
+{
+
+// Moves the points `which` of x by FindVal, writing their results.
+void FindValAt(Probe& probe, Real val, std::vector<Point>& x,
+               const std::vector<size_t>& which, Real tol, Real max_step,
+               int dim, const Point& norm, std::vector<SearchResult>& result)
+{
+  std::vector<Point> at;
+  Gather(x, which, at);
+  const auto found = FindVal(probe, val, at, tol, max_step, dim, norm);
+  for (size_t j = 0; j < which.size(); ++j) {
+    x[which[j]] = at[j];
+    result[which[j]] = found[j];
+  }
+}
+
+} // namespace
+
+std::vector<Path> Isosurface2D(const pcms::Function<Real>& f, Real val,
+                               std::span<const Point> guess, const Point& norm,
+                               const std::optional<Point>& dd, Real dl,
+                               Real tol, Real max_step)
+{
+  constexpr size_t MaxPoints = 10000;
+  RequireScalar(f, "Isosurface2D");
+  Probe probe(f, true);
+  const size_t num = guess.size();
+  std::vector<Path> paths(num, Path{SearchResult::Diverged, {}});
+  std::vector<Point> x(guess.begin(), guess.end());
+  std::vector<SearchResult> found(num);
+  std::vector<size_t> active(num), next;
+  std::iota(active.begin(), active.end(), 0);
+  std::vector<Point> at;
+  while (!active.empty()) {
+    FindValAt(probe, val, x, active, tol, max_step, 2, norm, found);
+    // as 1.x, only leaving the domain ends the path
+    std::erase_if(active, [&](size_t k) {
+      if (found[k] == SearchResult::OutOfBounds) {
+        paths[k].result = SearchResult::OutOfBounds;
+        return true;
+      }
+      paths[k].points.push_back(x[k]);
+      return false;
+    });
+    if (!dd) {
+      probe.At(Gather(x, active, at));
+    }
+    next.clear();
+    for (size_t j = 0; j < active.size(); ++j) {
+      const size_t k = active[j];
+      // the step: along dd, or along norm x grad(f)
+      Point t{};
+      if (dd) {
+        t = *dd;
+      } else {
+        const Point& dv = probe.Gradient(j);
+        t = {norm[1] * dv[2] - norm[2] * dv[1],
+             norm[2] * dv[0] - norm[0] * dv[2],
+             norm[0] * dv[1] - norm[1] * dv[0]};
+      }
+      const Real dt = Norm(t);
+      if (dt == 0. || std::isnan(dt)) {
+        continue; // no gradient: diverged
+      }
+      const auto& p = paths[k].points;
+      const Point d{x[k][0] * std::cos(x[k][1]) - p[0][0] * std::cos(p[0][1]),
+                    x[k][0] * std::sin(x[k][1]) - p[0][0] * std::sin(p[0][1]),
+                    x[k][2] - p[0][2]};
+      if (Dot(d, d) < 4. * dl * dl && p.size() > 3) {
+        paths[k].result = SearchResult::Success;
+        continue;
+      }
+      if (p.size() >= MaxPoints) {
+        continue; // not closed: diverged
+      }
+      for (int c = 0; c < 3; ++c) {
+        x[k][c] += dl * t[c] / dt;
+      }
+      next.push_back(k);
+    }
+    active.swap(next);
+  }
+  return paths;
+}
+
+std::vector<Path> Isosurface(const pcms::Function<Real>& f, Real val,
+                             std::span<const Point> guess, const Point& enclose,
+                             Real dl, Real tol, Real max_step, int nphi)
+{
+  constexpr size_t MaxPoints = 1000000;
+  RequireScalar(f, "Isosurface");
+  Probe probe(f, true);
+  const Point plane{0., 1., 0.};
+  const size_t num = guess.size();
+  std::vector<Path> paths(num, Path{SearchResult::Diverged, {}});
+  std::vector<Point> x(guess.begin(), guess.end());
+  // direction of each guess from `enclose` in (R, Z)
+  std::vector<Real> co(num), sn(num);
+  std::vector<size_t> start(num, 0);
+  std::vector<int> iphi(num, 0);
+  for (size_t k = 0; k < num; ++k) {
+    const Real dx = x[k][0] - enclose[0];
+    const Real dz = x[k][2] - enclose[2];
+    const Real d = std::hypot(dx, dz);
+    co[k] = dx / d;
+    sn[k] = dz / d;
+  }
+  std::vector<SearchResult> found(num);
+  std::vector<size_t> active(num), first, rest, next;
+  std::iota(active.begin(), active.end(), 0);
+  std::vector<Point> at;
+  while (!active.empty()) {
+    // the first point of a loop keeps its direction (1.x searches along
+    // `enclose` as a direction); the others stay in their phi plane
+    first.clear();
+    rest.clear();
+    for (const size_t k : active) {
+      (paths[k].points.size() == start[k] ? first : rest).push_back(k);
+    }
+    FindValAt(probe, val, x, first, tol, max_step, 1, enclose, found);
+    FindValAt(probe, val, x, rest, tol, max_step, 2, plane, found);
+    std::erase_if(active, [&](size_t k) {
+      if (found[k] != SearchResult::Success) {
+        paths[k].result = found[k];
+        return true;
+      }
+      paths[k].points.push_back(x[k]);
+      return false;
+    });
+    probe.At(Gather(x, active, at));
+    next.clear();
+    for (size_t j = 0; j < active.size(); ++j) {
+      const size_t k = active[j];
+      if (!probe.Found(j)) {
+        paths[k].result = SearchResult::OutOfBounds;
+        continue;
+      }
+      const Point& dv = probe.Gradient(j);
+      // t = phi-hat x grad(f)
+      const Real dt = std::hypot(dv[2], dv[0]);
+      if (dt == 0.) {
+        continue; // no gradient: diverged
+      }
+      const Real tr = dv[2] * dl / dt;
+      const Real tz = -dv[0] * dl / dt;
+      auto& p = paths[k].points;
+      const size_t n = p.size();
+      if (n > start[k] + 3 &&
+          std::hypot(x[k][0] - p[start[k]][0], x[k][2] - p[start[k]][2]) < dl) {
+        if (iphi[k] == nphi - 1) {
+          paths[k].result = SearchResult::Success;
+          continue;
+        }
+        // around once poloidally: step toroidally, keeping the poloidal
+        // angle and moving to stay on the surface
+        const Real d =
+          std::hypot(p[start[k]][0] - enclose[0], p[start[k]][2] - enclose[2]);
+        const Real dphi = TwoPi / nphi;
+        const Real dd = -dv[1] * dphi / (dv[0] * co[k] + dv[2] * sn[k]);
+        x[k][0] = enclose[0] + (d + dd) * co[k];
+        x[k][1] = guess[k][1] + TwoPi * (iphi[k] + 1) / nphi;
+        x[k][2] = enclose[2] + (d + dd) * sn[k];
+        WrapPhi(x[k]);
+        // as 1.x: the next loop starts one point after the next point
+        start[k] = n + 1;
+        ++iphi[k];
+      }
+      if (n >= MaxPoints) {
+        continue; // not closed: diverged
+      }
+      x[k][0] += tr;
+      x[k][2] += tz;
+      next.push_back(k);
+    }
+    active.swap(next);
+  }
+  return paths;
+}
+
+Path GeomIsosurface(const pcms::Function<Real>& f, Real val, const Point& guess,
+                    const Point& axis, Real tol, Real max_step, int nphi,
+                    int ntheta)
+{
+  RequireScalar(f, "GeomIsosurface");
+  Probe probe(f, true);
+  const auto planes = static_cast<size_t>(nphi);
+  Path path{SearchResult::Success,
+            std::vector<Point>(planes * static_cast<size_t>(ntheta))};
+  // the planes together; within a plane, each angle starts at the distance
+  // from the axis found at the previous one
+  std::vector<Real> l(planes,
+                      std::hypot(guess[0] - axis[0], guess[2] - axis[2]));
+  std::vector<Point> x(planes);
+  std::vector<SearchResult> found(planes);
+  std::vector<size_t> all(planes);
+  std::iota(all.begin(), all.end(), 0);
+  for (int j = 0; j < ntheta; ++j) {
+    const Real theta = TwoPi * j / ntheta;
+    for (size_t i = 0; i < planes; ++i) {
+      x[i] = {l[i] * std::cos(theta) + axis[0], TwoPi * i / nphi,
+              l[i] * std::sin(theta) + axis[2]};
+    }
+    // as 1.x, along `axis` as a direction
+    FindValAt(probe, val, x, all, tol, max_step, 1, axis, found);
+    for (size_t i = 0; i < planes; ++i) {
+      if (found[i] != SearchResult::Success) {
+        path.result = found[i];
+        return path;
+      }
+      path.points[i * ntheta + j] = x[i];
+      l[i] = std::hypot(x[i][0] - axis[0], x[i][2] - axis[2]);
+    }
+  }
+  return path;
+}
+
 } // namespace fusionio

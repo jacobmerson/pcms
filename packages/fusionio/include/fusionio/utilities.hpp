@@ -77,6 +77,38 @@ SearchResult GridifySurface(std::span<const Point> path0, const Point& axis,
                             int nphi, int ntheta, std::span<Point> path,
                             std::span<Real> phi, std::span<Real> theta);
 
+/// A traced path and how its tracing ended.
+struct Path
+{
+  SearchResult result;
+  std::vector<Point> points;
+};
+
+/// fio_isosurface_2d: for each guess, the closed contour of the scalar `f`
+/// at `val` in the plane through it normal to `norm`, points about `dl`
+/// apart (each found by FindVal, dim 2), stepping along `dd` if given, else
+/// along norm x grad(f). Paths end when they close or leave the domain.
+std::vector<Path> Isosurface2D(const pcms::Function<Real>& f, Real val,
+                               std::span<const Point> guess, const Point& norm,
+                               const std::optional<Point>& dd, Real dl,
+                               Real tol, Real max_step);
+
+/// fio_isosurface: for each guess, the surface of the scalar `f` at `val`
+/// that encloses `enclose`, as poloidal loops (points about `dl` apart) in
+/// `nphi` planes of phi one after another. As in 1.x, the first point of
+/// each loop is searched along `enclose` taken as a direction.
+std::vector<Path> Isosurface(const pcms::Function<Real>& f, Real val,
+                             std::span<const Point> guess, const Point& enclose,
+                             Real dl, Real tol, Real max_step, int nphi);
+
+/// fio_geom_isosurface: the surface of the scalar `f` at `val` on a grid of
+/// `nphi` x `ntheta` geometric angles about `axis` (point i * ntheta + j at
+/// phi_i, theta_j), each point searched (FindVal, dim 1, along `axis` taken
+/// as a direction as in 1.x) from the distance found at the previous angle.
+Path GeomIsosurface(const pcms::Function<Real>& f, Real val, const Point& guess,
+                    const Point& axis, Real tol, Real max_step, int nphi,
+                    int ntheta);
+
 } // namespace fusionio
 
 #endif // FUSIONIO_UTILITIES_HPP
