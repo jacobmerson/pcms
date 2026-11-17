@@ -1,4 +1,4 @@
-#include "pcms/localization/point_search.hpp"
+#include "pcms/backends/omega_h/point_search.hpp"
 #include "pcms/utility/memory_spaces.hpp"
 #include <Omega_h_mesh.hpp>
 #include <bitset>
@@ -90,7 +90,7 @@ KOKKOS_INLINE_FUNCTION BarycentricWithScales<Dim> barycentric_with_scales(
   return result;
 }
 
-namespace pcms::localization
+namespace pcms::backend::omega_h
 {
 
 KOKKOS_INLINE_FUNCTION
@@ -885,4 +885,4 @@ GridPointSearch3D::GridPointSearch3D(Omega_h::Mesh& mesh, LO Nx, LO Ny, LO Nz,
   tris2verts_adj_ = mesh.ask_down(Omega_h::FACE, Omega_h::VERT);
   edges2verts_adj_ = mesh.ask_down(Omega_h::EDGE, Omega_h::VERT);
 }
-} // namespace pcms::localization
+} // namespace pcms::backend::omega_h
