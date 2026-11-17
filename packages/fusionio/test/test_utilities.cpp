@@ -135,3 +135,32 @@ TEST_CASE("fusionio::FindMax matches fio_find_max")
     REQUIRE_THAT(val[k], WithinRel(val1, 1e-12));
   }
 }
+
+TEST_CASE("fusionio::FindVal matches fio_find_val")
+{
+  Flux flux;
+  const Real tol = 1e-10 * std::abs(flux.Psi1x({1.9, 0., 0.}));
+  const Real val = flux.Psi1x({1.9, 0., 0.});
+  // along R (dim 1) from both sides, and down the gradient in a phi plane
+  for (const int dim : {1, 2}) {
+    CAPTURE(dim);
+    const Point norm = dim == 1 ? Point{1., 0., 0.} : Point{0., 1., 0.};
+    std::vector<Point> x = {{1.8, 0., 0.}, {2.0, 0.3, 0.}, {1.85, 2., 0.1}};
+    const auto start = x;
+    const auto result =
+      fusionio::FindVal(flux.psi, val, x, tol, 0.1, dim, norm);
+    for (size_t k = 0; k < x.size(); ++k) {
+      CAPTURE(k);
+      Point x1 = start[k];
+      const int result1 = fio_find_val(flux.psi1x.get(), val, x1.data(), tol,
+                                       0.1, dim, norm.data());
+      REQUIRE(result[k] == Result1x(result1));
+      REQUIRE(result[k] == SearchResult::Success);
+      RequirePoint(x[k], x1, 1e-10);
+    }
+  }
+  // a guess outside the domain
+  std::vector<Point> outside = {{10., 0., 0.}};
+  REQUIRE(fusionio::FindVal(flux.psi, val, outside, tol, 0.1, 1,
+                            {1., 0., 0.})[0] == SearchResult::OutOfBounds);
+}

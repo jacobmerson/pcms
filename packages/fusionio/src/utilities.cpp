@@ -256,4 +256,75 @@ std::vector<SearchResult> FindMax(const pcms::Function<Real>& f,
   return FindMax(probe, val, x, tol, max_step, dim, norm);
 }
 
+namespace
+{
+
+std::vector<SearchResult> FindVal(Probe& probe, Real val, std::span<Point> x,
+                                  Real tol, Real max_step, int dim,
+                                  const Point& norm)
+{
+  const Point n = Unit(norm);
+  const size_t num = x.size();
+  std::vector<SearchResult> result(num, SearchResult::Diverged);
+  std::vector<Point> last_x(num), dx(num);
+  std::vector<size_t> active(num);
+  std::iota(active.begin(), active.end(), 0);
+  std::vector<size_t> next;
+  std::vector<Point> at;
+  for (int i = 0; i < MaxIterations && !active.empty(); ++i) {
+    probe.At(Gather(x, active, at));
+    next.clear();
+    for (size_t j = 0; j < active.size(); ++j) {
+      const size_t k = active[j];
+      if (!probe.Found(j)) {
+        if (i == 0) {
+          result[k] = SearchResult::OutOfBounds;
+          continue;
+        }
+        for (int c = 0; c < 3; ++c) {
+          dx[k][c] /= 2.;
+          x[k][c] = last_x[k][c] + dx[k][c];
+        }
+        next.push_back(k);
+        continue;
+      }
+      const Real error = probe.Value(j) - val;
+      if (std::abs(error) < tol) {
+        result[k] = SearchResult::Success;
+        continue;
+      }
+      const Point& dv = probe.Gradient(j);
+      // along norm, or down the gradient within the plane normal to norm
+      const Point s = dim == 1 ? n
+                               : Unit({dv[0] * (1. - n[0]), dv[1] * (1. - n[1]),
+                                       dv[2] * (1. - n[2])});
+      const Real df = Dot(dv, s);
+      if (std::abs(df) < tol) {
+        continue; // zero gradient: diverged
+      }
+      const Real dl = std::clamp(-error / df, -max_step, max_step);
+      last_x[k] = x[k];
+      for (int c = 0; c < 3; ++c) {
+        dx[k][c] = dl * s[c];
+        x[k][c] += dx[k][c];
+      }
+      WrapPhi(x[k]);
+      next.push_back(k);
+    }
+    active.swap(next);
+  }
+  return result;
+}
+
+} // namespace
+
+std::vector<SearchResult> FindVal(const pcms::Function<Real>& f, Real val,
+                                  std::span<Point> x, Real tol, Real max_step,
+                                  int dim, const Point& norm)
+{
+  RequireScalar(f, "FindVal");
+  Probe probe(f, true);
+  return FindVal(probe, val, x, tol, max_step, dim, norm);
+}
+
 } // namespace fusionio

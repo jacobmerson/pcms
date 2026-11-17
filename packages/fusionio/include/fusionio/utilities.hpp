@@ -39,6 +39,13 @@ std::vector<SearchResult> FindMax(const pcms::Function<Real>& f,
                                   Real tol, Real max_step, int dim,
                                   const Point& norm);
 
+/// fio_find_val: moves each point of `x` to where the scalar `f` equals
+/// `val` (within `tol`): along `norm` (dim 1) or down the gradient within
+/// the plane normal to `norm` (dim 2), by Newton steps of at most `max_step`.
+std::vector<SearchResult> FindVal(const pcms::Function<Real>& f, Real val,
+                                  std::span<Point> x, Real tol, Real max_step,
+                                  int dim, const Point& norm);
+
 } // namespace fusionio
 
 #endif // FUSIONIO_UTILITIES_HPP
