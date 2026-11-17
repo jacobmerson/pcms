@@ -504,7 +504,10 @@ if(Catch2_FOUND)
   endif()
 
   target_link_libraries(unit_tests PUBLIC Catch2::Catch2 pcms::pcms
-          pcms::transfer Kokkos::kokkoskernels Omega_h::omega_h MPI::MPI_CXX)
+          pcms::transfer Kokkos::kokkoskernels MPI::MPI_CXX)
+  if(PCMS_ENABLE_OMEGA_H)
+    target_link_libraries(unit_tests PUBLIC Omega_h::omega_h)
+  endif()
   target_include_directories(unit_tests PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
   if(PCMS_ENABLE_PETSC)
