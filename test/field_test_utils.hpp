@@ -18,9 +18,9 @@
 #include <Omega_h_mesh.hpp>
 #include <Omega_h_shape.hpp>
 #include "pcms/backends/omega_h/geometry.hpp"
-#include "pcms/field/function_spaces.hpp"
 #include "pcms/backends/omega_h/adj_search.hpp"
 #endif
+#include "pcms/field/function_spaces.hpp"
 #if defined(PCMS_ENABLE_PETSC) && defined(PCMS_ENABLE_MESHFIELDS)
 #include "pcms/transfer/linear_form_integrator.hpp"
 #include "pcms/transfer/omega_h_intersection_rhs_integrator.hpp"
@@ -662,6 +662,7 @@ void CheckEvaluationWithFill(const Factory& factory, const Field<Real>& field,
                                           func, fill_value, abs_tol);
 }
 
+#ifdef PCMS_ENABLE_OMEGA_H
 // An Omega_h geometry of `mesh` in the Cartesian coordinate system of its
 // dimension, typed for the layouts built on it.
 inline std::shared_ptr<backend::omega_h::OmegaHGeometry> MakeOmegaHGeometry(
@@ -735,6 +736,7 @@ inline void CheckOwnersMatchSearch(CoordinateView<DeviceMemorySpace> points,
   CheckSameRecords(FoundRecords(*owners.geometry->Bind(points, owners)),
                    FoundRecords(*owners.geometry->Bind(points)));
 }
+#endif // PCMS_ENABLE_OMEGA_H
 
 #if defined(PCMS_ENABLE_PETSC) && defined(PCMS_ENABLE_MESHFIELDS)
 // Evaluates source_field at the integrator's points, searched on the source
