@@ -213,10 +213,10 @@ declarations in `include/pcms/field/` and `include/pcms/transfer/`.
 
 | Class | Count |
 |---|---|
-| public | 47 |
-| backend public | 1 |
+| public | 50 |
+| backend public | 6 |
 | installed-detail | 9 |
-| private | 65 |
+| private | 57 |
 
 | Current installed header | Class | Proposed location | Backend includes (direct / via) | Notes |
 |---|---|---|---|---|
@@ -257,20 +257,20 @@ declarations in `include/pcms/field/` and `include/pcms/transfer/`.
 | `pcms/field/eqdsk_field.h` | public | `include/pcms/field/eqdsk_field.hpp` | – / Omega_h | MakeEQDSKField; struct member becomes shared_ptr<FunctionSpace> |
 | `pcms/field/evaluator/mesh_fields.h` | private | `src/pcms/backends/meshfields/evaluator.hpp` | – / Omega_h/meshfields |  |
 | `pcms/field/evaluator/mesh_fields_backend.h` | private | `src/pcms/backends/omega_h_meshfields/evaluator_backend.hpp` | Omega_h/meshfields / – | needs Omega_h + meshfields: bridge |
-| `pcms/field/evaluator/mls_interpolation.hpp` | private | `src/pcms/field/evaluator/mls_interpolation.hpp` | Omega_h / – | RadialBasisFunction enum moves to mls_options |
+| `pcms/field/evaluator/mls_interpolation.hpp` | public | `include/pcms/field/evaluator/mls_interpolation.hpp` | Omega_h / – | RadialBasisFunction enum moves to mls_options |
 | `pcms/field/evaluator/mls_interpolation_impl.hpp` | private | `src/pcms/field/evaluator/mls_interpolation_impl.hpp` | Omega_h / – |  |
 | `pcms/field/evaluator/mls_options.h` | public | `include/pcms/field/mls_options.hpp` | – / Omega_h | options for polynomial reconstruction (Python binds it); stop including mls_interpolation.hpp |
-| `pcms/field/evaluator/mls_point_cloud.h` | private | `src/pcms/backends/point_cloud/mls_evaluator.hpp` | Omega_h / – |  |
-| `pcms/field/evaluator/omega_h_geometry.hpp` | private | `src/pcms/backends/omega_h/geometry.hpp` | Omega_h / – | the Omega_h geometry kind; factory backend::omega_h::CreateGeometry |
+| `pcms/field/evaluator/mls_point_cloud.h` | backend public | `include/pcms/backends/point_cloud/mls_evaluator.hpp` | Omega_h / – |  |
+| `pcms/field/evaluator/omega_h_geometry.hpp` | backend public | `include/pcms/backends/omega_h/geometry.hpp` | Omega_h / – | the Omega_h geometry kind; factory backend::omega_h::CreateGeometry |
 | `pcms/field/evaluator/omega_h_lagrange.h` | private | `src/pcms/backends/omega_h/lagrange_evaluator.hpp` | Omega_h / – |  |
 | `pcms/field/evaluator/pcms_interpolator_aliases.hpp` | private | `src/pcms/field/evaluator/interpolator_aliases.hpp` | – / Omega_h | stutter dropped (Phase 4) |
 | `pcms/field/evaluator/pcms_interpolator_logger.hpp` | private | `src/pcms/field/evaluator/interpolator_logger.hpp` | – / Omega_h | stutter dropped (Phase 4) |
 | `pcms/field/evaluator/pcms_interpolator_view_utils.hpp` | private | `src/pcms/field/evaluator/interpolator_view_utils.hpp` | Omega_h / – | stutter dropped (Phase 4) |
 | `pcms/field/evaluator/point_cloud.h` | private | `src/pcms/backends/point_cloud/evaluator.hpp` | – / Omega_h |  |
-| `pcms/field/evaluator/point_cloud_geometry.hpp` | private | `src/pcms/backends/point_cloud/geometry.hpp` | Omega_h / – | the point-cloud geometry kind; factory CreatePointCloudGeometry |
+| `pcms/field/evaluator/point_cloud_geometry.hpp` | backend public | `include/pcms/backends/point_cloud/geometry.hpp` | Omega_h / – | the point-cloud geometry kind; factory CreatePointCloudGeometry |
 | `pcms/field/evaluator/spline_interpolator.hpp` | private | `src/pcms/backends/uniform_grid/spline_interpolator.hpp` | – / Omega_h | installed on purpose in an earlier PR ("install spline_interpolator.hpp"); question: any external user? |
 | `pcms/field/evaluator/uniform_grid.h` | private | `src/pcms/backends/uniform_grid/evaluator.hpp` | – / Omega_h |  |
-| `pcms/field/evaluator/uniform_grid_geometry.hpp` | private | `src/pcms/backends/uniform_grid/geometry.hpp` | Omega_h / – | the uniform-grid geometry kind; factory CreateUniformGridGeometry |
+| `pcms/field/evaluator/uniform_grid_geometry.hpp` | backend public | `include/pcms/backends/uniform_grid/geometry.hpp` | Omega_h / – | the uniform-grid geometry kind; factory CreateUniformGridGeometry |
 | `pcms/field/evaluator/uniform_grid_spline.h` | private | `src/pcms/backends/uniform_grid/spline_evaluator.hpp` | – / Omega_h |  |
 | `pcms/field/field.h` | public | `include/pcms/field/field.hpp` | – / Omega_h |  |
 | `pcms/field/field_data.h` | public | `include/pcms/field/field_data.hpp` | – / Omega_h | FieldData / DOFAccess interfaces |
@@ -287,7 +287,7 @@ declarations in `include/pcms/field/` and `include/pcms/transfer/`.
 | `pcms/field/layout/mfem.hpp` | private | `src/pcms/backends/mfem/layout.hpp` | – / Omega_h | OverlapMaskFromAttribute becomes a backend free function |
 | `pcms/field/layout/omega_h_entity.h` | private | `src/pcms/backends/omega_h/entity_layout.hpp` | Omega_h / – |  |
 | `pcms/field/layout/omega_h_lagrange.h` | private | `src/pcms/backends/omega_h/lagrange_layout.hpp` | Omega_h / – |  |
-| `pcms/field/layout/point_cloud.h` | private | `src/pcms/backends/point_cloud/layout.hpp` | – / Omega_h |  |
+| `pcms/field/layout/point_cloud.h` | backend public | `include/pcms/backends/point_cloud/layout.hpp` | – / Omega_h |  |
 | `pcms/field/layout/uniform_grid.h` | private | `src/pcms/backends/uniform_grid/layout.hpp` | – / Omega_h |  |
 | `pcms/field/layout/xgc.h` | private | `src/pcms/backends/xgc/layout.hpp` | – / Omega_h |  |
 | `pcms/field/out_of_bounds_policy.h` | public | `include/pcms/field/out_of_bounds_policy.hpp` | – / – |  |
@@ -301,10 +301,10 @@ declarations in `include/pcms/field/` and `include/pcms/transfer/`.
 | `pcms/geometry/geometry.hpp` | public | `include/pcms/geometry/geometry.hpp` | – / Omega_h | Geometry (Bind, Rebind, Neighbourhood, Differential) and the uniform-grid and point-cloud geometry factories |
 | `pcms/geometry/supports.hpp` | public | `include/pcms/geometry/supports.hpp` | Omega_h / – | SupportResults, the result of Geometry::Neighbourhood; holds Omega_h arrays (the one core public header that includes Omega_h; Kokkos views after Phase 4) |
 | `pcms/localization/adj_search.hpp` | private | `src/pcms/backends/omega_h/adj_search.hpp` | – / Omega_h | Omega_h adapter (Phase 3.6) |
-| `pcms/localization/mls_support_helpers.h` | private | `src/pcms/localization/mls_support_helpers.hpp` | Omega_h / – |  |
+| `pcms/localization/mls_support_helpers.h` | public | `include/pcms/localization/mls_support_helpers.hpp` | Omega_h / – |  |
 | `pcms/localization/point_search.h` | private | `src/pcms/localization/point_search.hpp` | Omega_h / – |  |
 | `pcms/localization/queue_visited.hpp` | private | `src/pcms/backends/omega_h/queue_visited.hpp` | Omega_h / – | Omega_h adapter (Phase 3.6) |
-| `pcms/localization/uniform_grid_search.hpp` | private | `src/pcms/localization/uniform_grid_search.hpp` | Omega_h / – | the cell and the position in it of a point on a uniform grid |
+| `pcms/localization/uniform_grid_search.hpp` | public | `include/pcms/localization/uniform_grid_search.hpp` | Omega_h / – | the cell and the position in it of a point on a uniform grid |
 | `pcms/pcms.h` | public | `include/pcms/pcms.hpp` | – / – | becomes umbrella header (Phase 4) |
 | `pcms/transfer/bilinear_form_integrator.hpp` | private | `src/pcms/transfer/bilinear_form_integrator.hpp` | PETSc / – |  |
 | `pcms/transfer/conservative_projection_solver.hpp` | private | `src/pcms/transfer/conservative_projection_solver.hpp` | Omega_h/PETSc / – |  |
