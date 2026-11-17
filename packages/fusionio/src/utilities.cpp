@@ -327,4 +327,71 @@ std::vector<SearchResult> FindVal(const pcms::Function<Real>& f, Real val,
   return FindVal(probe, val, x, tol, max_step, dim, norm);
 }
 
+std::vector<SearchResult> FindValOnLine(const pcms::Function<Real>& f, Real f0,
+                                        std::span<const Point> x0,
+                                        std::span<const Point> x1,
+                                        std::span<Point> x, Real tol)
+{
+  RequireScalar(f, "FindValOnLine");
+  const size_t num = x.size();
+  std::vector<SearchResult> result(num, SearchResult::Diverged);
+  std::vector<Point> origin(num), vec(num);
+  std::vector<Real> len(num), l(num), last_l(num, 0.);
+  std::vector<bool> checklen(num);
+  for (size_t k = 0; k < num; ++k) {
+    // equal ends: the line through the origin and x1, unbounded
+    checklen[k] = x0[k] != x1[k];
+    origin[k] = checklen[k] ? x0[k] : Point{0., 0., 0.};
+    const Point d{x1[k][0] - origin[k][0], x1[k][1] - origin[k][1],
+                  x1[k][2] - origin[k][2]};
+    len[k] = Norm(d);
+    vec[k] = Unit(d);
+    l[k] = Dot(
+      {x[k][0] - origin[k][0], x[k][1] - origin[k][1], x[k][2] - origin[k][2]},
+      vec[k]);
+  }
+  Probe probe(f, true);
+  std::vector<size_t> active(num);
+  std::iota(active.begin(), active.end(), 0);
+  std::vector<size_t> next;
+  std::vector<Point> at;
+  for (int i = 0; i < MaxIterations && !active.empty(); ++i) {
+    for (const size_t k : active) {
+      l[k] = std::max(l[k], 0.);
+      if (checklen[k]) {
+        l[k] = std::min(l[k], len[k]);
+      }
+      for (int c = 0; c < 3; ++c) {
+        x[k][c] = l[k] * vec[k][c] + origin[k][c];
+      }
+    }
+    probe.At(Gather(x, active, at));
+    next.clear();
+    for (size_t j = 0; j < active.size(); ++j) {
+      const size_t k = active[j];
+      if (!probe.Found(j)) {
+        if (i == 0) {
+          result[k] = SearchResult::OutOfBounds;
+          continue;
+        }
+        l[k] = (l[k] + last_l[k]) / 2.;
+        next.push_back(k);
+        continue;
+      }
+      const Real error = probe.Value(j) - f0;
+      if (std::abs(error) < tol) {
+        result[k] = SearchResult::Success;
+        continue;
+      }
+      // as 1.x: the derivative along the unit vector, over the line's length
+      const Real dfdl = Dot(probe.Gradient(j), vec[k]) / len[k];
+      last_l[k] = l[k];
+      l[k] -= error / dfdl;
+      next.push_back(k);
+    }
+    active.swap(next);
+  }
+  return result;
+}
+
 } // namespace fusionio

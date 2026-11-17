@@ -23,3 +23,4 @@ batched evaluation per iteration where 1.x evaluates point by point.
 | `fio_field::get_bounding_box(min, max)` | `Source::BoundingBox()` |
 | `fio_find_max(f, &val, x, tol, max_step, dim, norm)` | `FindMax(f, val, x, tol, max_step, dim, norm)`: `val` and `x` one entry per point |
 | `fio_find_val(f, val, x, tol, max_step, dim, norm)` | `FindVal(f, val, x, tol, max_step, dim, norm)`: `x` one entry per point |
+| `f->find_val_on_line(f0, x0, x1, x, h, tol)` | `FindValOnLine(f, f0, x0, x1, x, tol)`: one segment and guess per point |

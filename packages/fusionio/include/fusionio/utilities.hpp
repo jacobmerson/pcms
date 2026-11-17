@@ -46,6 +46,14 @@ std::vector<SearchResult> FindVal(const pcms::Function<Real>& f, Real val,
                                   std::span<Point> x, Real tol, Real max_step,
                                   int dim, const Point& norm);
 
+/// fio_field::find_val_on_line: moves each point of `x` (the guess) to where
+/// the scalar `f` equals `f0` (within `tol`) on the segment from x0[k] to
+/// x1[k] (or, if they are equal, on the ray from the origin through x1[k]).
+std::vector<SearchResult> FindValOnLine(const pcms::Function<Real>& f, Real f0,
+                                        std::span<const Point> x0,
+                                        std::span<const Point> x1,
+                                        std::span<Point> x, Real tol = 1e-4);
+
 } // namespace fusionio
 
 #endif // FUSIONIO_UTILITIES_HPP

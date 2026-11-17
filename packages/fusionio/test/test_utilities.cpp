@@ -164,3 +164,24 @@ TEST_CASE("fusionio::FindVal matches fio_find_val")
   REQUIRE(fusionio::FindVal(flux.psi, val, outside, tol, 0.1, 1,
                             {1., 0., 0.})[0] == SearchResult::OutOfBounds);
 }
+
+TEST_CASE("fusionio::FindValOnLine matches find_val_on_line")
+{
+  Flux flux;
+  const Real val = flux.Psi1x({1.9, 0., 0.});
+  const Real tol = 1e-10 * std::abs(val);
+  const std::vector<Point> x0 = {{1.7, 0., 0.}, {1.7, 0., 0.}};
+  const std::vector<Point> x1 = {{2.1, 0., 0.}, {2.0, 0., 0.3}};
+  std::vector<Point> x = {{1.95, 0., 0.}, {1.8, 0., 0.1}};
+  const auto start = x;
+  const auto result = fusionio::FindValOnLine(flux.psi, val, x0, x1, x, tol);
+  for (size_t k = 0; k < x.size(); ++k) {
+    CAPTURE(k);
+    Point x_1x = start[k];
+    const int result1 = flux.psi1x->find_val_on_line(
+      val, x0[k].data(), x1[k].data(), x_1x.data(), nullptr, tol);
+    REQUIRE(result[k] == Result1x(result1));
+    REQUIRE(result[k] == SearchResult::Success);
+    RequirePoint(x[k], x_1x, 1e-10);
+  }
+}
