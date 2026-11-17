@@ -185,3 +185,112 @@ TEST_CASE("fusionio::FindValOnLine matches find_val_on_line")
     RequirePoint(x[k], x_1x, 1e-10);
   }
 }
+
+// 1.x's contour (fio_isosurface_2d) through `guess` at psi = val
+std::vector<Point> Contour1x(Flux& flux, Real val, Point guess, Real dl,
+                             Real tol)
+{
+  const Point norm{0., 1., 0.};
+  int n = 0;
+  double** path = nullptr;
+  const int result =
+    fio_isosurface_2d(flux.psi1x.get(), val, guess.data(), nullptr, norm.data(),
+                      nullptr, dl, tol, 0.1, &n, &path);
+  REQUIRE(result == FIO_SUCCESS);
+  std::vector<Point> points(n);
+  for (int i = 0; i < n; ++i) {
+    points[i] = {path[0][i], path[1][i], path[2][i]};
+  }
+  for (int c = 0; c < 3; ++c) {
+    delete[] path[c];
+  }
+  delete[] path;
+  return points;
+}
+
+// 1.x's path arrays, path[c][i], for a range of points
+struct Arrays1x
+{
+  explicit Arrays1x(size_t n) : values(3, std::vector<double>(n))
+  {
+    for (int c = 0; c < 3; ++c) {
+      rows[c] = values[c].data();
+    }
+  }
+  explicit Arrays1x(const std::vector<Point>& points) : Arrays1x(points.size())
+  {
+    for (size_t i = 0; i < points.size(); ++i) {
+      for (int c = 0; c < 3; ++c) {
+        values[c][i] = points[i][c];
+      }
+    }
+  }
+  [[nodiscard]] Point At(size_t i) const
+  {
+    return {values[0][i], values[1][i], values[2][i]};
+  }
+  std::vector<std::vector<double>> values;
+  double* rows[3] = {};
+};
+
+TEST_CASE("fusionio::GridifyLoop and GridifySurface match 1.x")
+{
+  Flux flux;
+  const Real val = flux.Psi1x({1.9, 0., 0.});
+  const auto contour = Contour1x(flux, val, {1.9, 0., 0.}, 0.01, 1e-10);
+  const Point axis{1.7537, 0., 0.0172};
+  constexpr int M = 64;
+  using fusionio::LoopParameter;
+  // a toroidal circle for the toroidal angle
+  std::vector<Point> circle;
+  for (int i = 0; i < 50; ++i) {
+    circle.push_back({1.9, 2 * std::numbers::pi * i / 50, 0.});
+  }
+  // 1.x's angle parameters fail on closed loops (the loop's closing point
+  // takes the first point's angle, so the angle is not monotonic): both
+  // report it
+  for (const auto& [param, param1x, loop] :
+       {std::tuple{LoopParameter::ArcLength, 0, contour},
+        std::tuple{LoopParameter::PoloidalAngle, 1, contour},
+        std::tuple{LoopParameter::ToroidalAngle, 2, circle}}) {
+    CAPTURE(param1x);
+    std::vector<Point> path(M);
+    std::vector<Real> theta(M);
+    const auto result = fusionio::GridifyLoop(loop, axis, path, theta, param);
+    Arrays1x loop1x(loop), path1x(M);
+    std::vector<double> theta1x(M);
+    const int result1x =
+      fio_gridify_loop(static_cast<int>(loop.size()), loop1x.rows, axis.data(),
+                       M, path1x.rows, theta1x.data(), param1x);
+    REQUIRE(result == Result1x(result1x));
+    if (result != SearchResult::Success) {
+      continue;
+    }
+    // the same arithmetic
+    for (int i = 0; i < M; ++i) {
+      CAPTURE(i);
+      RequirePoint(path[i], path1x.At(i), 1e-14);
+      REQUIRE_THAT(theta[i], WithinAbs(theta1x[i], 1e-14));
+    }
+  }
+  // the contour in two planes of phi, one after the other
+  std::vector<Point> surface0 = contour;
+  for (Point p : contour) {
+    p[1] = 1.;
+    surface0.push_back(p);
+  }
+  std::vector<Point> surface(2 * M);
+  std::vector<Real> phi(2), theta(M);
+  REQUIRE(fusionio::GridifySurface(surface0, axis, 2, M, surface, phi, theta) ==
+          SearchResult::Success);
+  Arrays1x surface0_1x(surface0), surface1x(2 * M);
+  std::vector<double> phi1x(2), theta1x(M);
+  REQUIRE(fio_gridify_surface(
+            static_cast<int>(surface0.size()), surface0_1x.rows, axis.data(), 2,
+            M, surface1x.rows, phi1x.data(), theta1x.data()) == FIO_SUCCESS);
+  for (int i = 0; i < 2 * M; ++i) {
+    CAPTURE(i);
+    RequirePoint(surface[i], surface1x.At(i), 1e-14);
+  }
+  REQUIRE(phi == std::vector<Real>(phi1x.begin(), phi1x.end()));
+}

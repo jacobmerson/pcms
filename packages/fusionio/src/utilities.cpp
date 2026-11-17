@@ -394,4 +394,103 @@ std::vector<SearchResult> FindValOnLine(const pcms::Function<Real>& f, Real f0,
   return result;
 }
 
+SearchResult GridifyLoop(std::span<const Point> path0, const Point& axis,
+                         std::span<Point> path, std::span<Real> theta,
+                         LoopParameter param)
+{
+  const size_t m0 = path0.size();
+  const size_t m = path.size();
+  // the parameter at each point of the loop and back at its start
+  std::vector<Real> l0(m0 + 1);
+  int dir = 0;
+  for (size_t i = 0; i <= m0; ++i) {
+    const size_t ii = i < m0 ? i : 0;
+    if (param == LoopParameter::PoloidalAngle) {
+      l0[i] = std::atan2(path0[ii][2] - axis[2], path0[ii][0] - axis[0]);
+      if (l0[i] < 0.) {
+        l0[i] += TwoPi;
+      }
+    } else if (param == LoopParameter::ToroidalAngle) {
+      l0[i] = path0[ii][1];
+    } else if (i == 0) {
+      l0[i] = 0.;
+    } else {
+      const Point& a = path0[i - 1];
+      const Point& b = path0[ii];
+      const Point d{b[0] * std::cos(b[1]) - a[0] * std::cos(a[1]),
+                    b[0] * std::sin(b[1]) - a[0] * std::sin(a[1]), b[2] - a[2]};
+      l0[i] = l0[i - 1] + Norm(d);
+    }
+    if (i > 0) {
+      const Real d = l0[i] - l0[i - 1];
+      if (i == 1) {
+        dir = d < 0 ? -1 : 1;
+      } else if (d * dir < 0) {
+        return SearchResult::Diverged; // not single-valued in the parameter
+      }
+    }
+  }
+  path[0] = path0[0];
+  theta[0] = 0.;
+  size_t j = 0;
+  for (size_t i = 1; i < m; ++i) {
+    Real l = 0;
+    if (param == LoopParameter::ArcLength) {
+      theta[i] = static_cast<Real>(i) / static_cast<Real>(m);
+      l = theta[i] * l0[m0];
+    } else {
+      theta[i] = static_cast<Real>(i) / static_cast<Real>(m) * TwoPi;
+      l = theta[i];
+    }
+    while (l0[j + 1] < l) {
+      ++j;
+      if (j == m0) {
+        j = m0 - 1;
+        break;
+      }
+    }
+    const Real w = (l - l0[j]) / (l0[j + 1] - l0[j]);
+    const size_t jp = j + 1 < m0 ? j + 1 : 0;
+    for (int c = 0; c < 3; ++c) {
+      path[i][c] = path0[j][c] * (1. - w) + path0[jp][c] * w;
+    }
+  }
+  return SearchResult::Success;
+}
+
+SearchResult GridifySurface(std::span<const Point> path0, const Point& axis,
+                            int nphi, int ntheta, std::span<Point> path,
+                            std::span<Real> phi, std::span<Real> theta)
+{
+  // path0 holds loops of constant phi one after another
+  const size_t m0 = path0.size();
+  size_t istart = 0;
+  int iphi = 0;
+  for (size_t i = 1; i < m0; ++i) {
+    size_t m = 0;
+    if (i == m0 - 1) {
+      m = i - istart + 1;
+    } else if (path0[i][1] != path0[i - 1][1]) {
+      m = i - istart;
+    }
+    if (m == 0) {
+      continue;
+    }
+    if (iphi >= nphi) {
+      return SearchResult::Diverged;
+    }
+    phi[iphi] = path0[i - 1][1];
+    const SearchResult result =
+      GridifyLoop(path0.subspan(istart, m), axis,
+                  path.subspan(static_cast<size_t>(ntheta) * iphi, ntheta),
+                  theta, LoopParameter::ArcLength);
+    if (result != SearchResult::Success) {
+      return result;
+    }
+    istart = i;
+    ++iphi;
+  }
+  return iphi == nphi ? SearchResult::Success : SearchResult::Diverged;
+}
+
 } // namespace fusionio

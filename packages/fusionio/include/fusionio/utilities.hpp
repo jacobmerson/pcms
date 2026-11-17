@@ -54,6 +54,29 @@ std::vector<SearchResult> FindValOnLine(const pcms::Function<Real>& f, Real f0,
                                         std::span<const Point> x1,
                                         std::span<Point> x, Real tol = 1e-4);
 
+/// What fio_gridify_loop spaces the points of a loop evenly in.
+enum class LoopParameter
+{
+  ArcLength,
+  PoloidalAngle, // about the axis
+  ToroidalAngle
+};
+
+/// fio_gridify_loop: interpolates the closed loop `path0` linearly onto
+/// path.size() points evenly spaced in `param`, writing the parameter of
+/// each to `theta` (the fraction of the arc length, or the angle). Diverged
+/// if the loop is not single-valued in the parameter.
+SearchResult GridifyLoop(std::span<const Point> path0, const Point& axis,
+                         std::span<Point> path, std::span<Real> theta,
+                         LoopParameter param = LoopParameter::ArcLength);
+
+/// fio_gridify_surface: GridifyLoop (by arc length) of each loop of constant
+/// phi in `path0` onto `ntheta` points of `path`; `phi` gets the loops'
+/// angles. Diverged if `path0` does not hold `nphi` loops.
+SearchResult GridifySurface(std::span<const Point> path0, const Point& axis,
+                            int nphi, int ntheta, std::span<Point> path,
+                            std::span<Real> phi, std::span<Real> theta);
+
 } // namespace fusionio
 
 #endif // FUSIONIO_UTILITIES_HPP
