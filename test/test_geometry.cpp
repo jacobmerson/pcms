@@ -570,8 +570,8 @@ TEST_CASE("PointCloudGeometry::Neighbourhood takes the search of its sites")
   // a bare point cloud has no geometry to search: the distance search
   pcms::test::CheckSupportResultsEquivalent(
     pcms::CreatePointCloudGeometry(cloud)->Neighbourhood(query, 0, options),
-    pcms::BuildPointCloudSupports(centroids, mesh.coords(), 2, options.radius,
-                                  8, true));
+    pcms::BuildPointCloudSupports(centroids.view(), mesh.coords().view(), 2,
+                                  options.radius, 8, true));
   // sites that are entities of a mesh geometry's mesh, vertices or element
   // centroids: the adjacency search of the mesh from the element of each
   // query point (of the entity dimension the sites are)
