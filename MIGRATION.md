@@ -30,6 +30,11 @@ replacement). The rest of this document explains those changes.
   `PETSC_LINK_STATIC` → `PCMS_PETSC_LINK_STATIC`.
 - **New option** `PCMS_ENABLE_COUPLER` (default `ON`): with `OFF`, PCMS builds
   without redev and ADIOS2 (no coupler, no C/Fortran client API, no Python).
+- **Without Omega_h:** `PCMS_ENABLE_OMEGA_H=OFF` (with
+  `PCMS_ENABLE_SERVER=OFF`, which forces Omega_h on, and the coupler, XGC
+  and MeshFields off) builds the core: uniform-grid and point-cloud
+  geometries and their spaces, QueryPoints, MLS. Mesh geometries, the mesh
+  search and the projections need Omega_h.
 - **Finding PCMS:** the package files are in `<prefix>/lib/cmake/pcms`. The
   package no longer bakes in the paths of its dependencies: make them findable
   as usual (`CMAKE_PREFIX_PATH`, `<Package>_ROOT` or `<Package>_DIR`) for

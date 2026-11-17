@@ -60,6 +60,11 @@ The reorganization does not change numerical behavior. See [MIGRATION.md](MIGRAT
 ### Added
 
 - `PCMS_ENABLE_COUPLER` to build without redev and ADIOS2.
+- A build without Omega_h (`PCMS_ENABLE_OMEGA_H=OFF`, with the server, the
+  coupler, XGC and MeshFields off): the uniform-grid Lagrange and spline
+  spaces and point-cloud MLS (`CreatePointCloudGeometry`,
+  `CreatePolynomialReconstructionSpace`) need only Kokkos, KokkosKernels and
+  MPI.
 - `pcms::ForEach(label, n, functor)` (`pcms/utility/memory_spaces.hpp`): runs
   a kernel, or a plain loop for a small host batch (`IsSmallHostBatch`).
 - `Geometry` (`Bind` with out-of-bounds policy, coordinate map and owner
