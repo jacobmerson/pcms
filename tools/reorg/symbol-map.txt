@@ -75,7 +75,7 @@ cpp-private   pcms::MeshFieldsEvaluatorFactory pcms::backend::omega_h_meshfields
 cpp-private   pcms::MeshFieldsPointEvaluator pcms::backend::omega_h_meshfields::MeshFieldsPointEvaluator
 manual        pcms::PointCloudDiscretization  ->  removed (layouts hold their Geometry: FieldLayout::GetGeometry())
 cpp-private   pcms::PointCloud pcms::backend::point_cloud::PointCloud
-cpp-private   pcms::PointCloudLayout pcms::backend::point_cloud::PointCloudLayout
+cpp   pcms::PointCloudLayout pcms::backend::point_cloud::PointCloudLayout
 cpp-private   pcms::PointCloudEvaluatorFactory pcms::backend::point_cloud::PointCloudEvaluatorFactory
 cpp-private   pcms::MLSPointEvaluator pcms::backend::point_cloud::MLSPointEvaluator
 cpp           pcms::ExchangePlan pcms::coupler::ExchangePlan
@@ -96,15 +96,15 @@ cpp-private   pcms::EmptyFieldLayout pcms::field::EmptyFieldLayout
 cpp-private   pcms::GidToIndexMaps pcms::field::GidToIndexMaps
 cpp-private   pcms::MakeUnmappedPermutation pcms::field::MakeUnmappedPermutation
 cpp-private pcms::mls_interpolation pcms::field::mls_interpolation
-cpp-private   pcms::BuildPointCloudSupports pcms::localization::BuildPointCloudSupports
-cpp-private   pcms::GridPointSearch2D pcms::backend::omega_h::GridPointSearch2D
-cpp-private   pcms::GridPointSearch3D pcms::backend::omega_h::GridPointSearch3D
-cpp-private   pcms::GridPointSearchVariant pcms::backend::omega_h::GridPointSearchVariant
-cpp-private   pcms::PointLocalizationSearch pcms::backend::omega_h::PointLocalizationSearch
-cpp-private   pcms::PointLocalizationSearch2D pcms::backend::omega_h::PointLocalizationSearch2D
-cpp-private   pcms::PointLocalizationSearch3D pcms::backend::omega_h::PointLocalizationSearch3D
-cpp-private   pcms::adapt_radii pcms::localization::adapt_radii
-cpp-private   pcms::minmax pcms::localization::minmax
+cpp   pcms::BuildPointCloudSupports pcms::localization::BuildPointCloudSupports
+cpp   pcms::GridPointSearch2D pcms::backend::omega_h::GridPointSearch2D
+cpp   pcms::GridPointSearch3D pcms::backend::omega_h::GridPointSearch3D
+cpp   pcms::GridPointSearchVariant pcms::backend::omega_h::GridPointSearchVariant
+cpp   pcms::PointLocalizationSearch pcms::backend::omega_h::PointLocalizationSearch
+cpp   pcms::PointLocalizationSearch2D pcms::backend::omega_h::PointLocalizationSearch2D
+cpp   pcms::PointLocalizationSearch3D pcms::backend::omega_h::PointLocalizationSearch3D
+cpp   pcms::adapt_radii pcms::localization::adapt_radii
+cpp   pcms::minmax pcms::localization::minmax
 cpp-private   pcms::triangle_intersects_bbox pcms::localization::triangle_intersects_bbox
 cpp-private   pcms::within_number_of_support_range pcms::localization::within_number_of_support_range
 cpp-private   pcms::BilinearFormIntegrator pcms::transfer::BilinearFormIntegrator
@@ -163,10 +163,10 @@ cpp-private   pcms::XGCFieldData pcms::backend::xgc::XGCFieldData
 cpp-private   pcms::XGCFieldFactory pcms::backend::xgc::XGCFieldFactory
 cpp           pcms::CreateUniformGridFromMesh pcms::backend::omega_h::CreateUniformGridFromMesh
 manual        pcms::LagrangeFunctionSpace::FromMesh  ->  pcms::CreateLagrangeSpace(pcms::backend::omega_h::CreateGeometry(mesh, csys, {.global_id_name = name, .owned_mask = mask}), order, ncomp, {.backend = backend, .layout_name = layout_name})
-manual        pcms::LagrangeFunctionSpace::FromUniformGrid  ->  pcms::CreateLagrangeSpace(pcms::CreateUniformGridGeometry(grid, csys), order, ncomp)
+manual        pcms::LagrangeFunctionSpace::FromUniformGrid  ->  pcms::CreateLagrangeSpace(pcms::backend::uniform_grid::CreateUniformGridGeometry(grid, csys), order, ncomp)
 manual        pcms::LagrangeFunctionSpace::Backend  ->  pcms::LagrangeBackend (in pcms::LagrangeOptions)
-manual        pcms::SplineFunctionSpace::FromUniformGrid  ->  pcms::CreateSplineSpace(pcms::CreateUniformGridGeometry(grid, csys))
-manual        pcms::PolynomialReconstructionFunctionSpace::Create  ->  pcms::CreatePolynomialReconstructionSpace(pcms::CreatePointCloudGeometry(points, neighbourhood), options)
+manual        pcms::SplineFunctionSpace::FromUniformGrid  ->  pcms::CreateSplineSpace(pcms::backend::uniform_grid::CreateUniformGridGeometry(grid, csys))
+manual        pcms::PolynomialReconstructionFunctionSpace::Create  ->  pcms::CreatePolynomialReconstructionSpace(pcms::backend::point_cloud::CreatePointCloudGeometry(points, neighbourhood), options)
 manual        pcms::PolynomialReconstructionFunctionSpace::FromMesh  ->  pcms::CreatePolynomialReconstructionSpace(pcms::backend::omega_h::CreatePointCloudGeometry(mesh, entity_dim, csys, neighbourhood), options)
 manual        pcms::OmegaHConservativeProjection  ->  pcms::CreateConservativeProjection(source_space, target_space, {mass_matrix_type})
 manual        pcms::OmegaHControlVariateProjection  ->  pcms::CreateControlVariateProjection(source, target_space, {samples_per_element, seed, mass_matrix_type, to_source})
