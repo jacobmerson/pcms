@@ -105,7 +105,8 @@ class TestMLSOnMeshEntities:
         mesh = omega_h.build_box(
             world, omega_h.Family.SIMPLEX, 1.0, 1.0, 0.0, 4, 4, 0, False)
         face_dim = 2
-        geometry = pcms.create_point_cloud_geometry(mesh, face_dim)
+        mesh_geometry = pcms.create_omega_h_geometry(mesh)
+        geometry = pcms.create_point_cloud_geometry(mesh_geometry, face_dim)
         opts = pcms.MLSOptions()
         opts.degree = 1
         opts.basis = pcms.RadialBasisFunction.NO_OP
@@ -117,12 +118,12 @@ class TestMLSOnMeshEntities:
         field.set_dof_holder_data(
             (1.0 + 2.0 * centroids[:, 0] - 3.0 * centroids[:, 1]).reshape(-1, 1))
 
-        vertex_space = pcms.create_lagrange_space(
-            pcms.create_omega_h_geometry(mesh), 1, 1)
+        # a space on the same geometry object: binding the cloud at its DOF
+        # holders forwards the hints of that geometry to the mesh search
+        vertex_space = pcms.create_lagrange_space(mesh_geometry, 1, 1)
         vertices = np.array(
             vertex_space.get_layout().get_dof_holder_coordinates().get_values())
-        evaluator = space.create_point_evaluator(
-            geometry.bind(pcms.CoordinateView(vertices)))
+        evaluator = space.create_point_evaluator(geometry.bind(vertex_space))
         results = np.zeros((vertices.shape[0], 1), dtype=np.float64)
         evaluator.evaluate(field, results)
 
@@ -134,4 +135,14 @@ class TestMLSOnMeshEntities:
         mesh = omega_h.build_box(
             world, omega_h.Family.SIMPLEX, 1.0, 1.0, 0.0, 2, 2, 0, False)
         with pytest.raises(ValueError):
-            pcms.create_point_cloud_geometry(mesh, 3)
+            pcms.create_point_cloud_geometry(
+                pcms.create_omega_h_geometry(mesh), 3)
+
+    def test_geometry_must_be_an_omega_h_geometry(self):
+        grid = pcms.UniformGrid2D()
+        grid.bot_left = [0.0, 0.0]
+        grid.edge_length = [1.0, 1.0]
+        grid.divisions = [2, 2]
+        with pytest.raises(ValueError, match="Omega_h geometry"):
+            pcms.create_point_cloud_geometry(
+                pcms.create_uniform_grid_geometry(grid), 0)

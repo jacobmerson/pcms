@@ -125,19 +125,34 @@ public:
     OutOfBoundsPolicy policy = {},
     std::shared_ptr<const CoordinateMap> map = nullptr) const;
 
+  /// @return whether `owners` is a hint Bind uses for `num_points` points: one
+  ///         entity per point, naming this geometry (OwnerHints::Names). A
+  ///         geometry built on the entities of another (a point cloud over a
+  ///         mesh's entities) also takes hints that name that one.
+  [[nodiscard]] virtual bool TakesHints(const OwnerHints& owners,
+                                        LO num_points) const noexcept
+  {
+    return owners.Names(*this, num_points);
+  }
+
   /// @brief Support sets of query points among this geometry's sites, for
   ///        reconstruction spaces.
   /// @throws pcms_error unless the kind overrides it, or if the coordinate
   ///         system does not have the identity metric (the distances are
   ///         Euclidean), or `options.max_supports` is neither 0 nor
   ///         3 * `options.min_supports` (other bounds are not honoured yet)
+  /// @param site_dim the dimension of the entities whose coordinates are the
+  ///        sites: 0 for a mesh's vertices, its dimension for its cell
+  ///        centroids; the kinds that do not search among the entities of
+  ///        their geometry (a point cloud, whose sites are its site layout's)
+  ///        ignore it
   /// @param owners the claimed owner of each query point, as for Bind: the
   ///        kinds with an adjacency search start their search for the point
   ///        there (a vertex hint starts from an element around the vertex);
   ///        verified, so a wrong hint gives the supports of the unhinted
   ///        search
   [[nodiscard]] virtual SupportResults Neighbourhood(
-    CoordinateView<DeviceMemorySpace> coords,
+    CoordinateView<DeviceMemorySpace> coords, int site_dim,
     const NeighbourhoodOptions& options, const OwnerHints& owners = {}) const;
 
   /// @brief Jacobian at the bound points.

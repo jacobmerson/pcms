@@ -467,23 +467,30 @@ void bind_create_field_module(py::module& m)
 
   m.def(
     "create_point_cloud_geometry",
-    [](Omega_h::Mesh& mesh, int entity_dim, const SystemHolder& system,
+    [](const std::shared_ptr<Geometry>& geometry, int entity_dim,
        NeighbourhoodOptions neighbourhood) {
-      if (entity_dim < 0 || entity_dim > mesh.dim()) {
+      const auto omega_h = std::dynamic_pointer_cast<OmegaHGeometry>(geometry);
+      if (omega_h == nullptr) {
         throw py::value_error(
-          "create_point_cloud_geometry: entity_dim is out of range");
+          "create_point_cloud_geometry: the geometry must be an Omega_h "
+          "geometry");
+      }
+      if (entity_dim != 0 && entity_dim != omega_h->GetMesh().dim()) {
+        throw py::value_error(
+          "create_point_cloud_geometry: entity_dim must be 0 (vertices) or "
+          "the mesh dimension (element centroids)");
       }
       return CreatePointCloudGeometry(
-        std::make_shared<OmegaHEntityLayout>(
-          std::make_shared<OmegaHGeometry>(mesh, CartesianIfNone(system)),
-          entity_dim, 1),
+        std::make_shared<OmegaHEntityLayout>(omega_h, entity_dim, 1),
         std::move(neighbourhood));
     },
-    py::arg("mesh"), py::arg("entity_dim"), py::arg("system") = py::none(),
+    py::arg("geometry").none(false), py::arg("entity_dim"),
     py::arg("neighbourhood") = NeighbourhoodOptions{}, py::keep_alive<0, 1>(),
-    "A point-cloud geometry whose sites are the entities of one dimension of "
-    "an Omega_h mesh (e.g. element centroids); the support search uses the "
-    "mesh adjacency.");
+    "A point-cloud geometry whose sites are the vertices (entity_dim 0) or "
+    "the element centroids (the mesh dimension) of the mesh of an Omega_h "
+    "geometry; the support search uses the mesh adjacency. Spaces made on the "
+    "same geometry object share its entities, so binding the cloud at their "
+    "DOF holders (bind(space)) starts from those entities.");
 
   m.def(
     "create_uniform_grid_from_mesh",

@@ -3,12 +3,9 @@
 
 #include "pcms/field/coordinate_system.hpp"
 #include "pcms/field/evaluator/mls_point_cloud.h"
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/field_layout.h"
-#include "pcms/field/layout/omega_h_entity.h"
 #include "pcms/field/layout/point_cloud.h"
 #include "pcms/geometry/geometry.hpp"
-#include "pcms/localization/adj_search.hpp"
 #include "pcms/localization/mls_support_helpers.h"
 #include "pcms/utility/arrays.h"
 #include "pcms/utility/assert.h"
@@ -17,7 +14,6 @@
 #include "pcms/utility/profile.h"
 
 #include <Omega_h_array.hpp>
-#include <Omega_h_mesh.hpp>
 #include <memory>
 #include <string>
 
@@ -27,9 +23,14 @@ namespace pcms
 /// Geometry of a set of sites (the DOF holders of a layout: a point cloud or
 /// the entities of one dimension of a mesh): the identity map, located by the
 /// MLS supports of each query point. Bind finds the supports with
-/// Neighbourhood, using the options the geometry was created with. For the
-/// vertices or the cells of a mesh, construction builds the mesh's
-/// OmegaHGeometry, whose search starts the adjacency search of each point.
+/// Neighbourhood, using the options the geometry was created with.
+///
+/// The supports are searched by the geometry the site layout is on
+/// (FieldLayout::GetGeometry) when it has one and its DOF holders are the
+/// entities of one dimension of it without ghosts, e.g. the adjacency search of
+/// an Omega_h mesh for its vertices or element centroids; otherwise, for a bare
+/// point cloud, by distance. It holds only the site layout, and the layout
+/// never holds a point-cloud geometry built on it.
 /// @throws pcms_error on construction if the sites' coordinate system does not
 ///         have the identity metric
 class PointCloudGeometry final : public Geometry
@@ -37,20 +38,9 @@ class PointCloudGeometry final : public Geometry
 public:
   /// Own it by std::shared_ptr, as CreatePointCloudGeometry does: Bind uses
   /// shared_from_this().
-  /// @param mesh the mesh whose entities of dimension `site_entity_dim` are
-  ///        the sites, or null for a point cloud
   PointCloudGeometry(std::shared_ptr<const FieldLayout> site_layout,
-                     Omega_h::Mesh* mesh, int site_entity_dim,
                      NeighbourhoodOptions options)
-    : site_layout_(std::move(site_layout)),
-      mesh_(mesh),
-      site_entity_dim_(site_entity_dim),
-      options_(std::move(options)),
-      mesh_geometry_(mesh != nullptr && (site_entity_dim == Vertex ||
-                                         site_entity_dim == mesh->dim())
-                       ? std::make_shared<OmegaHGeometry>(
-                           *mesh, site_layout_->GetCoordinateSystem())
-                       : nullptr)
+    : site_layout_(std::move(site_layout)), options_(std::move(options))
   {
     // MLS distances are based on the unweighted Euclidean measure, which is
     // valid only with the identity metric; this almost certainly should be
@@ -75,37 +65,42 @@ public:
     return site_layout_;
   }
 
-  /// The mesh-adjacency search for the sites of a mesh (its vertices or its
-  /// element centroids) when `owners` claims the cell or vertex of the mesh at
-  /// each point, and for mesh-vertex sites, which otherwise locate the points
-  /// first; the distance search otherwise. The search starts from the element
-  /// the mesh geometry's search finds for each point, starting from the claim
-  /// (verified, see OwnerHints).
+  /// A hint naming the cloud or the geometry of its site layout, whose
+  /// entities the sites are, is used (and forwarded to that geometry).
+  [[nodiscard]] bool TakesHints(const OwnerHints& owners,
+                                LO num_points) const noexcept override
+  {
+    const auto& site_geometry = site_layout_->GetGeometry();
+    return owners.Names(*this, num_points) ||
+           (site_geometry != nullptr &&
+            owners.Names(*site_geometry, num_points));
+  }
+
+  /// The supports among the sites: the search of the site layout's geometry
+  /// among the entities the sites are, when there is one (see the class
+  /// comment), with `owners` forwarded to it (verified there), and the
+  /// distance search otherwise. `site_dim` is ignored: the sites are the DOF
+  /// holders of the site layout.
   [[nodiscard]] SupportResults Neighbourhood(
-    CoordinateView<DeviceMemorySpace> coords,
+    CoordinateView<DeviceMemorySpace> coords, int /*site_dim*/,
     const NeighbourhoodOptions& options,
     const OwnerHints& owners = {}) const override
   {
     detail::CheckNeighbourhoodArguments(*this, coords, options,
                                         "PointCloudGeometry::Neighbourhood");
-    const auto n = static_cast<LO>(coords.GetValues().extent(0));
+    const auto& site_geometry = site_layout_->GetGeometry();
+    const int site_dim = site_layout_->GetDOFHolderEntityDim();
     // the supports are entity ids, which are site indices only without ghosts
-    if (mesh_geometry_ != nullptr && !site_layout_->HasGhosts() &&
-        owners.Names(*this, n) &&
-        (owners.entity_dim == Vertex || owners.entity_dim == mesh_->dim())) {
-      const int dim = mesh_->dim();
-      const auto flat_points = flatten_to_omega_h_reals(coords.GetValues());
-      const auto seeds = mesh_geometry_->FindElementSeeds(
-        ConvertCoordsTo2D(flat_points, n, dim),
-        detail::ElementGuesses(*mesh_, owners,
-                               "PointCloudGeometry::Neighbourhood"));
-      return searchNeighbors(*mesh_, site_entity_dim_, flat_points, dim, seeds,
-                             options.radius * options.radius,
-                             options.min_supports, 3 * options.min_supports,
-                             options.adapt_radius);
-    }
-    if (mesh_geometry_ != nullptr && site_entity_dim_ == Vertex) {
-      return mesh_geometry_->Neighbourhood(std::move(coords), options);
+    if (site_geometry != nullptr && site_dim >= 0 &&
+        !site_layout_->HasGhosts()) {
+      const auto n = static_cast<LO>(coords.GetValues().extent(0));
+      // a hint naming the cloud names the entities of its sites
+      const OwnerHints forwarded =
+        owners.Names(*this, n)
+          ? OwnerHints{site_geometry, owners.entity_dim, owners.entities}
+          : owners;
+      return site_geometry->Neighbourhood(std::move(coords), site_dim, options,
+                                          forwarded);
     }
     const auto sites = site_layout_->GetDOFHolderCoordinates().GetValues();
     return BuildPointCloudSupports(
@@ -126,7 +121,8 @@ protected:
       flatten_to_omega_h_reals(src_view, "src_coords");
 
     SupportResults supports =
-      Neighbourhood(request.coords, options_, request.owners);
+      Neighbourhood(request.coords, site_layout_->GetDOFHolderEntityDim(),
+                    options_, request.owners);
 
     return std::make_shared<MLSBinding>(shared_from_this(), request,
                                         std::move(source_coords),
@@ -135,12 +131,7 @@ protected:
 
 private:
   std::shared_ptr<const FieldLayout> site_layout_;
-  Omega_h::Mesh* mesh_;
-  int site_entity_dim_;
   NeighbourhoodOptions options_;
-  // for mesh-vertex or cell sites, the mesh's geometry: its search finds the
-  // element the adjacency search of each point starts from
-  std::shared_ptr<const OmegaHGeometry> mesh_geometry_;
 };
 
 /// A point-cloud geometry whose sites are `coords` (copied to the device).
@@ -160,13 +151,13 @@ inline std::shared_ptr<Geometry> CreatePointCloudGeometry(
   DeepCopyMismatchLayouts(device_view, host_view);
   auto layout = std::make_shared<PointCloudLayout>(
     dim, device_view, coords.GetCoordinateSystem());
-  return std::make_shared<PointCloudGeometry>(std::move(layout), nullptr, -1,
+  return std::make_shared<PointCloudGeometry>(std::move(layout),
                                               std::move(options));
 }
 
 /// A point-cloud geometry whose sites are the DOF holders of `sites` (e.g. the
-/// entities of one dimension of a mesh, through OmegaHEntityLayout, which the
-/// adjacency search then serves).
+/// entities of one dimension of a mesh, through OmegaHEntityLayout, whose
+/// geometry's adjacency search then serves).
 /// @param sites the layout of the sites
 /// @param options the support search of the geometry
 /// @throws pcms_error if `sites` is null or its coordinate system does not
@@ -177,17 +168,8 @@ inline std::shared_ptr<Geometry> CreatePointCloudGeometry(
   if (sites == nullptr) {
     throw pcms_error("CreatePointCloudGeometry: the sites must not be null");
   }
-  Omega_h::Mesh* mesh = nullptr;
-  int site_entity_dim = -1;
-  if (dynamic_cast<const OmegaHEntityLayout*>(sites.get()) != nullptr) {
-    const auto* geometry =
-      dynamic_cast<const OmegaHGeometry*>(sites->GetGeometry().get());
-    PCMS_ALWAYS_ASSERT(geometry != nullptr);
-    mesh = &geometry->GetMesh();
-    site_entity_dim = sites->GetDOFHolderEntityDim();
-  }
-  return std::make_shared<PointCloudGeometry>(
-    std::move(sites), mesh, site_entity_dim, std::move(options));
+  return std::make_shared<PointCloudGeometry>(std::move(sites),
+                                              std::move(options));
 }
 
 } // namespace pcms
