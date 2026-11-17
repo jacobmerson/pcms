@@ -62,7 +62,7 @@ std::shared_ptr<Geometry> CreatePointCloudGeometry(
   if (dynamic_cast<const OmegaHEntityLayout*>(sites.get()) != nullptr) {
     const auto discretization =
       std::dynamic_pointer_cast<const OmegaHDiscretization>(
-        sites->GetDiscretization());
+        detail::DOFHolderDiscretization(*sites));
     PCMS_ALWAYS_ASSERT(discretization != nullptr);
     mesh = &discretization->GetMesh();
     site_entity_dim = sites->GetDOFHolderEntityDim();

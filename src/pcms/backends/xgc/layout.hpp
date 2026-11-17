@@ -14,8 +14,7 @@ public:
   XGCFieldLayout(const ReverseClassificationVertex& reverse_classification,
                  LO num_plane_nodes);
 
-  std::shared_ptr<const Discretization> GetDiscretization()
-    const noexcept override;
+  std::shared_ptr<const Discretization> GetDiscretization() const noexcept;
 
   int GetNumComponents() const override;
   LO GetNumDofHolder() const override;

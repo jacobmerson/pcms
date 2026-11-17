@@ -221,6 +221,7 @@ MeshFieldsAdapterLayout::MeshFieldsAdapterLayout(
   const auto checked = detail::CheckDiscretizationOf(
     mesh_, std::move(discretization), "MeshFieldsAdapterLayout");
   discretization_ = checked;
+  SetDOFHolderDiscretization(discretization_);
   const std::string& global_id_name = checked->GetGlobalIdName();
 
   auto tag = mesh_.get_tagbase(0, global_id_name);

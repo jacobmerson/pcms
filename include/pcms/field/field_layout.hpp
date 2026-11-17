@@ -4,7 +4,6 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include "pcms/discretization/discretization.hpp"
 #include "pcms/utility/types.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/coordinate_system.hpp"
@@ -58,6 +57,18 @@ inline EntOffsetsArray OwnedEntOffsets(
   return offsets;
 }
 
+class Discretization; // opaque; see Geometry::GetDiscretization
+class FieldLayout;
+
+namespace detail
+{
+/// The discretization whose entities the DOF holders of an in-tree layout
+/// are (FieldLayout::SetDOFHolderDiscretization), or null. For PCMS's own
+/// code; defined in field_layout.cpp.
+[[nodiscard]] std::shared_ptr<const Discretization> DOFHolderDiscretization(
+  const FieldLayout& layout) noexcept;
+} // namespace detail
+
 class FieldLayout
 {
 public:
@@ -66,9 +77,6 @@ public:
   // a stable name use it; it carries no meaning within the field layer itself.
   [[nodiscard]] const std::string& GetName() const noexcept { return name_; }
   void SetName(std::string name) { name_ = std::move(name); }
-
-  virtual std::shared_ptr<const Discretization> GetDiscretization()
-    const noexcept = 0;
 
   // number of components
   int virtual GetNumComponents() const = 0;
@@ -158,6 +166,16 @@ public:
   virtual ~FieldLayout() noexcept = default;
 
 protected:
+  // In-tree layouts whose DOF holders are the entities of one dimension of a
+  // discretization record it here (DOFHolderOwners uses it to tell whether
+  // the DOF holders are a geometry's entities). Layouts that do not set it
+  // have no such entities.
+  void SetDOFHolderDiscretization(
+    std::shared_ptr<const Discretization> discretization) noexcept
+  {
+    dof_holder_discretization_ = std::move(discretization);
+  }
+
   // Builds the global-to-local permutation from the GIDs and entity offsets of
   // the DOF holders with ghosts (the permutation is indexed with ghosts).
   // Derived layouts that support GetGlobalToLocalPermutation() must call this
@@ -179,6 +197,10 @@ protected:
   }
 
 private:
+  friend std::shared_ptr<const Discretization> detail::DOFHolderDiscretization(
+    const FieldLayout& layout) noexcept;
+
+  std::shared_ptr<const Discretization> dof_holder_discretization_;
   std::shared_ptr<const CoordinateSystem> system_;
   std::string name_;
   Kokkos::View<LO*, HostMemorySpace> global_to_local_host_;

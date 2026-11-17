@@ -1,4 +1,5 @@
 #include "pcms/field/field_layout.hpp"
+#include "pcms/discretization/discretization.hpp"
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/field/gid_permutation.hpp"
 #include "pcms/utility/assert.hpp"
@@ -6,11 +7,20 @@
 namespace pcms
 {
 
+namespace detail
+{
+std::shared_ptr<const Discretization> DOFHolderDiscretization(
+  const FieldLayout& layout) noexcept
+{
+  return layout.dof_holder_discretization_;
+}
+} // namespace detail
+
 KnownOwners DOFHolderOwners(const FieldLayout& layout,
                             std::shared_ptr<const Geometry> geometry)
 {
   const int entity_dim = layout.GetDOFHolderEntityDim();
-  const auto discretization = layout.GetDiscretization();
+  const auto discretization = detail::DOFHolderDiscretization(layout);
   if (geometry == nullptr || entity_dim < 0 || layout.HasGhosts() ||
       discretization == nullptr || geometry->GetDiscretization() == nullptr ||
       !geometry->GetDiscretization()->SameEntities(*discretization)) {

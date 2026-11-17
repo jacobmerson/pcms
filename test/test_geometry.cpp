@@ -15,6 +15,7 @@
 #include <pcms/backends/omega_h/entity_layout.hpp>
 #include <pcms/backends/omega_h/lagrange_layout.hpp>
 #include <pcms/backends/point_cloud/layout.hpp>
+#include <pcms/discretization/discretization.hpp>
 #include <pcms/geometry/geometry.hpp>
 #include <pcms/backends/omega_h/adj_search.hpp>
 #include <pcms/localization/mls_support_helpers.hpp>
@@ -159,20 +160,24 @@ TEST_CASE("Spaces on a geometry share its discretization")
   const auto discretization = geometry->GetDiscretization();
   auto scalars = MakeSpace(geometry, 1, 1);
   auto cells = MakeSpace(geometry, 0, 1);
-  REQUIRE(scalars->GetLayout()->GetDiscretization() == discretization);
-  REQUIRE(cells->GetLayout()->GetDiscretization() == discretization);
-  REQUIRE(scalars->GetDiscretization() == discretization);
+  REQUIRE(pcms::detail::DOFHolderDiscretization(*scalars->GetLayout()) ==
+          discretization);
+  REQUIRE(pcms::detail::DOFHolderDiscretization(*cells->GetLayout()) ==
+          discretization);
+  REQUIRE(scalars->GetGeometry()->GetDiscretization() == discretization);
 #ifdef PCMS_ENABLE_MESHFIELDS
   auto p2 = CreateLagrangeSpace(
     geometry, 2, 1, LagrangeOptions{.backend = LagrangeBackend::MeshFields});
-  REQUIRE(p2->GetLayout()->GetDiscretization() == discretization);
+  REQUIRE(pcms::detail::DOFHolderDiscretization(*p2->GetLayout()) ==
+          discretization);
 #endif
   // a space on another geometry of the same mesh has the same entities, but
   // not the same discretization object
   auto other = MakeSpace(MakeGeometry(mesh), 1, 1);
-  REQUIRE(other->GetLayout()->GetDiscretization() != discretization);
-  REQUIRE(
-    other->GetLayout()->GetDiscretization()->SameEntities(*discretization));
+  REQUIRE(pcms::detail::DOFHolderDiscretization(*other->GetLayout()) !=
+          discretization);
+  REQUIRE(pcms::detail::DOFHolderDiscretization(*other->GetLayout())
+            ->SameEntities(*discretization));
   // a layout refuses a discretization of another mesh
   auto other_mesh = pcms::test::BuildSquareMesh(lib, 2);
   REQUIRE_THROWS_WITH(

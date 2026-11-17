@@ -25,8 +25,7 @@ public:
     std::shared_ptr<const CoordinateSystem> coordinate_system,
     std::shared_ptr<const OmegaHDiscretization> discretization);
 
-  std::shared_ptr<const Discretization> GetDiscretization()
-    const noexcept override;
+  std::shared_ptr<const Discretization> GetDiscretization() const noexcept;
 
   int GetNumComponents() const override;
   // nodes for standard lagrange FEM

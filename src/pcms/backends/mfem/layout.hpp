@@ -18,8 +18,7 @@ public:
   MFEMLayout(mfem::ParMesh& pmesh, mfem::ParFiniteElementSpace& pfes,
              std::shared_ptr<const CoordinateSystem> coordinate_system);
 
-  std::shared_ptr<const Discretization> GetDiscretization()
-    const noexcept override;
+  std::shared_ptr<const Discretization> GetDiscretization() const noexcept;
 
   int GetNumComponents() const override;
   LO GetNumDofHolder() const override;

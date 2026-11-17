@@ -141,7 +141,8 @@ TEST_CASE("Different layouts on the same mesh report SameEntities")
   auto lagrange = pcms::CreateLagrangeSpace(geometry, 1, 1);
 
   auto nodal_disc = nodal->GetDiscretization();
-  auto lagrange_disc = lagrange->GetLayout()->GetDiscretization();
+  auto lagrange_disc =
+    pcms::detail::DOFHolderDiscretization(*lagrange->GetLayout());
 
   REQUIRE(nodal_disc != nullptr);
   REQUIRE(lagrange_disc != nullptr);
@@ -189,8 +190,10 @@ TEST_CASE(
     pcms::CreatePointCloudGeometry(pcms::CoordinateView<HostMemorySpace>(
       pcms::csys::Cartesian::Deferred(), coords_view)));
 
-  auto mesh_disc = lagrange->GetLayout()->GetDiscretization();
-  auto point_cloud_disc = standalone->GetLayout()->GetDiscretization();
+  auto mesh_disc =
+    pcms::detail::DOFHolderDiscretization(*lagrange->GetLayout());
+  auto point_cloud_disc =
+    pcms::detail::DOFHolderDiscretization(*standalone->GetLayout());
 
   REQUIRE_FALSE(mesh_disc->SameEntities(*point_cloud_disc));
   REQUIRE_FALSE(point_cloud_disc->SameEntities(*mesh_disc));

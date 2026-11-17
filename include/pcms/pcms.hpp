@@ -24,9 +24,6 @@
 #include "pcms/utility/types.hpp"
 #include "pcms/utility/uniform_grid.hpp"
 
-// discretization and localization
-#include "pcms/discretization/discretization.hpp"
-
 // geometry
 #include "pcms/geometry/bound_source.hpp"
 #include "pcms/geometry/geometry.hpp"

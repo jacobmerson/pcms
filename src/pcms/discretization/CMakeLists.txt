@@ -1,15 +1,11 @@
 set(
         PCMS_DISCRETIZATION_HEADERS
-        ../../../include/pcms/discretization/discretization.hpp
-        empty.hpp
+        discretization.hpp
 )
 
-set(
-        PCMS_DISCRETIZATION_SOURCES
-        empty.cpp
-)
-
-add_library(pcms_discretization ${PCMS_DISCRETIZATION_SOURCES})
+# The sources are the backends' discretizations (src/pcms/backends/*), which
+# add themselves to this target.
+add_library(pcms_discretization)
 add_library(pcms::discretization ALIAS pcms_discretization)
 # Only the public headers (include/pcms/...) are installed; the private
 # headers next to the sources are private sources of the target.

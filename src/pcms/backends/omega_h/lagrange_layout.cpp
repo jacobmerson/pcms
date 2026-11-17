@@ -88,6 +88,7 @@ OmegaHLagrangeLayout::OmegaHLagrangeLayout(
   const auto checked = detail::CheckDiscretizationOf(
     mesh_, std::move(discretization), "OmegaHLagrangeLayout");
   discretization_ = checked;
+  SetDOFHolderDiscretization(discretization_);
   // the mask is per vertex: it applies to the DOF holders of an order-1
   // layout only
   const auto owned_mask = checked->GetOwnedMask();
