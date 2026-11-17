@@ -26,12 +26,12 @@ namespace detail
 Kokkos::Crs<LO, Kokkos::DefaultExecutionSpace, void, LO>
 construct_intersection_map_2d(Omega_h::Mesh& mesh,
                               Kokkos::View<Uniform2DGrid[1]> grid,
-                              int num_grid_cells);
+                              int num_grid_cells, Real inflation = 0);
 
 Kokkos::Crs<LO, Kokkos::DefaultExecutionSpace, void, LO>
 construct_intersection_map_3d(Omega_h::Mesh& mesh,
                               Kokkos::View<Uniform3DGrid[1]> grid,
-                              int num_grid_cells);
+                              int num_grid_cells, Real inflation = 0);
 
 /// O(num_cells * nelems) brute-force candidate map. Test oracle for the
 /// element-major build above; never use in production.
@@ -81,9 +81,9 @@ public:
     /// face's or region's from the element-to-vertex adjacency), the entries
     /// are (lambda_1, ..., lambda_d): the point is
     /// x_0 + sum_j parametric[j] * (x_{j+1} - x_0). For a point outside the
-    /// mesh it is the position of the point on the nearest entity where the
-    /// search has one (the projection onto an edge, the extrapolated position
-    /// in a region) and zeros otherwise.
+    /// mesh it is approximate: the barycentric coordinates of the nearest
+    /// candidate element on the nearest entity, negative ones clamped to 0 and
+    /// renormalized, not a projection onto the entity.
     Omega_h::Vector<dim> parametric;
 
     /// `entity` of a point outside the mesh whose nearest entity is `id`.
@@ -112,13 +112,9 @@ public:
 
   static constexpr auto DIM = dim;
 
-  using PointSearchTolerances = Kokkos::View<Real[DIM]>;
-
-  explicit PointLocalizationSearch(const PointSearchTolerances& tolerances)
-    : tolerances_(tolerances)
-  {
-    assert(tolerances_.is_allocated());
-  }
+  /// \param tolerance Cartesian distance from the facets of a simplex within
+  ///        which a point counts as lying on them
+  explicit PointLocalizationSearch(Real tolerance) : tolerance_(tolerance) {}
 
   virtual Kokkos::View<Result*> operator()(
     Kokkos::View<const Real* [dim]> point) const = 0;
@@ -126,7 +122,7 @@ public:
   virtual ~PointLocalizationSearch() = default;
 
 protected:
-  PointSearchTolerances tolerances_;
+  Real tolerance_;
 };
 
 using PointLocalizationSearch2D = PointLocalizationSearch<2>;
@@ -141,24 +137,42 @@ public:
   using Result = PointLocalizationSearch2D::Result;
 
   GridPointSearch2D(Omega_h::Mesh& mesh, LO Nx, LO Ny);
-  GridPointSearch2D(Omega_h::Mesh& mesh, LO Nx, LO Ny,
-                    const PointSearchTolerances& tolerances);
+  GridPointSearch2D(Omega_h::Mesh& mesh, LO Nx, LO Ny, Real tolerance);
 
   /**
    * Given points in global coordinates, returns for each the entity (vertex,
-   * edge or face, chosen with the vertex and edge tolerances) containing it
-   * and the point's position on that entity.
+   * edge, face or region) it lies on and the point's position on that entity,
+   * see PointLocalizationSearch::Result. With lambda the barycentric
+   * coordinates of the point in a candidate simplex and ||grad lambda_i|| their
+   * gradient norms, the point is within Cartesian distance `tolerance` of the
+   * plane of facet i iff |lambda_i| <= tolerance ||grad lambda_i||. The facets
+   * whose band contains the point decide the entity: the sub-simplex spanned
+   * by the vertices of the other facets (a vertex if the point is in the bands
+   * of all facets but one, an edge if of all but two, ..., the simplex itself
+   * if of none). The entity of lowest dimension over all candidates wins, then
+   * the lowest id. Its reduced coordinates are the barycentric coordinates of
+   * those vertices renormalized to sum 1, in the entity's vertex order.
+   *
+   * The tolerance region of an entity is therefore the intersection of facet
+   * bands, not a Euclidean ball around it or a segment projection; near a
+   * corner of angle alpha it reaches about tolerance / sin(alpha / 2) from the
+   * vertex along the bisector. A point beyond the bands of every candidate is
+   * outside: the result names, with Result::OutsideId, the entity the nearest
+   * candidate (largest signed plane distance) puts it on, treating every facet
+   * it is beyond as one it lies on; this is an approximate nearest entity. A
+   * grid cell without candidates gives NO_INTERSECT with id -1.
    */
   Kokkos::View<Result*> operator()(
     Kokkos::View<const Real* [DIM]> point) const override;
 
 private:
-  Omega_h::Adj tris2edges_adj_;
-  Omega_h::Adj tris2verts_adj_;
-  Omega_h::Adj edges2verts_adj_;
+  /// per entity dimension 1..DIM-1, the element-to-entity and
+  /// entity-to-vertex adjacencies
+  Omega_h::Few<Omega_h::Adj, DIM> down_;
+  Omega_h::Few<Omega_h::Adj, DIM> down_verts_;
   Kokkos::View<Uniform2DGrid[1]> grid_{"uniform grid"};
   CandidateMapT candidate_map_;
-  Omega_h::LOs tris2verts_;
+  Omega_h::LOs elem_verts_;
   Omega_h::Reals coords_;
 };
 
@@ -171,35 +185,42 @@ public:
   using Result = PointLocalizationSearch3D::Result;
 
   GridPointSearch3D(Omega_h::Mesh& mesh, LO Nx, LO Ny, LO Nz);
-  GridPointSearch3D(Omega_h::Mesh& mesh, LO Nx, LO Ny, LO Nz,
-                    const PointSearchTolerances& tolerances);
+  GridPointSearch3D(Omega_h::Mesh& mesh, LO Nx, LO Ny, LO Nz, Real tolerance);
 
   /**
-   * Given points in global coordinates, returns for each the id of a
-   * tetrahedron containing it and the point's reduced coordinates in that
-   * tetrahedron. Containment is tested with a Cartesian tolerance band: the
-   * point may lie up to `tolerances(2)` outside any face plane (the band is
-   * applied per barycentric coordinate, scaled by the gradient norm of that
-   * coordinate, so it is the same distance from both sides of a shared face).
-   * The result is always labelled REGION. When several tetrahedra contain the
-   * point (it lies on a shared face, edge or vertex) the smallest id is
-   * returned; this is an interim tie-break that hides a genuine ambiguity,
-   * see docs/point_search_shared_face_plan.md.
+   * Given points in global coordinates, returns for each the entity (vertex,
+   * edge, face or region) it lies on and the point's position on that entity,
+   * see PointLocalizationSearch::Result. With lambda the barycentric
+   * coordinates of the point in a candidate simplex and ||grad lambda_i|| their
+   * gradient norms, the point is within Cartesian distance `tolerance` of the
+   * plane of facet i iff |lambda_i| <= tolerance ||grad lambda_i||. The facets
+   * whose band contains the point decide the entity: the sub-simplex spanned
+   * by the vertices of the other facets (a vertex if the point is in the bands
+   * of all facets but one, an edge if of all but two, ..., the simplex itself
+   * if of none). The entity of lowest dimension over all candidates wins, then
+   * the lowest id. Its reduced coordinates are the barycentric coordinates of
+   * those vertices renormalized to sum 1, in the entity's vertex order.
    *
-   * If no candidate contains the point, the result is the candidate whose
-   * face is closest, encoded with Result::OutsideId or NO_INTERSECT with
-   * id -1 when the grid cell has no candidates at all.
+   * The tolerance region of an entity is therefore the intersection of facet
+   * bands, not a Euclidean ball around it or a segment projection; near a
+   * corner of angle alpha it reaches about tolerance / sin(alpha / 2) from the
+   * vertex along the bisector. A point beyond the bands of every candidate is
+   * outside: the result names, with Result::OutsideId, the entity the nearest
+   * candidate (largest signed plane distance) puts it on, treating every facet
+   * it is beyond as one it lies on; this is an approximate nearest entity. A
+   * grid cell without candidates gives NO_INTERSECT with id -1.
    */
   Kokkos::View<Result*> operator()(
     Kokkos::View<const Real* [DIM]> point) const override;
 
 private:
-  Omega_h::Adj tris2edges_adj_;
-  Omega_h::Adj tris2verts_adj_;
-  Omega_h::Adj edges2verts_adj_;
+  /// per entity dimension 1..DIM-1, the element-to-entity and
+  /// entity-to-vertex adjacencies
+  Omega_h::Few<Omega_h::Adj, DIM> down_;
+  Omega_h::Few<Omega_h::Adj, DIM> down_verts_;
   Kokkos::View<UniformGrid<DIM>[1]> grid_{"uniform grid"};
   CandidateMapT candidate_map_;
-  Omega_h::LOs tris2verts_;
+  Omega_h::LOs elem_verts_;
   Omega_h::Reals coords_;
 };
 

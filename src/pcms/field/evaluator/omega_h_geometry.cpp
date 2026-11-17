@@ -51,19 +51,13 @@ GridPointSearchVariant MakeGridSearch(Omega_h::Mesh& mesh,
     const LO n = options.divisions > 0
                    ? options.divisions
                    : DivisionsPerAxisForMesh<2>(mesh.nelems());
-    GridPointSearch2D::PointSearchTolerances tolerances(
-      "point search 2d tolerances");
-    Kokkos::deep_copy(tolerances, options.tolerance);
-    return GridPointSearch2D(mesh, n, n, tolerances);
+    return GridPointSearch2D(mesh, n, n, options.tolerance);
   }
   if (mesh.dim() == 3) {
     const LO n = options.divisions > 0
                    ? options.divisions
                    : DivisionsPerAxisForMesh<3>(mesh.nelems());
-    GridPointSearch3D::PointSearchTolerances tolerances(
-      "point search 3d tolerances");
-    Kokkos::deep_copy(tolerances, options.tolerance);
-    return GridPointSearch3D(mesh, n, n, n, tolerances);
+    return GridPointSearch3D(mesh, n, n, n, options.tolerance);
   }
   throw std::invalid_argument(
     "MakeGridSearch: only 2D and 3D meshes are supported");
