@@ -116,8 +116,8 @@ public:
     }
     const auto sites = site_layout_->GetDOFHolderCoordinates().GetValues();
     return localization::BuildPointCloudSupports(
-      utility::flatten_to_omega_h_reals(sites, "src_coords"),
-      utility::flatten_to_omega_h_reals(coords.GetValues(), "tgt_coords"),
+      detail::FlattenRows(sites, "src_coords"),
+      detail::FlattenRows(coords.GetValues(), "tgt_coords"),
       static_cast<int>(sites.extent(1)), options.radius, options.min_supports,
       options.adapt_radius);
   }
@@ -129,8 +129,8 @@ protected:
     PCMS_FUNCTION_TIMER;
     // Extract source coordinates for the MLS solve.
     const auto src_view = site_layout_->GetDOFHolderCoordinates().GetValues();
-    Omega_h::Reals source_coords =
-      utility::flatten_to_omega_h_reals(src_view, "src_coords");
+    Kokkos::View<const Real*, DeviceMemorySpace> source_coords =
+      detail::FlattenRows(src_view, "src_coords");
 
     SupportResults supports =
       Neighbourhood(request.coords, options_, request.owners);

@@ -426,7 +426,7 @@ TEST_CASE("PointCloudGeometry::Neighbourhood takes the search of its sites")
   pcms::NeighbourhoodOptions options{.radius = 0.25, .min_supports = 8};
   Omega_h::Real radius_sq = options.radius * options.radius;
   const auto distance_search = pcms::BuildPointCloudSupports(
-    centroids, mesh.coords(), 2, options.radius, 8, true);
+    centroids.view(), mesh.coords().view(), 2, options.radius, 8, true);
 
   // a point cloud, and element centroids queried at arbitrary points: the
   // distance search
