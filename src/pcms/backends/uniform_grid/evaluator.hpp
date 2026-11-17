@@ -6,11 +6,11 @@
 #include "pcms/utility/types.hpp"
 #include <Kokkos_Core.hpp>
 #include "pcms/field/point_evaluator_factory.hpp"
-#include "pcms/field/out_of_bounds_policy.h"
-#include "pcms/field/point_evaluator.h"
-#include "pcms/field/field_data.h"
-#include "pcms/utility/assert.h"
-#include "pcms/utility/profile.h"
+#include "pcms/field/out_of_bounds_policy.hpp"
+#include "pcms/field/point_evaluator.hpp"
+#include "pcms/field/field_data.hpp"
+#include "pcms/utility/assert.hpp"
+#include "pcms/utility/detail/profile.hpp"
 
 #include <memory>
 #include <utility>
