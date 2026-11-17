@@ -1,17 +1,32 @@
 // Fusion-IO 1.x's utilities against Fusion-IO 2's, on the equilibrium
 // poloidal flux of the example C1.h5. Both evaluate the same 1.x fields (the
-// source is opened with Evaluation::FusionIO).
+// source is opened with Evaluation::FusionIO) and the batched functions run
+// 1.x's iterations, so they take the same steps up to the round-off of the
+// gradient's (1/R) d/dphi scaling. Where a batched function starts a search
+// from another guess than 1.x's sequential loop does, the tolerance follows
+// from the search's own.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <fusion_io.h>
 #include <fusionio/fusionio.hpp>
+#include <fusionio/utilities.hpp>
 #include "fusion_io_source.hpp"
+#include <isosurface.h>
+#include <cmath>
 #include <memory>
+#include <numbers>
+#include <optional>
 #include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 using Catch::Matchers::WithinAbs;
+using Catch::Matchers::WithinRel;
 using fusionio::Point;
 using fusionio::Real;
+using fusionio::SearchResult;
 
 namespace
 {
@@ -47,7 +62,22 @@ struct Flux
     REQUIRE(source1x->get_field(type, &field, &options) == FIO_SUCCESS);
     return fusionio::detail::FusionIOFieldPtr(field);
   }
+
+  /// 1.x's psi at x
+  [[nodiscard]] Real Psi1x(Point x) const
+  {
+    Real v = 0.;
+    REQUIRE(psi1x->eval(x.data(), &v) == FIO_SUCCESS);
+    return v;
+  }
 };
+
+SearchResult Result1x(int result)
+{
+  return result == FIO_SUCCESS         ? SearchResult::Success
+         : result == FIO_OUT_OF_BOUNDS ? SearchResult::OutOfBounds
+                                       : SearchResult::Diverged;
+}
 
 void RequirePoint(const Point& actual, const Point& expected, Real tol)
 {
@@ -78,4 +108,30 @@ TEST_CASE("fusionio BoundingBox is get_bounding_box")
                                      std::string(FUSIONIO_TEST_DATA_DIR) +
                                        "/geqdsk/g158115.04701");
   REQUIRE_FALSE(geqdsk->BoundingBox().has_value());
+}
+
+TEST_CASE("fusionio::FindMax matches fio_find_max")
+{
+  Flux flux;
+  const Point norm{0., 1., 0.};
+  const Real tol = 1e-12;
+  std::vector<Point> x = {{1.65, 0., 0.05}, {1.75, 0.5, -0.1}, {1.6, 1., 0.2}};
+  std::vector<Real> val(x.size(), 0.);
+  const auto expected_x = x;
+  const auto result = fusionio::FindMax(flux.psi, val, x, tol, 0.1, 2, norm);
+  for (size_t k = 0; k < x.size(); ++k) {
+    CAPTURE(k);
+    Point x1 = expected_x[k];
+    Real val1 = 0.;
+    const int result1 = fio_find_max(flux.psi1x.get(), &val1, x1.data(), tol,
+                                     0.1, 2, norm.data());
+    REQUIRE(result[k] == Result1x(result1));
+    REQUIRE(result[k] == SearchResult::Success);
+    // The values agree to round-off (the evaluations may take a point on an
+    // element boundary from either element), and the search stops once psi
+    // changes by less than tol in a step, within sqrt(tol / psi'') of the
+    // axis (about 1e-6 m here): the two stop that close to each other.
+    RequirePoint(x[k], x1, 1e-6);
+    REQUIRE_THAT(val[k], WithinRel(val1, 1e-12));
+  }
 }

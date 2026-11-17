@@ -25,7 +25,8 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-add_library(fusionio src/fusion_io_space.cpp src/m3dc1_native.cpp)
+add_library(fusionio src/fusion_io_space.cpp src/m3dc1_native.cpp
+                     src/utilities.cpp)
 add_library(fusionio::fusionio ALIAS fusionio)
 target_compile_features(fusionio PUBLIC cxx_std_20)
 target_include_directories(
@@ -35,7 +36,8 @@ target_include_directories(
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(fusionio PUBLIC pcms::core
                       PRIVATE fusionio::fusionio_fusionio)
-set(FUSIONIO_HEADERS include/fusionio/fusionio.hpp)
+set(FUSIONIO_HEADERS include/fusionio/fusionio.hpp
+                     include/fusionio/utilities.hpp)
 if(FUSIONIO_ENABLE_NIMROD)
   target_sources(fusionio PRIVATE src/nimrod_space.cpp)
   target_link_libraries(fusionio PRIVATE ${NIMROD_NIMEVAL_LIBRARY})
