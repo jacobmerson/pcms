@@ -153,6 +153,25 @@ public:
   Kokkos::View<Result*> operator()(
     Kokkos::View<const Real* [DIM]> point) const override;
 
+  /**
+   * As operator()(points), into `results` (one per point), starting from a
+   * guessed element per point: a point with guesses(i) >= 0 that lies in
+   * that element or one sharing a side with it (an edge in 2D, a face in
+   * 3D), farther than the
+   * tolerances from the element's boundary, takes the result the search
+   * reports for it without a grid search. The other points, and every point
+   * when `guesses` is empty, are searched for on the grid.
+   *
+   * In 2D the result is then the one operator() gives. In 3D it is an
+   * element operator() also accepts; operator() picks the lowest-numbered
+   * element whose tolerance band contains the point, so the two can differ
+   * only where another element's band reaches farther than the tolerance
+   * past its faces, near an edge with a sharp dihedral angle.
+   */
+  void operator()(Kokkos::View<const Real* [DIM]> points,
+                  Kokkos::View<const LO*> guesses,
+                  Kokkos::View<Result*> results) const;
+
 private:
   Omega_h::Adj tris2edges_adj_;
   Omega_h::Adj tris2verts_adj_;
@@ -161,6 +180,8 @@ private:
   CandidateMapT candidate_map_;
   Omega_h::LOs tris2verts_;
   Omega_h::Reals coords_;
+  // the elements across each element's faces (edges in 2D)
+  Omega_h::Graph elems2elems_;
 };
 
 class GridPointSearch3D : public PointLocalizationSearch3D
@@ -194,6 +215,25 @@ public:
   Kokkos::View<Result*> operator()(
     Kokkos::View<const Real* [DIM]> point) const override;
 
+  /**
+   * As operator()(points), into `results` (one per point), starting from a
+   * guessed element per point: a point with guesses(i) >= 0 that lies in
+   * that element or one sharing a side with it (an edge in 2D, a face in
+   * 3D), farther than the
+   * tolerances from the element's boundary, takes the result the search
+   * reports for it without a grid search. The other points, and every point
+   * when `guesses` is empty, are searched for on the grid.
+   *
+   * In 2D the result is then the one operator() gives. In 3D it is an
+   * element operator() also accepts; operator() picks the lowest-numbered
+   * element whose tolerance band contains the point, so the two can differ
+   * only where another element's band reaches farther than the tolerance
+   * past its faces, near an edge with a sharp dihedral angle.
+   */
+  void operator()(Kokkos::View<const Real* [DIM]> points,
+                  Kokkos::View<const LO*> guesses,
+                  Kokkos::View<Result*> results) const;
+
 private:
   Omega_h::Adj tris2edges_adj_;
   Omega_h::Adj tris2verts_adj_;
@@ -202,6 +242,8 @@ private:
   CandidateMapT candidate_map_;
   Omega_h::LOs tris2verts_;
   Omega_h::Reals coords_;
+  // the elements across each element's faces (edges in 2D)
+  Omega_h::Graph elems2elems_;
 };
 
 /// A grid search of either spatial dimension, as owned by components that are

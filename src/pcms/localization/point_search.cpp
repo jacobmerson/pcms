@@ -3,6 +3,7 @@
 #include <Omega_h_mesh.hpp>
 #include <bitset>
 #include <cmath>
+#include <tuple>
 
 // From
 // https://en.wikipedia.org/wiki/Distance_from_a_point_to_a_line#Vector_formulation
@@ -92,6 +93,142 @@ KOKKOS_INLINE_FUNCTION BarycentricWithScales<Dim> barycentric_with_scales(
 
 namespace pcms
 {
+namespace
+{
+
+/// Whether `point` lies in element `elem` farther than the search's
+/// tolerances from the element's boundary; if so, `result` is set to the
+/// result the grid search reports for it (the element, with the reduced
+/// coordinates computed as the search computes them).
+///
+/// 2D: inside the triangle (Omega_h::is_barycentric_inside) and farther than
+/// the vertex and the edge tolerance from the lines of its edges. Such a point
+/// is farther than both tolerances from every vertex and edge of the mesh
+/// (they lie outside the open triangle), so the search finds no vertex or edge
+/// within tolerance and reports the one triangle that contains the point.
+/// 3D: signed distance to the faces' planes above the tolerance; the search
+/// accepts the element (it accepts every element whose band, the tolerance
+/// along each face normal, contains the point).
+template <int Dim, typename Result>
+KOKKOS_INLINE_FUNCTION bool InteriorOf(
+  const Omega_h::Vector<Dim>& point, LO elem, const Omega_h::LOs& elem_verts,
+  const Omega_h::Reals& coords, const Kokkos::View<Real[Dim]>& tolerances,
+  Result& result)
+{
+  const auto verts = Omega_h::gather_verts<Dim + 1>(elem_verts, elem);
+  const auto vertex_coords =
+    Omega_h::gather_vectors<Dim + 1, Dim>(coords, verts);
+  if constexpr (Dim == 2) {
+    const auto bary =
+      Omega_h::barycentric_from_global<2, 2>(point, vertex_coords);
+    if (!Omega_h::is_barycentric_inside(bary)) {
+      return false;
+    }
+    const Real tol = Kokkos::fmax(tolerances(0), tolerances(1));
+    for (int j = 0; j < 3; ++j) {
+      if (distance_from_line(vertex_coords[j], vertex_coords[(j + 1) % 3],
+                             point) <= tol) {
+        return false;
+      }
+    }
+    result = Result{Result::Dimensionality::FACE, elem, {bary[1], bary[2]}};
+  } else {
+    const auto bary = barycentric_with_scales<Dim>(vertex_coords, point);
+    if (!(bary.SignedPlaneDistance() > tolerances(Dim - 1))) {
+      return false;
+    }
+    Omega_h::Vector<Dim> xi;
+    for (int j = 0; j < Dim; ++j) {
+      xi[j] = bary.lambda[j + 1];
+    }
+    result = Result{Result::Dimensionality::REGION, elem, xi};
+  }
+  return true;
+}
+
+/// Tests each point with a guess (guesses(i) >= 0) in that element and then
+/// in the elements across its faces (InteriorOf): a hit writes results(i), a
+/// miss writes NO_INTERSECT. Returns the indices of the points left for the
+/// grid search, ascending, and their number; the view is allocated only when
+/// there are some.
+template <int Dim, typename Result>
+std::pair<Kokkos::View<LO*>, LO> TryGuesses(
+  Kokkos::View<const Real* [Dim]> points, Kokkos::View<const LO*> guesses,
+  const Omega_h::Graph& elems2elems, const Omega_h::LOs& elem_verts,
+  const Omega_h::Reals& coords, const Kokkos::View<Real[Dim]>& tolerances,
+  Kokkos::View<Result*> results)
+{
+  const auto n = static_cast<LO>(points.extent(0));
+  const auto offsets = elems2elems.a2ab;
+  const auto neighbours = elems2elems.ab2b;
+  ForEach(
+    "GridPointSearch::TryGuesses", n, KOKKOS_LAMBDA(const LO i) {
+      Omega_h::Vector<Dim> point;
+      for (int d = 0; d < Dim; ++d) {
+        point[d] = points(i, d);
+      }
+      Result result{Result::Dimensionality::NO_INTERSECT, -1,
+                    Omega_h::zero_vector<Dim>()};
+      const LO guess = guesses(i);
+      if (guess >= 0 && !InteriorOf<Dim>(point, guess, elem_verts, coords,
+                                         tolerances, result)) {
+        for (LO a = offsets[guess]; a < offsets[guess + 1]; ++a) {
+          if (InteriorOf<Dim>(point, neighbours[a], elem_verts, coords,
+                              tolerances, result)) {
+            break;
+          }
+        }
+      }
+      results(i) = result;
+    });
+  constexpr auto Miss = Result::Dimensionality::NO_INTERSECT;
+  if (IsSmallHostBatch(static_cast<std::size_t>(n))) {
+    LO num_misses = 0;
+    for (LO i = 0; i < n; ++i) {
+      num_misses += (results(i).dimensionality == Miss) ? 1 : 0;
+    }
+    if (num_misses == 0) {
+      return {{}, 0};
+    }
+    Kokkos::View<LO*> misses(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing, "point search misses"),
+      num_misses);
+    for (LO i = 0, k = 0; i < n; ++i) {
+      if (results(i).dimensionality == Miss) {
+        misses(k++) = i;
+      }
+    }
+    return {misses, num_misses};
+  }
+  LO num_misses = 0;
+  Kokkos::parallel_reduce(
+    "GridPointSearch::CountMisses",
+    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
+    KOKKOS_LAMBDA(const LO i, LO& count) {
+      count += (results(i).dimensionality == Miss) ? 1 : 0;
+    },
+    num_misses);
+  if (num_misses == 0) {
+    return {{}, 0};
+  }
+  Kokkos::View<LO*> misses(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "point search misses"),
+    num_misses);
+  Kokkos::parallel_scan(
+    "GridPointSearch::CollectMisses",
+    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
+    KOKKOS_LAMBDA(const LO i, LO& before, const bool final) {
+      if (results(i).dimensionality == Miss) {
+        if (final) {
+          misses(before) = i;
+        }
+        ++before;
+      }
+    });
+  return {misses, num_misses};
+}
+
+} // namespace
 
 KOKKOS_INLINE_FUNCTION
 AABBox<2> triangle_bbox(const Omega_h::Matrix<2, 3>& coords)
@@ -566,6 +703,23 @@ Kokkos::View<GridPointSearch2D::Result*> GridPointSearch2D::operator()(
   Kokkos::View<GridPointSearch2D::Result*> results(
     Kokkos::view_alloc(Kokkos::WithoutInitializing, "point search result"),
     points.extent(0));
+  (*this)(points, {}, results);
+  return results;
+}
+
+void GridPointSearch2D::operator()(Kokkos::View<const Real* [DIM]> points,
+                                   Kokkos::View<const LO*> guesses,
+                                   Kokkos::View<Result*> results) const
+{
+  // the points left for the grid: all of them without guesses
+  auto num_searched = static_cast<LO>(points.extent(0));
+  Kokkos::View<LO*> misses;
+  if (guesses.extent(0) > 0) {
+    std::tie(misses, num_searched) =
+      TryGuesses<DIM>(points, guesses, elems2elems_, tris2verts_, coords_,
+                      tolerances_, results);
+  }
+  const bool all = guesses.extent(0) == 0;
   auto num_rows = candidate_map_.numRows();
   // needed so that we don't capture this ptr which will be memory error on cuda
   auto grid = grid_;
@@ -577,8 +731,8 @@ Kokkos::View<GridPointSearch2D::Result*> GridPointSearch2D::operator()(
   auto coords = coords_;
   auto tolerances = tolerances_;
   ForEach(
-    "GridPointSearch", static_cast<LO>(points.extent(0)),
-    KOKKOS_LAMBDA(const LO p) {
+    "GridPointSearch", num_searched, KOKKOS_LAMBDA(const LO k) {
+      const LO p = all ? k : misses(k);
       Omega_h::Vector<2> point(
         std::initializer_list<double>{points(p, 0), points(p, 1)});
       auto cell_id = grid(0).ClosestCellID(point);
@@ -737,8 +891,6 @@ Kokkos::View<GridPointSearch2D::Result*> GridPointSearch2D::operator()(
       results(p) =
         GridPointSearch2D::Result{dim_out, entity_out, parametric_out};
     });
-
-  return results;
 }
 
 GridPointSearch2D::GridPointSearch2D(Omega_h::Mesh& mesh, LO Nx, LO Ny)
@@ -770,6 +922,7 @@ GridPointSearch2D::GridPointSearch2D(Omega_h::Mesh& mesh, LO Nx, LO Ny,
   tris2edges_adj_ = mesh.ask_down(Omega_h::FACE, Omega_h::EDGE);
   tris2verts_adj_ = mesh.ask_down(Omega_h::FACE, Omega_h::VERT);
   edges2verts_adj_ = mesh.ask_down(Omega_h::EDGE, Omega_h::VERT);
+  elems2elems_ = mesh.ask_dual();
 }
 
 Kokkos::View<GridPointSearch3D::Result*> GridPointSearch3D::operator()(
@@ -778,6 +931,23 @@ Kokkos::View<GridPointSearch3D::Result*> GridPointSearch3D::operator()(
   Kokkos::View<GridPointSearch3D::Result*> results(
     Kokkos::view_alloc(Kokkos::WithoutInitializing, "point search result"),
     points.extent(0));
+  (*this)(points, {}, results);
+  return results;
+}
+
+void GridPointSearch3D::operator()(Kokkos::View<const Real* [DIM]> points,
+                                   Kokkos::View<const LO*> guesses,
+                                   Kokkos::View<Result*> results) const
+{
+  // the points left for the grid: all of them without guesses
+  auto num_searched = static_cast<LO>(points.extent(0));
+  Kokkos::View<LO*> misses;
+  if (guesses.extent(0) > 0) {
+    std::tie(misses, num_searched) =
+      TryGuesses<DIM>(points, guesses, elems2elems_, tris2verts_, coords_,
+                      tolerances_, results);
+  }
+  const bool all = guesses.extent(0) == 0;
   auto num_rows = candidate_map_.numRows();
   // needed so that we don't capture this ptr which will be memory error on cuda
   auto grid = grid_;
@@ -786,8 +956,8 @@ Kokkos::View<GridPointSearch3D::Result*> GridPointSearch3D::operator()(
   auto coords = coords_;
   auto tolerances = tolerances_;
   ForEach(
-    "GridPointSearch", static_cast<LO>(points.extent(0)),
-    KOKKOS_LAMBDA(const LO p) {
+    "GridPointSearch", num_searched, KOKKOS_LAMBDA(const LO k) {
+      const LO p = all ? k : misses(k);
       using Dimensionality = GridPointSearch3D::Result::Dimensionality;
       Omega_h::Vector<DIM> point;
       for (int i = 0; i < DIM; ++i) {
@@ -846,8 +1016,6 @@ Kokkos::View<GridPointSearch3D::Result*> GridPointSearch3D::operator()(
           GridPointSearch3D::Result{Dimensionality::NO_INTERSECT, -1, xi};
       }
     });
-
-  return results;
 }
 
 GridPointSearch3D::GridPointSearch3D(Omega_h::Mesh& mesh, LO Nx, LO Ny, LO Nz)
@@ -884,5 +1052,6 @@ GridPointSearch3D::GridPointSearch3D(Omega_h::Mesh& mesh, LO Nx, LO Ny, LO Nz,
   tris2edges_adj_ = mesh.ask_down(Omega_h::FACE, Omega_h::EDGE);
   tris2verts_adj_ = mesh.ask_down(Omega_h::FACE, Omega_h::VERT);
   edges2verts_adj_ = mesh.ask_down(Omega_h::EDGE, Omega_h::VERT);
+  elems2elems_ = mesh.ask_dual();
 }
 } // namespace pcms

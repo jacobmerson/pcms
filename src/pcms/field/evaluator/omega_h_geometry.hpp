@@ -13,6 +13,7 @@
 #include <mutex>
 #include <string>
 #include <utility>
+#include <variant>
 
 namespace pcms
 {
@@ -124,25 +125,24 @@ KOKKOS_INLINE_FUNCTION Kokkos::pair<LO, Omega_h::Vector<Dim + 1>> LiftToElement(
   return {elem, bary};
 }
 
-/// The element and barycentric coordinates ([point][vertex]) every result of a
-/// search lifts to, see LiftToElement. Without `with_bary` only the elements
-/// are written (the coordinates view is empty).
+/// Writes the element and barycentric coordinates ([point][vertex]) every
+/// result of a search lifts to (see LiftToElement) to the first rows of
+/// `elem_ids` and, unless it has no rows, `bary`, and, unless it is empty,
+/// whether the point is in the mesh (as LocatePoints) to `found`.
 template <int Dim>
-std::pair<Kokkos::View<LO*, DeviceMemorySpace>,
-          Kokkos::View<Real**, DeviceMemorySpace>>
-LiftResults(Omega_h::Mesh& mesh,
-            Kokkos::View<const typename PointLocalizationSearch<Dim>::Result*,
-                         DeviceMemorySpace>
-              results,
-            bool with_bary = true)
+void LiftResults(
+  Omega_h::Mesh& mesh,
+  Kokkos::View<const typename PointLocalizationSearch<Dim>::Result*,
+               DeviceMemorySpace>
+    results,
+  Kokkos::View<LO*, DeviceMemorySpace> elem_ids,
+  Kokkos::View<Real**, DeviceMemorySpace> bary,
+  Kokkos::View<bool*, DeviceMemorySpace> found = {})
 {
+  using Result = typename PointLocalizationSearch<Dim>::Result;
   const auto n = static_cast<LO>(results.extent(0));
-  Kokkos::View<LO*, DeviceMemorySpace> elem_ids(
-    Kokkos::view_alloc(Kokkos::WithoutInitializing, "omega_h_lift_elem_ids"),
-    n);
-  Kokkos::View<Real**, DeviceMemorySpace> bary(
-    Kokkos::view_alloc(Kokkos::WithoutInitializing, "omega_h_lift_bary"),
-    with_bary ? n : 0, Dim + 1);
+  const bool with_bary = bary.extent(0) > 0;
+  const bool with_found = found.extent(0) > 0;
   Omega_h::Few<Omega_h::Adj, Dim> entities2elems;
   Omega_h::Few<Omega_h::Adj, Dim> entities2verts;
   for (int d = 0; d < Dim; ++d) {
@@ -162,7 +162,34 @@ LiftResults(Omega_h::Mesh& mesh,
           bary(i, k) = lifted.second[k];
         }
       }
+      if (with_found) {
+        found(i) =
+          !results(i).IsOutside() &&
+          results(i).dimensionality != Result::Dimensionality::NO_INTERSECT;
+      }
     });
+}
+
+/// The element and barycentric coordinates ([point][vertex]) every result of a
+/// search lifts to, see LiftToElement. Without `with_bary` only the elements
+/// are written (the coordinates view is empty).
+template <int Dim>
+std::pair<Kokkos::View<LO*, DeviceMemorySpace>,
+          Kokkos::View<Real**, DeviceMemorySpace>>
+LiftResults(Omega_h::Mesh& mesh,
+            Kokkos::View<const typename PointLocalizationSearch<Dim>::Result*,
+                         DeviceMemorySpace>
+              results,
+            bool with_bary = true)
+{
+  const auto n = static_cast<LO>(results.extent(0));
+  Kokkos::View<LO*, DeviceMemorySpace> elem_ids(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "omega_h_lift_elem_ids"),
+    n);
+  Kokkos::View<Real**, DeviceMemorySpace> bary(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "omega_h_lift_bary"),
+    with_bary ? n : 0, Dim + 1);
+  LiftResults<Dim>(mesh, results, elem_ids, bary);
   return {elem_ids, bary};
 }
 
@@ -213,6 +240,18 @@ void GatherFoundLifts(Kokkos::View<const LO*, DeviceMemorySpace> rows,
 /// binding's policy picks the element for the evaluators, which need one:
 /// shared entities (a point on an edge or vertex) take the lowest adjacent
 /// element, and a hinted bind uses the hinted element.
+///
+/// A rebind starts from the element each point had in the last locate (the
+/// hinted one after a hinted bind): a point that lies in it, or in an element
+/// sharing a side with it, farther than the search tolerance from that
+/// element's boundary keeps that element without a grid search; the others
+/// are searched for (see the guessed GridPointSearch2D::operator()). The
+/// elements, barycentric coordinates and found points are those of a new
+/// bind, except that in 3D a point closer to another element's tolerance band
+/// than to its own boundary may keep an element the search accepts but
+/// would not pick. The per-point arrays are kept across rebinds and
+/// reallocated only when the points outgrow them; the first bind searches
+/// every point.
 class OmegaHMeshBinding final : public BoundSource
 {
 public:
@@ -253,14 +292,25 @@ private:
   }
 
   /// Fills elem_ids_ and bary_ for the elements `owners` gives, or, if it is
-  /// empty, locates the points with the search, sets the found points and
-  /// lifts their results to elements (detail::LiftResults).
+  /// empty, locates the points with the search, from the guesses of the last
+  /// locate, sets the found points and lifts their results to elements
+  /// (detail::LiftResults).
   void Locate(Kokkos::View<const LO*, DeviceMemorySpace> owners);
 
   const GridPointSearchVariant& search_;
   Omega_h::Mesh& mesh_;
   Kokkos::View<LO*, DeviceMemorySpace> elem_ids_;
   Kokkos::View<Real**, DeviceMemorySpace> bary_;
+  // per query point, the search's result, the element and barycentric
+  // coordinates it lifts to, and whether it is in the mesh; the elements of
+  // the first num_guesses_ points are the guesses of the next rebind
+  std::variant<Kokkos::View<GridPointSearch2D::Result*, DeviceMemorySpace>,
+               Kokkos::View<GridPointSearch3D::Result*, DeviceMemorySpace>>
+    point_results_;
+  Kokkos::View<LO*, DeviceMemorySpace> point_elems_;
+  Kokkos::View<Real**, DeviceMemorySpace> point_bary_;
+  Kokkos::View<bool*, DeviceMemorySpace> point_found_;
+  LO num_guesses_ = 0;
 };
 
 /// @brief Options of an Omega_h geometry.
