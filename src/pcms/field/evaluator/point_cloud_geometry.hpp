@@ -15,6 +15,7 @@
 
 #include <Omega_h_array.hpp>
 #include <memory>
+#include <mutex>
 #include <string>
 
 namespace pcms
@@ -104,7 +105,7 @@ public:
     }
     const auto sites = site_layout_->GetDOFHolderCoordinates().GetValues();
     return BuildPointCloudSupports(
-      flatten_to_omega_h_reals(sites, "src_coords"),
+      SourceCoordinates(),
       flatten_to_omega_h_reals(coords.GetValues(), "tgt_coords"),
       static_cast<int>(sites.extent(1)), options.radius, options.min_supports,
       options.adapt_radius);
@@ -116,9 +117,7 @@ protected:
   {
     PCMS_FUNCTION_TIMER;
     // Extract source coordinates for the MLS solve.
-    const auto src_view = site_layout_->GetDOFHolderCoordinates().GetValues();
-    Omega_h::Reals source_coords =
-      flatten_to_omega_h_reals(src_view, "src_coords");
+    Omega_h::Reals source_coords = SourceCoordinates();
 
     const int site_dim = site_layout_->GetDOFHolderEntityDim();
     SupportResults supports =
@@ -130,8 +129,21 @@ protected:
   }
 
 private:
+  /// The sites flattened for the MLS solve, once per geometry: the site layout
+  /// is fixed, and Bind then flattens only the query points.
+  const Omega_h::Reals& SourceCoordinates() const
+  {
+    std::call_once(source_once_, [this] {
+      source_coords_ = flatten_to_omega_h_reals(
+        site_layout_->GetDOFHolderCoordinates().GetValues(), "src_coords");
+    });
+    return source_coords_;
+  }
+
   std::shared_ptr<const FieldLayout> site_layout_;
   NeighbourhoodOptions options_;
+  mutable std::once_flag source_once_;
+  mutable Omega_h::Reals source_coords_;
 };
 
 /// A point-cloud geometry whose sites are `coords` (copied to the device).

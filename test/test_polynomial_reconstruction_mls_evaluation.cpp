@@ -450,3 +450,40 @@ TEST_CASE("PolynomialReconstructionFunctionSpace MLS: 3D point clouds preserve "
   REQUIRE(out_host(1, 0) == Catch::Approx(3.75).margin(1e-2));
   REQUIRE(out_host(1, 0) - out_host(0, 0) == Catch::Approx(1.5).margin(1e-2));
 }
+
+TEST_CASE("PolynomialReconstructionFunctionSpace MLS: binding twice, and "
+          "binding other points in between, gives identical results")
+{
+  auto src = MakeGrid2D(9);
+  Rank2View<Real, HostMemorySpace> coords_view(src.data(), 81, 2);
+  auto fs = pcms::CreatePolynomialReconstructionSpace(
+    pcms::CreatePointCloudGeometry(
+      pcms::CoordinateView<HostMemorySpace>(pcms::csys::Cartesian::Deferred(),
+                                            coords_view),
+      pcms::NeighbourhoodOptions{.radius = 0.45, .min_supports = 8}),
+    Linear);
+  auto field = fs->CreateFunction<Real>();
+  auto func = OMEGA_H_LAMBDA(Real x, Real y)
+  {
+    return 2.0 * x - 3.0 * y;
+  };
+  pcms::test::SetField(field, func);
+
+  auto evaluate = [&](const std::vector<Real>& pts) {
+    auto evaluator =
+      fs->CreatePointEvaluator<Real>(pcms::test::Bind(*fs->GetGeometry(), pts));
+    const auto n = static_cast<int>(pts.size() / 2);
+    Kokkos::View<Real**, DeviceMemorySpace> out("out", n, 1);
+    evaluator->Evaluate(field, pcms::test::TagLike(field, out));
+    return Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out);
+  };
+  const auto pts = pcms::test::StandardEvalCoords2D();
+  const std::vector<Real> other{0.31, 0.62, 0.55, 0.45};
+  const auto first = evaluate(pts);
+  evaluate(other);
+  const auto second = evaluate(pts);
+  REQUIRE(first.extent(0) == second.extent(0));
+  for (size_t i = 0; i < first.extent(0); ++i) {
+    REQUIRE(first(i, 0) == second(i, 0));
+  }
+}
