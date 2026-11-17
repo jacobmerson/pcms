@@ -47,7 +47,7 @@ bool SameDOFHolderSites(const BoundSource& bound, const FieldLayout& layout);
 //   auto layout = tgt_space->GetLayout();
 //   auto geometry = src_space->GetGeometry();
 //   auto bound = geometry->Bind(layout->GetDOFHolderCoordinates(),
-//                               DOFHolderOwners(*layout, geometry));
+//                               DOFHolderOwners(*layout));
 //   Interpolator<Real> values(*src_space, *tgt_space, bound);
 //   Interpolator<Real> gradient(*Gradient(src_space), *grad_space, bound);
 template <typename T>
@@ -113,7 +113,7 @@ private:
     }
     const auto layout = target_space.GetLayout();
     return geometry->Bind(layout->GetDOFHolderCoordinates(),
-                          DOFHolderOwners(*layout, geometry), policy);
+                          DOFHolderOwners(*layout), policy);
   }
 
   static std::unique_ptr<PointEvaluator<T>> CreateEvaluator(

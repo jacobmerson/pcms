@@ -4,7 +4,6 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <Kokkos_Core.hpp>
 #include <Omega_h_library.hpp>
-#include <pcms/discretization/discretization/empty.hpp>
 #include <pcms/field/coordinate_map.hpp>
 #include <pcms/field/coordinate_systems/cylindrical.hpp>
 #include <pcms/field/function_space.h>
@@ -62,17 +61,7 @@ public:
 class AnalyticGeometry final : public pcms::Geometry
 {
 public:
-  AnalyticGeometry()
-    : discretization_(std::make_shared<pcms::EmptyDiscretization>()),
-      system_(pcms::csys::CylindricalRThetaZ::Create())
-  {
-  }
-
-  std::shared_ptr<const pcms::Discretization> GetDiscretization()
-    const noexcept override
-  {
-    return discretization_;
-  }
+  AnalyticGeometry() : system_(pcms::csys::CylindricalRThetaZ::Create()) {}
 
   const std::shared_ptr<const pcms::CoordinateSystem>& GetCoordinateSystem()
     const noexcept override
@@ -88,7 +77,6 @@ protected:
   }
 
 private:
-  std::shared_ptr<const pcms::Discretization> discretization_;
   std::shared_ptr<const pcms::CoordinateSystem> system_;
 };
 

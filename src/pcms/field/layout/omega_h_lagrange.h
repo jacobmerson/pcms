@@ -4,7 +4,7 @@
 #include <Omega_h_mesh.hpp>
 #include <memory>
 #include "pcms/utility/arrays.h"
-#include "pcms/discretization/discretization/omega_h.hpp"
+#include "pcms/field/evaluator/omega_h_geometry.hpp"
 #include "pcms/field/field_layout.h"
 #include "pcms/field/field.h"
 
@@ -18,19 +18,14 @@ namespace pcms
 class OmegaHLagrangeLayout : public FieldLayout
 {
 public:
-  /// @param discretization discretization of `mesh` to share, e.g. its
-  ///        geometry's, so SameEntities is pointer equality for spaces on one
-  ///        geometry; the layout reads the global id tag name and the owned
-  ///        mask from it. The mask is per vertex: it applies to the DOF holders
-  ///        of an order-1 layout and not to those of an order-0 layout.
-  /// @throws pcms_error if `discretization` is not of `mesh`
-  OmegaHLagrangeLayout(
-    Omega_h::Mesh& mesh, int order, int num_components,
-    std::shared_ptr<const CoordinateSystem> coordinate_system,
-    std::shared_ptr<const OmegaHDiscretization> discretization);
-
-  std::shared_ptr<const Discretization> GetDiscretization()
-    const noexcept override;
+  /// The layout is on `geometry`, whose mesh it lays out, and takes its
+  /// coordinate system, its global id tag name and its owned mask. The mask is
+  /// per vertex: it applies to the DOF holders of an order-1 layout and not to
+  /// those of an order-0 layout.
+  /// @throws pcms_error if `geometry` is null
+  /// @throws std::invalid_argument if `order` is neither 0 nor 1
+  OmegaHLagrangeLayout(std::shared_ptr<const OmegaHGeometry> geometry,
+                       int order, int num_components);
 
   int GetNumComponents() const override;
   LO GetNumDofHolder() const override;
@@ -87,8 +82,6 @@ private:
   void BuildOwnedViews();
   // Requires the owned views and the classification arrays.
   void BuildOwnedClassification();
-
-  std::shared_ptr<const Discretization> discretization_;
 };
 
 } // namespace pcms

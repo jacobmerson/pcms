@@ -1,7 +1,6 @@
 #ifndef PCMS_FIELD_EVALUATOR_OMEGA_H_GEOMETRY_HPP
 #define PCMS_FIELD_EVALUATOR_OMEGA_H_GEOMETRY_HPP
 
-#include "pcms/discretization/discretization/omega_h.hpp"
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/localization/point_search.h"
 #include "pcms/utility/memory_spaces.h"
@@ -11,6 +10,7 @@
 #include <Omega_h_shape.hpp>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -221,29 +221,29 @@ struct OmegaHGeometryOptions
   SearchOptions search;
   /// the tag holding global entity ids
   std::string global_id_name = "global";
-  /// per-vertex ownership override; empty means the mesh's ownership, see
-  /// OmegaHDiscretization
+  /// per-vertex ownership override: a vertex the mask is 0 for is not owned,
+  /// whatever the mesh says; empty means the mesh's own ownership. Layouts
+  /// whose DOF holders are the mesh vertices apply it; layouts of other
+  /// entities do not.
   Omega_h::Read<Omega_h::I8> owned_mask;
 };
 
-/// Geometry of a 2D or 3D Omega_h simplex mesh (with classification) with
-/// straight-sided elements. Construction builds the containing-element search
-/// over the mesh, which costs about as much as a bind: create one geometry per
-/// mesh and share it. Create it with CreateOmegaHGeometry.
+/// Geometry of a 2D or 3D Omega_h simplex mesh with
+/// straight-sided elements. The containing-element search over the mesh is
+/// built by the first Bind or Neighbourhood, which costs about as much as a
+/// bind: create one geometry per mesh and share it, so that every layout and
+/// space on the mesh is on the same entities. Create it with
+/// CreateOmegaHGeometry.
 class OmegaHGeometry final : public Geometry
 {
 public:
   /// Own it by std::shared_ptr, as CreateOmegaHGeometry does: Bind uses
   /// shared_from_this().
+  /// @throws pcms_error if the options' owned mask is not empty and does not
+  ///         have one entry per mesh vertex
   OmegaHGeometry(Omega_h::Mesh& mesh,
                  std::shared_ptr<const CoordinateSystem> system,
                  OmegaHGeometryOptions options = {});
-
-  [[nodiscard]] std::shared_ptr<const Discretization> GetDiscretization()
-    const noexcept override
-  {
-    return discretization_;
-  }
 
   [[nodiscard]] const std::shared_ptr<const CoordinateSystem>&
   GetCoordinateSystem() const noexcept override
@@ -252,6 +252,20 @@ public:
   }
 
   [[nodiscard]] Omega_h::Mesh& GetMesh() const noexcept { return mesh_; }
+
+  /// @return the name of the tag that holds the global entity ids the layouts
+  ///         on this geometry use
+  [[nodiscard]] const std::string& GetGlobalIdName() const noexcept
+  {
+    return global_id_name_;
+  }
+
+  /// @return the per-vertex ownership override, empty if the mesh's own
+  ///         ownership applies
+  [[nodiscard]] Omega_h::Read<Omega_h::I8> GetOwnedMask() const noexcept
+  {
+    return owned_mask_;
+  }
 
   /// One source element per query point, to seed adjacency searches. Points
   /// must be in the mesh's native coordinate system. `guesses`, empty or an
@@ -287,12 +301,19 @@ protected:
     const BindRequest& request) const override;
 
 private:
+  /// The containing-element search, built on first use.
+  const GridPointSearchVariant& Search() const;
+
   Omega_h::Mesh& mesh_;
-  std::shared_ptr<const OmegaHDiscretization> discretization_;
+  std::string global_id_name_;
+  Omega_h::Read<Omega_h::I8> owned_mask_;
   std::shared_ptr<const CoordinateSystem> system_;
-  GridPointSearchVariant search_;
-  // Differential is computed once, lazily; the geometry is const and shared,
-  // hence the once_flag. This is the one mutable member and it is a cache.
+  SearchOptions search_options_;
+  // The search and Differential are built once, lazily; the geometry is const
+  // and shared, hence the once_flags. These are the mutable members and they
+  // are caches.
+  mutable std::once_flag search_once_;
+  mutable std::optional<GridPointSearchVariant> search_;
   mutable std::once_flag differential_once_;
   mutable DifferentialView differential_;
 };

@@ -51,8 +51,9 @@ TEST_CASE("MLS reconstruction from a mesh to vertices")
     Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 20, 20, 0, false);
   const auto system = pcms::csys::Cartesian::Create(2);
   const pcms::NeighbourhoodOptions supports{.radius = 0.12, .min_supports = 15};
-  auto vertices = std::make_shared<pcms::OmegaHEntityLayout>(
-    source_mesh, pcms::Vertex, 1, system);
+  const auto source_geometry = pcms::test::MakeOmegaHGeometry(source_mesh);
+  auto vertices = std::make_shared<pcms::OmegaHEntityLayout>(source_geometry,
+                                                             pcms::Vertex, 1);
 
   SECTION("Single Mesh")
   {
@@ -60,7 +61,7 @@ TEST_CASE("MLS reconstruction from a mesh to vertices")
     // adjacency and by the distance search over the centroids as a point cloud
     auto mesh_space = pcms::CreatePolynomialReconstructionSpace(
       pcms::CreatePointCloudGeometry(std::make_shared<pcms::OmegaHEntityLayout>(
-                                       source_mesh, pcms::Face, 1, system),
+                                       source_geometry, pcms::Face, 1),
                                      supports));
     auto centroids = pcms::test::CopyOmegaHRealsToVector(
       pcms::get_entity_centroids(source_mesh, Omega_h::FACE));
@@ -72,8 +73,7 @@ TEST_CASE("MLS reconstruction from a mesh to vertices")
         supports),
       {});
     const auto mesh_bound = mesh_space->GetGeometry()->Bind(
-      vertices->GetDOFHolderCoordinates(),
-      pcms::DOFHolderOwners(*vertices, mesh_space->GetGeometry()));
+      vertices->GetDOFHolderCoordinates(), pcms::DOFHolderOwners(*vertices));
     const auto cloud_bound =
       cloud_space->GetGeometry()->Bind(vertices->GetDOFHolderCoordinates());
 
@@ -111,8 +111,8 @@ TEST_CASE("MLS reconstruction from a mesh to vertices")
     auto field = space->CreateFunction<Real>();
     pcms::test::SetField(
       field, OMEGA_H_LAMBDA(Real x, Real y) { return SinxCosy(x, y); });
-    const pcms::OmegaHEntityLayout targets(target_mesh, pcms::Vertex, 1,
-                                           system);
+    const pcms::OmegaHEntityLayout targets(
+      pcms::test::MakeOmegaHGeometry(target_mesh), pcms::Vertex, 1);
     const auto values = pcms::test::EvaluateToHost(
       *space->CreatePointEvaluator<Real>(
         space->GetGeometry()->Bind(targets.GetDOFHolderCoordinates())),

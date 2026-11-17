@@ -27,15 +27,6 @@ namespace pcms
 namespace
 {
 
-// The discretization of an Omega_h geometry, which the layouts of the spaces
-// on it share (OmegaHGeometry creates an OmegaHDiscretization).
-std::shared_ptr<const OmegaHDiscretization> GeometryDiscretization(
-  const OmegaHGeometry& geometry)
-{
-  return std::static_pointer_cast<const OmegaHDiscretization>(
-    geometry.GetDiscretization());
-}
-
 /// Checks that `backend` supports Lagrange order `order` (and an owned mask
 /// if `owned_mask`) before anything is built.
 /// @return the backend to use: MeshFields falls back to OmegaH for order 0
@@ -76,19 +67,16 @@ std::shared_ptr<FunctionSpace> CreateOmegaHLagrangeSpace(
   std::shared_ptr<const OmegaHGeometry> geometry, int order, int num_components,
   const LagrangeOptions& options)
 {
-  const auto discretization = GeometryDiscretization(*geometry);
-  const auto backend = CheckOrderAndBackend(
-    order, options.backend,
-    /*owned_mask=*/discretization->GetOwnedMask().size() > 0);
-  Omega_h::Mesh& mesh = geometry->GetMesh();
-  const auto& coordinate_system = geometry->GetCoordinateSystem();
+  const auto backend =
+    CheckOrderAndBackend(order, options.backend,
+                         /*owned_mask=*/geometry->GetOwnedMask().size() > 0);
   if (backend == LagrangeBackend::MeshFields) {
 #ifdef PCMS_ENABLE_MESHFIELDS
     const std::array<int, 4> nodes_per_dim = order == 1
                                                ? std::array<int, 4>{1, 0, 0, 0}
                                                : std::array<int, 4>{1, 1, 0, 0};
     auto mesh_layout = std::make_shared<MeshFieldsAdapterLayout>(
-      mesh, nodes_per_dim, num_components, coordinate_system, discretization);
+      geometry, nodes_per_dim, num_components);
     mesh_layout->SetName(options.layout_name);
     auto eval_factory =
       std::make_shared<MeshFieldsEvaluatorFactory<Real>>(geometry, mesh_layout);
@@ -115,8 +103,8 @@ std::shared_ptr<FunctionSpace> CreateOmegaHLagrangeSpace(
       std::move(eval_factory));
 #endif
   }
-  auto layout = std::make_shared<OmegaHLagrangeLayout>(
-    mesh, order, num_components, coordinate_system, discretization);
+  auto layout =
+    std::make_shared<OmegaHLagrangeLayout>(geometry, order, num_components);
   layout->SetName(options.layout_name);
   auto eval_factory = std::make_shared<OmegaHLagrangeEvaluatorFactory<Real>>(
     std::move(geometry), layout);
@@ -146,8 +134,7 @@ std::shared_ptr<FunctionSpace> CreateUniformGridLagrangeSpace(
                      "support Lagrange orders 0 and 1");
   }
   auto ug_layout = std::make_shared<UniformGridFieldLayout<Dim>>(
-    geometry->GetGrid(), num_components, geometry->GetCoordinateSystem(),
-    order);
+    geometry, num_components, order);
   ug_layout->SetName(options.layout_name);
   auto eval_factory = std::make_shared<UniformGridEvaluatorFactory<Dim>>(
     std::move(geometry), ug_layout);

@@ -63,12 +63,6 @@ public:
     }
   }
 
-  [[nodiscard]] std::shared_ptr<const Discretization> GetDiscretization()
-    const noexcept override
-  {
-    return site_layout_->GetDiscretization();
-  }
-
   [[nodiscard]] const std::shared_ptr<const CoordinateSystem>&
   GetCoordinateSystem() const noexcept override
   {
@@ -186,11 +180,10 @@ inline std::shared_ptr<Geometry> CreatePointCloudGeometry(
   Omega_h::Mesh* mesh = nullptr;
   int site_entity_dim = -1;
   if (dynamic_cast<const OmegaHEntityLayout*>(sites.get()) != nullptr) {
-    const auto discretization =
-      std::dynamic_pointer_cast<const OmegaHDiscretization>(
-        sites->GetDiscretization());
-    PCMS_ALWAYS_ASSERT(discretization != nullptr);
-    mesh = &discretization->GetMesh();
+    const auto* geometry =
+      dynamic_cast<const OmegaHGeometry*>(sites->GetGeometry().get());
+    PCMS_ALWAYS_ASSERT(geometry != nullptr);
+    mesh = &geometry->GetMesh();
     site_entity_dim = sites->GetDOFHolderEntityDim();
   }
   return std::make_shared<PointCloudGeometry>(

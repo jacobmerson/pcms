@@ -653,6 +653,14 @@ void CheckEvaluationWithFill(const Factory& factory, const Field<Real>& field,
                                           func, fill_value, abs_tol);
 }
 
+// An Omega_h geometry of `mesh` in the Cartesian coordinate system of its
+// dimension, typed for the layouts built on it.
+inline std::shared_ptr<OmegaHGeometry> MakeOmegaHGeometry(Omega_h::Mesh& mesh)
+{
+  return std::make_shared<OmegaHGeometry>(
+    mesh, pcms::csys::Cartesian::Create(mesh.dim()));
+}
+
 // Checks that `points` bound with `owners` on their Omega_h geometry are in
 // the elements its search finds.
 inline void CheckOwnersMatchSearch(CoordinateView<DeviceMemorySpace> points,

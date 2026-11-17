@@ -93,7 +93,7 @@ inline Kokkos::View<Real*, DeviceMemorySpace> ElementMeasuresAtPoints(
   }
   PCMS_ALWAYS_ASSERT(owners.entities.extent(0) ==
                      static_cast<size_t>(bound->NumPoints()));
-  const int dim = geometry.GetDiscretization()->GetDimension();
+  const int dim = GetMesh(geometry).dim();
   const Real reference_measure = dim == 3 ? 1.0 / 6.0 : 0.5;
   const auto determinant = differential.determinant;
   const bool per_element = differential.per_element;
