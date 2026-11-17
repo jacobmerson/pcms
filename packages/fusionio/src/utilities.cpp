@@ -710,4 +710,61 @@ Path GeomIsosurface(const pcms::Function<Real>& f, Real val, const Point& guess,
   return path;
 }
 
+GriddedSurface GriddedIsosurface(const pcms::Function<Real>& f, Real val,
+                                 const Point& guess, const Point& axis,
+                                 Real dl_pol, Real tol, Real max_step, int nphi,
+                                 int ntheta)
+{
+  RequireScalar(f, "GriddedIsosurface");
+  Probe probe(f, true);
+  const auto planes = static_cast<size_t>(nphi);
+  GriddedSurface surface{SearchResult::Success, std::vector<Real>(planes),
+                         std::vector<Real>(ntheta), std::vector<Point>(planes),
+                         std::vector<Point>(planes * ntheta)};
+  for (size_t i = 0; i < planes; ++i) {
+    surface.phi[i] = TwoPi * i / nphi;
+    surface.axis[i] = {axis[0], surface.phi[i], axis[2]};
+  }
+  const auto fail = [&](const std::vector<SearchResult>& results) {
+    for (const SearchResult result : results) {
+      if (result != SearchResult::Success) {
+        surface.result = result;
+        return true;
+      }
+    }
+    return false;
+  };
+  // the magnetic axis (the maximum) of each plane
+  std::vector<Real> max_val(planes, NaN);
+  if (fail(FindMax(probe, max_val, surface.axis, tol, max_step, 2,
+                   {0., 1., 0.}))) {
+    return surface;
+  }
+  // a point of each plane's loop, out along R from the axis
+  std::vector<Point> x(planes);
+  for (size_t i = 0; i < planes; ++i) {
+    x[i] = {guess[0], surface.phi[i], surface.axis[i][2]};
+  }
+  const auto start = FindVal(probe, val, x, tol, max_step, 1, {1., 0., 0.});
+  if (std::ranges::find(start, SearchResult::OutOfBounds) != start.end()) {
+    surface.result = SearchResult::OutOfBounds;
+    return surface;
+  }
+  const auto loops =
+    Isosurface2D(f, val, x, {0., 1., 0.}, std::nullopt, dl_pol, tol, max_step);
+  for (size_t i = 0; i < planes; ++i) {
+    surface.result = loops[i].result;
+    if (surface.result == SearchResult::Success) {
+      surface.result =
+        GridifyLoop(loops[i].points, {},
+                    std::span(surface.path).subspan(i * ntheta, ntheta),
+                    surface.theta, LoopParameter::ArcLength);
+    }
+    if (surface.result != SearchResult::Success) {
+      return surface;
+    }
+  }
+  return surface;
+}
+
 } // namespace fusionio

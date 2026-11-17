@@ -109,6 +109,26 @@ Path GeomIsosurface(const pcms::Function<Real>& f, Real val, const Point& guess,
                     const Point& axis, Real tol, Real max_step, int nphi,
                     int ntheta);
 
+/// A surface on a grid of nphi x ntheta points (path[i * ntheta + j] at
+/// phi[i], theta[j]) and the axis found in each plane.
+struct GriddedSurface
+{
+  SearchResult result;
+  std::vector<Real> phi;
+  std::vector<Real> theta;
+  std::vector<Point> axis;
+  std::vector<Point> path;
+};
+
+/// fio_gridded_isosurface: in each of `nphi` planes, the axis (FindMax from
+/// `axis`, dim 2), a point of the contour at `val` out along R from it
+/// (FindVal from R = guess[0]), the contour (Isosurface2D, points `dl_pol`
+/// apart) and the contour gridded by arc length (GridifyLoop).
+GriddedSurface GriddedIsosurface(const pcms::Function<Real>& f, Real val,
+                                 const Point& guess, const Point& axis,
+                                 Real dl_pol, Real tol, Real max_step, int nphi,
+                                 int ntheta);
+
 } // namespace fusionio
 
 #endif // FUSIONIO_UTILITIES_HPP

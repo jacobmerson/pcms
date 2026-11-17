@@ -391,3 +391,40 @@ TEST_CASE("fusionio isosurfaces match 1.x's")
     }
   }
 }
+
+TEST_CASE("fusionio::GriddedIsosurface matches fio_gridded_isosurface")
+{
+  Flux flux;
+  const Real val = flux.Psi1x({1.9, 0., 0.});
+  const Real tol = 1e-10 * std::abs(val);
+  constexpr int NPhi = 3, NTheta = 32;
+  const Point guess{1.9, 0., 0.};
+  const Point axis{1.75, 0., 0.};
+  const auto surface = fusionio::GriddedIsosurface(
+    flux.psi, val, guess, axis, 0.02, tol, 0.1, NPhi, NTheta);
+  REQUIRE(surface.result == SearchResult::Success);
+
+  Arrays1x axis1x(std::vector<Point>(NPhi, axis)), path1x(NPhi * NTheta);
+  std::vector<double> phi1x(NPhi), theta1x(NTheta);
+  REQUIRE(fio_gridded_isosurface(flux.psi1x.get(), val, guess.data(),
+                                 axis1x.rows, 0.02, 0.02, tol, 0.1, NPhi,
+                                 NTheta, phi1x.data(), theta1x.data(),
+                                 path1x.rows, nullptr) == FIO_SUCCESS);
+  REQUIRE(surface.phi == std::vector<Real>(phi1x.begin(), phi1x.end()));
+  REQUIRE(surface.theta == std::vector<Real>(theta1x.begin(), theta1x.end()));
+  // The first plane is 1.x's search. 1.x starts each later plane's axis and
+  // contour search from the previous plane's results, this from the
+  // arguments. The axis search stops once psi changes by less than tol in a
+  // step, within sqrt(tol / psi'') of the axis (about 1e-6 m here), and the
+  // contour starts level with the axis, so the gridded points move as much.
+  for (int i = 0; i < NPhi; ++i) {
+    CAPTURE(i);
+    const Real tolerance = i == 0 ? 1e-12 : 1e-5;
+    RequirePoint(surface.axis[i], axis1x.At(i), tolerance);
+    for (int j = 0; j < NTheta; ++j) {
+      CAPTURE(j);
+      RequirePoint(surface.path[i * NTheta + j], path1x.At(i * NTheta + j),
+                   tolerance);
+    }
+  }
+}
