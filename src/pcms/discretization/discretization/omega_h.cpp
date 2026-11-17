@@ -1,6 +1,7 @@
 #include "pcms/discretization/discretization/omega_h.hpp"
 #include "pcms/utility/assert.h"
 #include "pcms/utility/mesh_geometry.h"
+#include <string>
 
 namespace pcms
 {
@@ -11,8 +12,17 @@ static_assert(
   std::is_same_v<ClassificationDimension, Omega_h::I8>,
   "ClassificationDimension must match Omega_h::I8 for direct views");
 
-OmegaHDiscretization::OmegaHDiscretization(Omega_h::Mesh& mesh) : mesh_(mesh)
+OmegaHDiscretization::OmegaHDiscretization(
+  Omega_h::Mesh& mesh, std::string global_id_name,
+  Omega_h::Read<Omega_h::I8> owned_mask)
+  : mesh_(mesh),
+    global_id_name_(std::move(global_id_name)),
+    owned_mask_(std::move(owned_mask))
 {
+  if (owned_mask_.size() != 0 && owned_mask_.size() != mesh_.nverts()) {
+    throw pcms_error("OmegaHDiscretization: the owned mask must have one "
+                     "entry per mesh vertex");
+  }
   for (int entity_dim = 0; entity_dim <= max_entity_dim_; ++entity_dim) {
     class_dims_by_dim_[entity_dim] = Omega_h::Read<Omega_h::I8>();
     class_ids_by_dim_[entity_dim] = Omega_h::Read<Omega_h::ClassId>();
@@ -24,6 +34,20 @@ OmegaHDiscretization::OmegaHDiscretization(Omega_h::Mesh& mesh) : mesh_(mesh)
     class_ids_by_dim_[entity_dim] = Omega_h::Read<Omega_h::ClassId>(
       mesh_.get_array<Omega_h::ClassId>(entity_dim, "class_id"));
   }
+}
+
+std::shared_ptr<const OmegaHDiscretization> detail::CheckDiscretizationOf(
+  Omega_h::Mesh& mesh,
+  std::shared_ptr<const OmegaHDiscretization> discretization,
+  const char* caller)
+{
+  PCMS_ALWAYS_ASSERT(discretization != nullptr);
+  if (&discretization->GetMesh() != &mesh) {
+    throw pcms_error(std::string(caller) +
+                     ": the discretization is of another mesh than the "
+                     "layout's");
+  }
+  return discretization;
 }
 
 bool OmegaHDiscretization::SameEntities(
