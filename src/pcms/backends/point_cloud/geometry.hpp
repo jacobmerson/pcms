@@ -3,54 +3,39 @@
 
 #include "pcms/utility/coordinate_system.hpp"
 #include "pcms/backends/point_cloud/mls_evaluator.hpp"
-#include "pcms/backends/omega_h/geometry.hpp"
 #include "pcms/field/field_layout.hpp"
-#include "pcms/backends/omega_h/entity_layout.hpp"
 #include "pcms/backends/point_cloud/layout.hpp"
 #include "pcms/geometry/geometry.hpp"
-#include "pcms/backends/omega_h/adj_search.hpp"
 #include "pcms/localization/mls_support_helpers.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/entity_types.hpp"
-#include "pcms/utility/omega_h_array_utils.hpp"
 #include "pcms/utility/detail/profile.hpp"
 
-#include <Omega_h_array.hpp>
-#include <Omega_h_mesh.hpp>
 #include <memory>
 #include <string>
 
 namespace pcms::backend::point_cloud
 {
 
-/// Geometry of a set of sites (the DOF holders of a layout: a point cloud or
-/// the entities of one dimension of a mesh): the identity map, located by the
-/// MLS supports of each query point. Bind finds the supports with
-/// Neighbourhood, using the options the geometry was created with. For the
-/// vertices of a mesh, construction builds the mesh's OmegaHGeometry, whose
-/// search starts the adjacency search of each point. Create it with
-/// CreatePointCloudGeometry (pcms/geometry/geometry.hpp).
+/// Geometry of a set of sites (the DOF holders of a layout): the identity
+/// map, located by the MLS supports of each query point. Bind finds the
+/// supports with Neighbourhood, using the options the geometry was created
+/// with; the supports are found by distance. Sites that are the entities of
+/// an Omega_h mesh use the mesh-sited variant of the Omega_h backend
+/// (backend::omega_h::OmegaHPointCloudGeometry), whose Neighbourhood is the
+/// mesh-adjacency search. Create it with CreatePointCloudGeometry
+/// (pcms/geometry/geometry.hpp).
 /// @throws pcms_error on construction if the sites' coordinate system does not
 ///         have the identity metric
-class PointCloudGeometry final : public Geometry
+class PointCloudGeometry : public Geometry
 {
 public:
   /// Own it by std::shared_ptr, as CreatePointCloudGeometry does: Bind uses
   /// shared_from_this().
-  /// @param mesh the mesh whose entities of dimension `site_entity_dim` are
-  ///        the sites, or null for a point cloud
   PointCloudGeometry(std::shared_ptr<const FieldLayout> site_layout,
-                     Omega_h::Mesh* mesh, int site_entity_dim,
                      NeighbourhoodOptions options)
-    : site_layout_(std::move(site_layout)),
-      mesh_(mesh),
-      site_entity_dim_(site_entity_dim),
-      options_(std::move(options)),
-      vertex_geometry_(mesh != nullptr && site_entity_dim == Vertex
-                         ? std::make_shared<omega_h::OmegaHGeometry>(
-                             *mesh, site_layout_->GetCoordinateSystem())
-                         : nullptr)
+    : site_layout_(std::move(site_layout)), options_(std::move(options))
   {
     // MLS distances are based on the unweighted Euclidean measure, which is
     // valid only with the identity metric; this almost certainly should be
@@ -82,38 +67,24 @@ public:
     return site_layout_;
   }
 
-  /// The mesh-adjacency search for the sites of a mesh (its vertices or its
-  /// element centroids) when `owners` gives the cell or vertex of the mesh at
-  /// each point, and for mesh-vertex sites, which otherwise locate the points
-  /// first; the distance search otherwise.
+  /// The supports by distance (BuildPointCloudSupports); `owners` is
+  /// ignored.
   [[nodiscard]] SupportResults Neighbourhood(
     CoordinateView<DeviceMemorySpace> coords,
     const NeighbourhoodOptions& options,
-    const KnownOwners& owners = {}) const override
+    const KnownOwners& /*owners*/ = {}) const override
   {
     pcms::detail::CheckNeighbourhoodArguments(
       *this, coords, options, "PointCloudGeometry::Neighbourhood");
-    const auto n = static_cast<LO>(coords.GetValues().extent(0));
-    const auto mesh_entity = [this](int dim) {
-      return dim == Vertex || dim == mesh_->dim();
-    };
-    // the supports are entity ids, which are site indices only without ghosts
-    if (mesh_ != nullptr && mesh_entity(site_entity_dim_) &&
-        !site_layout_->HasGhosts() && owners.Hints(*this, n) &&
-        mesh_entity(owners.entity_dim)) {
-      pcms::detail::CheckEntityIds(
-        owners.entities, mesh_->nents(owners.entity_dim),
-        "PointCloudGeometry::Neighbourhood",
-        owners.entity_dim == Vertex ? "vertex" : "element");
-      return omega_h::searchNeighbors(
-        *mesh_, site_entity_dim_,
-        utility::flatten_to_omega_h_reals(coords.GetValues()),
-        owners.entity_dim, owners.entities, options.radius * options.radius,
-        options.min_supports, 3 * options.min_supports, options.adapt_radius);
-    }
-    if (vertex_geometry_ != nullptr) {
-      return vertex_geometry_->Neighbourhood(std::move(coords), options);
-    }
+    return DistanceNeighbourhood(coords, options);
+  }
+
+protected:
+  /// The supports of the points `coords` among the sites by distance.
+  [[nodiscard]] SupportResults DistanceNeighbourhood(
+    const CoordinateView<DeviceMemorySpace>& coords,
+    const NeighbourhoodOptions& options) const
+  {
     const auto sites = site_layout_->GetDOFHolderCoordinates().GetValues();
     return localization::BuildPointCloudSupports(
       detail::FlattenRows(sites, "src_coords"),
@@ -122,7 +93,6 @@ public:
       options.adapt_radius);
   }
 
-protected:
   std::shared_ptr<BoundSource> BindImpl(
     const BindRequest& request) const override
   {
@@ -142,12 +112,7 @@ protected:
 
 private:
   std::shared_ptr<const FieldLayout> site_layout_;
-  Omega_h::Mesh* mesh_;
-  int site_entity_dim_;
   NeighbourhoodOptions options_;
-  // for mesh-vertex sites, the mesh's geometry: its Neighbourhood is the
-  // adjacency search from the element its search finds for each point
-  std::shared_ptr<const omega_h::OmegaHGeometry> vertex_geometry_;
 };
 
 } // namespace pcms::backend::point_cloud
