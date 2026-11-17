@@ -45,7 +45,10 @@ OmegaHDiscretization::OmegaHDiscretization(
   }
 }
 
-std::shared_ptr<const OmegaHDiscretization> detail::CheckDiscretizationOf(
+namespace detail
+{
+
+std::shared_ptr<const OmegaHDiscretization> CheckDiscretizationOf(
   Omega_h::Mesh& mesh,
   std::shared_ptr<const OmegaHDiscretization> discretization,
   const char* caller)
@@ -58,6 +61,8 @@ std::shared_ptr<const OmegaHDiscretization> detail::CheckDiscretizationOf(
   }
   return discretization;
 }
+
+} // namespace detail
 
 bool OmegaHDiscretization::SameEntities(
   const Discretization& other) const noexcept
