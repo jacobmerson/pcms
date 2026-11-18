@@ -1,12 +1,12 @@
-#ifndef PCMS_UNIFORM_GRID_BINARY_FIELD_H
-#define PCMS_UNIFORM_GRID_BINARY_FIELD_H
+#ifndef PCMS_BACKENDS_OMEGA_H_UNIFORM_GRID_BINARY_FIELD_HPP
+#define PCMS_BACKENDS_OMEGA_H_UNIFORM_GRID_BINARY_FIELD_HPP
 
 #include "pcms/backends/uniform_grid/layout.hpp"
 #include "pcms/field/simple_field_data.hpp"
 #include "pcms/field/function_spaces.hpp"
 #include "pcms/backends/uniform_grid/geometry.hpp"
 #include "pcms/field/value_view.hpp"
-#include "pcms/localization/point_search.hpp"
+#include "pcms/backends/omega_h/point_search.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/types.hpp"
 #include "pcms/utility/uniform_grid.hpp"
@@ -41,7 +41,8 @@ std::pair<std::shared_ptr<const uniform_grid::UniformGridFieldLayout<Dim>>,
 CreateUniformGridBinaryField(Omega_h::Mesh& mesh, const UniformGrid<Dim>& grid)
 {
   auto function_space = CreateLagrangeSpace(
-    CreateUniformGridGeometry(grid, csys::Cartesian::Deferred()), 1, 1);
+    uniform_grid::CreateUniformGridGeometry(grid, csys::Cartesian::Deferred()),
+    1, 1);
   auto layout =
     std::dynamic_pointer_cast<const uniform_grid::UniformGridFieldLayout<Dim>>(
       function_space->GetLayout());
@@ -61,15 +62,13 @@ CreateUniformGridBinaryField(Omega_h::Mesh& mesh, const UniformGrid<Dim>& grid)
     });
 
   // Run point-in-mesh search
-  Kokkos::View<typename localization::PointLocalizationSearch<Dim>::Result*>
-    results_d;
+  Kokkos::View<typename PointLocalizationSearch<Dim>::Result*> results_d;
   if constexpr (Dim == 2) {
-    localization::GridPointSearch2D search(mesh, grid.divisions[0],
-                                           grid.divisions[1]);
+    GridPointSearch2D search(mesh, grid.divisions[0], grid.divisions[1]);
     results_d = search(coords_d);
   } else {
-    localization::GridPointSearch3D search(
-      mesh, grid.divisions[0], grid.divisions[1], grid.divisions[2]);
+    GridPointSearch3D search(mesh, grid.divisions[0], grid.divisions[1],
+                             grid.divisions[2]);
     results_d = search(coords_d);
   }
   auto results_h =
@@ -100,4 +99,4 @@ CreateUniformGridBinaryField(Omega_h::Mesh& mesh,
 
 } // namespace pcms::backend::omega_h
 
-#endif // PCMS_UNIFORM_GRID_BINARY_FIELD_H
+#endif // PCMS_BACKENDS_OMEGA_H_UNIFORM_GRID_BINARY_FIELD_HPP
