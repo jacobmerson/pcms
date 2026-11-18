@@ -50,13 +50,12 @@ inline OmegaHScalarSpace ResolveOmegaHScalarSpace(const FunctionSpace& space,
   auto geometry =
     std::dynamic_pointer_cast<const backend::omega_h::OmegaHGeometry>(
       space.GetGeometry());
-  if (geometry == nullptr ||
-      &backend::omega_h::GetMesh(*geometry) != &layout->GetMesh()) {
+  if (geometry == nullptr || &geometry->GetMesh() != &layout->GetMesh()) {
     throw pcms_error(prefix +
                      "space must be on the Omega_h geometry of its layout's "
                      "mesh");
   }
-  const Omega_h::Mesh& mesh = backend::omega_h::GetMesh(*geometry);
+  const Omega_h::Mesh& mesh = geometry->GetMesh();
   if (mesh.dim() != 2 && mesh.dim() != 3) {
     throw pcms_error(prefix + "mesh must be 2D or 3D");
   }
@@ -96,7 +95,10 @@ inline Kokkos::View<Real*, DeviceMemorySpace> ElementMeasuresAtPoints(
   }
   PCMS_ALWAYS_ASSERT(owners.entities.extent(0) ==
                      static_cast<size_t>(bound->NumPoints()));
-  const int dim = backend::omega_h::GetMesh(geometry).dim();
+  const int dim =
+    dynamic_cast<const backend::omega_h::OmegaHGeometry&>(geometry)
+      .GetMesh()
+      .dim();
   const Real reference_measure = dim == 3 ? 1.0 / 6.0 : 0.5;
   const auto determinant = differential.determinant;
   const bool per_element = differential.per_element;

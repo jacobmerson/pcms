@@ -59,6 +59,8 @@ Kokkos::View<Real*, DeviceMemorySpace> FlattenRows(const View2D& coords,
 /// @brief MLS bound source: the supports of the query points and the
 ///        coordinates the solve uses. A query point without supports (e.g.
 ///        one the adjacency search has no start for) is missing.
+///
+/// Implementer API: not covered by the public-API stability promise.
 class MLSBinding final : public BoundSource
 {
 public:
@@ -136,6 +138,8 @@ private:
 };
 
 /// @brief Evaluates a scalar point-cloud field at the bound points by MLS.
+///
+/// Implementer API: not covered by the public-API stability promise.
 template <typename LayoutPolicy =
             pcms::detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
 class MLSPointEvaluator : public PointEvaluator<Real, LayoutPolicy>

@@ -1,6 +1,9 @@
 #ifndef PCMS_LOCALIZATION_MLS_SUPPORT_HELPERS_HPP
 #define PCMS_LOCALIZATION_MLS_SUPPORT_HELPERS_HPP
 
+// Implementer API: not covered by the public-API stability promise. (the whole
+// header)
+
 #include "pcms/geometry/supports.hpp"
 #include "pcms/utility/memory_spaces.hpp"
 #include "pcms/utility/types.hpp"

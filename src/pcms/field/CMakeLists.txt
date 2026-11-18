@@ -33,12 +33,10 @@ set(PCMS_FIELD_SOURCES
         function_space/lagrange.cpp
         function_space/spline.cpp
         evaluator/mls_interpolation.cpp
-        geometry_factories.cpp
 )
 list(APPEND PCMS_FIELD_HEADERS
         ../../../include/pcms/field/eqdsk_field.hpp
-        evaluator/mls_interpolation.hpp
-        evaluator/mls_interpolation_impl.hpp
+                evaluator/mls_interpolation_impl.hpp
         evaluator/interpolator_aliases.hpp
         evaluator/interpolator_view_utils.hpp
         evaluator/interpolator_logger.hpp
