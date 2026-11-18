@@ -478,6 +478,11 @@ if(Catch2_FOUND)
       test_geometry.cpp)
   endif()
 
+  if(PCMS_ENABLE_TRANSIENT)
+    list(APPEND PCMS_UNIT_TEST_SOURCES test_transient_accelerator.cpp
+         test_transient_timestepper.cpp)
+  endif()
+
   if(PCMS_ENABLE_MESHFIELDS)
     list(APPEND PCMS_UNIT_TEST_SOURCES
       test_omega_h_form_integrator_utils.cpp)
@@ -513,6 +518,10 @@ if(Catch2_FOUND)
   endif()
   target_include_directories(unit_tests PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
+  if(PCMS_ENABLE_TRANSIENT)
+    target_link_libraries(unit_tests PUBLIC pcms::transient)
+  endif()
+
   if(PCMS_ENABLE_PETSC)
     target_link_libraries(unit_tests PRIVATE PETSc::PETSc)
   endif()
@@ -534,12 +543,6 @@ if(Catch2_FOUND)
 
  include(Catch)
    Catch_discover_tests(unit_tests)
-   if(PCMS_ENABLE_TRANSIENT)
-     add_executable(test_transient_timestepper test_transient_timestepper.cpp)
-     target_link_libraries(test_transient_timestepper
-             PRIVATE Catch2::Catch2WithMain pcms::transient)
-     Catch_discover_tests(test_transient_timestepper)
-   endif()
 else()
   message(WARNING "Catch2 not found. Disabling Unit Tests")
 endif()
