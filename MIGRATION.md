@@ -38,7 +38,7 @@ replacement). The rest of this document explains those changes.
 - **Finding PCMS:** the package files are in `<prefix>/lib/cmake/pcms`. The
   package no longer bakes in the paths of its dependencies: make them findable
   as usual (`CMAKE_PREFIX_PATH`, `<Package>_ROOT` or `<Package>_DIR`) for
-  Kokkos, KokkosKernels, perfstubs, Omega_h, and, if PCMS was built with them,
+  Kokkos, KokkosKernels, Omega_h, and, if PCMS was built with them,
   redev, ADIOS2, MeshFields, MFEM and PETSc.
 - **Dependencies of consumers:** Omega_h, KokkosKernels, MeshFields, PETSc,
   MFEM and MPI are private dependencies of the core libraries: a program that
