@@ -79,7 +79,7 @@ pcms/localization/localization_path_selection.h                - private
 pcms/localization/mesh_localization.h                          - private
 pcms/localization/mls_support_helpers.h                        pcms/localization/mls_support_helpers.hpp private
 pcms/localization/point_cloud_localization.h                   - private
-pcms/localization/point_search.h                               pcms/localization/point_search.hpp private
+pcms/localization/point_search.h                               pcms/backends/omega_h/point_search.hpp private
 pcms/localization/queue_visited.hpp                            pcms/backends/omega_h/queue_visited.hpp private
 pcms/pythonapi/numpy_array_transform.h                         pcms/pythonapi/numpy_array_transform.hpp private
 pcms/pythonapi/numpy_view.h                                    pcms/pythonapi/numpy_view.hpp private
@@ -90,6 +90,7 @@ pcms/transfer/interpolation_base.h                             - private
 pcms/transfer/interpolation_helpers.h                          - private
 pcms/transfer/interpolator.h                                   pcms/transfer/interpolator.hpp
 pcms/transfer/linear_interpolant.hpp                           pcms/backends/uniform_grid/linear_interpolant.hpp private
+pcms/transfer/mesh_intersection.hpp                            pcms/backends/omega_h/mesh_intersection.hpp private
 pcms/transfer/monte_carlo_sampling.hpp                         - private
 pcms/transfer/multidimarray.hpp                                pcms/backends/uniform_grid/multidimarray.hpp private
 pcms/utility/array_mask.h                                      pcms/utility/array_mask.hpp private
