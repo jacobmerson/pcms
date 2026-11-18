@@ -2,8 +2,8 @@
 #include <catch2/catch_approx.hpp>
 #include <pcms/field/evaluator/mls_interpolation.hpp>
 #include <pcms/field/evaluator/mls_interpolation_impl.hpp>
-#include <pcms/field/evaluator/pcms_interpolator_aliases.hpp>
-#include <pcms/field/evaluator/pcms_interpolator_view_utils.hpp>
+#include <pcms/field/evaluator/interpolator_aliases.hpp>
+#include <pcms/field/evaluator/interpolator_view_utils.hpp>
 #include <Omega_h_mesh.hpp>
 #include <Omega_h_build.hpp>
 #include <Omega_h_file.hpp>
@@ -64,7 +64,7 @@ TEST_CASE("test_normalization_routine")
                                           dim);
       pcms::detail::fill(0, team, local_supports);
 
-      double target_point[PCMS_MAX_DIM] = {};
+      double target_point[MAX_DIM] = {};
 
       for (int i = 0; i < dim; ++i) {
         target_point[i] = target_coordinates[league_rank][i];
