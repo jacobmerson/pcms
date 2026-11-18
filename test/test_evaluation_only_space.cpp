@@ -15,7 +15,7 @@
 
 namespace pcms
 {
-using backend::omega_h::CreateOmegaHGeometry;
+using backend::omega_h::CreateGeometry;
 using field::EmptyFieldLayout;
 } // namespace pcms
 
@@ -175,7 +175,7 @@ std::shared_ptr<const pcms::FunctionSpace> MakePoloidalTarget(
   Omega_h::Mesh& mesh, int num_components)
 {
   return pcms::CreateLagrangeSpace(
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::CylindricalRZ::Create()), 1,
+    pcms::CreateGeometry(mesh, pcms::csys::CylindricalRZ::Create()), 1,
     num_components,
     pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
 }

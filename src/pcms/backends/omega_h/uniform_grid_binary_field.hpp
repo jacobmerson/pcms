@@ -40,8 +40,10 @@ std::pair<std::shared_ptr<const uniform_grid::UniformGridFieldLayout<Dim>>,
           Field<Real>>
 CreateUniformGridBinaryField(Omega_h::Mesh& mesh, const UniformGrid<Dim>& grid)
 {
-  auto function_space = CreateLagrangeSpace(
-    CreateUniformGridGeometry(grid, csys::Cartesian::Deferred()), 1, 1);
+  auto function_space =
+    CreateLagrangeSpace(backend::uniform_grid::CreateUniformGridGeometry(
+                          grid, csys::Cartesian::Deferred()),
+                        1, 1);
   auto layout =
     std::dynamic_pointer_cast<const uniform_grid::UniformGridFieldLayout<Dim>>(
       function_space->GetLayout());
