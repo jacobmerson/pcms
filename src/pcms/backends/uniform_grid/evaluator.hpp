@@ -64,7 +64,7 @@ public:
     auto cell_indices = binding_->CellIndices();
 
     if (layout_->GetOrder() == 0) {
-      ForEach(
+      pcms::detail::ForEach(
         "evaluate_order0_device", num_points, KOKKOS_LAMBDA(const LO i) {
           for (int c = 0; c < n_comp; ++c) {
             values(i, c) = dof_data(cell_indices(i), c);
@@ -83,7 +83,7 @@ public:
     // the binding's parametric coordinates: the point's position in its
     // cell, per axis in [0, 1] (outside it for a NEAREST_BOUNDARY point)
     const auto parametric = binding_->Parametric();
-    ForEach(
+    pcms::detail::ForEach(
       "evaluate_order1_device", num_points, KOKKOS_LAMBDA(const LO i) {
         const LO cell = cell_indices(i);
         const auto cell_index = grid.GetDimensionedIndex(cell);
