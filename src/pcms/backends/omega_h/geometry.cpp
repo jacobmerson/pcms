@@ -13,9 +13,6 @@
 
 namespace pcms
 {
-using localization::GridPointSearch2D;
-using localization::GridPointSearch3D;
-using localization::GridPointSearchVariant;
 using utility::ConvertCoordsTo2D;
 using utility::flatten_to_omega_h_reals;
 } // namespace pcms

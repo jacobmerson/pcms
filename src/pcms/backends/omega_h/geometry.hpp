@@ -3,7 +3,7 @@
 
 #include "pcms/backends/omega_h/omega_h.hpp"
 #include "pcms/geometry/geometry.hpp"
-#include "pcms/localization/point_search.hpp"
+#include "pcms/backends/omega_h/point_search.hpp"
 #include "pcms/utility/memory_spaces.hpp"
 #include "pcms/utility/types.hpp"
 #include <Kokkos_Core.hpp>
@@ -89,9 +89,9 @@ KOKKOS_INLINE_FUNCTION LO LowestAdjacentElement(
 /// adjacent to the entity it names (for a point outside the mesh, its nearest
 /// entity); -1 for NO_INTERSECT.
 template <int Dim>
-KOKKOS_INLINE_FUNCTION LO ElementOfResult(
-  const Omega_h::Few<Omega_h::Adj, Dim>& up,
-  const typename localization::PointLocalizationSearch<Dim>::Result& result)
+KOKKOS_INLINE_FUNCTION LO
+ElementOfResult(const Omega_h::Few<Omega_h::Adj, Dim>& up,
+                const typename PointLocalizationSearch<Dim>::Result& result)
 {
   return LowestAdjacentElement(up, static_cast<int>(result.dimensionality),
                                result.EntityId());
@@ -109,8 +109,8 @@ KOKKOS_INLINE_FUNCTION LO ElementOfResult(
 template <int Dim>
 KOKKOS_INLINE_FUNCTION int EntityVertexWeights(
   const Omega_h::Few<Omega_h::LOs, Dim + 1>& verts_of,
-  const typename localization::PointLocalizationSearch<Dim>::Result& result,
-  LO* vertices, Real* weights)
+  const typename PointLocalizationSearch<Dim>::Result& result, LO* vertices,
+  Real* weights)
 {
   const int d = static_cast<int>(result.dimensionality);
   const LO entity = result.EntityId();
@@ -132,13 +132,12 @@ KOKKOS_INLINE_FUNCTION int EntityVertexWeights(
 /// NO_INTERSECT), as the points the bound source evaluates.
 template <int Dim>
 void FoundFlags(
-  Kokkos::View<
-    const typename localization::PointLocalizationSearch<Dim>::Result*,
-    DeviceMemorySpace>
+  Kokkos::View<const typename PointLocalizationSearch<Dim>::Result*,
+               DeviceMemorySpace>
     results,
   Kokkos::View<bool*, DeviceMemorySpace> found)
 {
-  using Result = typename localization::PointLocalizationSearch<Dim>::Result;
+  using Result = typename PointLocalizationSearch<Dim>::Result;
   pcms::detail::ForEach(
     "FoundFlags", static_cast<LO>(results.extent(0)),
     KOKKOS_LAMBDA(const LO i) {
@@ -154,9 +153,8 @@ void FoundFlags(
 template <int Dim>
 void ElementsOfResults(
   Omega_h::Mesh& mesh,
-  Kokkos::View<
-    const typename localization::PointLocalizationSearch<Dim>::Result*,
-    DeviceMemorySpace>
+  Kokkos::View<const typename PointLocalizationSearch<Dim>::Result*,
+               DeviceMemorySpace>
     results,
   LO num_records, Kokkos::View<LO*, DeviceMemorySpace> elements)
 {
@@ -188,9 +186,8 @@ void ElementsOfEntities(Omega_h::Mesh& mesh, int entity_dim,
 template <int Dim>
 Kokkos::View<LO*, DeviceMemorySpace> LiftElements(
   Omega_h::Mesh& mesh,
-  Kokkos::View<
-    const typename localization::PointLocalizationSearch<Dim>::Result*,
-    DeviceMemorySpace>
+  Kokkos::View<const typename PointLocalizationSearch<Dim>::Result*,
+               DeviceMemorySpace>
     results)
 {
   Kokkos::View<LO*, DeviceMemorySpace> elements(
@@ -223,8 +220,7 @@ public:
   /// `mesh` are the geometry's; a rebind searches with them again.
   OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
                     const BindRequest& request,
-                    const localization::GridPointSearchVariant& search,
-                    Omega_h::Mesh& mesh);
+                    const GridPointSearchVariant& search, Omega_h::Mesh& mesh);
 
   /// [query point]: the search's record of each point, the entity it lies on
   /// and its reduced coordinates on it (PointLocalizationSearch<Dim>::Result;
@@ -234,13 +230,11 @@ public:
   /// detail::LowestAdjacentElement, detail::EntityVertexWeights).
   template <int Dim>
   [[nodiscard]] Kokkos::View<
-    const typename localization::PointLocalizationSearch<Dim>::Result*,
-    DeviceMemorySpace>
+    const typename PointLocalizationSearch<Dim>::Result*, DeviceMemorySpace>
   Results() const
   {
-    using Results =
-      Kokkos::View<typename localization::PointLocalizationSearch<Dim>::Result*,
-                   DeviceMemorySpace>;
+    using Results = Kokkos::View<typename PointLocalizationSearch<Dim>::Result*,
+                                 DeviceMemorySpace>;
     return Kokkos::subview(std::get<Results>(point_results_),
                            Kokkos::make_pair(LO{0}, NumPoints()));
   }
@@ -261,13 +255,12 @@ private:
   /// results in point_results_ and sets the found points.
   void Locate(Kokkos::View<const LO*, DeviceMemorySpace> hints);
 
-  const localization::GridPointSearchVariant& search_;
+  const GridPointSearchVariant& search_;
   Omega_h::Mesh& mesh_;
   // per query point, the search's record, kept across rebinds; the first
   // num_records_ are the last locate's
-  std::variant<
-    Kokkos::View<localization::GridPointSearch2D::Result*, DeviceMemorySpace>,
-    Kokkos::View<localization::GridPointSearch3D::Result*, DeviceMemorySpace>>
+  std::variant<Kokkos::View<GridPointSearch2D::Result*, DeviceMemorySpace>,
+               Kokkos::View<GridPointSearch3D::Result*, DeviceMemorySpace>>
     point_results_;
   Kokkos::View<LO*, DeviceMemorySpace> point_guesses_;
   Kokkos::View<bool*, DeviceMemorySpace> point_found_;
@@ -355,7 +348,7 @@ protected:
 
 private:
   /// The containing-element search, built on first use.
-  const localization::GridPointSearchVariant& Search() const;
+  const GridPointSearchVariant& Search() const;
 
   // The library must outlive the mesh and the cached search data.
   std::shared_ptr<Omega_h::Library> library_owner_;
@@ -369,7 +362,7 @@ private:
   // and shared, hence the once_flags. These are the mutable members and they
   // are caches.
   mutable std::once_flag search_once_;
-  mutable std::unique_ptr<localization::GridPointSearchVariant> search_;
+  mutable std::unique_ptr<GridPointSearchVariant> search_;
   mutable std::once_flag differential_once_;
   mutable DifferentialView differential_;
 };
@@ -393,7 +386,7 @@ private:
 /// The grid search over a mesh, with options.divisions divisions per axis when
 /// nonzero and DivisionsPerAxisForMesh otherwise.
 /// @throws std::invalid_argument unless the mesh is 2D or 3D
-[[nodiscard]] localization::GridPointSearchVariant MakeGridSearch(
+[[nodiscard]] GridPointSearchVariant MakeGridSearch(
   Omega_h::Mesh& mesh, const SearchOptions& options);
 
 } // namespace pcms::backend::omega_h

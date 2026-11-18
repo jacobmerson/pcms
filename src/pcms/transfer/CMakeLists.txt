@@ -1,5 +1,4 @@
 set(PCMS_FIELD_TRANSFER_HEADERS
-    mesh_intersection.hpp
     ../../../include/pcms/transfer/interpolator.hpp
     ../../../include/pcms/transfer/copy.hpp
     ../../../include/pcms/transfer/transfer_operator.hpp
@@ -9,10 +8,18 @@ set(PCMS_FIELD_TRANSFER_HEADERS
 
 
 set(PCMS_FIELD_TRANSFER_SOURCES
-    mesh_intersection.cpp
     interpolator.cpp
     projection.cpp)
 
+
+if(PCMS_ENABLE_OMEGA_H)
+  # the Omega_h mesh intersection (Omega_h backend code used by the
+  # projections)
+  list(APPEND PCMS_FIELD_TRANSFER_HEADERS
+      ../backends/omega_h/mesh_intersection.hpp)
+  list(APPEND PCMS_FIELD_TRANSFER_SOURCES
+      ../backends/omega_h/mesh_intersection.cpp)
+endif()
 
 if(PCMS_ENABLE_MESHFIELDS)
   list(APPEND PCMS_FIELD_TRANSFER_HEADERS
