@@ -298,7 +298,8 @@ TEST_CASE("PointEvaluator: UniformGrid order-1 reproduces linear functions")
   auto check = [&](const auto& grid, auto func) {
     constexpr int dim = std::tuple_size_v<decltype(grid.divisions)>;
     auto space = pcms::CreateLagrangeSpace(
-      pcms::CreateUniformGridGeometry(grid, pcms::csys::Cartesian::Deferred()),
+      pcms::backend::uniform_grid::CreateUniformGridGeometry(
+        grid, pcms::csys::Cartesian::Deferred()),
       1, 1);
     auto field = space->template CreateFunction<Real>();
     pcms::test::SetField(field, func);
