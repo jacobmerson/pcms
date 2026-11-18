@@ -36,7 +36,7 @@
 
 namespace pcms
 {
-using backend::omega_h::CreateOmegaHGeometry;
+using backend::omega_h::CreateGeometry;
 using backend::omega_h::OmegaHGeometry;
 } // namespace pcms
 
@@ -303,8 +303,8 @@ void bind_create_field_module(py::module& m)
                   host.data());
         options.owned_mask = Omega_h::Read<Omega_h::I8>(host.write());
       }
-      return OmegaHGeometryHandle{{CreateOmegaHGeometry(
-        mesh, CartesianIfNone(system), std::move(options))}};
+      return OmegaHGeometryHandle{
+        {CreateGeometry(mesh, CartesianIfNone(system), std::move(options))}};
     },
     py::arg("mesh"), py::arg("system") = py::none(), py::arg("divisions") = 0,
     py::arg("global_id_name") = "global", py::arg("owned_mask") = py::none(),
@@ -320,7 +320,8 @@ void bind_create_field_module(py::module& m)
     [](const UniformGrid<2>& grid,
        const std::optional<Immutable<CoordinateSystem>>& system) {
       return Immutable<Geometry>{
-        CreateUniformGridGeometry(grid, CartesianIfNone(system))};
+        backend::uniform_grid::CreateUniformGridGeometry(
+          grid, CartesianIfNone(system))};
     },
     py::arg("grid"), py::arg("system") = py::none(),
     "Create the geometry of a 2D uniform grid; the coordinate system defaults "
@@ -331,7 +332,8 @@ void bind_create_field_module(py::module& m)
     [](const UniformGrid<3>& grid,
        const std::optional<Immutable<CoordinateSystem>>& system) {
       return Immutable<Geometry>{
-        CreateUniformGridGeometry(grid, CartesianIfNone(system))};
+        backend::uniform_grid::CreateUniformGridGeometry(
+          grid, CartesianIfNone(system))};
     },
     py::arg("grid"), py::arg("system") = py::none(),
     "Create the geometry of a 3D uniform grid; the coordinate system defaults "
@@ -616,7 +618,7 @@ void bind_create_field_module(py::module& m)
     "create_point_cloud_geometry",
     [](const PyCoordinateView& coords, NeighbourhoodOptions neighbourhood) {
       auto values = NumpyInput<Real>::ensure(coords.values);
-      return Immutable<Geometry>{CreatePointCloudGeometry(
+      return Immutable<Geometry>{backend::point_cloud::CreatePointCloudGeometry(
         CoordinateView<HostMemorySpace>(coords.system,
                                         NumpyToHostView<2, Real>(values)),
         std::move(neighbourhood))};
@@ -629,8 +631,8 @@ void bind_create_field_module(py::module& m)
     "create_point_cloud_geometry",
     [](const Immutable<FieldLayout>& sites,
        NeighbourhoodOptions neighbourhood) {
-      return Immutable<Geometry>{
-        CreatePointCloudGeometry(sites.ptr, std::move(neighbourhood))};
+      return Immutable<Geometry>{backend::point_cloud::CreatePointCloudGeometry(
+        sites.ptr, std::move(neighbourhood))};
     },
     py::arg("sites"), py::arg("neighbourhood") = NeighbourhoodOptions{},
     py::keep_alive<0, 1>(),
@@ -641,9 +643,17 @@ void bind_create_field_module(py::module& m)
     "create_point_cloud_geometry",
     [](const Immutable<Geometry>& geometry, int entity_dim,
        NeighbourhoodOptions neighbourhood) {
+      const auto omega_h =
+        std::dynamic_pointer_cast<const backend::omega_h::OmegaHGeometry>(
+          geometry.ptr);
+      if (omega_h == nullptr) {
+        throw py::value_error(
+          "create_point_cloud_geometry: the geometry must be an Omega_h "
+          "geometry");
+      }
       try {
         return Immutable<Geometry>{backend::omega_h::CreatePointCloudGeometry(
-          geometry.ptr, entity_dim, std::move(neighbourhood))};
+          omega_h, entity_dim, std::move(neighbourhood))};
       } catch (const pcms_error& e) {
         throw py::value_error(e.what());
       }
@@ -658,11 +668,14 @@ void bind_create_field_module(py::module& m)
   omega_h_module.def(
     "get_mesh",
     [](const Immutable<Geometry>& geometry) -> Omega_h::Mesh& {
-      try {
-        return backend::omega_h::GetMesh(*geometry.ptr);
-      } catch (const pcms_error& e) {
-        throw py::value_error(e.what());
+      const auto* omega_h =
+        dynamic_cast<const backend::omega_h::OmegaHGeometry*>(
+          geometry.ptr.get());
+      if (omega_h == nullptr) {
+        throw py::value_error(
+          "get_mesh: the geometry must be an Omega_h geometry");
       }
+      return omega_h->GetMesh();
     },
     // no keep_alive: the mesh is the Python object the geometry was created
     // from, and the geometry keeps it alive (keeping the geometry alive from

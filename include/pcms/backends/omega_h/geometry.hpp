@@ -1,7 +1,6 @@
 #ifndef PCMS_BACKENDS_OMEGA_H_GEOMETRY_HPP
 #define PCMS_BACKENDS_OMEGA_H_GEOMETRY_HPP
 
-#include "pcms/backends/omega_h/omega_h.hpp"
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/backends/omega_h/point_search.hpp"
 #include "pcms/utility/memory_spaces.hpp"
@@ -211,6 +210,8 @@ Kokkos::View<LO*, DeviceMemorySpace> LiftElements(
 /// points are those of a new bind. The records are kept across rebinds and
 /// reallocated only when the points outgrow them (after which the next rebind
 /// has no guesses); the first bind has the guesses its hints give, else none.
+///
+/// Implementer API: not covered by the public-API stability promise.
 class OmegaHMeshBinding final : public BoundSource
 {
 public:
@@ -267,17 +268,31 @@ private:
   LO num_records_ = 0;
 };
 
+/// Options of an Omega_h geometry.
+struct OmegaHGeometryOptions
+{
+  /// divisions and tolerance of the containing-element search
+  SearchOptions search;
+  /// the tag holding global entity ids
+  std::string global_id_name = "global";
+  /// per-vertex ownership override: a vertex the mask is 0 for is not owned,
+  /// whatever the mesh says; empty means the mesh's own ownership. Layouts
+  /// whose DOF holders are the mesh vertices apply it; layouts of other
+  /// entities do not.
+  Omega_h::Read<Omega_h::I8> owned_mask;
+};
+
 /// Geometry of a 2D or 3D Omega_h simplex mesh with
 /// straight-sided elements. The containing-element search over the mesh is
 /// built by the first Bind or Neighbourhood, which costs about as much as a
 /// bind: create one geometry per mesh and share it, so that every layout and
 /// space on the mesh is on the same entities. Create it with
-/// CreateOmegaHGeometry.
+/// CreateGeometry.
 class OmegaHGeometry final : public Geometry
 {
 public:
-  /// Own it by std::shared_ptr, as CreateOmegaHGeometry does: Bind uses
-  /// shared_from_this().
+  /// Own it by std::shared_ptr, as CreateGeometry
+  /// (pcms/backends/omega_h/omega_h.hpp) does: Bind uses shared_from_this().
   /// @throws pcms_error if the options' owned mask is not empty and does not
   ///         have one entry per mesh vertex
   OmegaHGeometry(Omega_h::Mesh& mesh,
@@ -315,6 +330,8 @@ public:
   /// -1 means the search cell has no candidate. Unlike Bind, this preserves
   /// outside-point seeds: an outside target centroid can still belong to an
   /// element that overlaps the mesh.
+  ///
+  /// Implementer API: not covered by the public-API stability promise.
   [[nodiscard]] Kokkos::View<const LO*, DeviceMemorySpace> FindElementSeeds(
     Kokkos::View<const Real**, DeviceMemorySpace> points,
     Kokkos::View<const LO*, DeviceMemorySpace> guesses = {}) const;
@@ -334,10 +351,13 @@ public:
 
   /// The per-element constant Jacobian of the affine simplex map, computed
   /// for all elements on the first call.
+  ///
+  /// Implementer API: not covered by the public-API stability promise.
   [[nodiscard]] DifferentialView Differential(
     const BoundSource& bound) const override;
 
 protected:
+  /// Implementer API: not covered by the public-API stability promise.
   [[nodiscard]] std::shared_ptr<BoundSource> BindImpl(
     const BindRequest& request) const override;
 
@@ -358,15 +378,6 @@ private:
   mutable std::once_flag differential_once_;
   mutable DifferentialView differential_;
 };
-
-/// The geometry of an Omega_h simplex mesh (2D or 3D). Create one per mesh and
-/// share it: the layouts and spaces on one geometry object share its entities.
-/// @param mesh the mesh; must outlive the geometry
-/// @param system the mesh's coordinate system, or null for Cartesian
-/// @param options search, global id tag and ownership
-[[nodiscard]] std::shared_ptr<const OmegaHGeometry> CreateOmegaHGeometry(
-  Omega_h::Mesh& mesh, std::shared_ptr<const CoordinateSystem> system,
-  OmegaHGeometryOptions options = {});
 
 /// The grid search over a mesh, with options.divisions divisions per axis when
 /// nonzero and DivisionsPerAxisForMesh otherwise.

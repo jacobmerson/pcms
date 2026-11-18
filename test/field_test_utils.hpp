@@ -19,6 +19,7 @@
 #include <Omega_h_shape.hpp>
 #include "pcms/backends/omega_h/geometry.hpp"
 #include "pcms/backends/omega_h/adj_search.hpp"
+#include "pcms/backends/omega_h/omega_h.hpp"
 #endif
 #include "pcms/field/function_spaces.hpp"
 #if defined(PCMS_ENABLE_PETSC) && defined(PCMS_ENABLE_MESHFIELDS)
@@ -182,7 +183,7 @@ inline std::shared_ptr<const FunctionSpace> MakeP0Space(
 inline std::shared_ptr<const FunctionSpace> MakeP1Space(
   Omega_h::Mesh& mesh, const std::string& global_id_name = "global")
 {
-  return MakeP1Space(backend::omega_h::CreateOmegaHGeometry(
+  return MakeP1Space(backend::omega_h::CreateGeometry(
     mesh, csys::Cartesian::Deferred(),
     backend::omega_h::OmegaHGeometryOptions{.global_id_name = global_id_name}));
 }
@@ -190,7 +191,7 @@ inline std::shared_ptr<const FunctionSpace> MakeP1Space(
 inline std::shared_ptr<const FunctionSpace> MakeP0Space(Omega_h::Mesh& mesh)
 {
   return MakeP0Space(
-    backend::omega_h::CreateOmegaHGeometry(mesh, csys::Cartesian::Deferred()));
+    backend::omega_h::CreateGeometry(mesh, csys::Cartesian::Deferred()));
 }
 
 inline bool AreArraysEqualUnordered(
@@ -706,7 +707,10 @@ inline std::vector<HostRecord> FoundRecords(const BoundSource& bound)
 {
   const auto& binding =
     dynamic_cast<const backend::omega_h::OmegaHMeshBinding&>(bound);
-  return backend::omega_h::GetMesh(*bound.GetGeometry()).dim() == 2
+  return dynamic_cast<const backend::omega_h::OmegaHGeometry&>(
+           *bound.GetGeometry())
+               .GetMesh()
+               .dim() == 2
            ? FoundRecordsOfDim<2>(binding)
            : FoundRecordsOfDim<3>(binding);
 }

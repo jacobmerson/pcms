@@ -3,6 +3,8 @@
 // space on a uniform grid and in a polynomial-reconstruction (MLS) space on a
 // point cloud.
 
+#include <pcms/backends/point_cloud/geometry.hpp>
+#include <pcms/backends/uniform_grid/geometry.hpp>
 #include <pcms/field/function_spaces.hpp>
 #include <pcms/field/query_points.hpp>
 #include <pcms/geometry/geometry.hpp>
@@ -116,10 +118,11 @@ int main(int argc, char** argv)
     // a linear Lagrange space on a uniform grid
     const pcms::UniformGrid<2> grid{
       .edge_length = {1.0, 1.0}, .bot_left = {0.0, 0.0}, .divisions = {4, 4}};
-    const int lagrange =
-      EvaluateLinear(pcms::CreateLagrangeSpace(
-                       pcms::CreateUniformGridGeometry(grid, cartesian), 1, 1),
-                     cartesian, LagrangeTol);
+    const int lagrange = EvaluateLinear(
+      pcms::CreateLagrangeSpace(
+        pcms::backend::uniform_grid::CreateUniformGridGeometry(grid, cartesian),
+        1, 1),
+      cartesian, LagrangeTol);
 
     // linear MLS on a point cloud (a 9x9 grid of points)
     const int n = 9;
@@ -132,7 +135,7 @@ int main(int argc, char** argv)
     }
     const int mls = EvaluateLinear(
       pcms::CreatePolynomialReconstructionSpace(
-        pcms::CreatePointCloudGeometry(
+        pcms::backend::point_cloud::CreatePointCloudGeometry(
           pcms::CoordinateView<pcms::HostMemorySpace>(
             cartesian, pcms::Rank2View<pcms::Real, pcms::HostMemorySpace>(
                          sites.data(), n * n, 2)),
