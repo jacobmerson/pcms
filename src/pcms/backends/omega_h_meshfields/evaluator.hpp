@@ -35,7 +35,7 @@ std::tuple<Kokkos::View<LO*>, Kokkos::View<Real**>, Kokkos::View<LO*>>
 GroupFoundPointsByElement(
   Omega_h::Mesh& mesh, Kokkos::View<const LO*, DeviceMemorySpace> found,
   Kokkos::View<
-    const typename localization::PointLocalizationSearch<Dim>::Result*,
+    const typename backend::omega_h::PointLocalizationSearch<Dim>::Result*,
     DeviceMemorySpace>
     results)
 {
