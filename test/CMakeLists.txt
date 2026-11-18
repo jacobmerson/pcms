@@ -479,7 +479,7 @@ if(Catch2_FOUND)
   endif()
 
   if(PCMS_ENABLE_TRANSIENT)
-    list(APPEND PCMS_UNIT_TEST_SOURCES test_transient_accelerator.cpp
+    list(APPEND PCMS_UNIT_TEST_SOURCES test_transient_accelerator.cpp test_transient_application.cpp
          test_transient_timestepper.cpp)
   endif()
 
