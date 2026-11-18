@@ -1,14 +1,10 @@
 set(
         PCMS_LOCALIZATION_HEADERS
-        point_search.hpp
-        uniform_grid_search.hpp
-        mls_support_helpers.hpp
-        ../../../include/pcms/localization/mls_options.hpp
+                        ../../../include/pcms/localization/mls_options.hpp
 )
 
 set(
         PCMS_LOCALIZATION_SOURCES
-        point_search.cpp
         mls_support_helpers.cpp
 )
 add_library(pcms_localization ${PCMS_LOCALIZATION_SOURCES})
@@ -26,8 +22,11 @@ target_link_libraries(
         Kokkos::kokkos
         pcms::utility
         pcms::geometry
-        Omega_h::omega_h
 )
+# Omega_h is used by the implementation only (no public header includes it)
+if(PCMS_ENABLE_OMEGA_H)
+  target_link_libraries(pcms_localization PRIVATE Omega_h::omega_h)
+endif()
 target_compile_features(pcms_localization PUBLIC cxx_std_20)
 
 set_target_properties(
@@ -61,5 +60,5 @@ install(
 install(
         EXPORT pcms_localization-targets
         NAMESPACE pcms::
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pcms
+        DESTINATION ${PCMS_INSTALL_CMAKEDIR}
 )

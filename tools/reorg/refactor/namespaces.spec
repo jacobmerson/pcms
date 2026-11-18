@@ -15,13 +15,13 @@ namespace pcms::backend::omega_h_meshfields
   src/pcms/backends/omega_h_meshfields/
 namespace pcms::backend::point_cloud
   src/pcms/backends/point_cloud/
+  include/pcms/backends/point_cloud/
 namespace pcms::backend::uniform_grid
   src/pcms/backends/uniform_grid/
+  include/pcms/backends/uniform_grid/
 namespace pcms::backend::omega_h
   src/pcms/backends/omega_h/
   include/pcms/backends/omega_h/
-  src/pcms/transfer/mesh_intersection.hpp
-  src/pcms/transfer/mesh_intersection.cpp
 
 namespace pcms::utility
   src/pcms/utility/array_mask.hpp
@@ -30,11 +30,9 @@ namespace pcms::utility
   src/pcms/utility/omega_h_array_utils.hpp
 
 namespace pcms::localization
-  src/pcms/localization/mls_support_helpers.hpp
-  src/pcms/localization/point_search.hpp
-  src/pcms/localization/uniform_grid_search.hpp
+  include/pcms/localization/mls_support_helpers.hpp
+  include/pcms/localization/uniform_grid_search.hpp
   src/pcms/localization/mls_support_helpers.cpp
-  src/pcms/localization/point_search.cpp
 
   # interpolator_aliases.hpp keeps its generic type aliases (member_type,
   # ScratchMatView, ...) in pcms:: (still private), since other files define
@@ -43,7 +41,7 @@ namespace pcms::field
   src/pcms/field/element_dispatch.hpp
   src/pcms/field/evaluator/interpolator_logger.hpp
   src/pcms/field/evaluator/interpolator_view_utils.hpp
-  src/pcms/field/evaluator/mls_interpolation.hpp
+  include/pcms/field/evaluator/mls_interpolation.hpp
   src/pcms/field/evaluator/mls_interpolation_impl.hpp
   src/pcms/field/gid_permutation.hpp
   src/pcms/field/layout/empty.hpp

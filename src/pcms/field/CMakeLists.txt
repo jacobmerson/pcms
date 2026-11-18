@@ -30,24 +30,17 @@ set(PCMS_FIELD_SOURCES
         gid_permutation.cpp
         function_space/polynomial_reconstruction.cpp
         layout/empty.cpp
+        function_space/lagrange.cpp
+        function_space/spline.cpp
+        evaluator/mls_interpolation.cpp
 )
-
-if (PCMS_ENABLE_OMEGA_H)
-    list(APPEND PCMS_FIELD_SOURCES
-            function_space/lagrange.cpp
-            function_space/spline.cpp
-            evaluator/mls_interpolation.cpp
-            geometry_factories.cpp
-    )
-    list(APPEND PCMS_FIELD_HEADERS
-            ../../../include/pcms/field/eqdsk_field.hpp
-            evaluator/mls_interpolation.hpp
-            evaluator/mls_interpolation_impl.hpp
-            evaluator/interpolator_aliases.hpp
-            evaluator/interpolator_view_utils.hpp
-            evaluator/interpolator_logger.hpp
-    )
-endif ()
+list(APPEND PCMS_FIELD_HEADERS
+        ../../../include/pcms/field/eqdsk_field.hpp
+                evaluator/mls_interpolation_impl.hpp
+        evaluator/interpolator_aliases.hpp
+        evaluator/interpolator_view_utils.hpp
+        evaluator/interpolator_logger.hpp
+)
 
 add_library(pcms_field ${PCMS_FIELD_SOURCES})
 set_target_properties(pcms_field PROPERTIES
@@ -72,9 +65,13 @@ target_link_libraries(pcms_field PUBLIC
         pcms::geometry)
 
 if(PCMS_ENABLE_OMEGA_H)
-    target_link_libraries(pcms_field PUBLIC Omega_h::omega_h)
-    target_link_libraries(pcms_field PRIVATE Kokkos::kokkoskernels)
+    # private: core public headers do not include Omega_h. The Omega_h backend
+    # header (pcms/backends/omega_h/omega_h.hpp) does; its users link
+    # Omega_h::omega_h themselves
+    target_link_libraries(pcms_field PRIVATE Omega_h::omega_h)
 endif()
+# the MLS solve uses KokkosBatched
+target_link_libraries(pcms_field PRIVATE Kokkos::kokkoskernels)
 
 
 target_include_directories(pcms_field INTERFACE
@@ -94,4 +91,4 @@ install(
 install(
         EXPORT pcms_field-targets
         NAMESPACE pcms::
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pcms)
+        DESTINATION ${PCMS_INSTALL_CMAKEDIR})

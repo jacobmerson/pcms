@@ -1,5 +1,5 @@
-#ifndef PCMS_ADAPTER_MESHFIELDS_MESH_FIELDS_EVALUATOR_FACTORY_H
-#define PCMS_ADAPTER_MESHFIELDS_MESH_FIELDS_EVALUATOR_FACTORY_H
+#ifndef PCMS_BACKENDS_OMEGA_H_MESHFIELDS_EVALUATOR_HPP
+#define PCMS_BACKENDS_OMEGA_H_MESHFIELDS_EVALUATOR_HPP
 
 #include "pcms/backends/omega_h_meshfields/evaluator_backend.hpp"
 #include "pcms/backends/omega_h/geometry.hpp"
@@ -34,9 +34,8 @@ template <int Dim>
 std::tuple<Kokkos::View<LO*>, Kokkos::View<Real**>, Kokkos::View<LO*>>
 GroupFoundPointsByElement(
   Omega_h::Mesh& mesh, Kokkos::View<const LO*, DeviceMemorySpace> found,
-  Kokkos::View<
-    const typename localization::PointLocalizationSearch<Dim>::Result*,
-    DeviceMemorySpace>
+  Kokkos::View<const typename omega_h::PointLocalizationSearch<Dim>::Result*,
+               DeviceMemorySpace>
     results)
 {
   const auto num_found = static_cast<LO>(found.extent(0));
@@ -204,4 +203,4 @@ private:
 
 } // namespace pcms::backend::omega_h_meshfields
 
-#endif // PCMS_ADAPTER_MESHFIELDS_MESH_FIELDS_EVALUATOR_FACTORY_H
+#endif // PCMS_BACKENDS_OMEGA_H_MESHFIELDS_EVALUATOR_HPP

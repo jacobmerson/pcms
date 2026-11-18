@@ -32,8 +32,11 @@ target_link_libraries(
         pcms_geometry PUBLIC
         Kokkos::kokkos
         pcms::utility
-        Omega_h::omega_h
 )
+# Omega_h is used by the implementation only (no public header includes it)
+if(PCMS_ENABLE_OMEGA_H)
+  target_link_libraries(pcms_geometry PRIVATE Omega_h::omega_h)
+endif()
 target_compile_features(pcms_geometry PUBLIC cxx_std_20)
 
 set_target_properties(
@@ -56,5 +59,5 @@ install(
 install(
         EXPORT pcms_geometry-targets
         NAMESPACE pcms::
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/pcms
+        DESTINATION ${PCMS_INSTALL_CMAKEDIR}
 )
