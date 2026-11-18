@@ -6,14 +6,16 @@
 #include <variant>
 
 #include <Kokkos_Core.hpp>
+#include <Omega_h_array.hpp>
 #include <Omega_h_mesh.hpp>
 #include <Omega_h_bbox.hpp>
 #include <Omega_h_shape.hpp>
 
 #include "pcms/utility/memory_spaces.h"
+#include "pcms/localization/overlap.hpp"
 #include "pcms/utility/types.h"
 #include "pcms/utility/uniform_grid.h"
-#include "pcms/utility/bounding_box.h"
+#include "pcms/utility/shapes.hpp"
 
 namespace pcms
 {

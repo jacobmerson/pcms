@@ -1,0 +1,123 @@
+#ifndef PCMS_UTILITY_SHAPES_HPP
+#define PCMS_UTILITY_SHAPES_HPP
+
+#include <Kokkos_Core.hpp>
+#include <Omega_h_adj.hpp>
+#include <Omega_h_array.hpp>
+#include <Omega_h_matrix.hpp>
+#include <Omega_h_shape.hpp>
+#include <Omega_h_vector.hpp>
+
+#include "pcms/utility/types.h"
+
+namespace pcms
+{
+
+template <int DIM = 2>
+struct AABBox
+{
+  static constexpr int dim = DIM;
+  Kokkos::Array<Real, dim> center;
+  // half length of bounding box
+  Kokkos::Array<Real, dim> half_width;
+};
+
+// Shape tags: what kind of shape a type is, for choosing an overlap test.
+struct PointTag
+{};
+struct BoxTag
+{};
+struct SimplexTag
+{};
+struct SegmentTag
+{};
+
+/** A point in `Dim`-dimensional space. */
+template <int Dim>
+struct Point
+{
+  Omega_h::Vector<Dim> coords;
+};
+
+/** A line segment in `Dim`-dimensional space, from `start` to `end`. */
+template <int Dim>
+struct Segment
+{
+  Omega_h::Vector<Dim> start;
+  Omega_h::Vector<Dim> end;
+};
+
+/**
+ * A simplex in `Dim`-dimensional space: a triangle in 2D, a tetrahedron in 3D.
+ */
+template <int Dim>
+struct Simplex
+{
+  Omega_h::Matrix<Dim, Dim + 1> vertices;
+
+  /** Vertex `k`, for `k` in `[0, Dim]`. */
+  [[nodiscard]] KOKKOS_INLINE_FUNCTION Point<Dim> Vertex(int k) const
+  {
+    return {vertices[k]};
+  }
+
+  /** The edge from vertex `i` to vertex `j`. */
+  [[nodiscard]] KOKKOS_INLINE_FUNCTION Segment<Dim> Edge(int i, int j) const
+  {
+    return {vertices[i], vertices[j]};
+  }
+
+  /**
+   * The simplex corresponding to elements of an Omega_h mesh.
+   */
+  [[nodiscard]] KOKKOS_INLINE_FUNCTION static Simplex FromElement(
+    const Omega_h::Reals& coords, const Omega_h::LOs& elems2verts, LO elem)
+  {
+    const auto verts = Omega_h::gather_verts<Dim + 1>(elems2verts, elem);
+    return {Omega_h::gather_vectors<Dim + 1, Dim>(coords, verts)};
+  }
+};
+
+/**
+ * The tag and dimension of a shape type.
+ */
+template <typename Shape>
+struct GeometryTraits;
+
+template <int Dim>
+struct GeometryTraits<Point<Dim>>
+{
+  using tag = PointTag;
+  static constexpr int dimension = Dim;
+};
+
+template <int Dim>
+struct GeometryTraits<AABBox<Dim>>
+{
+  using tag = BoxTag;
+  static constexpr int dimension = Dim;
+};
+
+template <int Dim>
+struct GeometryTraits<Segment<Dim>>
+{
+  using tag = SegmentTag;
+  static constexpr int dimension = Dim;
+};
+
+template <int Dim>
+struct GeometryTraits<Simplex<Dim>>
+{
+  using tag = SimplexTag;
+  static constexpr int dimension = Dim;
+};
+
+template <typename Shape>
+using tag_t = typename GeometryTraits<Shape>::tag;
+
+template <typename Shape>
+inline constexpr int dimension_v = GeometryTraits<Shape>::dimension;
+
+} // namespace pcms
+
+#endif // PCMS_UTILITY_SHAPES_HPP

@@ -2,7 +2,7 @@ set(
         PCMS_UTILITY_HEADERS
         arrays.h
         assert.h
-        bounding_box.h
+        shapes.hpp
         common.h
         entity_types.h
         eqdsk.h
