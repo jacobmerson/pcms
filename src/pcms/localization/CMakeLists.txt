@@ -1,8 +1,6 @@
 set(
         PCMS_LOCALIZATION_HEADERS
-        uniform_grid_search.hpp
-        mls_support_helpers.hpp
-        ../../../include/pcms/localization/mls_options.hpp
+                        ../../../include/pcms/localization/mls_options.hpp
 )
 
 set(
