@@ -1,0 +1,2 @@
+pcms_add_example(fields_coordinate_systems main.cpp)
+pcms_add_python_example(main.py NEEDS_PYOMEGA_H)
