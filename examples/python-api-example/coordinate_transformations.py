@@ -8,7 +8,10 @@
       and the target's are Cartesian: points are mapped, values rotated
 
 Each case prints the maximum error against the exact answer. This is the
-Python version of examples/coordinate-transformation-example.
+Python version of the C++ coordinate-transformation example, which
+track A absorbed as examples/fields/coordinate-systems (C++ and Python). This
+script stays until test/python/test_examples.py, which runs it, is switched to
+run the new examples.
 """
 import sys
 
