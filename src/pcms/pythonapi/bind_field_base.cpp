@@ -660,7 +660,7 @@ void bind_create_field_module(py::module& m)
     "DOF holders (bind(space)) starts from those entities.");
   omega_h_module.def(
     "get_mesh",
-    [](const Immutable<Geometry>& geometry) -> Omega_h::Mesh& {
+    [](const Immutable<Geometry>& geometry) -> std::shared_ptr<Omega_h::Mesh> {
       const auto* omega_h =
         dynamic_cast<const backend::omega_h::OmegaHGeometry*>(
           geometry.ptr.get());
@@ -668,13 +668,12 @@ void bind_create_field_module(py::module& m)
         throw py::value_error(
           "get_mesh: the geometry must be an Omega_h geometry");
       }
-      return omega_h->GetMesh();
+      // owning handle aliased to the geometry: the mesh (and the Omega_h
+      // library the geometry holds) stay alive even when the geometry is a
+      // temporary and the original Python mesh wrapper is gone
+      return std::shared_ptr<Omega_h::Mesh>(geometry.ptr, &omega_h->GetMesh());
     },
-    // no keep_alive: the mesh is the Python object the geometry was created
-    // from, and the geometry keeps it alive (keeping the geometry alive from
-    // the mesh as well would be a reference cycle)
-    py::arg("geometry"), py::return_value_policy::reference,
-    "The Omega_h mesh of an Omega_h geometry");
+    py::arg("geometry"), "The Omega_h mesh of an Omega_h geometry");
 
   omega_h_module.def(
     "create_uniform_grid_binary_field",

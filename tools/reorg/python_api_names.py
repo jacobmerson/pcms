@@ -33,14 +33,16 @@ The keyword mesh_coordinate_system= becomes system= (the coordinate system is
 the geometry's). A module imported as `import pcms as <alias>` is rewritten
 under its alias. Running the script twice is a no-op.
 
-Review the result: `<expr>.mesh()` is rewritten whatever <expr> is (the
-script does not know types); `pcms.create_point_cloud_geometry(a, b)` is
+Review the result: `<expr>.mesh()` is rewritten only when <expr> starts with
+the module name or a name assigned from a call through it in the same file;
+other `.mesh()` calls are reported, not rewritten (the script does not know
+types); `pcms.create_point_cloud_geometry(a, b)` is
 treated as the Omega_h-geometry form when `b` is an integer literal, a name ending in
 `dim`, or entity_dim= is given; the MLSOptions fields radius,
 min_req_supports and adapt_radius are now NeighbourhoodOptions fields
 (radius, min_supports, adapt_radius) of the point-cloud geometry, and are
 reported, not rewritten; names imported with `from pcms import ...` that moved
-are reported, not rewritten.
+are reported, not rewritten (so is `from pcms import create_omega_h_geometry`).
 """
 
 import re
@@ -51,11 +53,17 @@ KW_RENAME = {"mesh_coordinate_system": "system"}
 
 def split_args(text):
     """Split a call's argument text at top-level commas."""
-    args, depth, cur, quote = [], 0, "", None
+    args, depth, cur, quote, skip = [], 0, "", None, False
     for ch in text:
+        if skip:
+            cur += ch
+            skip = False
+            continue
         if quote:
             cur += ch
-            if ch == quote:
+            if ch == "\\":
+                skip = True
+            elif ch == quote:
                 quote = None
             continue
         if ch in "\"'":
@@ -75,15 +83,31 @@ def split_args(text):
 
 
 def find_call(text, start):
-    """Given the index of an opening '(', return the index of its ')'."""
-    depth = 0
-    for i in range(start, len(text)):
-        if text[i] == "(":
+    """Given the index of an opening '(', return the index of its ')'.
+
+    Parentheses inside string literals and comments are not counted."""
+    depth, i = 0, start
+    while i < len(text):
+        ch = text[i]
+        if ch in "\"'":
+            quote = ch * 3 if text.startswith(ch * 3, i) else ch
+            i += len(quote)
+            while i < len(text) and not text.startswith(quote, i):
+                i += 2 if text[i] == "\\" else 1
+            i += len(quote)
+            continue
+        if ch == "#":
+            i = text.find("\n", i)
+            if i < 0:
+                break
+            continue
+        if ch == "(":
             depth += 1
-        elif text[i] == ")":
+        elif ch == ")":
             depth -= 1
             if depth == 0:
                 return i
+        i += 1
     raise ValueError("unbalanced call")
 
 
@@ -105,7 +129,13 @@ def rewrite_calls(text, prefix, fn):
             out.append(text[pos:open_paren + 1])
             pos = open_paren + 1
             continue
-        close = find_call(text, open_paren)
+        try:
+            close = find_call(text, open_paren)
+        except ValueError:
+            # not a complete call (e.g. text in a docstring): skip it
+            out.append(text[pos:open_paren + 1])
+            pos = open_paren + 1
+            continue
         args = split_args(text[open_paren + 1:close])
         out.append(text[pos:i])
         try:
@@ -241,10 +271,17 @@ def convert(text, mod="pcms"):
     for name in MOVED_TO_OMEGA_H:
         text = re.sub(rf"(?<![\w.]){m}\.{name}\b",
                       f"{mod}.backend.omega_h.{name}", text)
-    text = re.sub(r"(?<![\w.])((?:\w+\.)*\w+)\.mesh\(\)",
-                  rf"{mod}.backend.omega_h.get_mesh(\1.get_geometry())",
-                  text)
-    return text
+    # only receivers known to be PCMS objects: rooted at the module, or a
+    # name assigned from a call through the module in this file
+    known = set(re.findall(rf"^[ \t]*(\w+)[ \t]*=[ \t]*{m}\.\w", text, re.M))
+    known.add(mod)
+
+    def mesh_call(match):
+        if match.group(1).split(".")[0] not in known:
+            return match.group(0)
+        return f"{mod}.backend.omega_h.get_mesh({match.group(1)}.get_geometry())"
+
+    return re.sub(r"(?<![\w.])((?:\w+\.)*\w+)\.mesh\(\)", mesh_call, text)
 
 
 def main(files):
@@ -252,8 +289,12 @@ def main(files):
         with open(f, encoding="utf-8") as fh:
             text = fh.read()
         new = text
-        for mod in ["pcms"] + re.findall(r"^\s*import\s+pcms\s+as\s+(\w+)",
-                                         text, re.M):
+        aliases = re.findall(r"^\s*import\s+pcms\s+as\s+(\w+)", text, re.M)
+        mods = list(aliases)
+        # `pcms` itself, unless the file imports the module only under an alias
+        if not aliases or re.search(r"^\s*import\s+pcms(?!\s+as\b)", text, re.M):
+            mods.insert(0, "pcms")
+        for mod in mods:
             new = convert(new, mod)
         for n, line in enumerate(new.split("\n"), 1):
             if re.search(r"\bmin_req_supports\b", line) or \
@@ -263,11 +304,22 @@ def main(files):
                       "NeighbourhoodOptions fields (radius, min_supports, "
                       "adapt_radius) of the point-cloud geometry; update by "
                       "hand", file=sys.stderr)
+            if re.search(r"(?<![\w.])(?:\w+\.)*\w+\.mesh\(\)", line):
+                print(f"{f}:{n}: .mesh() call not rewritten: the receiver is "
+                      "not known to be a PCMS object; if it is, use "
+                      "pcms.backend.omega_h.get_mesh(<expr>.get_geometry()) "
+                      "by hand", file=sys.stderr)
             imp = re.match(r"\s*from\s+pcms\s+import\s+(.*)", line)
             if imp:
                 moved = [x for x in re.findall(r"\w+", imp.group(1))
                          if x in MOVED_TO_OMEGA_H
                          or x in dict(ALIASES)]
+                for old, new_name in RENAMED:
+                    if old in re.findall(r"\w+", imp.group(1)):
+                        module, _, short = new_name.rpartition(".")
+                        print(f"{f}:{n}: {old} is now pcms.{new_name}; use "
+                              f"`from pcms.{module} import {short}` instead",
+                              file=sys.stderr)
                 if moved:
                     print(f"{f}:{n}: {', '.join(moved)} moved to "
                           "pcms.backend.omega_h; update this import by hand",
