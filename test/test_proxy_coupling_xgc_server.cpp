@@ -16,7 +16,7 @@
 
 namespace pcms
 {
-using backend::omega_h::CreateOmegaHGeometry;
+using backend::omega_h::CreateGeometry;
 using backend::omega_h::OmegaHFieldData;
 using backend::xgc::XGCFieldData;
 using backend::xgc::XGCFieldFactory;
@@ -181,9 +181,9 @@ void omegah_coupler(MPI_Comm comm, Omega_h::Mesh& mesh,
     // field registration, so each XGC plane is registered as a separate layout
     // communicator even though the layouts are geometrically identical.
     auto geometry =
-      pcms::CreateOmegaHGeometry(mesh, pcms::csys::Cartesian::Deferred(),
-                                 pcms::backend::omega_h::OmegaHGeometryOptions{
-                                   .global_id_name = numbering});
+      pcms::CreateGeometry(mesh, pcms::csys::Cartesian::Deferred(),
+                           pcms::backend::omega_h::OmegaHGeometryOptions{
+                             .global_id_name = numbering});
     auto factory = pcms::CreateLagrangeSpace(
       geometry, 1, 1,
       pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH,
