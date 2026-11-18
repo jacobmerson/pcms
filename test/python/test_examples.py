@@ -17,6 +17,7 @@ import PyOmega_h as omega_h
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "examples" / "python-api-example"
+FIELDS_DIR = REPO_ROOT / "examples" / "fields"
 EXAMPLE_TIMEOUT_SECONDS = 600
 
 
@@ -33,8 +34,9 @@ def _skip_or_fail(reason):
 
 
 def _run_example(script, *args):
+    path = script if isinstance(script, pathlib.Path) else EXAMPLES_DIR / script
     result = subprocess.run(
-        [sys.executable, str(EXAMPLES_DIR / script), *map(str, args)],
+        [sys.executable, str(path), *map(str, args)],
         capture_output=True,
         text=True,
         timeout=EXAMPLE_TIMEOUT_SECONDS,
@@ -67,6 +69,13 @@ def test_flow_example():
     assert "SUCCESS" in stdout
 
 
-def test_coordinate_transformations_example():
-    stdout = _run_example("coordinate_transformations.py")
-    assert "SUCCESS" in stdout
+# The fields track of examples/: every example asserts its own result and
+# exits non-zero on a failed check, so running it is the test.
+FIELDS_EXAMPLES = sorted(p.parent.name for p in FIELDS_DIR.glob("*/main.py"))
+
+
+@pytest.mark.parametrize("name", FIELDS_EXAMPLES)
+def test_fields_example(name):
+    if name != "hello-field" and not hasattr(pcms.backend, "omega_h"):
+        _skip_or_fail("pcms was built without Omega_h")
+    _run_example(FIELDS_DIR / name / "main.py")
