@@ -49,7 +49,8 @@ bool SameDOFHolderSites(const BoundSource& bound, const FieldLayout& layout);
 //   auto bound = geometry->Bind(layout->GetDOFHolderCoordinates(),
 //                               DOFHolderOwners(*layout));
 //   Interpolator<Real> values(*src_space, *tgt_space, bound);
-//   Interpolator<Real> gradient(*Gradient(src_space), *grad_space, bound);
+//   Interpolator<Real> gradient(*detail::Gradient(src_space), *grad_space,
+//   bound);
 template <typename T>
 class Interpolator : public TransferOperator<T>
 {

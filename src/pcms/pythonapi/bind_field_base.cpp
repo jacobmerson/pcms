@@ -486,7 +486,8 @@ void bind_create_field_module(py::module& m)
   m.def(
     "gradient",
     [](const Immutable<PointEvaluatorFactory>& source) {
-      return Immutable<PointEvaluatorFactory>{Gradient(source.ptr)};
+      return Immutable<PointEvaluatorFactory>{
+        pcms::detail::Gradient(source.ptr)};
     },
     py::arg("source"),
     "A source whose evaluators write the gradient of the field they are given; "
@@ -495,7 +496,8 @@ void bind_create_field_module(py::module& m)
   m.def(
     "divergence",
     [](const Immutable<PointEvaluatorFactory>& source) {
-      return Immutable<PointEvaluatorFactory>{Divergence(source.ptr)};
+      return Immutable<PointEvaluatorFactory>{
+        pcms::detail::Divergence(source.ptr)};
     },
     py::arg("source"),
     "A source whose evaluators write the divergence of the field they are "
@@ -504,7 +506,7 @@ void bind_create_field_module(py::module& m)
   m.def(
     "curl",
     [](const Immutable<PointEvaluatorFactory>& source) {
-      return Immutable<PointEvaluatorFactory>{Curl(source.ptr)};
+      return Immutable<PointEvaluatorFactory>{pcms::detail::Curl(source.ptr)};
     },
     py::arg("source"),
     "A source whose evaluators write the curl of the field they are given; it "

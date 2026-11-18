@@ -684,7 +684,7 @@ struct HostRecord
 
 template <int Dim>
 std::vector<HostRecord> FoundRecordsOfDim(
-  const backend::omega_h::OmegaHMeshBinding& binding)
+  const detail::OmegaHMeshBinding& binding)
 {
   const auto results = Kokkos::create_mirror_view_and_copy(
     HostMemorySpace(), binding.Results<Dim>());
@@ -705,8 +705,7 @@ std::vector<HostRecord> FoundRecordsOfDim(
 // The search records of the found points, in FoundPoints() order.
 inline std::vector<HostRecord> FoundRecords(const BoundSource& bound)
 {
-  const auto& binding =
-    dynamic_cast<const backend::omega_h::OmegaHMeshBinding&>(bound);
+  const auto& binding = dynamic_cast<const detail::OmegaHMeshBinding&>(bound);
   return dynamic_cast<const backend::omega_h::OmegaHGeometry&>(
            *bound.GetGeometry())
                .GetMesh()

@@ -28,18 +28,25 @@ python3 - "$spec" "$tree" > $out/moves <<'PY'
 import os, sys
 spec, tree = sys.argv[1], sys.argv[2]
 CODE = (".hpp", ".h", ".cpp", ".cc", ".cxx")
-moves, excluded, target = {}, set(), None
+moves, target, section = {}, None, {}
+def close():
+    for f, t in section.items():
+        if moves.get(f, t) != t:
+            sys.exit(f"{spec}: {f} is listed for {moves[f]} and {t}")
+        moves[f] = t
+    section.clear()
 for n, line in enumerate(open(spec), 1):
     line = line.split("#", 1)[0].strip()
     if not line:
         continue
     if line.startswith("namespace "):
+        close()
         target = line.split()[1]
         continue
     if target is None:
         sys.exit(f"{spec}:{n}: path before any namespace line")
     if line.startswith("!"):
-        excluded.add(line[1:].strip())
+        section.pop(line[1:].strip(), None)  # leaves the file out of this section
         continue
     full = os.path.join(tree, line)
     if line.endswith("/"):
@@ -52,12 +59,10 @@ for n, line in enumerate(open(spec), 1):
             sys.exit(f"{spec}:{n}: no file {line}")
         files = [line]
     for f in files:
-        if moves.get(f, target) != target:
-            sys.exit(f"{spec}:{n}: {f} is listed for {moves[f]} and {target}")
-        moves[f] = target
+        section[f] = target
+close()
 for f in sorted(moves):
-    if f not in excluded:
-        print(f, moves[f])
+    print(f, moves[f])
 PY
 echo "$(wc -l < $out/moves) files move to $(cut -d' ' -f2 $out/moves | sort -u | wc -l) namespaces"
 

@@ -327,15 +327,14 @@ What is left by hand:
   `tools/reorg/decisions.md`, "The public surface"). They are not API and may
   change; code that used one should use the public equivalent or copy the few
   lines.
-- Implementer API: the types needed to implement a source, a geometry kind, a
-  layout or field data (`PointEvaluator`, `PointEvaluatorFactory`,
-  `BindRequest`, `DifferentialView`, `SupportResults`, `OwnerHints` and `DOFHolderOwners`,
-  `FieldData`, `DOFAccess`, `SimpleFieldData`, `FieldFactory`,
-  `OwnedLayoutData`, `CreateEmptyLayout`, the `FunctionSpace` constructor, the
-  coupler detail classes) stay installed under their names, but are not
-  covered by the public-API stability promise: they can change in a minor
-  release, with a CHANGELOG entry. Each carries that line in its
-  documentation.
+- Extending PCMS: the types a public signature or a protected hook names stay
+  public (`PointEvaluator`, `PointEvaluatorFactory`, `BindRequest`,
+  `DifferentialView`, `SupportResults`, `OwnerHints`, `DOFHolderOwners`,
+  `FieldData`, `DOFAccess`, `FieldFactory`, `CreateEmptyLayout`, the
+  `FunctionSpace` constructor). The concrete helpers moved to `pcms::detail`
+  (`SimpleFieldData`, `PointCloudLayout`, the backends' bound sources and
+  evaluators, the coupler's communicators and planners, the MLS helpers); the
+  symbol map lists the 0.3 names as `cpp-private`.
 - Uses of APIs that changed shape: `migrate-pcms.sh` reports them (the
   `manual` entries of `tools/reorg/symbol-map.txt`).
 - Code that calls the point search directly (pull requests #345, #416 and

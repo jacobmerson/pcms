@@ -238,7 +238,6 @@ void ConvertMismatchLayoutView2D(DestView& dest, const SrcView& src)
     });
 }
 
-/// Implementer API: not covered by the public-API stability promise.
 namespace detail
 {
 

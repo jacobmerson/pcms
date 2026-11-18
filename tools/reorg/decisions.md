@@ -75,9 +75,8 @@ the geometry kinds `backend::omega_h::OmegaHGeometry`,
 `backend::uniform_grid::UniformGridGeometry<Dim>` and
 `backend::point_cloud::PointCloudGeometry` (the factories return them).
 
-The types that only code implementing a source, a geometry kind, a layout or
-field data needs are the **implementer API**, and the helpers the public
-templates call are in `pcms::detail`: see "The public surface (0.4 trim)".
+What a public signature does not reach is in `pcms::detail`: see "The public
+surface (0.4 trim)".
 
 ### Factories
 
@@ -140,43 +139,38 @@ whose vertices (entity_dim 0) or element centroids are the sites.
 
 ### The public surface (0.4 trim)
 
-Three tiers, each header documenting its own:
-
-1. **Public API**, covered by the stability promise: the interfaces and types
-   listed above, the factories, and what users call on them. This includes
-   `Geometry::Bind`, `BoundSource` (the handle of located points),
-   `Interpolator(source, target, bound)`, `QueryPoints` and
-   `QueryPoints::Bound()`, `CoordinateMap`, `BoundCoordinateMap` and the three
-   maps.
-2. **Implementer API**: installed, named as in 0.3 where it existed, for code that
-   implements a source, a geometry kind, a layout or field data. It is not
-   covered by the stability promise; each declaration carries the doc line
-   "Implementer API: not covered by the public-API stability promise."
-3. **`pcms::detail`**: helpers that public templates and inline functions call
-   and that users have no use for. Not API. They stay in their headers.
-
-Implementer API:
-
-| Name | Header | For |
-|---|---|---|
-| `PointEvaluator<T>`, `PointEvaluatorFactory`, `TypedPointEvaluatorFactory` | `field/point_evaluator.hpp`, `field/point_evaluator_factory.hpp` | sources implemented outside PCMS (`BindImpl`, `CreatePointEvaluatorImpl`) |
-| `TransformedPointEvaluator<T>` | `field/detail/transformed_point_evaluator.hpp` | the templates of `point_evaluator_factory.hpp` |
-| `BindRequest`, `BoundSource::RebindKey`, `Geometry::RebindKey` | `geometry/bound_source.hpp`, `geometry/geometry.hpp` | geometry kinds (`BindImpl`, `RebindImpl`) |
-| `DifferentialView` | `geometry/geometry.hpp` | geometry kinds (`Differential`) |
-| `SupportResults` | `geometry/supports.hpp` | geometry kinds (`Neighbourhood`) and MLS |
-| the members of the geometry kinds that users do not call (`FindElementSeeds`, `Differential`, `BindImpl`, `TakesHints`), their bound sources (`OmegaHMeshBinding`, `UniformGridBinding`, `MLSBinding`, `MLSPointEvaluator`), the point searches, the MLS helpers and `PointCloudLayout` | `backends/*/geometry.hpp` and the headers they include | geometry kinds and layouts implemented outside PCMS, and PCMS's own backends |
-| `OwnerHints`, `DOFHolderOwners` | `geometry/bound_source.hpp`, `field/field_layout.hpp` | geometry kinds and layouts naming the entities of a bind |
-| `Apply`, `Gradient`, `Divergence`, `Curl` | `field/gradient_source.hpp` | wrappers of a `PointEvaluatorFactory` |
-| `FieldData<T>`, `DOFAccess<T>`, `SimpleFieldData<T>`, `FieldFactory` | `field/field_data.hpp`, `field/simple_field_data.hpp`, `field/field_factory.hpp` | backends and sources with their own field storage |
-| `OwnedLayoutData`, `CreateEmptyLayout` | `field/field_layout.hpp`, `field/function_spaces.hpp` | layouts; evaluation-only spaces outside PCMS |
-| the `FunctionSpace` constructor | `field/function_space.hpp` | backends (users call the `Create*` factories) |
-| `ExchangePlan`, `FieldExchangePlanner`, `GenericFieldExchangePlanner`, `FieldLayoutCommunicator`, `FieldCommunicator<T>`, `FieldSerializer<T>`, `GlobalCommunicator<T>` | `coupler/detail/*.hpp` | the coupler and coupler adapters |
+Two tiers. A name is **public**, covered by the stability promise, when a public
+signature reaches it: the interfaces and types listed above, the factories, and
+what users call on them (`Geometry::Bind`, `BoundSource`, `BindRequest`,
+`OwnerHints`, `Interpolator(source, target, bound)`, `QueryPoints`,
+`CoordinateMap`, `BoundCoordinateMap` and the three maps). The protocol for
+extending a public type is its protected members (`BindImpl`, `RebindImpl`,
+`CreatePointEvaluatorImpl`, `Neighbourhood`, `Differential`, the layout hooks)
+and the types they name: `PointEvaluator<T>`, `PointEvaluatorFactory`,
+`BoundSource` with `RebindKey`, `DifferentialView`, `SupportResults`,
+`OwnerHints`, `DOFHolderOwners`, `FieldData<T>`, `DOFAccess<T>`, `FieldFactory`
+(the XGC and MFEM factories return it), `CreateEmptyLayout` and the
+`FunctionSpace` constructor (evaluation-only spaces outside PCMS), `BindRequest`
+(a public parameter of `BoundSource::Rebind`), the grid point searches
+(`MakeGridSearch` returns one) and `OwnedLayoutData`. Everything else is
+`pcms::detail`: helpers that public templates and inline functions call, the
+backends' bound sources and evaluators, the coupler's communicators and
+planners, and the wrappers of a source. Not API; they stay in their headers.
 
 Moved to `pcms::detail` (same headers; every use in the tree is qualified):
 
 | Header | Names |
 |---|---|
 | `geometry/geometry.hpp` | `CheckEntityIds`, `CheckNeighbourhoodArguments` |
+| `field/point_evaluator_factory.hpp` | `TypedPointEvaluatorFactory` |
+| `field/detail/transformed_point_evaluator.hpp` | `TransformedPointEvaluator` |
+| `field/simple_field_data.hpp` | `SimpleFieldData` |
+| `field/gradient_source.hpp` | `Apply`, `Gradient`, `Divergence`, `Curl` (until Lagrange gradients are public through `DifferentialOperator`) |
+| `backends/omega_h/geometry.hpp` | `OmegaHMeshBinding` |
+| `backends/point_cloud/mls_evaluator.hpp`, `backends/point_cloud/layout.hpp` | `MLSBinding`, `MLSPointEvaluator`, `PointCloudLayout`, `HasSupports`, `FlattenRows` |
+| `backends/uniform_grid/geometry.hpp` | `UniformGridBinding`, `FillUniformGridBinding` |
+| `localization/mls_support_helpers.hpp`, `localization/uniform_grid_search.hpp`, `field/evaluator/mls_interpolation.hpp` | the MLS support helpers, `UniformGridPointSearch`, `mls_interpolation` |
+| `coupler/detail/*.hpp` | `ExchangePlan`, `FieldExchangePlanner`, `GenericFieldExchangePlanner`, `FieldLayoutCommunicator`, `FieldCommunicator<T>`, `FieldSerializer<T>`, `GlobalCommunicator<T>` |
 | `geometry/bound_source.hpp` | `ReserveRows` |
 | `field/point_evaluator.hpp` | `FillRows` |
 | `field/field_layout.hpp` | `BuildOwnedClassificationHost`, `OwnedEntOffsets`, `GetMeshEntityDim` |
@@ -192,8 +186,7 @@ Moved to `pcms::detail` (same headers; every use in the tree is qualified):
 | `backends/xgc/reverse_classification.hpp` | `DimID` and its `std::hash` |
 
 `ForEach` and `IsSmallHostBatch` (the QueryPoints work) were public in the
-rehearsal; they are implementer-facing templates, so they are `pcms::detail`
-and documented as implementer API. The types the public signatures name stay:
+rehearsal; they are implementer-facing templates, so they are `pcms::detail`. The types the public signatures name stay:
 `ComponentScaling`, `VarianceSignature`, `View`, `Rank1View`, `Rank2View`,
 `GlobalIDView`.
 
