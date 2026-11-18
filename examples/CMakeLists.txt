@@ -33,3 +33,17 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(PcmsExamples)
 
 add_subdirectory(fields)
+
+# The examples may only use the public API: a test that scans their sources.
+# It lives in the PCMS source tree, so it is part of the in-tree build only.
+if(NOT PCMS_EXAMPLES_STANDALONE
+   AND EXISTS "${PROJECT_SOURCE_DIR}/tools/check-examples-public-api.py"
+   AND PCMS_EXAMPLES_PYTHON_EXECUTABLE)
+  add_test(
+    NAME example.public-api-gate
+    COMMAND
+      ${PCMS_EXAMPLES_PYTHON_EXECUTABLE}
+      "${PROJECT_SOURCE_DIR}/tools/check-examples-public-api.py"
+      --include-dir "${PROJECT_SOURCE_DIR}/include" "${PCMS_EXAMPLES_ROOT}")
+  set_tests_properties(example.public-api-gate PROPERTIES LABELS example)
+endif()
