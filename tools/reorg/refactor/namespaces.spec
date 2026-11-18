@@ -20,8 +20,6 @@ namespace pcms::backend::uniform_grid
 namespace pcms::backend::omega_h
   src/pcms/backends/omega_h/
   include/pcms/backends/omega_h/
-  src/pcms/transfer/mesh_intersection.hpp
-  src/pcms/transfer/mesh_intersection.cpp
 
 namespace pcms::utility
   src/pcms/utility/array_mask.hpp
@@ -32,10 +30,8 @@ namespace pcms::utility
 
 namespace pcms::localization
   src/pcms/localization/mls_support_helpers.hpp
-  src/pcms/localization/point_search.hpp
   src/pcms/localization/uniform_grid_search.hpp
   src/pcms/localization/mls_support_helpers.cpp
-  src/pcms/localization/point_search.cpp
 
   # interpolator_aliases.hpp keeps its generic type aliases (member_type,
   # ScratchMatView, ...) in pcms:: (still private), since other files define
