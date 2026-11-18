@@ -1,7 +1,0 @@
-# Phase 3.1: XGC backend
-src/pcms/field/layout/xgc_reverse_classification.hpp src/pcms/backends/xgc/reverse_classification.hpp
-src/pcms/field/layout/xgc_reverse_classification.cpp src/pcms/backends/xgc/reverse_classification.cpp
-src/pcms/field/layout/xgc.hpp                                         src/pcms/backends/xgc/layout.hpp
-src/pcms/field/layout/xgc.cpp                                         src/pcms/backends/xgc/layout.cpp
-src/pcms/field/data/xgc.hpp                                           src/pcms/backends/xgc/field_data.hpp
-src/pcms/field/function_space/xgc.hpp                                 src/pcms/backends/xgc/field_factory.hpp

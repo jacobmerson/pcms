@@ -323,8 +323,8 @@ What is left by hand:
 - Names that are no longer public: 0.3 declared a number of helpers in public
   headers; in 0.4 they are in `pcms::detail` (array copy and view helpers of
   `utility/arrays.hpp`, `TypeEnumFromType`, `ForEach`, the coordinate
-  system and value-basis helpers; the full list is in
-  `tools/reorg/decisions.md`, "The public surface"). They are not API and may
+  system and value-basis helpers, the backends' bound sources and evaluators,
+  the coupler's communicators and planners). They are not API and may
   change; code that used one should use the public equivalent or copy the few
   lines.
 - Extending PCMS: the types a public signature or a protected hook names stay

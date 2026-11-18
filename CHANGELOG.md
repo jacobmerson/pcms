@@ -4,8 +4,7 @@
 
 A one-time breaking reorganization so that downstream codes migrate once.
 The reorganization does not change numerical behavior. See [MIGRATION.md](MIGRATION.md) and
-`tools/migrate-pcms.sh`; the decisions behind the changes are in
-`tools/reorg/decisions.md`.
+`tools/migrate-pcms.sh`.
 
 ### Changed (breaking)
 

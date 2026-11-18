@@ -1,4 +1,0 @@
-# Phase 5: public headers of the geometry library.
-src/pcms/geometry/geometry.hpp       include/pcms/geometry/geometry.hpp
-src/pcms/geometry/bound_source.hpp   include/pcms/geometry/bound_source.hpp
-src/pcms/geometry/supports.hpp       include/pcms/geometry/supports.hpp
