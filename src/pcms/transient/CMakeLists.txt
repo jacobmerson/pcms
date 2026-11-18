@@ -1,4 +1,5 @@
 set(PCMS_TRANSIENT_HEADERS ../../../include/pcms/transient/accelerator.hpp
+                           ../../../include/pcms/transient/application.hpp
                            ../../../include/pcms/transient/timestepper.hpp)
 set(PCMS_TRANSIENT_SOURCES accelerator.cpp timestepper.cpp)
 
