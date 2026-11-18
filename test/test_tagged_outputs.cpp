@@ -14,7 +14,7 @@
 
 namespace pcms
 {
-using backend::omega_h::CreateOmegaHGeometry;
+using backend::omega_h::CreateGeometry;
 } // namespace pcms
 
 using Catch::Matchers::ContainsSubstring;
@@ -47,8 +47,8 @@ std::shared_ptr<const FunctionSpace> BuildCylindricalSpace(Omega_h::Mesh& mesh,
                                                            int num_components)
 {
   return CreateLagrangeSpace(
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::CylindricalRThetaZ::Create()),
-    1, num_components, LagrangeOptions{.backend = LagrangeBackend::OmegaH});
+    pcms::CreateGeometry(mesh, pcms::csys::CylindricalRThetaZ::Create()), 1,
+    num_components, LagrangeOptions{.backend = LagrangeBackend::OmegaH});
 }
 
 int NumDOFHolders(const FunctionSpace& space)
