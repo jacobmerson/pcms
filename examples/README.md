@@ -107,7 +107,9 @@ out at configure time with a message; with the environment variable
 
 1. **Public API only.** Includes are installed `pcms/...` headers, with no
    `detail/` header, no `detail::` or `impl::`, and nothing from the PCMS
-   sources.
+   sources. `tools/check-examples-public-api.py` checks this and runs as the
+   ctest `example.public-api-gate`; it reads the code of the examples (and the
+   fenced code of the READMEs) and fails on any of those.
    Anything an example cannot do with the public API is a gap of the API: the
    example stops there, says so in a TODO in its README, and the gap is
    fixed in the API, not worked around with an internal.
