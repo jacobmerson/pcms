@@ -1,4 +1,4 @@
-#include "pcms/field/layout/xgc_reverse_classification.h"
+#include "pcms/backends/xgc/reverse_classification.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <sstream>
 
@@ -39,7 +39,7 @@ TEST_CASE("reverse classification")
   }
   auto vec = rc.Serialize();
   pcms::ReverseClassificationVertex rc_deserialized;
-  auto av = pcms::make_array_view(vec);
+  auto av = pcms::detail::make_array_view(vec);
   rc_deserialized.Deserialize(av);
   REQUIRE(rc_deserialized == rc);
 }

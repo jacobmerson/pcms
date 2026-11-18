@@ -1,21 +1,21 @@
 #include <Omega_h_mesh.hpp>
 #include <iostream>
-#include <pcms.h>
-#include <pcms/utility/types.h>
+#include <pcms/pcms.hpp>
+#include <pcms/utility/types.hpp>
 #include <Omega_h_file.hpp>
 #include <Omega_h_for.hpp>
 #include <redev_variant_tools.h>
-#include "test_support.h"
+#include "test_support.hpp"
 #include "pcms/coupler/coupler.hpp"
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
-#include "pcms/field/function_space/lagrange.h"
+#include "pcms/backends/omega_h/geometry.hpp"
+#include "pcms/field/function_spaces.hpp"
 #include "pcms/field/value_view.hpp"
 #include <chrono>
 #include <thread>
-#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
 
 using pcms::GO;
-using pcms::make_array_view;
+using pcms::detail::make_array_view;
 
 using namespace std::chrono_literals;
 
@@ -51,7 +51,7 @@ bool validateField(const pcms::FieldLayout& layout,
 {
   auto gids = layout.GetGidsHost();
   auto copied_array =
-    pcms::FlattenToRank1View(field->GetDOFHolderDataHost().GetValues());
+    pcms::detail::FlattenToRank1View(field->GetDOFHolderDataHost().GetValues());
   const auto n = layout.GetNumDofHolder();
 
   PCMS_ALWAYS_ASSERT(copied_array.size() == gids.size());

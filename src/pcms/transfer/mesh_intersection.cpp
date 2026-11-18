@@ -1,8 +1,8 @@
 #include "pcms/transfer/mesh_intersection.hpp"
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
-#include "pcms/utility/assert.h"
-#include "pcms/utility/mesh_geometry.h"
-#include "pcms/utility/omega_h_array_utils.h"
+#include "pcms/backends/omega_h/geometry.hpp"
+#include "pcms/utility/assert.hpp"
+#include "pcms/utility/mesh_geometry.hpp"
+#include "pcms/utility/omega_h_array_utils.hpp"
 
 namespace pcms
 {
@@ -174,7 +174,7 @@ IntersectionResults intersectTargetsImpl(const OmegaHGeometry& source,
                                          Omega_h::Mesh& target_mesh,
                                          bool use_prefilter)
 {
-  FindIntersections intersect(GetMesh(source), target_mesh);
+  FindIntersections intersect(backend::omega_h::GetMesh(source), target_mesh);
 
   auto nelems_target = target_mesh.nelems();
 
@@ -213,7 +213,7 @@ IntersectionResults intersectTargets(const OmegaHGeometry& source,
                                      Omega_h::Mesh& target_mesh,
                                      bool use_prefilter)
 {
-  if (GetMesh(source).dim() != target_mesh.dim()) {
+  if (backend::omega_h::GetMesh(source).dim() != target_mesh.dim()) {
     throw pcms_error("intersectTargets: the source geometry's mesh and the "
                      "target mesh differ in dimension");
   }

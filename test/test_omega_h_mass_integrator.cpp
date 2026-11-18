@@ -5,11 +5,11 @@
 #include <Omega_h_library.hpp>
 #include <Omega_h_mesh.hpp>
 #include <Omega_h_shape.hpp>
-#include <pcms/field/function_space/lagrange.h>
-#include <pcms/field/layout/omega_h_lagrange.h>
+#include <pcms/field/function_spaces.hpp>
+#include <pcms/backends/omega_h/lagrange_layout.hpp>
 #include <pcms/transfer/mass_matrix_integrator.hpp>
 #include <pcms/transfer/omega_h_mass_integrator.hpp>
-#include "field_test_utils.h"
+#include "field_test_utils.hpp"
 #include <KokkosController.hpp>
 #include <MeshField.hpp>
 #include <MeshField_Config.hpp>
@@ -18,8 +18,8 @@
 #include <map>
 #include <utility>
 #include <vector>
-#include "pcms/field/coordinate_systems/cartesian.hpp"
-#include "pcms/field/coordinate_systems/cylindrical.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/cylindrical.hpp"
 
 // ---------------------------------------------------------------------------
 // Helpers

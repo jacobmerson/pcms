@@ -4,16 +4,17 @@
 #include <Omega_h_for.hpp>
 #include <Omega_h_library.hpp>
 #include <Omega_h_mesh.hpp>
-#include <pcms/field/function_space/lagrange.h>
-#include <pcms/field/layout/omega_h_lagrange.h>
+#include <pcms/field/function_spaces.hpp>
+#include <pcms/backends/omega_h/lagrange_layout.hpp>
 #include <pcms/transfer/omega_h_intersection_rhs_integrator.hpp>
-#include "field_test_utils.h"
+#include "field_test_utils.hpp"
 #include <petscksp.h>
 #include <cmath>
 #include <unordered_map>
 #include <vector>
-#include "pcms/field/coordinate_systems/cartesian.hpp"
-#include "pcms/field/coordinate_systems/cylindrical.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/cylindrical.hpp"
+#include "pcms/backends/omega_h/omega_h.hpp"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -201,7 +202,7 @@ TEST_CASE(
     std::dynamic_pointer_cast<const pcms::OmegaHLagrangeLayout>(
       target_space->GetLayout());
   const auto tgt_coords_h = pcms::test::CopyCoordinatesToHost(
-    pcms::MakeConstRank2View(target_mesh.coords(), 2));
+    pcms::backend::omega_h::MakeConstRank2View(target_mesh.coords(), 2));
   std::vector<pcms::Real> g(target_mesh.nverts());
   for (int i = 0; i < target_mesh.nverts(); ++i) {
     g[i] = tgt_coords_h(i, 0) + tgt_coords_h(i, 1);

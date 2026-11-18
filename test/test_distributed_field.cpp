@@ -3,13 +3,13 @@
 #include <Kokkos_Core.hpp>
 #include <Omega_h_build.hpp>
 
-#include "distributed_test_utils.h"
-#include "pcms/field/coordinate_systems/cartesian.hpp"
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
-#include "pcms/field/function_space/lagrange.h"
-#include "pcms/field/out_of_bounds_policy.h"
-#include "pcms/utility/arrays.h"
-#include "pcms/utility/types.h"
+#include "distributed_test_utils.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
+#include "pcms/backends/omega_h/geometry.hpp"
+#include "pcms/field/function_spaces.hpp"
+#include "pcms/field/out_of_bounds_policy.hpp"
+#include "pcms/utility/arrays.hpp"
+#include "pcms/utility/types.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -70,8 +70,9 @@ DeviceCoordinates make_device_coordinates(const std::vector<Real>& points)
     host(i, 1) = points[static_cast<size_t>(i) * 2 + 1];
   }
   pcms::DeepCopyMismatchLayouts(storage, host);
-  return {storage,
-          {pcms::csys::Cartesian::Deferred(), pcms::MakeRank2View(storage)}};
+  return {
+    storage,
+    {pcms::csys::Cartesian::Deferred(), pcms::detail::MakeRank2View(storage)}};
 }
 
 void require(bool condition, const char* message)

@@ -6,19 +6,17 @@
 #include <stdexcept>
 #include <tuple>
 
-#include "pcms/field/function_space/lagrange.h"
-#include "pcms/field/evaluator/uniform_grid_geometry.hpp"
-#include "pcms/field/function_space/polynomial_reconstruction.hpp"
-#include <pcms/field/evaluator/point_cloud_geometry.hpp>
-#include "pcms/field/function_space/spline.h"
-#include "pcms/field/field_data.h"
-#include "pcms/field/point_evaluator.h"
-#include "pcms/field/out_of_bounds_policy.h"
+#include "pcms/field/function_spaces.hpp"
+#include "pcms/backends/uniform_grid/geometry.hpp"
+#include <pcms/backends/point_cloud/geometry.hpp>
+#include "pcms/field/field_data.hpp"
+#include "pcms/field/point_evaluator.hpp"
+#include "pcms/field/out_of_bounds_policy.hpp"
 #include "pcms/field/value_view.hpp"
-#include "pcms/field/coordinate_view.hpp"
-#include "pcms/utility/arrays.h"
-#include "field_test_utils.h"
-#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_view.hpp"
+#include "pcms/utility/arrays.hpp"
+#include "field_test_utils.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
 
 using pcms::CoordinateSystem;
 using pcms::Real;
@@ -36,7 +34,7 @@ void CheckOutputValidation(const pcms::PointEvaluator<Real>& evaluator,
   REQUIRE(field.GetLayout().GetNumComponents() == 1);
   auto scalar = [](OutView v) {
     return pcms::ValueView<Real, pcms::DeviceMemorySpace>(
-      pcms::ValueBasis{}, pcms::MakeRank2View(v));
+      pcms::ValueBasis{}, pcms::detail::MakeRank2View(v));
   };
   const auto n = static_cast<size_t>(num_points);
 
@@ -57,7 +55,7 @@ void CheckOutputValidation(const pcms::PointEvaluator<Real>& evaluator,
                          pcms::ValueBasis{pcms::csys::Cartesian::Create(1),
                                           pcms::ComponentScaling::Physical,
                                           pcms::values::Vector},
-                         pcms::MakeRank2View(out))),
+                         pcms::detail::MakeRank2View(out))),
     pcms::pcms_error);
 }
 
@@ -423,8 +421,8 @@ TEST_CASE("FieldLayout: metadata queries")
   auto layout = factory->GetLayout();
 
   auto coords = layout->GetDOFHolderCoordinates();
-  REQUIRE(pcms::SameCoordinateSystem(coords.GetCoordinateSystem(),
-                                     pcms::csys::Cartesian::Create(2)));
+  REQUIRE(pcms::detail::SameCoordinateSystem(coords.GetCoordinateSystem(),
+                                             pcms::csys::Cartesian::Create(2)));
   REQUIRE(coords.GetValues().extent(0) > 0);
   REQUIRE(coords.GetValues().extent(1) == 2);
 }
@@ -447,8 +445,8 @@ TEST_CASE("FieldData: layout metadata queries")
   auto field_data = factory->CreateFunction<Real>();
 
   auto coords = factory->GetLayout()->GetDOFHolderCoordinates();
-  REQUIRE(pcms::SameCoordinateSystem(coords.GetCoordinateSystem(),
-                                     pcms::csys::Cartesian::Create(2)));
+  REQUIRE(pcms::detail::SameCoordinateSystem(coords.GetCoordinateSystem(),
+                                             pcms::csys::Cartesian::Create(2)));
   REQUIRE(coords.GetValues().extent(0) > 0);
   REQUIRE(coords.GetValues().extent(1) == 2);
 }
@@ -484,8 +482,8 @@ TEST_CASE("SimpleFieldData: set and get DOF holder data round-trip")
       pcms::ValueBasis{}, pcms::Rank2View<const Real, pcms::HostMemorySpace>(
                             data_in.data(), n, 1)));
 
-  auto data_out =
-    pcms::FlattenToRank1View(field_data.GetDOFHolderDataHost().GetValues());
+  auto data_out = pcms::detail::FlattenToRank1View(
+    field_data.GetDOFHolderDataHost().GetValues());
   REQUIRE(static_cast<int>(data_out.size()) == n);
   for (int i = 0; i < n; ++i) {
     REQUIRE(data_out[i] == Catch::Approx(data_in[i]));
@@ -511,8 +509,8 @@ TEST_CASE("FieldLayout: MeshFields metadata queries")
 
   auto layout = factory->GetLayout();
   auto coords = layout->GetDOFHolderCoordinates();
-  REQUIRE(pcms::SameCoordinateSystem(coords.GetCoordinateSystem(),
-                                     pcms::csys::Cartesian::Create(2)));
+  REQUIRE(pcms::detail::SameCoordinateSystem(coords.GetCoordinateSystem(),
+                                             pcms::csys::Cartesian::Create(2)));
   REQUIRE(coords.GetValues().extent(0) > 0);
   REQUIRE(coords.GetValues().extent(1) == 2);
 }
@@ -621,7 +619,7 @@ TEST_CASE("PointEvaluator: MeshFields order-1 multi-component (2) evaluation")
   // Component 0: f(x,y)=x+y, Component 1: f(x,y)=2x-y
   auto dof_coords_mdspan = layout->GetDOFHolderCoordinates().GetValues();
   Kokkos::View<Real**, pcms::DeviceMemorySpace> dof_dev("dof_dev", num_dof, 2);
-  pcms::ConvertMismatchLayoutView2D(dof_dev, dof_coords_mdspan);
+  pcms::detail::ConvertMismatchLayoutView2D(dof_dev, dof_coords_mdspan);
   auto coords_host =
     Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(), dof_dev);
 
@@ -676,7 +674,7 @@ TEST_CASE("PointEvaluator: MeshFields order-1 multi-component (3) evaluation")
   // Component 0: x, Component 1: y, Component 2: x*y
   auto dof_coords_mdspan = layout->GetDOFHolderCoordinates().GetValues();
   Kokkos::View<Real**, pcms::DeviceMemorySpace> dof_dev("dof_dev", num_dof, 2);
-  pcms::ConvertMismatchLayoutView2D(dof_dev, dof_coords_mdspan);
+  pcms::detail::ConvertMismatchLayoutView2D(dof_dev, dof_coords_mdspan);
   auto coords_host =
     Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(), dof_dev);
 

@@ -1,9 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
-#include <pcms/localization/adj_search.hpp>
+#include <pcms/backends/omega_h/adj_search.hpp>
 #include <pcms/field/evaluator/mls_interpolation.hpp>
-#include <pcms/field/evaluator/pcms_interpolator_aliases.hpp>
-#include <pcms/utility/arrays.h>
+#include <pcms/field/evaluator/interpolator_aliases.hpp>
+#include <pcms/utility/arrays.hpp>
 #include <Omega_h_mesh.hpp>
 #include <Omega_h_build.hpp>
 #include <Omega_h_file.hpp>
@@ -50,7 +50,7 @@ void test(Omega_h::Mesh& mesh, Omega_h::Real cutoffDistance, int degree,
   // the element centroids around each vertex
   Kokkos::View<pcms::LO*, pcms::DeviceMemorySpace> vertices("vertices",
                                                             mesh.nverts());
-  pcms::iota_view<pcms::LO>(vertices);
+  pcms::detail::iota_view<pcms::LO>(vertices);
   pcms::SupportResults support = pcms::searchNeighbors(
     mesh, mesh.dim(), mesh.coords(), 0, vertices, cutoffDistance,
     min_num_supports, 3 * min_num_supports);

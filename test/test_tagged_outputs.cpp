@@ -4,13 +4,13 @@
 #include <Kokkos_Core.hpp>
 #include <Omega_h_build.hpp>
 #include <Omega_h_library.hpp>
-#include <pcms/field/function_space/lagrange.h>
-#include <pcms/transfer/interpolator.h>
-#include "field_test_utils.h"
+#include <pcms/field/function_spaces.hpp>
+#include <pcms/transfer/interpolator.hpp>
+#include "field_test_utils.hpp"
 #include <memory>
 #include <vector>
-#include "pcms/field/coordinate_systems/cartesian.hpp"
-#include "pcms/field/coordinate_systems/cylindrical.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/cylindrical.hpp"
 
 using Catch::Matchers::ContainsSubstring;
 using pcms::DeviceMemorySpace;
@@ -81,7 +81,7 @@ TEST_CASE("PointEvaluator::Evaluate gates on the source field's stored basis")
     REQUIRE_NOTHROW(evaluator->Evaluate(
       cartesian,
       ValueView<Real, DeviceMemorySpace>(cartesian.GetData().GetValueBasis(),
-                                         pcms::MakeRank2View(out))));
+                                         pcms::detail::MakeRank2View(out))));
   }
 
   SECTION("a mismatched basis claim is rejected")
@@ -89,7 +89,7 @@ TEST_CASE("PointEvaluator::Evaluate gates on the source field's stored basis")
     REQUIRE_THROWS_WITH(
       evaluator->Evaluate(cartesian, ValueView<Real, DeviceMemorySpace>(
                                        cylindrical.GetData().GetValueBasis(),
-                                       pcms::MakeRank2View(out))),
+                                       pcms::detail::MakeRank2View(out))),
       ContainsSubstring("does not match the basis this call writes"));
   }
 }

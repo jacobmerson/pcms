@@ -1,8 +1,8 @@
 #ifndef PCMS_TRANSFER_LINEAR_FORM_INTEGRATOR_H
 #define PCMS_TRANSFER_LINEAR_FORM_INTEGRATOR_H
 
-#include "pcms/field/coordinate_view.hpp"
-#include "pcms/utility/arrays.h"
+#include "pcms/utility/coordinate_view.hpp"
+#include "pcms/utility/arrays.hpp"
 #include <petscvec.h>
 
 namespace pcms

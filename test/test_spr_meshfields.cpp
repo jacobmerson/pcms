@@ -1,9 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
-#include <pcms/localization/adj_search.hpp>
+#include <pcms/backends/omega_h/adj_search.hpp>
 #include <pcms/field/evaluator/mls_interpolation.hpp>
-#include <pcms/field/evaluator/pcms_interpolator_aliases.hpp>
-#include <pcms/utility/mesh_geometry.h>
+#include <pcms/field/evaluator/interpolator_aliases.hpp>
+#include <pcms/utility/mesh_geometry.hpp>
 #include <Omega_h_mesh.hpp>
 #include <Omega_h_build.hpp>
 #include <Omega_h_file.hpp>
@@ -66,7 +66,8 @@ void test(Mesh& mesh, Omega_h::Graph& patches, int degree,
   Omega_h::Real tolerance = 0.0005;
 
   Omega_h::Write<Omega_h::Real> ignored(patches.a2ab.size() - 1, 1);
-  SupportResults support{patches.a2ab, patches.ab2b, ignored};
+  SupportResults support{patches.a2ab.view(), patches.ab2b.view(),
+                         ignored.view()};
 
   auto approx_target_values = pcms::mls_interpolation(
     source_values, source_coordinates, target_coordinates, support, dim, degree,

@@ -3,7 +3,7 @@
 #include "pcms/transfer/omega_h_intersection_rhs_integrator.hpp"
 #include "pcms/transfer/omega_h_form_integrator_utils.hpp"
 #include "pcms/transfer/omega_h_mass_integrator.hpp"
-#include "pcms/utility/arrays.h"
+#include "pcms/utility/arrays.hpp"
 #include <Omega_h_array.hpp>
 #include <memory>
 
@@ -87,7 +87,7 @@ void OmegaHConservativeProjection::Apply(const Field<Real>& source,
   }
   const int num_dof_holders = target_layout_->GetNumDofHolder();
   const int num_components = target_layout_->GetNumComponents();
-  const auto values = MakeRank2View(target_values_);
+  const auto values = pcms::detail::MakeRank2View(target_values_);
   const auto solution = solver_->Solve(*evaluator_, source);
   const auto global_to_local = target_layout_->GetGlobalToLocalPermutation();
   const bool has_ghosts = target_layout_->HasGhosts();

@@ -11,11 +11,11 @@
 #include <Omega_h_build.hpp>
 #include <Omega_h_library.hpp>
 #include <pcms/field/coordinate_map.hpp>
-#include <pcms/field/coordinate_systems/cartesian.hpp>
-#include <pcms/field/coordinate_systems/cylindrical.hpp>
-#include <pcms/field/evaluator/omega_h_geometry.hpp>
-#include <pcms/field/function_space/lagrange.h>
-#include <pcms/transfer/interpolator.h>
+#include <pcms/utility/coordinate_systems/cartesian.hpp>
+#include <pcms/utility/coordinate_systems/cylindrical.hpp>
+#include <pcms/backends/omega_h/geometry.hpp>
+#include <pcms/field/function_spaces.hpp>
+#include <pcms/transfer/interpolator.hpp>
 #include <cmath>
 #include <cstdio>
 #include <exception>
@@ -44,7 +44,15 @@ DeviceView ToDevice(const std::vector<Real>& flat, int width)
 HostView ToHost(Rank2View<const Real, DeviceMemorySpace> v)
 {
   DeviceView dev("dev", v.extent(0), v.extent(1));
-  ConvertMismatchLayoutView2D(dev, v);
+  const auto num_cols = v.extent(1);
+  Kokkos::parallel_for(
+    "ToHost",
+    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, v.extent(0)),
+    KOKKOS_LAMBDA(const int i) {
+      for (std::size_t j = 0; j < num_cols; ++j) {
+        dev(i, j) = v(i, j);
+      }
+    });
   HostView host("host", v.extent(0), v.extent(1));
   DeepCopyMismatchLayouts(host, dev);
   return host;
@@ -92,13 +100,14 @@ void BuildSpaces(Omega_h::Library& lib, Omega_h::Mesh& src_mesh,
   src_mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 2.0, 1.6, 1.1, 8,
                                 8, 6, false);
   src = CreateLagrangeSpace(
-    CreateOmegaHGeometry(src_mesh, csys::CylindricalRThetaZ::Create()), 1, 3,
-    LagrangeOptions{.backend = LagrangeBackend::OmegaH});
+    backend::omega_h::CreateGeometry(src_mesh,
+                                     csys::CylindricalRThetaZ::Create()),
+    1, 3, LagrangeOptions{.backend = LagrangeBackend::OmegaH});
   tgt_mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1.0, 1.0, 1.0, 4,
                                 4, 4, false);
   tgt = CreateLagrangeSpace(
-    CreateOmegaHGeometry(tgt_mesh, csys::Cartesian::Create(3)), 1, 3,
-    LagrangeOptions{.backend = LagrangeBackend::OmegaH});
+    backend::omega_h::CreateGeometry(tgt_mesh, csys::Cartesian::Create(3)), 1,
+    3, LagrangeOptions{.backend = LagrangeBackend::OmegaH});
 }
 
 void CaseA()
@@ -112,8 +121,9 @@ void CaseA()
   // Values run opposite to points: this map re-expresses cylindrical
   // components as Cartesian ones, in place. Here, e_theta at each point.
   auto v = ToDevice({0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0}, 3);
-  auto v_cart = bound->TransformValues(
-    ValueView<Real, DeviceMemorySpace>(CylindricalVector(), MakeRank2View(v)));
+  auto v_cart = bound->TransformValues(ValueView<Real, DeviceMemorySpace>(
+    CylindricalVector(),
+    Rank2View<Real, DeviceMemorySpace>(v.data(), v.extent(0), v.extent(1))));
   auto vh = ToHost(MakeConstRank2View(v));
   Real err = 0.0;
   for (int i = 0; i < 3; ++i) {
