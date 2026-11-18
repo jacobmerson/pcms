@@ -1,6 +1,9 @@
 #ifndef PCMS_FIELD_EVALUATOR_MLS_INTERPOLATION_HPP
 #define PCMS_FIELD_EVALUATOR_MLS_INTERPOLATION_HPP
 
+// Implementer API: not covered by the public-API stability promise. (the whole
+// header)
+
 #include "pcms/localization/mls_options.hpp"
 #include "pcms/geometry/supports.hpp"
 #include "pcms/utility/memory_spaces.hpp"
