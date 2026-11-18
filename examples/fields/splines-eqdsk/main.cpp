@@ -143,10 +143,9 @@ int main(int argc, char** argv)
 {
   Kokkos::ScopeGuard kokkos(argc, argv);
   example::Report report;
-  if (argc < 2) {
-    std::printf("usage: %s <path to solovev.eqdsk>\n", argv[0]);
-    return 2;
-  }
+  // The file next to this source unless one is given on the command line.
+  const std::string path =
+    argc > 1 ? argv[1] : std::string(EXAMPLE_SOURCE_DIR) + "/solovev.eqdsk";
   {
     // -------------------------------------------------------------------
     // 1. Reading the file
@@ -157,7 +156,7 @@ int main(int argc, char** argv)
     // field holding psi. That field can be stored and communicated but not
     // evaluated, so its values are copied to a Function of the space, which
     // can be evaluated.
-    const auto eqdsk = pcms::MakeEQDSKField(argv[1]);
+    const auto eqdsk = pcms::MakeEQDSKField(path);
     const auto& data = eqdsk.data;
     std::printf("EQDSK: %d x %d points, R in [%.2f, %.2f], Z in [%.2f, %.2f]\n",
                 data.GetNW(), data.GetNH(), data.GetRMin(), data.GetRMax(),

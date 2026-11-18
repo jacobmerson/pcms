@@ -383,17 +383,18 @@ jobs:
           --debug-output
         cmake --build ${{github.workspace}}/examples/external-usage-example/build
         mpirun --oversubscribe -np 1 ${{github.workspace}}/examples/external-usage-example/build/pcms_test
-        # A core-only consumer: pcms::pcms without Omega_h, MeshFields or PETSc
-        # on its line (with the coupler built, redev brings MPI and ADIOS2)
+        # The examples as a project of their own, against the install tree:
+        # hello-field links only pcms::pcms (Kokkos and PCMS, nothing else on
+        # its line), the others use Omega_h and MPI directly when PCMS has them.
         cmake \
-          -B ${{github.workspace}}/examples/core-usage-example/build \
-          -S ${{github.workspace}}/examples/core-usage-example/ \
+          -B ${{github.workspace}}/examples/build \
+          -S ${{github.workspace}}/examples/ \
           -Dpcms_DIR=${{ runner.temp }}/build-pcms/install/lib/cmake/pcms \
           -DCMAKE_PREFIX_PATH="${{ runner.temp }}/build-kokkos/install;${{ runner.temp }}/build-kokkos-kernels/install;${{ runner.temp }}/build-omega_h/install;${{ runner.temp }}/build-redev/install;${{ runner.temp }}/build-ADIOS2/install;${{ runner.temp }}/build-perfstubs/install;${{ runner.temp }}/build-meshFields/install" \
           -DCMAKE_CXX_COMPILER=`which mpicxx` \
           ${{ matrix.petsc == 'ON' && format('-DPCMS_PETSC_LINK_STATIC=ON -DPETSC_DIR={0}/petsc -DPETSC_ARCH=ubuntu-kokkos', runner.temp) || '' }}
-        cmake --build ${{github.workspace}}/examples/core-usage-example/build
-        ${{github.workspace}}/examples/core-usage-example/build/pcms_core_test
+        cmake --build ${{github.workspace}}/examples/build
+        ctest --test-dir ${{github.workspace}}/examples/build --output-on-failure
 
     - name: Check public header includes
       run: python3 tools/check-public-includes.py

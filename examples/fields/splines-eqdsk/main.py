@@ -24,7 +24,7 @@ answer.
   5. the checks: psi on the axis, B against the analytic field, B
      divergence-free on the surface.
 
-Usage: main.py <path to solovev.eqdsk>
+Usage: main.py [path to an EQDSK file; default: the solovev.eqdsk next to it]
 """
 import pathlib
 import sys
@@ -124,9 +124,9 @@ class Flux:
 
 def main():
     report = Report()
-    if len(sys.argv) < 2:
-        print("usage: %s <path to solovev.eqdsk>" % sys.argv[0])
-        return 2
+    # The file next to this script unless one is given on the command line.
+    path = (sys.argv[1] if len(sys.argv) > 1
+            else str(pathlib.Path(__file__).with_name("solovev.eqdsk")))
 
     # ---------------------------------------------------------------------
     # 1. Reading the file
@@ -134,7 +134,7 @@ def main():
     # The file gives the grid and psi on it. The spline space is created on
     # a uniform grid in cylindrical (R, Z) coordinates, and psi is the values
     # of the DOF holders, which are the grid points, R varying fastest.
-    eq = read_eqdsk(sys.argv[1])
+    eq = read_eqdsk(path)
     print("EQDSK: %d x %d points, R in [%.2f, %.2f], Z in [%.2f, %.2f]"
           % (eq["nw"], eq["nh"], eq["r_min"], eq["r_min"] + eq["r_dim"],
              eq["z_min"], eq["z_min"] + eq["z_dim"]))

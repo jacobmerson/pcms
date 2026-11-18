@@ -87,6 +87,9 @@ function(pcms_add_example name source)
     endif()
   endif()
   target_include_directories(${name} PRIVATE "${PCMS_EXAMPLES_ROOT}/common")
+  # so an example finds the data shipped next to its source by default
+  target_compile_definitions(
+    ${name} PRIVATE EXAMPLE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   set(test example.${track}.${dir}.cpp)
   add_test(NAME ${test} COMMAND ${name} ${EX_ARGS})
   set_tests_properties(${test} PROPERTIES LABELS example TIMEOUT 60)
