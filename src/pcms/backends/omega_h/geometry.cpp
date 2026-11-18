@@ -180,23 +180,6 @@ const GridPointSearchVariant& OmegaHGeometry::Search() const
   return *search_;
 }
 
-std::shared_ptr<const OmegaHGeometry> CreateOmegaHGeometry(
-  Omega_h::Mesh& mesh, std::shared_ptr<const CoordinateSystem> system,
-  OmegaHGeometryOptions options)
-{
-  return std::make_shared<OmegaHGeometry>(mesh, std::move(system),
-                                          std::move(options));
-}
-
-std::shared_ptr<const OmegaHGeometry> CreateOmegaHGeometry(
-  std::shared_ptr<Omega_h::Mesh> mesh,
-  std::shared_ptr<Omega_h::Library> library,
-  std::shared_ptr<const CoordinateSystem> system, OmegaHGeometryOptions options)
-{
-  return std::make_shared<OmegaHGeometry>(
-    std::move(mesh), std::move(library), std::move(system), std::move(options));
-}
-
 std::shared_ptr<BoundSource> OmegaHGeometry::BindImpl(
   const BindRequest& request) const
 {
