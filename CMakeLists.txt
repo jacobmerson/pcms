@@ -209,7 +209,7 @@ endif()
 # the smoke test exercises the coupler and needs the Omega_h test support
 if(TARGET test_support)
   add_executable(smoke_test test/test_ohClassPtn.cpp)
-  target_link_libraries(smoke_test pcms::pcms test_support)
+  target_link_libraries(smoke_test pcms::coupler test_support)
   # Uses a mesh vendored in test/data so the install check works without
   # PCMS_TEST_DATA_DIR (e.g. with BUILD_TESTING=OFF).
   dual_mpi_test(
