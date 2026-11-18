@@ -325,6 +325,13 @@ jobs:
       if: always()
       run: cat ${{ runner.temp }}/build-pcms/Testing/Temporary/LastTest.log
 
+    - name: Print smoke_test link line
+      if: always()
+      run: |
+        cat ${{ runner.temp }}/build-pcms/CMakeFiles/smoke_test.dir/link.txt
+        echo
+        cat ${{ runner.temp }}/build-pcms/test/CMakeFiles/test_GDI.dir/link.txt
+
     - name: Run Python API tests
       if: matrix.python_api == 'ON'
       run: |
