@@ -187,7 +187,7 @@ Moved to `pcms::detail` (same headers; every use in the tree is qualified):
 | `utility/coordinate_system.hpp` | `ResolveCoordinateSystem`, `SameCoordinateSystem`, `HasIdentityMetric` |
 | `utility/uniform_grid.hpp` | `DivisionsPerAxisForMesh` |
 | `utility/types.hpp` | `TypeEnumFromType`, `type_identity`, `dependent_always_false` |
-| `utility/arrays.hpp` | everything except `View`, `Rank1View`, `Rank2View`, `GlobalIDView`, `MakeConstRank2View` and `DeepCopyMismatchLayouts`: `Rank3View`, `Rank4View`, `make_mdspan`, `make_array_view`, `make_const_array_view`, `MakeRank1View`, `MakeRank2View`, `FlattenToRank1View`, `ConvertMismatchLayoutView2D`, `iota_view`, the `Copy*` and `ScatterRows` helpers |
+| `utility/arrays.hpp` | everything except `View`, `Rank1View`, `Rank2View`, `GlobalIDView`, `MakeRank1View`, `MakeRank2View`, `MakeConstRank2View`, `ConvertMismatchLayoutView2D` and `DeepCopyMismatchLayouts`: `Rank3View`, `Rank4View`, `make_mdspan`, `make_array_view`, `make_const_array_view`, `FlattenToRank1View`, `iota_view`, the `Copy*` and `ScatterRows` helpers |
 | `utility/memory_spaces.hpp` | `ForEach`, `IsSmallHostBatch`, `SmallHostBatchSize` |
 | `backends/xgc/reverse_classification.hpp` | `DimID` and its `std::hash` |
 

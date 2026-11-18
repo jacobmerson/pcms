@@ -96,9 +96,8 @@ public:
         "Interpolator: the basis written for the source's stored basis "
         "differs from the target's declared basis");
     }
-    evaluator_->Evaluate(source,
-                         ValueView<T, DeviceMemorySpace>(
-                           written, detail::MakeRank2View(target_values_)));
+    evaluator_->Evaluate(source, ValueView<T, DeviceMemorySpace>(
+                                   written, MakeRank2View(target_values_)));
     target.SetDOFHolderDataUnchecked(MakeConstRank2View(target_values_));
     target.Synchronize();
   }

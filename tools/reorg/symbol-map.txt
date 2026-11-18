@@ -27,10 +27,7 @@ cpp-private   pcms::MFEMFieldFactory pcms::backend::mfem::MFEMFieldFactory
 cpp-private   pcms::TypeEnumFromType pcms::detail::TypeEnumFromType
 cpp-private   pcms::make_array_view pcms::detail::make_array_view
 cpp-private   pcms::make_const_array_view pcms::detail::make_const_array_view
-cpp-private   pcms::MakeRank1View pcms::detail::MakeRank1View
-cpp-private   pcms::MakeRank2View pcms::detail::MakeRank2View
 cpp-private   pcms::FlattenToRank1View pcms::detail::FlattenToRank1View
-cpp-private   pcms::ConvertMismatchLayoutView2D pcms::detail::ConvertMismatchLayoutView2D
 cpp-private   pcms::iota_view pcms::detail::iota_view
 cpp-private   pcms::CopyDeviceRank1ViewToDeviceView pcms::detail::CopyDeviceRank1ViewToDeviceView
 cpp-private   pcms::CopyDeviceRank1ViewToHostView pcms::detail::CopyDeviceRank1ViewToHostView
