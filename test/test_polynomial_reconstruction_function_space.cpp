@@ -1,18 +1,17 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "pcms/field/function_space/polynomial_reconstruction.hpp"
-#include <pcms/field/evaluator/point_cloud_geometry.hpp>
+#include "pcms/field/function_spaces.hpp"
+#include <pcms/backends/point_cloud/geometry.hpp>
 #include "pcms/field/value_view.hpp"
-#include "pcms/field/function_space/lagrange.h"
-#include "pcms/field/layout/omega_h_entity.h"
-#include "pcms/field/layout/point_cloud.h"
-#include "field_test_utils.h"
+#include "pcms/backends/omega_h/entity_layout.hpp"
+#include "pcms/backends/point_cloud/layout.hpp"
+#include "field_test_utils.hpp"
 
 #include <Omega_h_build.hpp>
 #include <Omega_h_library.hpp>
 #include <vector>
-#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
 
 using pcms::CoordinateSystem;
 using pcms::HostMemorySpace;
@@ -93,7 +92,8 @@ TEST_CASE("PolynomialReconstructionFunctionSpace point-cloud field set/get DOF "
     pcms::ValueView<const pcms::Real, pcms::HostMemorySpace>(pcms::ValueBasis{},
                                                              data_view));
 
-  auto got = pcms::FlattenToRank1View(field.GetDOFHolderDataHost().GetValues());
+  auto got =
+    pcms::detail::FlattenToRank1View(field.GetDOFHolderDataHost().GetValues());
   REQUIRE(got.size() == data.size());
   for (LO i = 0; i < static_cast<LO>(data.size()); ++i) {
     REQUIRE(got[i] == Catch::Approx(data[i]));
@@ -123,7 +123,8 @@ TEST_CASE("PolynomialReconstructionFunctionSpace field keeps layout alive "
     data.data(), static_cast<LO>(data.size()), 1);
   field.SetDOFHolderDataUncheckedHost(data_view);
 
-  auto got = pcms::FlattenToRank1View(field.GetDOFHolderDataHost().GetValues());
+  auto got =
+    pcms::detail::FlattenToRank1View(field.GetDOFHolderDataHost().GetValues());
   REQUIRE(got[0] == Catch::Approx(9.0));
   REQUIRE(got[3] == Catch::Approx(12.0));
 }

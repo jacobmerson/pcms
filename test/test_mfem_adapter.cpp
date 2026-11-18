@@ -1,10 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include <pcms/coupler/field_serializer.h>
-#include <pcms/field/coordinate_systems/cartesian.hpp>
-#include <pcms/field/data/mfem.hpp>
-#include <pcms/field/function_space/mfem.hpp>
-#include <pcms/field/layout/mfem.hpp>
+#include <pcms/coupler/detail/field_serializer.hpp>
+#include <pcms/utility/coordinate_systems/cartesian.hpp>
+#include <pcms/backends/mfem/field_data.hpp>
+#include <pcms/backends/mfem/field_factory.hpp>
+#include <pcms/backends/mfem/layout.hpp>
 
 #include <mfem.hpp>
 
@@ -124,16 +124,16 @@ TEST_CASE("MFEM vertex-scalar field adapter", "[mfem]")
     Kokkos::View<pcms::Real*, pcms::HostMemorySpace> buffer("buffer", n);
 
     pcms::FieldSerializer<pcms::Real> serializer;
-    serializer.Serialize(field, pcms::make_array_view(buffer),
-                         pcms::make_const_array_view(perm));
+    serializer.Serialize(field, pcms::detail::make_array_view(buffer),
+                         pcms::detail::make_const_array_view(perm));
 
     // Deserialize into a second field bound to a fresh grid function.
     mfem::ParGridFunction gf2(&pfes);
     gf2 = 0.0;
     auto field2 = factory.CreateField<pcms::Real>(
       "target", std::make_unique<pcms::MFEMVertexFieldData>(pfes, gf2));
-    serializer.Deserialize(field2, pcms::make_const_array_view(buffer),
-                           pcms::make_const_array_view(perm));
+    serializer.Deserialize(field2, pcms::detail::make_const_array_view(buffer),
+                           pcms::detail::make_const_array_view(perm));
 
     auto restored = field2.GetDOFHolderDataHost().GetValues();
     auto original = field.GetDOFHolderDataHost().GetValues();

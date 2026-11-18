@@ -1,19 +1,19 @@
-#include "client.h"
-#include "pcms.h"
-#include "pcms/field/field_factory.h"
-#include "pcms/field/function_space/xgc.h"
-#include "pcms/field/data/xgc.h"
-#include "pcms/field/layout/xgc.h"
-#include "pcms/field/layout/xgc_reverse_classification.h"
+#include "pcms/capi/client.h"
+#include "pcms/pcms.hpp"
+#include "pcms/field/field_factory.hpp"
+#include "pcms/backends/xgc/field_factory.hpp"
+#include "pcms/backends/xgc/field_data.hpp"
+#include "pcms/backends/xgc/layout.hpp"
+#include "pcms/backends/xgc/reverse_classification.hpp"
 #include "pcms/coupler/coupler.hpp"
-#include "pcms/field/layout/empty.h"
-#include "pcms/field/data/simple.h"
-#include "pcms/utility/assert.h"
+#include "pcms/field/layout/empty.hpp"
+#include "pcms/field/simple_field_data.hpp"
+#include "pcms/utility/assert.hpp"
 #include <map>
 #include <memory>
 #include <numeric>
 #include <variant>
-#include "pcms/field/coordinate_systems/cylindrical.hpp"
+#include "pcms/utility/coordinate_systems/cylindrical.hpp"
 
 namespace pcms
 {

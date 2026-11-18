@@ -9,8 +9,8 @@
 #include <pcms/transfer/mass_matrix_type.hpp>
 #include <pcms/transfer/omega_h_conservative_projection.hpp>
 #include <pcms/transfer/omega_h_form_integrator_utils.hpp>
-#include <pcms/utility/arrays.h>
-#include "field_test_utils.h"
+#include <pcms/utility/arrays.hpp>
+#include "field_test_utils.hpp"
 
 #include <array>
 #include <cmath>
@@ -365,10 +365,10 @@ std::vector<double> ProjectSameMesh(Omega_h::Mesh& mesh,
                                                 mass_type);
   projection.Apply(source, target);
 
-  source_values = ToVector(
-    pcms::FlattenToRank1View(source.GetDOFHolderDataHost().GetValues()));
-  return ToVector(
-    pcms::FlattenToRank1View(target.GetDOFHolderDataHost().GetValues()));
+  source_values = ToVector(pcms::detail::FlattenToRank1View(
+    source.GetDOFHolderDataHost().GetValues()));
+  return ToVector(pcms::detail::FlattenToRank1View(
+    target.GetDOFHolderDataHost().GetValues()));
 }
 
 template <int Dim>

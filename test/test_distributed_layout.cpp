@@ -10,13 +10,13 @@
 #include <Omega_h_library.hpp>
 #include <Omega_h_mesh.hpp>
 
-#include "distributed_test_utils.h"
-#include "pcms/configuration.h"
-#include "pcms/field/coordinate_systems/cartesian.hpp"
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
-#include "pcms/field/function_space/lagrange.h"
-#include "pcms/utility/arrays.h"
-#include "pcms/utility/types.h"
+#include "distributed_test_utils.hpp"
+#include "pcms/configuration.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
+#include "pcms/backends/omega_h/geometry.hpp"
+#include "pcms/field/function_spaces.hpp"
+#include "pcms/utility/arrays.hpp"
+#include "pcms/utility/types.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -121,8 +121,8 @@ void CheckLayout(Omega_h::Mesh& mesh, const pcms::FunctionSpace& space,
           label + ": owned coordinates have the wrong size");
   Kokkos::View<Real**, pcms::DeviceMemorySpace> owned_coords_copy(
     "owned_coords", n_owned, dim);
-  pcms::CopyDeviceRank2ViewToRank2View(pcms::MakeRank2View(owned_coords_copy),
-                                       owned_coords);
+  pcms::detail::CopyDeviceRank2ViewToRank2View(
+    pcms::detail::MakeRank2View(owned_coords_copy), owned_coords);
   const auto owned_coords_host = ToHost(owned_coords_copy);
   for (LO o = 0; o < n_owned; ++o) {
     for (int d = 0; d < dim; ++d) {
@@ -161,8 +161,8 @@ void CheckLayout(Omega_h::Mesh& mesh, const pcms::FunctionSpace& space,
           label + ": owned device data has the wrong shape");
   Kokkos::View<Real**, pcms::DeviceMemorySpace> owned_device_copy(
     "owned_device", n_owned, nc);
-  pcms::CopyDeviceRank2ViewToRank2View(pcms::MakeRank2View(owned_device_copy),
-                                       owned_device);
+  pcms::detail::CopyDeviceRank2ViewToRank2View(
+    pcms::detail::MakeRank2View(owned_device_copy), owned_device);
   const auto owned_device_host = ToHost(owned_device_copy);
   for (LO o = 0; o < n_owned; ++o) {
     for (int c = 0; c < nc; ++c) {

@@ -5,13 +5,13 @@
 #include <Kokkos_Core.hpp>
 #include <Omega_h_library.hpp>
 #include <pcms/field/coordinate_map.hpp>
-#include <pcms/field/coordinate_systems/cylindrical.hpp>
-#include <pcms/field/function_space.h>
-#include <pcms/field/function_space/lagrange.h>
-#include <pcms/field/layout/empty.h>
+#include <pcms/utility/coordinate_systems/cylindrical.hpp>
+#include <pcms/field/function_space.hpp>
+#include <pcms/field/function_spaces.hpp>
+#include <pcms/field/layout/empty.hpp>
 #include <pcms/geometry/geometry.hpp>
-#include <pcms/transfer/interpolator.h>
-#include "field_test_utils.h"
+#include <pcms/transfer/interpolator.hpp>
+#include "field_test_utils.hpp"
 
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;

@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include <pcms/coupler/field_exchange_planner.h>
-#include <pcms/field/layout/point_cloud.h>
-#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include <pcms/coupler/detail/field_exchange_planner.hpp>
+#include <pcms/backends/point_cloud/layout.hpp>
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
 
 TEST_CASE("Field exchange plans exclude GID message headers",
           "[field_exchange]")
@@ -52,7 +52,7 @@ TEST_CASE("GID messages insert headers around compact field payloads",
     "gid_message",
     plan.msg_size + 2 * static_cast<std::size_t>(pcms::ent_offsets_len));
   pcms::GenericFieldExchangePlanner planner;
-  planner.FillGidMessage(layout, plan, pcms::MakeRank1View(message));
+  planner.FillGidMessage(layout, plan, pcms::detail::MakeRank1View(message));
 
   const pcms::GO expected[] = {
     0, 2, 2, 2, 2, 0, 2, 0, 2, 2, 2, 2, 1, 3,

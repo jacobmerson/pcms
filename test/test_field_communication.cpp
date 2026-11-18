@@ -8,14 +8,14 @@
 #include <Omega_h_for.hpp>
 #include <redev.h>
 #include <vector>
-#include "pcms/coupler/field_communicator.hpp"
+#include "pcms/coupler/detail/field_communicator.hpp"
 #include "pcms/coupler/coupler.hpp"
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
-#include "pcms/field/function_space/lagrange.h"
+#include "pcms/backends/omega_h/geometry.hpp"
+#include "pcms/field/function_spaces.hpp"
 #include "pcms/field/value_view.hpp"
-#include "pcms/field/data/simple.h"
-#include "test_support.h"
-#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/field/simple_field_data.hpp"
+#include "test_support.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
 
 namespace ts = test_support;
 using pcms::Real;
@@ -172,7 +172,7 @@ void client2(MPI_Comm comm, Omega_h::Mesh& mesh, std::string comm_name,
   channel.EndReceiveCommunicationPhase();
 
   auto copied_array =
-    pcms::FlattenToRank1View(field.GetDOFHolderDataHost().GetValues());
+    pcms::detail::FlattenToRank1View(field.GetDOFHolderDataHost().GetValues());
 
   PCMS_ALWAYS_ASSERT(copied_array.size() == gids.size());
 

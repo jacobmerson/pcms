@@ -1,9 +1,9 @@
 #ifndef PCMS_LOCALIZATION_UNIFORM_GRID_SEARCH_HPP
 #define PCMS_LOCALIZATION_UNIFORM_GRID_SEARCH_HPP
 
-#include "pcms/utility/memory_spaces.h"
-#include "pcms/utility/types.h"
-#include "pcms/utility/uniform_grid.h"
+#include "pcms/utility/memory_spaces.hpp"
+#include "pcms/utility/types.hpp"
+#include "pcms/utility/uniform_grid.hpp"
 
 #include <Kokkos_Core.hpp>
 #include <Omega_h_vector.hpp>
@@ -64,7 +64,7 @@ public:
       n);
     // the lambda must not capture this
     const auto grid = grid_;
-    detail::ForEach(
+    pcms::detail::ForEach(
       "UniformGridPointSearch", n, KOKKOS_LAMBDA(const LO i) {
         Omega_h::Vector<Dim> point;
         for (unsigned d = 0; d < Dim; ++d) {

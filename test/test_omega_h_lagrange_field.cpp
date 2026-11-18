@@ -4,17 +4,17 @@
 #include <Omega_h_for.hpp>
 #include <Omega_h_mesh.hpp>
 
-#include "pcms/field/layout/omega_h_lagrange.h"
-#include "pcms/field/function_space/lagrange.h"
+#include "pcms/backends/omega_h/lagrange_layout.hpp"
+#include "pcms/field/function_spaces.hpp"
 #include "pcms/field/value_view.hpp"
-#include "pcms/utility/arrays.h"
-#include "pcms/utility/mesh_geometry.h"
-#include "field_test_utils.h"
+#include "pcms/utility/arrays.hpp"
+#include "pcms/utility/mesh_geometry.hpp"
+#include "field_test_utils.hpp"
 
 #include <memory>
 #include <optional>
 #include <stdexcept>
-#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
 
 using pcms::LO;
 using pcms::Real;
@@ -139,7 +139,8 @@ TEST_CASE("OmegaHLagrangeField order-1: set/get DOF data round-trip")
     pcms::ValueView<const pcms::Real, pcms::HostMemorySpace>(pcms::ValueBasis{},
                                                              view));
 
-  auto got = pcms::FlattenToRank1View(field.GetDOFHolderDataHost().GetValues());
+  auto got =
+    pcms::detail::FlattenToRank1View(field.GetDOFHolderDataHost().GetValues());
   REQUIRE(static_cast<int>(got.size()) == n);
   for (int i = 0; i < n; ++i)
     REQUIRE(got[i] == Catch::Approx(data[i]));
@@ -246,7 +247,8 @@ TEST_CASE("OmegaHLagrangeField order-0: set/get DOF data round-trip")
     pcms::ValueView<const pcms::Real, pcms::HostMemorySpace>(pcms::ValueBasis{},
                                                              view));
 
-  auto got = pcms::FlattenToRank1View(field.GetDOFHolderDataHost().GetValues());
+  auto got =
+    pcms::detail::FlattenToRank1View(field.GetDOFHolderDataHost().GetValues());
   REQUIRE(static_cast<int>(got.size()) == n);
   for (int i = 0; i < n; ++i)
     REQUIRE(got[i] == Catch::Approx(3.14));

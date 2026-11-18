@@ -3,13 +3,13 @@
 #include <Omega_h_mesh.hpp>
 #include <Omega_h_build.hpp>
 #include <Omega_h_for.hpp>
-#include "pcms/transfer/copy.h"
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
-#include "pcms/field/function_space/lagrange.h"
+#include "pcms/transfer/copy.hpp"
+#include "pcms/backends/omega_h/geometry.hpp"
+#include "pcms/field/function_spaces.hpp"
 #include "pcms/field/value_view.hpp"
-#include "pcms/utility/assert.h"
+#include "pcms/utility/assert.hpp"
 #include <Kokkos_Core.hpp>
-#include "pcms/field/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
 
 using pcms::Real;
 
@@ -42,7 +42,7 @@ void test_copy(Omega_h::CommPtr world, int dim, int order, int num_components)
   pcms::Copy<Real> copy(*factory, *factory);
   copy.Apply(original, copied);
   auto copied_array =
-    pcms::FlattenToRank1View(copied.GetDOFHolderDataHost().GetValues());
+    pcms::detail::FlattenToRank1View(copied.GetDOFHolderDataHost().GetValues());
 
   REQUIRE(copied_array.size() == ndata);
   int sum = 0;

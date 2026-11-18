@@ -2,23 +2,23 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
-#include "pcms/field/function_space/polynomial_reconstruction.hpp"
-#include "pcms/field/evaluator/point_cloud_geometry.hpp"
-#include "pcms/field/evaluator/mls_options.h"
+#include "pcms/field/function_spaces.hpp"
+#include "pcms/backends/point_cloud/geometry.hpp"
+#include "pcms/localization/mls_options.hpp"
 #include "pcms/field/value_view.hpp"
-#include "pcms/field/coordinate_view.hpp"
-#include "pcms/field/out_of_bounds_policy.h"
-#include "pcms/utility/arrays.h"
-#include "pcms/utility/memory_spaces.h"
-#include "field_test_utils.h"
+#include "pcms/utility/coordinate_view.hpp"
+#include "pcms/field/out_of_bounds_policy.hpp"
+#include "pcms/utility/arrays.hpp"
+#include "pcms/utility/memory_spaces.hpp"
+#include "field_test_utils.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <stdexcept>
 #include <vector>
-#include "pcms/field/coordinate_systems/cartesian.hpp"
-#include "pcms/field/coordinate_systems/cylindrical.hpp"
+#include "pcms/utility/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/cylindrical.hpp"
 
 using pcms::CoordinateSystem;
 using pcms::CoordinateView;

@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
-#include "pcms/field/data/xgc.h"
-#include "pcms/coupler/overlap_mask.h"
-#include "pcms/field/function_space/xgc.h"
+#include "pcms/backends/xgc/field_data.hpp"
+#include "pcms/coupler/overlap_mask.hpp"
+#include "pcms/backends/xgc/field_factory.hpp"
 #include <numeric>
 
 namespace
@@ -60,7 +60,7 @@ TEST_CASE("XGCFieldFactory creates fields and rejects evaluator access")
   auto field = function_space.CreateField<pcms::Real>(
     "", std::make_unique<pcms::XGCFieldData<pcms::Real>>(
           function_space.GetXGCLayout(), pcms::ValueBasis{},
-          pcms::make_array_view(data)));
+          pcms::detail::make_array_view(data)));
 
   REQUIRE(&field.GetLayout() == function_space.GetLayout().get());
 }

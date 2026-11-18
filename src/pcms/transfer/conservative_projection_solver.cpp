@@ -1,8 +1,8 @@
 #include <petscksp.h>
 
-#include "pcms/configuration.h"
+#include "pcms/configuration.hpp"
 #include "pcms/transfer/conservative_projection_solver.hpp"
-#include "pcms/utility/arrays.h"
+#include "pcms/utility/arrays.hpp"
 #include "pcms/transfer/petsc_utils.hpp"
 #include <Kokkos_Core.hpp>
 
@@ -87,9 +87,10 @@ GalerkinProjectionSolver::~GalerkinProjectionSolver()
 Omega_h::Reals GalerkinProjectionSolver::Solve(
   const PointEvaluator<Real>& evaluator, const Field<Real>& source_field) const
 {
-  evaluator.Evaluate(source_field, ValueView<Real, DeviceMemorySpace>(
-                                     source_field.GetData().GetValueBasis(),
-                                     MakeRank2View(sampled_values_)));
+  evaluator.Evaluate(source_field,
+                     ValueView<Real, DeviceMemorySpace>(
+                       source_field.GetData().GetValueBasis(),
+                       pcms::detail::MakeRank2View(sampled_values_)));
   return Solve(MakeConstRank2View(sampled_values_));
 }
 
