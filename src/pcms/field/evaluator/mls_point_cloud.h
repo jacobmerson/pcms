@@ -23,17 +23,8 @@ namespace detail
 /// Whether each of `n` query points has supports, from the supports' row
 /// pointers. (A free function: CUDA does not allow device lambdas in
 /// constructors or non-public member functions.)
-inline Kokkos::View<bool*, DeviceMemorySpace> HasSupports(
-  const Omega_h::LOs& supports_ptr, LO n)
-{
-  Kokkos::View<bool*, DeviceMemorySpace> found(
-    Kokkos::view_alloc(Kokkos::WithoutInitializing, "mls_found"), n);
-  detail::ForEach(
-    "MLSBinding::found", n, KOKKOS_LAMBDA(const LO i) {
-      found(i) = supports_ptr[i + 1] > supports_ptr[i];
-    });
-  return found;
-}
+Kokkos::View<bool*, DeviceMemorySpace> HasSupports(
+  const Omega_h::LOs& supports_ptr, LO n);
 
 } // namespace detail
 

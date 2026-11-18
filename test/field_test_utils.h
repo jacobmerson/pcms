@@ -268,8 +268,11 @@ inline double IntegrateP1Field(Omega_h::Mesh& mesh, const Field<Real>& field)
 }
 #endif // PCMS_ENABLE_OMEGA_H
 
-// Min/max of an order-1 nodal field. For P1, nodal values are min/max
-inline std::pair<double, double> P1FieldRange(const Field<Real>& field)
+// Min/max of an order-1 nodal field. For P1, nodal values are min/max.
+// A template so the kernel is not an inline non-template function with a
+// device lambda in a header (see mesh_geometry.cpp).
+template <typename T>
+std::pair<double, double> P1FieldRange(const Field<T>& field)
 {
   const auto values = FlattenToRank1View(field.GetDOFHolderData().GetValues());
   using MinMaxReducer = Kokkos::MinMax<double>;

@@ -38,6 +38,7 @@ if(PCMS_ENABLE_PETSC AND PCMS_ENABLE_MESHFIELDS)
       omega_h_mass_integrator.cpp
       omega_h_mc_rhs_integrator.cpp
       omega_h_control_variate_projection.cpp
+      omega_h_form_integrator_utils.cpp
       petsc_utils.cpp)
 endif()
 

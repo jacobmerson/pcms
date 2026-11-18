@@ -49,6 +49,8 @@ if (PCMS_ENABLE_OMEGA_H)
             layout/uniform_grid.cpp
             evaluator/mls_interpolation.cpp
             evaluator/omega_h_geometry.cpp
+            evaluator/mls_point_cloud.cpp
+            evaluator/uniform_grid_spline.cpp
     )
     list(APPEND PCMS_FIELD_HEADERS
             function_space/lagrange.h
