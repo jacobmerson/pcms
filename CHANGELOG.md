@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- 1D uniform grids (`UniformGrid1D`, `uniform_grid::CreateGeometry`): linear and piecewise-constant Lagrange spaces and a cubic (not-a-knot) spline space, with Value and Gradient evaluation, usable through `Function`, `QueryPoints`, `CreateInterpolator` and Python.
+
 ## 0.4.0
 
 A one-time breaking reorganization so that downstream codes migrate once.

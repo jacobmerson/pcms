@@ -255,6 +255,17 @@ void bind_create_field_module(py::module& m)
 
   uniform_grid_module.def(
     "create_geometry",
+    [](const UniformGrid<1>& grid,
+       const std::optional<Immutable<CoordinateSystem>>& system) {
+      return Immutable<Geometry>{
+        uniform_grid::CreateGeometry(grid, CartesianIfNone(system))};
+    },
+    py::arg("grid"), py::arg("system") = py::none(),
+    "Create the geometry of a 1D uniform grid; the coordinate system defaults "
+    "to Cartesian");
+
+  uniform_grid_module.def(
+    "create_geometry",
     [](const UniformGrid<2>& grid,
        const std::optional<Immutable<CoordinateSystem>>& system) {
       return Immutable<Geometry>{
@@ -516,7 +527,8 @@ void bind_create_field_module(py::module& m)
       return Immutable<FunctionSpace>{CreateSplineSpace(geometry.ptr)};
     },
     py::arg("geometry"),
-    "Create a bicubic spline FunctionSpace on a 2D uniform-grid geometry");
+    "Create a cubic (1D) or bicubic (2D) spline FunctionSpace on a "
+    "uniform-grid geometry");
 }
 
 } // namespace pcms
