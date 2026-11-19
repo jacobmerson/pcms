@@ -70,6 +70,49 @@ public:
     }
   }
 
+  /// @return whether EvaluateTranspose is implemented for this evaluator
+  [[nodiscard]] virtual bool SupportsTranspose() const noexcept
+  {
+    return false;
+  }
+
+  /// @brief Adds the transpose of the evaluation to `dofs`: dofs += E^T values,
+  ///        where E is the matrix that maps the DOFs of the field to its
+  ///        values at the points (the rows of the FoundPoints(); the rows of
+  ///        missing points are zero), so that <E x, y> = <x, E^T y>.
+  ///
+  /// Only for DifferentialOperator::Value. The DOFs are those of the layout's
+  /// DOF holders in the layout's holder order (the order of the field data),
+  /// ghost holders included, which the evaluator reads; the sum is local:
+  /// nothing is communicated, so a ghost holder holds the contribution of
+  /// this rank's points only, and summing the ghosts into their owners is up
+  /// to the caller. The weights of a quadrature are applied to `values` by
+  /// the caller: b = E^T (W f).
+  /// @param values one row per query point, one column per component of the
+  ///        field's layout (not tagged with a basis: the transpose is of the
+  ///        linear map on the DOFs)
+  /// @param dofs [number of DOF holders with ghosts][number of components],
+  ///        accumulated into (not zeroed)
+  /// @throws pcms_error if SupportsTranspose() is false or the operator is not
+  ///         Value
+  /// @throws std::invalid_argument if the views are not shaped as above
+  void EvaluateTranspose(
+    Rank2View<const T, DeviceMemorySpace, LayoutPolicy> values,
+    Rank2View<T, DeviceMemorySpace, LayoutPolicy> dofs) const
+  {
+    if (!SupportsTranspose() || op_ != DifferentialOperator::Value) {
+      throw pcms_error("PointEvaluator::EvaluateTranspose: not supported by "
+                       "this evaluator");
+    }
+    if (static_cast<size_t>(values.extent(0)) !=
+        static_cast<size_t>(NumPoints())) {
+      throw std::invalid_argument(
+        "PointEvaluator::EvaluateTranspose: values must have one row per "
+        "query point");
+    }
+    EvaluateTransposeImpl(values, dofs);
+  }
+
   /// @return number of query points
   [[nodiscard]] LO NumPoints() const noexcept { return bound_->NumPoints(); }
 
@@ -138,6 +181,18 @@ protected:
   virtual void EvaluateImpl(
     const Field<T>& field,
     ValueView<T, DeviceMemorySpace, LayoutPolicy> values) const = 0;
+
+  /// @brief Adds E^T values to dofs; the shapes of `values` (one row per
+  ///        query point) are checked, those of `dofs` are the evaluator's to
+  ///        check.
+  /// @throws pcms_error unless the evaluator overrides it
+  virtual void EvaluateTransposeImpl(
+    Rank2View<const T, DeviceMemorySpace, LayoutPolicy>,
+    Rank2View<T, DeviceMemorySpace, LayoutPolicy>) const
+  {
+    throw pcms_error("PointEvaluator::EvaluateTranspose: not implemented by "
+                     "this evaluator");
+  }
 
 private:
   /// @brief Checks that `values` has one row per query point and one column

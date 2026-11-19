@@ -84,6 +84,49 @@ void EvaluateOmegaHLagrange(Omega_h::Mesh& mesh, int order,
   }
 }
 
+/// The transpose of EvaluateOmegaHLagrange: adds each point's values, with the
+/// weights EvaluateOmegaHLagrange interpolates with, to the DOF holders it
+/// reads (the element of order 0, the vertices of the point's entity of order
+/// 1). Concurrent points that share a holder add atomically.
+template <int Dim, typename T, typename Dofs, typename Values>
+void EvaluateTransposeOmegaHLagrange(
+  Omega_h::Mesh& mesh, int order,
+  const pcms::detail::OmegaHMeshBinding& binding, const Values& values,
+  const Dofs& dofs, int n_comp)
+{
+  const auto found = binding.FoundPoints();
+  const auto results = binding.Results<Dim>();
+  const auto n_valid = static_cast<LO>(found.extent(0));
+  const auto up = UpAdjacencies<Dim>(mesh);
+  const auto verts_of = VerticesOfEntities<Dim>(mesh);
+  if (order == 0) {
+    pcms::detail::ForEach(
+      "OmegaHLagrangePointEvaluator::EvaluateTransposeOrder0", n_valid,
+      KOKKOS_LAMBDA(const LO k) {
+        const LO elem = ElementOfResult<Dim>(up, results(found(k)));
+        for (int c = 0; c < n_comp; ++c) {
+          Kokkos::atomic_add(&dofs(elem, c), values(found(k), c));
+        }
+      });
+  } else {
+    pcms::detail::ForEach(
+      "OmegaHLagrangePointEvaluator::EvaluateTransposeOrder1", n_valid,
+      KOKKOS_LAMBDA(const LO k) {
+        LO vertices[Dim + 1];
+        Real weights[Dim + 1];
+        const int nv = EntityVertexWeights<Dim>(verts_of, results(found(k)),
+                                                vertices, weights);
+        for (int c = 0; c < n_comp; ++c) {
+          for (int v = 0; v < nv; ++v) {
+            Kokkos::atomic_add(&dofs(vertices[v], c),
+                               static_cast<T>(weights[v]) *
+                                 values(found(k), c));
+          }
+        }
+      });
+  }
+}
+
 } // namespace detail
 
 // OmegaHLagrangePointEvaluator<T> implements PointEvaluator<T> for simplex
@@ -139,6 +182,39 @@ public:
     } else {
       detail::EvaluateOmegaHLagrange<3, T>(mesh, order, *binding_, dof_data,
                                            n_comp, values);
+    }
+  }
+
+  [[nodiscard]] bool SupportsTranspose() const noexcept override
+  {
+    return true;
+  }
+
+  // Public for the same reason as EvaluateImpl. The DOFs are indexed by mesh
+  // entity of the layout's DOF holder dimension, ghosts included.
+  void EvaluateTransposeImpl(
+    Rank2View<const T, DeviceMemorySpace, LayoutPolicy> values,
+    Rank2View<T, DeviceMemorySpace, LayoutPolicy> dofs) const override
+  {
+    PCMS_FUNCTION_TIMER;
+    const int n_comp = layout_->GetNumComponents();
+    if (static_cast<LO>(dofs.extent(0)) !=
+          layout_->GetNumDofHolderWithGhosts() ||
+        static_cast<int>(dofs.extent(1)) != n_comp ||
+        static_cast<int>(values.extent(1)) != n_comp) {
+      throw std::invalid_argument(
+        "OmegaHLagrangePointEvaluator::EvaluateTranspose: dofs must be "
+        "[DOF holders with ghosts][components] and values [points]"
+        "[components]");
+    }
+    Omega_h::Mesh& mesh = const_cast<Omega_h::Mesh&>(layout_->GetMesh());
+    const int order = layout_->GetOrder();
+    if (mesh.dim() == 2) {
+      detail::EvaluateTransposeOmegaHLagrange<2, T>(mesh, order, *binding_,
+                                                    values, dofs, n_comp);
+    } else {
+      detail::EvaluateTransposeOmegaHLagrange<3, T>(mesh, order, *binding_,
+                                                    values, dofs, n_comp);
     }
   }
 

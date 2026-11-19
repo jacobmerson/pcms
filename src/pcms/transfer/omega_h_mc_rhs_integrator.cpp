@@ -147,14 +147,14 @@ void ScaleByElementMeasure(
 OmegaHMonteCarloRHSIntegrator::OmegaHMonteCarloRHSIntegrator(
   const FunctionSpace& target_space, int samples_per_element, uint64_t seed)
   : OmegaHMonteCarloRHSIntegrator(
-      detail::ResolveOmegaHScalarSpace(
+      detail::ResolveOmegaHLagrangeSpace(
         target_space, 1, 1, "OmegaHMonteCarloRHSIntegrator", "target"),
       samples_per_element, seed)
 {
 }
 
 OmegaHMonteCarloRHSIntegrator::OmegaHMonteCarloRHSIntegrator(
-  detail::OmegaHScalarSpace target, int samples_per_element, uint64_t seed)
+  detail::OmegaHLagrangeSpace target, int samples_per_element, uint64_t seed)
   : geometry_(std::move(target.geometry))
 {
   const auto& target_layout = target.layout;

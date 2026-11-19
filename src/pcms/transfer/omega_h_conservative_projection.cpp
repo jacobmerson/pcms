@@ -47,11 +47,11 @@ OmegaHConservativeProjection::OmegaHConservativeProjection(
   : source_space_(std::move(source_space_ptr)),
     target_space_(std::move(target_space_ptr)),
     source_layout_(
-      detail::ResolveOmegaHScalarSpace(*source_space_, 0, 1,
+      detail::ResolveOmegaHLagrangeSpace(*source_space_, 0, 1,
                                        "OmegaHConservativeProjection", "source")
         .layout),
     target_layout_(
-      detail::ResolveOmegaHScalarSpace(*target_space_, 0, 1,
+      detail::ResolveOmegaHLagrangeSpace(*target_space_, 0, 1,
                                        "OmegaHConservativeProjection", "target")
         .layout)
 {

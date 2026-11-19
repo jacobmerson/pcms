@@ -118,6 +118,12 @@ DifferentialView Geometry::Differential(const BoundPoints&) const
   return {};
 }
 
+Quadrature Geometry::CreateQuadrature(const QuadratureOptions&) const
+{
+  throw pcms_error("Geometry::CreateQuadrature: this geometry has no "
+                   "quadrature");
+}
+
 void detail::CheckNeighbourhoodArguments(
   const Geometry& geometry, const CoordinateView<DeviceMemorySpace>& coords,
   const NeighbourhoodOptions& options, const std::string& caller)

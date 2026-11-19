@@ -33,7 +33,7 @@ OmegaHControlVariateProjection::OmegaHControlVariateProjection(
   : source_(std::move(source_ptr)),
     target_space_(std::move(target_space_ptr)),
     target_layout_(
-      detail::ResolveOmegaHScalarSpace(
+      detail::ResolveOmegaHLagrangeSpace(
         *target_space_, 1, 1, "OmegaHControlVariateProjection", "target")
         .layout),
     rhs_integrator_(std::make_unique<OmegaHMonteCarloRHSIntegrator>(

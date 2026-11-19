@@ -288,12 +288,13 @@ TEST_CASE("OmegaHMassIntegrator: rejects invalid layouts", "[mass_integrator]")
   Omega_h::Library lib;
   auto mesh = pcms::test::BuildUnitSquare(lib, 0);
 
-  SECTION("multi-component space throws")
+  SECTION("a multi-component space is accepted: the mass matrix is the same "
+          "for every component")
   {
     auto space = pcms::CreateLagrangeSpace(
       pcms::CreateGeometry(mesh, pcms::detail::DeferredCartesian()), 1, 2,
       pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
-    REQUIRE_THROWS(pcms::BuildOmegaHMassIntegrator(*space));
+    REQUIRE_NOTHROW(pcms::BuildOmegaHMassIntegrator(*space));
   }
 
   SECTION("non-Cartesian coordinate system throws")

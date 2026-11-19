@@ -39,6 +39,9 @@ public:
   // solver, but rhs_integrator must (it is assembled into on every Solve).
   GalerkinProjectionSolver(const BilinearFormIntegrator& mass_integrator,
                            LinearFormIntegrator& rhs_integrator);
+  // Retrieves the assembled matrix from mass_integrator and sets up the KSP;
+  // the right-hand sides are given to Solve(rhs).
+  explicit GalerkinProjectionSolver(const BilinearFormIntegrator& mass_integrator);
   ~GalerkinProjectionSolver();
 
   GalerkinProjectionSolver(const GalerkinProjectionSolver&) = delete;
@@ -60,10 +63,18 @@ public:
   Omega_h::Reals Solve(
     Rank2View<const Real, DeviceMemorySpace> sampled_values) const;
 
+  // Solves M*x = rhs with the cached KSP. `rhs` has one entry per row of M
+  // (the layout's DOF holders with ghosts, in its global-to-local order).
+  Omega_h::Reals Solve(
+    Kokkos::View<const Real*, DeviceMemorySpace> rhs) const;
+
 private:
+  void SetUp(const BilinearFormIntegrator& mass_integrator);
+  Omega_h::Reals SolveVec(Vec rhs_vector) const;
+
   PetscInt nverts_;
   KSP ksp_ = nullptr;
-  LinearFormIntegrator* rhs_integrator_;
+  LinearFormIntegrator* rhs_integrator_ = nullptr;
   mutable Kokkos::View<Real**, DeviceMemorySpace> sampled_values_;
 };
 

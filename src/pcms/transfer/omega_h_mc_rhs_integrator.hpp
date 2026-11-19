@@ -15,7 +15,7 @@ namespace pcms::transfer
 
 namespace detail
 {
-struct OmegaHScalarSpace;
+struct OmegaHLagrangeSpace;
 } // namespace detail
 
 // Monte Carlo RHS integrator for conservative L2 projection onto order-1
@@ -61,7 +61,7 @@ public:
     Rank2View<const Real, DeviceMemorySpace> sampled_values) override;
 
 private:
-  OmegaHMonteCarloRHSIntegrator(detail::OmegaHScalarSpace target,
+  OmegaHMonteCarloRHSIntegrator(detail::OmegaHLagrangeSpace target,
                                 int samples_per_element, uint64_t seed);
 
   Vec vec_ = nullptr;

@@ -46,10 +46,10 @@ Data BuildData(const FunctionSpace& source_space,
 {
   // the intersection locates the target centroids with the source geometry
   const auto [source_layout, source_geometry] =
-    detail::ResolveOmegaHScalarSpace(
+    detail::ResolveOmegaHLagrangeSpace(
       source_space, 0, 1, "OmegaHIntersectionRHSIntegrator", "source");
   const auto [target_layout, target_geometry] =
-    detail::ResolveOmegaHScalarSpace(
+    detail::ResolveOmegaHLagrangeSpace(
       target_space, 0, 1, "OmegaHIntersectionRHSIntegrator", "target");
 
   const int dim = target_geometry->GetMesh().dim();

@@ -5,6 +5,7 @@
 #include "pcms/utility/coordinate_view.hpp"
 #include "pcms/field/out_of_bounds_policy.hpp"
 #include "pcms/geometry/bound_points.hpp"
+#include "pcms/geometry/quadrature.hpp"
 #include "pcms/geometry/supports.hpp"
 #include "pcms/utility/memory_spaces.hpp"
 #include "pcms/utility/types.hpp"
@@ -190,6 +191,15 @@ public:
   ///         another geometry
   [[nodiscard]] virtual DifferentialView Differential(
     const BoundPoints& bound) const;
+
+  /// @brief Quadrature over this geometry's cells.
+  /// @param options the rule: deterministic of an order, or Monte Carlo
+  /// @return points generated in the cells and bound on this geometry (no
+  ///         search), with the weights that integrate over the cells
+  /// @throws pcms_error unless the kind overrides it, or if the kind cannot
+  ///         generate the requested rule
+  [[nodiscard]] virtual Quadrature CreateQuadrature(
+    const QuadratureOptions& options) const;
 
 protected:
   Geometry() = default;

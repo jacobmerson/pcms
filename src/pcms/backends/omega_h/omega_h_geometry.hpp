@@ -360,6 +360,19 @@ public:
   [[nodiscard]] DifferentialView Differential(
     const BoundPoints& bound) const override;
 
+  /// Quadrature over the elements: the reference rule of `options.order` on
+  /// each element (MeshFields' rules, so it needs the MeshFields backend), or,
+  /// with `options.samples_per_cell`, uniform random samples per element
+  /// weighing element measure / samples. The weights are element measures of
+  /// the differential of this geometry in the mesh's coordinates, which are
+  /// the physical measure only in the Cartesian system.
+  /// @throws pcms_error if the mesh is not a 2D or 3D simplex mesh, the
+  ///         coordinate system is not the Cartesian of the mesh dimension,
+  ///         the order is not positive or the rule is deterministic and
+  ///         MeshFields is not enabled
+  [[nodiscard]] Quadrature CreateQuadrature(
+    const QuadratureOptions& options) const override;
+
 protected:
   [[nodiscard]] std::shared_ptr<BoundPoints> BindImpl(
     const BindRequest& request) const override;

@@ -191,7 +191,7 @@ Mat BuildOmegaHMassMatrix(const OmegaHLagrangeLayout& target_layout,
 OmegaHMassIntegrator::OmegaHMassIntegrator(const FunctionSpace& target_space,
                                            MassMatrixType mass_type)
 {
-  const auto [target_layout, geometry] = detail::ResolveOmegaHScalarSpace(
+  const auto [target_layout, geometry] = detail::ResolveOmegaHLagrangeSpace(
     target_space, 0, 1, "OmegaHMassIntegrator", "target");
   diagonal_ =
     target_layout->GetOrder() == 0 || mass_type == MassMatrixType::Lumped;
