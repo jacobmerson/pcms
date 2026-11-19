@@ -42,17 +42,20 @@ struct LagrangeOptions
 
 /// A Lagrange space of order `order` with `num_components` components on
 /// `geometry`: an Omega_h geometry (backend OmegaH: orders 0 and 1; MeshFields:
-/// orders 1 and 2) or a uniform-grid geometry (orders 0 and 1, backend
-/// ignored). Spaces on one geometry accept each other's BoundPoints.
+/// orders 1 and 2) or a 1D, 2D or 3D uniform-grid geometry (orders 0 and 1,
+/// backend ignored). Spaces on one geometry accept each other's BoundPoints.
 /// @throws pcms_error for another geometry kind, a null geometry, or an order
 ///         the backend does not support
 [[nodiscard]] std::shared_ptr<const FunctionSpace> CreateLagrangeSpace(
   std::shared_ptr<const Geometry> geometry, int order, int num_components,
   LagrangeOptions options = {});
 
-/// A bicubic spline space on a 2D uniform-grid geometry. Spaces on one
-/// geometry accept each other's BoundPoints.
-/// @throws pcms_error if `geometry` is null or not a 2D uniform-grid geometry
+/// A cubic (1D) or bicubic (2D) spline space on a uniform-grid geometry, with
+/// not-a-knot boundary conditions: a cubic is reproduced exactly on the whole
+/// grid, ends included. Spaces on one geometry accept each other's
+/// BoundPoints.
+/// @throws pcms_error if `geometry` is null or not a 1D or 2D uniform-grid
+///         geometry
 [[nodiscard]] std::shared_ptr<const FunctionSpace> CreateSplineSpace(
   std::shared_ptr<const Geometry> geometry);
 
