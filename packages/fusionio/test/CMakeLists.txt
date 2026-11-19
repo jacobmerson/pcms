@@ -31,6 +31,18 @@ if(FUSIONIO_ENABLE_NIMROD AND FUSIONIO_TEST_NIMROD_DIR)
                "FUSIONIO_TEST_NIMROD_DIR=\"${FUSIONIO_TEST_NIMROD_DIR}\"")
 endif()
 
+if(FUSIONIO_ENABLE_GNET)
+  # The synthetic GNET file is written by the tests and by this tool (the input
+  # of reference runs of GNET tools).
+  add_library(gnet_synthetic STATIC gnet_synthetic.cpp)
+  target_compile_features(gnet_synthetic PUBLIC cxx_std_20)
+  target_link_libraries(gnet_synthetic PUBLIC HDF5::HDF5)
+  target_include_directories(gnet_synthetic PUBLIC
+                             ${CMAKE_CURRENT_SOURCE_DIR})
+  add_executable(make_synthetic_gnet make_synthetic_gnet.cpp)
+  target_link_libraries(make_synthetic_gnet PRIVATE gnet_synthetic)
+endif()
+
 if(FUSIONIO_TEST_SOURCES)
   add_executable(fusionio_tests test_main.cpp ${FUSIONIO_TEST_SOURCES})
   target_include_directories(fusionio_tests
@@ -39,6 +51,9 @@ if(FUSIONIO_TEST_SOURCES)
                                                Catch2::Catch2 MPI::MPI_CXX)
   if(FUSIONIO_ENABLE_WRAPPED)
     target_link_libraries(fusionio_tests PRIVATE fusionio::fusionio_fusionio)
+  endif()
+  if(FUSIONIO_ENABLE_GNET)
+    target_link_libraries(fusionio_tests PRIVATE gnet_synthetic)
   endif()
   if(FUSIONIO_ENABLE_NIMROD)
     # the NIMROD tests compare with nimeval directly
