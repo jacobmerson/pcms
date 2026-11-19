@@ -30,27 +30,18 @@ endif()
 
 if(PCMS_ENABLE_CONSERVATIVE_PROJECTION)
   list(APPEND PCMS_FIELD_TRANSFER_HEADERS
-      linear_form_integrator.hpp
       bilinear_form_integrator.hpp
       conservative_projection_solver.hpp
       galerkin_projection.hpp
       omega_h_intersection_quadrature.hpp
-      omega_h_conservative_projection.hpp
-      omega_h_intersection_rhs_integrator.hpp
       omega_h_mass_integrator.hpp
-      omega_h_mc_rhs_integrator.hpp
-      omega_h_control_variate_projection.hpp
       petsc_utils.hpp
       omega_h_form_integrator_utils.hpp)
   list(APPEND PCMS_FIELD_TRANSFER_SOURCES
       conservative_projection_solver.cpp
       galerkin_projection.cpp
       omega_h_intersection_quadrature.cpp
-      omega_h_conservative_projection.cpp
-      omega_h_intersection_rhs_integrator.cpp
       omega_h_mass_integrator.cpp
-      omega_h_mc_rhs_integrator.cpp
-      omega_h_control_variate_projection.cpp
       petsc_utils.cpp)
 endif()
 

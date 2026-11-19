@@ -262,68 +262,6 @@ OMEGA_H_INLINE void ForEachIntersectionSubsimplex(
   }
 }
 
-// Target Lagrange basis on a simplex (triangle in 2D, tetrahedron in 3D),
-// parameterized by spatial dimension and element order, for the
-// conservative-projection RHS assembly. Order 0 is a single element-constant
-// DOF; order 1 is the Dim+1 vertex (barycentric) DOFs. Higher orders slot in as
-// additional specializations, kept in lock-step with element_dispatch.h.
-//
-// Each specialization provides, for a target element `elm` with local vertex
-// ids `verts` and vertex coordinates `tgt_verts`:
-//   ndof            number of local target DOFs
-//   Index(...)      active PETSc row for local dof k
-//   Values(pt, ...) basis values at the (global) integration point pt
-template <int Dim, int Order>
-struct TargetSimplexBasis;
-
-template <int Dim>
-struct TargetSimplexBasis<Dim, 0>
-{
-  static constexpr int ndof = 1;
-
-  template <typename Permutation>
-  KOKKOS_INLINE_FUNCTION static LO Index(
-    const Permutation& permutation, int elm,
-    const Omega_h::Few<Omega_h::LO, Dim + 1>&, int /*k*/)
-  {
-    return permutation(elm);
-  }
-
-  KOKKOS_INLINE_FUNCTION static void Values(
-    const Omega_h::Vector<Dim>&,
-    const Omega_h::Few<Omega_h::Vector<Dim>, Dim + 1>&, Omega_h::Real out[ndof])
-  {
-    out[0] = 1.0;
-  }
-};
-
-template <int Dim>
-struct TargetSimplexBasis<Dim, 1>
-{
-  static constexpr int ndof = Dim + 1;
-
-  template <typename Permutation>
-  KOKKOS_INLINE_FUNCTION static LO Index(
-    const Permutation& permutation, int /*elm*/,
-    const Omega_h::Few<Omega_h::LO, Dim + 1>& verts, int k)
-  {
-    return permutation(verts[k]);
-  }
-
-  // P1 basis functions are the barycentric coordinates of the target element
-  // evaluated at the (global) integration point.
-  KOKKOS_INLINE_FUNCTION static void Values(
-    const Omega_h::Vector<Dim>& pt,
-    const Omega_h::Few<Omega_h::Vector<Dim>, Dim + 1>& tgt_verts,
-    Omega_h::Real out[ndof])
-  {
-    const auto bary = Omega_h::barycentric_from_global<Dim, Dim>(pt, tgt_verts);
-    for (int i = 0; i < ndof; ++i) {
-      out[i] = bary[i];
-    }
-  }
-};
-
 } // namespace pcms::transfer::detail
 
 #endif // PCMS_TRANSFER_OMEGA_H_FORM_INTEGRATOR_UTILS_HPP

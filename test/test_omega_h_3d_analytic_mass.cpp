@@ -6,7 +6,7 @@
 #include <pcms/field/function_spaces.hpp>
 #include <pcms/backends/omega_h/lagrange_layout.hpp>
 #include <pcms/transfer/omega_h_mass_integrator.hpp>
-#include <pcms/transfer/omega_h_conservative_projection.hpp>
+#include <pcms/transfer/projection.hpp>
 #include "field_test_utils.hpp"
 #include <petscksp.h>
 #include "pcms/backends/omega_h/omega_h.hpp"
@@ -15,7 +15,6 @@ namespace pcms
 {
 using omega_h::OmegaHLagrangeLayout;
 using transfer::BuildOmegaHMassIntegrator;
-using transfer::OmegaHConservativeProjection;
 } // namespace pcms
 
 // Reference corner tet:
@@ -108,13 +107,13 @@ TEST_CASE("OmegaHConservativeProjection (3D): same-mesh reference tet is "
   auto space = pcms::test::MakeP1Space(mesh);
   auto source = space->CreateFunction<pcms::Real>();
   auto target = space->CreateFunction<pcms::Real>();
-  pcms::OmegaHConservativeProjection projection(space, space);
+  auto projection = pcms::CreateConservativeProjection(space, space);
   SECTION("constant field")
   {
     const double c = 2.5;
     pcms::test::SetField(
       source, KOKKOS_LAMBDA(pcms::Real, pcms::Real, pcms::Real) { return c; });
-    projection.Apply(source, target);
+    projection->Apply(source, target);
     const auto values = pcms::detail::FlattenToRank1View(
       target.GetDOFHolderDataHost().GetValues());
     REQUIRE(static_cast<Omega_h::LO>(values.size()) == 4);
@@ -129,7 +128,7 @@ TEST_CASE("OmegaHConservativeProjection (3D): same-mesh reference tet is "
       source, KOKKOS_LAMBDA(pcms::Real x, pcms::Real y, pcms::Real z) {
         return 1.0 + x + 2.0 * y + 3.0 * z;
       });
-    projection.Apply(source, target);
+    projection->Apply(source, target);
     const auto values = pcms::detail::FlattenToRank1View(
       target.GetDOFHolderDataHost().GetValues());
     const auto coords_h = pcms::test::CopyCoordinatesToHost(

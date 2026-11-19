@@ -3,8 +3,6 @@
 #include "pcms/utility/assert.hpp"
 #if defined(PCMS_ENABLE_CONSERVATIVE_PROJECTION)
 #include "pcms/transfer/galerkin_projection.hpp"
-#include "pcms/transfer/omega_h_conservative_projection.hpp"
-#include "pcms/transfer/omega_h_control_variate_projection.hpp"
 #include "pcms/transfer/omega_h_form_integrator_utils.hpp"
 #include "pcms/transfer/omega_h_intersection_quadrature.hpp"
 #endif

@@ -36,24 +36,6 @@ static Omega_h::Reals vecToOmegaHReals(Vec vec)
 // ---------------------------------------------------------------------------
 
 GalerkinProjectionSolver::GalerkinProjectionSolver(
-  const BilinearFormIntegrator& mass_integrator,
-  LinearFormIntegrator& rhs_integrator)
-  : rhs_integrator_(&rhs_integrator)
-{
-  SetUp(mass_integrator);
-  const std::size_t num_pts =
-    rhs_integrator_->GetIntegrationPoints().GetValues().extent(0);
-  sampled_values_ =
-    Kokkos::View<Real**, DeviceMemorySpace>("rhs_sampled", num_pts, 1);
-}
-
-GalerkinProjectionSolver::GalerkinProjectionSolver(
-  const BilinearFormIntegrator& mass_integrator)
-{
-  SetUp(mass_integrator);
-}
-
-void GalerkinProjectionSolver::SetUp(
   const BilinearFormIntegrator& mass_integrator)
 {
   Mat A = mass_integrator.GetMatrix();
@@ -97,29 +79,14 @@ GalerkinProjectionSolver::~GalerkinProjectionSolver()
 }
 
 Omega_h::Reals GalerkinProjectionSolver::Solve(
-  const PointEvaluator<Real>& evaluator, const Field<Real>& source_field) const
-{
-  evaluator.Evaluate(source_field, ValueView<Real, DeviceMemorySpace>(
-                                     source_field.GetData().GetValueBasis(),
-                                     pcms::MakeRank2View(sampled_values_)));
-  return Solve(MakeConstRank2View(sampled_values_));
-}
-
-Omega_h::Reals GalerkinProjectionSolver::Solve(
-  Rank2View<const Real, DeviceMemorySpace> sampled_values) const
-{
-  rhs_integrator_->Assemble(sampled_values);
-  return SolveVec(rhs_integrator_->GetVector());
-}
-
-Omega_h::Reals GalerkinProjectionSolver::Solve(
   Kokkos::View<const Real*, DeviceMemorySpace> rhs) const
 {
   PCMS_ALWAYS_ASSERT(static_cast<PetscInt>(rhs.extent(0)) == nverts_);
   Vec rhs_vector = nullptr;
   PetscErrorCode ierr = createSeqVec(PETSC_COMM_SELF, nverts_, &rhs_vector);
   CHKERRABORT(PETSC_COMM_SELF, ierr);
-  const auto rhs_host = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, rhs);
+  const auto rhs_host =
+    Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace{}, rhs);
   PetscScalar* array = nullptr;
   ierr = VecGetArray(rhs_vector, &array);
   CHKERRABORT(PETSC_COMM_SELF, ierr);
@@ -128,16 +95,8 @@ Omega_h::Reals GalerkinProjectionSolver::Solve(
   }
   ierr = VecRestoreArray(rhs_vector, &array);
   CHKERRABORT(PETSC_COMM_SELF, ierr);
-  auto result = SolveVec(rhs_vector);
-  ierr = VecDestroy(&rhs_vector);
-  CHKERRABORT(PETSC_COMM_SELF, ierr);
-  return result;
-}
-
-Omega_h::Reals GalerkinProjectionSolver::SolveVec(Vec rhs_vector) const
-{
   Vec solution = nullptr;
-  PetscErrorCode ierr = createSeqVec(PETSC_COMM_SELF, nverts_, &solution);
+  ierr = createSeqVec(PETSC_COMM_SELF, nverts_, &solution);
   CHKERRABORT(PETSC_COMM_SELF, ierr);
 
   ierr = KSPSolve(ksp_, rhs_vector, solution);
@@ -146,6 +105,8 @@ Omega_h::Reals GalerkinProjectionSolver::SolveVec(Vec rhs_vector) const
   auto result = vecToOmegaHReals(solution);
 
   ierr = VecDestroy(&solution);
+  CHKERRABORT(PETSC_COMM_SELF, ierr);
+  ierr = VecDestroy(&rhs_vector);
   CHKERRABORT(PETSC_COMM_SELF, ierr);
 
   return result;

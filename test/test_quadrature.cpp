@@ -9,6 +9,7 @@
 #include <pcms/backends/omega_h/omega_h.hpp>
 #include <pcms/backends/omega_h/omega_h_geometry.hpp>
 #include <pcms/transfer/omega_h_intersection_quadrature.hpp>
+#include <pcms/utility/coordinate_systems/cylindrical.hpp>
 #include "field_test_utils.hpp"
 #include <cmath>
 #include <functional>
@@ -185,4 +186,85 @@ TEST_CASE("CreateIntersectionQuadrature: weights sum to the domain, the rule "
     pcms::MakeConstRank2View(quadrature.points->LocatedPointValues()));
   const auto bound = source->Bind(points, quadrature.other);
   CHECK(bound->MissingPoints().extent(0) == 0);
+}
+
+namespace
+{
+
+std::shared_ptr<const pcms::omega_h::OmegaHGeometry> CartesianGeometry(
+  Omega_h::Mesh& mesh)
+{
+  return std::dynamic_pointer_cast<const pcms::omega_h::OmegaHGeometry>(
+    pcms::omega_h::CreateGeometry(mesh, pcms::detail::DeferredCartesian()));
+}
+
+} // namespace
+
+TEST_CASE("CreateIntersectionQuadrature: a tet inside a tet", "[quadrature][3d]")
+{
+  // Source is the reference tet (volume 1/6). Target is the similar tet at the
+  // (1,0,0) corner, cut by the plane x=0.5, which sits entirely inside the
+  // source (volume (1/6)*(1/2)^3 = 1/48).
+  Omega_h::Library lib;
+  auto source_mesh = pcms::test::BuildReferenceTet(lib);
+  auto target_mesh = pcms::test::BuildTet(
+    lib, Omega_h::Reals({1.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.5, 0.5, 0.0, 0.5, 0.0,
+                         0.5}));
+  const auto quadrature = pcms::omega_h::CreateIntersectionQuadrature(
+    CartesianGeometry(source_mesh), CartesianGeometry(target_mesh),
+    pcms::QuadratureOptions{.order = 2});
+  CHECK(WeightSum(quadrature) == Catch::Approx(1.0 / 48.0).margin(1e-14));
+  const auto points = Kokkos::create_mirror_view_and_copy(
+    pcms::HostMemorySpace{}, quadrature.points->LocatedPointValues());
+  REQUIRE(points.extent(0) > 0);
+  for (std::size_t i = 0; i < points.extent(0); ++i) {
+    CHECK(points(i, 0) >= 0.5 - 1e-12);
+    CHECK(points(i, 1) >= -1e-12);
+    CHECK(points(i, 2) >= -1e-12);
+    CHECK(points(i, 0) + points(i, 1) + points(i, 2) <= 1.0 + 1e-12);
+  }
+}
+
+TEST_CASE("CreateIntersectionQuadrature: dual tets overlap in an octahedron",
+          "[quadrature][3d]")
+{
+  // Dual tets in the cube [-1,1]^3. Intersection = {|x|+|y|+|z| <= 1},
+  // volume 4/3.
+  Omega_h::Library lib;
+  auto source_mesh = pcms::test::BuildTet(
+    lib, Omega_h::Reals({1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, 1.0, -1.0,
+                         1.0, -1.0}));
+  auto target_mesh = pcms::test::BuildTet(
+    lib, Omega_h::Reals({-1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0,
+                         1.0, -1.0}));
+  const auto quadrature = pcms::omega_h::CreateIntersectionQuadrature(
+    CartesianGeometry(source_mesh), CartesianGeometry(target_mesh),
+    pcms::QuadratureOptions{.order = 2});
+  CHECK(WeightSum(quadrature) == Catch::Approx(4.0 / 3.0).margin(1e-10));
+  CHECK(Integrate(quadrature, [](const double* x) { return x[0] + x[1] + x[2]; }) ==
+        Catch::Approx(0.0).margin(1e-10));
+  const auto points = Kokkos::create_mirror_view_and_copy(
+    pcms::HostMemorySpace{}, quadrature.points->LocatedPointValues());
+  for (std::size_t i = 0; i < points.extent(0); ++i) {
+    CHECK(std::abs(points(i, 0)) + std::abs(points(i, 1)) +
+            std::abs(points(i, 2)) <=
+          1.0 + 1e-10);
+  }
+}
+
+TEST_CASE("quadratures refuse a non-Cartesian coordinate system",
+          "[quadrature]")
+{
+  Omega_h::Library lib;
+  auto mesh = pcms::test::BuildUnitSquare(lib, 0);
+  auto cartesian = CartesianGeometry(mesh);
+  auto cylindrical = std::dynamic_pointer_cast<const pcms::omega_h::OmegaHGeometry>(
+    pcms::omega_h::CreateGeometry(mesh, pcms::csys::CreateCylindricalRZ()));
+  CHECK_THROWS_AS(cylindrical->CreateQuadrature({}), pcms::pcms_error);
+  CHECK_THROWS_AS(pcms::omega_h::CreateIntersectionQuadrature(cylindrical,
+                                                              cartesian, {}),
+                  pcms::pcms_error);
+  CHECK_THROWS_AS(pcms::omega_h::CreateIntersectionQuadrature(cartesian,
+                                                              cylindrical, {}),
+                  pcms::pcms_error);
 }

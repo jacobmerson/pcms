@@ -7,8 +7,6 @@
 #include <pcms/field/function_spaces.hpp>
 #include <pcms/transfer/projection.hpp>
 #include <pcms/backends/omega_h/omega_h.hpp>
-#include <pcms/transfer/omega_h_conservative_projection.hpp>
-#include <pcms/transfer/omega_h_control_variate_projection.hpp>
 #include "field_test_utils.hpp"
 #include <cmath>
 #include <cstdio>
@@ -230,119 +228,6 @@ TEST_CASE("CreateProjection projects several components at once",
     CHECK(values[2 * i + 1] ==
           Catch::Approx(2 * coords(i, 0) - coords(i, 1) + 0.5).margin(1e-10));
   }
-}
-
-TEST_CASE("the generic projection reproduces the intersection-integrator "
-          "conservative projection",
-          "[quadrature][equivalence]")
-{
-  Omega_h::Library lib;
-  const int dim = GENERATE(2, 3);
-  const int source_order = GENERATE(0, 1);
-  const int target_order = GENERATE(0, 1);
-  const auto mass_type =
-    GENERATE(pcms::MassMatrixType::Consistent, pcms::MassMatrixType::Lumped);
-  CAPTURE(dim, source_order, target_order, static_cast<int>(mass_type));
-  auto source_mesh = dim == 2 ? pcms::test::BuildSquareMesh(lib, 5)
-                              : pcms::test::BuildUnitCube(lib, 3);
-  auto target_mesh = dim == 2 ? pcms::test::BuildUnitSquare(lib, 0)
-                              : pcms::test::BuildUnitCube(lib, 2);
-  const auto source_geometry = MakeGeometry(source_mesh);
-  const auto target_geometry = MakeGeometry(target_mesh);
-  const auto lagrange = pcms::LagrangeOptions{.backend =
-                                                pcms::LagrangeBackend::OmegaH};
-  const auto source_space =
-    pcms::CreateLagrangeSpace(source_geometry, source_order, 1, lagrange);
-  const auto target_space =
-    pcms::CreateLagrangeSpace(target_geometry, target_order, 1, lagrange);
-  auto source = source_space->CreateFunction<pcms::Real>();
-  if (dim == 2) {
-    pcms::test::SetField(source, OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) {
-      return std::sin(3 * x) * (1 + y * y);
-    });
-  } else {
-    pcms::test::SetField(
-      source, OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y, pcms::Real z) {
-        return std::sin(3 * x) * (1 + y * z);
-      });
-  }
-
-  auto expected = target_space->CreateFunction<pcms::Real>();
-  pcms::transfer::OmegaHConservativeProjection old_projection(
-    source_space, target_space, mass_type);
-  old_projection.Apply(source, expected);
-
-  auto actual = target_space->CreateFunction<pcms::Real>();
-  auto projection = pcms::CreateConservativeProjection(
-    source_space, target_space, {.mass_matrix_type = mass_type});
-  projection->Apply(source, actual);
-
-  const auto expected_values = FieldValues(expected);
-  const auto actual_values = FieldValues(actual);
-  REQUIRE(expected_values.size() == actual_values.size());
-  double max_difference = 0, max_value = 0;
-  for (std::size_t i = 0; i < expected_values.size(); ++i) {
-    max_difference =
-      std::max(max_difference, std::abs(expected_values[i] - actual_values[i]));
-    max_value = std::max(max_value, std::abs(expected_values[i]));
-  }
-  CAPTURE(max_difference, max_value);
-  CHECK(max_value > 0.1);
-  CHECK(max_difference < 1e-12 * std::max(1.0, max_value));
-}
-
-TEST_CASE("the generic control-variate projection reproduces the old one with "
-          "the same seed",
-          "[quadrature][equivalence]")
-{
-  Omega_h::Library lib;
-  const int dim = GENERATE(2, 3);
-  const auto mass_type =
-    GENERATE(pcms::MassMatrixType::Consistent, pcms::MassMatrixType::Lumped);
-  CAPTURE(dim, static_cast<int>(mass_type));
-  auto source_mesh = dim == 2 ? pcms::test::BuildSquareMesh(lib, 5)
-                              : pcms::test::BuildUnitCube(lib, 3);
-  auto target_mesh = dim == 2 ? pcms::test::BuildUnitSquare(lib, 0)
-                              : pcms::test::BuildUnitCube(lib, 2);
-  const auto source_space = pcms::test::MakeP1Space(MakeGeometry(source_mesh));
-  const auto target_space = pcms::test::MakeP1Space(MakeGeometry(target_mesh));
-  auto source = source_space->CreateFunction<pcms::Real>();
-  if (dim == 2) {
-    pcms::test::SetField(source, OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) {
-      return std::sin(3 * x) * (1 + y * y);
-    });
-  } else {
-    pcms::test::SetField(
-      source, OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y, pcms::Real z) {
-        return std::sin(3 * x) * (1 + y * z);
-      });
-  }
-  const int samples = 6;
-  const std::uint64_t seed = 42;
-
-  auto expected = target_space->CreateFunction<pcms::Real>();
-  pcms::transfer::OmegaHControlVariateProjection old_projection(
-    source_space, target_space, samples, seed, mass_type);
-  old_projection.Apply(source, expected);
-
-  auto actual = target_space->CreateFunction<pcms::Real>();
-  auto projection = pcms::CreateControlVariateProjection(
-    source_space, target_space,
-    {.samples_per_element = samples,
-     .seed = seed,
-     .mass_matrix_type = mass_type});
-  projection->Apply(source, actual);
-
-  const auto expected_values = FieldValues(expected);
-  const auto actual_values = FieldValues(actual);
-  REQUIRE(expected_values.size() == actual_values.size());
-  double max_difference = 0;
-  for (std::size_t i = 0; i < expected_values.size(); ++i) {
-    max_difference =
-      std::max(max_difference, std::abs(expected_values[i] - actual_values[i]));
-  }
-  CAPTURE(max_difference);
-  CHECK(max_difference < 1e-12);
 }
 
 // ---------------------------------------------------------------------------
