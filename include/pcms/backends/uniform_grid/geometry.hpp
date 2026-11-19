@@ -9,6 +9,13 @@
 namespace pcms::uniform_grid
 {
 
+/// The geometry of a 1D uniform grid (an interval cut into equal cells), for
+/// profiles and time series.
+/// @param grid the grid
+/// @param system the grid's coordinate system, or null for Cartesian
+[[nodiscard]] std::shared_ptr<const Geometry> CreateGeometry(
+  UniformGrid<1> grid, std::shared_ptr<const CoordinateSystem> system);
+
 /// The geometry of a 2D uniform grid: an affine map of the unit cells, located
 /// in closed form (no search to build).
 /// @param grid the grid
