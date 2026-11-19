@@ -94,6 +94,29 @@ if(FUSIONIO_PCMS_HAS_POLYNOMIAL_RECONSTRUCTION)
                                                          sampling_threads)
 endif()
 
+if(TARGET gnet2gtc)
+  # the tool on the synthetic file, in memory and streaming
+  add_test(NAME gnet2gtc_input
+           COMMAND make_synthetic_gnet
+                   ${CMAKE_CURRENT_BINARY_DIR}/gnet2gtc_input.h5)
+  set_tests_properties(gnet2gtc_input PROPERTIES FIXTURES_SETUP gnet2gtc_input)
+  foreach(mode memory stream)
+    set(args --samples 500 --batch 200 --threshold-scale 1)
+    if(mode STREQUAL stream)
+      list(APPEND args --stream)
+    endif()
+    add_test(NAME gnet2gtc_${mode}
+             COMMAND gnet2gtc --input ${CMAKE_CURRENT_BINARY_DIR}/gnet2gtc_input.h5
+                     --output ${CMAKE_CURRENT_BINARY_DIR}/gnet2gtc_${mode}.h5
+                     ${args})
+    set_tests_properties(
+      gnet2gtc_${mode}
+      PROPERTIES FIXTURES_REQUIRED gnet2gtc_input
+                 PASS_REGULAR_EXPRESSION "Completed Successfully"
+                 FIXTURES_SETUP gnet2gtc_output)
+  endforeach()
+endif()
+
 if(TARGET fio_trace AND FUSIONIO_TEST_DATA_DIR)
   # A few transits of two field lines in the M3D-C1 equilibrium.
   add_test(
