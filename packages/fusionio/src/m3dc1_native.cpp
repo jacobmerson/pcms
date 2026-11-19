@@ -1,12 +1,9 @@
 #include "m3dc1_native.hpp"
 #include "fusion_io_source.hpp"
 #include "host_evaluation.hpp"
-#include "pcms/discretization/discretization/empty.hpp"
-#include "pcms/field/coordinate_systems/cylindrical.hpp"
-#include "pcms/field/evaluator/omega_h_geometry.hpp"
-#include "pcms/field/layout/empty.h"
-#include "pcms/utility/memory_spaces.h"
-#include "pcms/utility/profile.h"
+#include "pcms/backends/omega_h/omega_h.hpp"
+#include "pcms/utility/coordinate_systems/cylindrical.hpp"
+#include "pcms/utility/memory_spaces.hpp"
 #include <Omega_h_build.hpp>
 #include <algorithm>
 #include <array>
@@ -15,6 +12,7 @@
 #include <numbers>
 #include <numeric>
 #include <string>
+#include <type_traits>
 #include <typeinfo>
 #include <utility>
 #include <vector>
@@ -26,6 +24,56 @@ using namespace pcms;
 
 namespace
 {
+
+// Local versions of PCMS's internal ForEach and ReserveRows (not API).
+
+/// Runs `functor(i)` for every i in [0, n): as a plain loop on the calling
+/// thread where device memory is host memory and n is at most 256 (opening a
+/// parallel region costs more), else as a kernel.
+template <typename Functor>
+void ForEach(const char* label, LO n, const Functor& functor)
+{
+  if (Kokkos::SpaceAccessibility<Kokkos::HostSpace,
+                                 DeviceMemorySpace>::accessible &&
+      n <= 256) {
+    for (LO i = 0; i < n; ++i) {
+      functor(i);
+    }
+    return;
+  }
+  Kokkos::parallel_for(
+    label, Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
+    functor);
+}
+
+/// Makes `storage` hold at least `rows` entries, reallocating it,
+/// uninitialized, when it does not.
+template <typename T>
+void ReserveRows(Kokkos::View<T*, DeviceMemorySpace>& storage,
+                 const std::string& label, size_t rows)
+{
+  if (storage.extent(0) < rows) {
+    storage = Kokkos::View<T*, DeviceMemorySpace>(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing, label), rows);
+  }
+}
+
+/// Makes `storage` hold at least `rows` rows of `cols` columns; on a
+/// LayoutLeft memory space (GPUs) only as many rows as it has, since the
+/// first rows of a taller view are not contiguous there.
+template <typename T>
+void ReserveRows(Kokkos::View<T**, DeviceMemorySpace>& storage,
+                 const std::string& label, size_t rows, size_t cols)
+{
+  constexpr bool rows_contiguous =
+    std::is_same_v<typename Kokkos::View<T**, DeviceMemorySpace>::array_layout,
+                   Kokkos::LayoutRight>;
+  if (storage.extent(0) < rows || storage.extent(1) != cols ||
+      (!rows_contiguous && storage.extent(0) != rows)) {
+    storage = Kokkos::View<T**, DeviceMemorySpace>(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing, label), rows, cols);
+  }
+}
 
 /// m3dc1_field::nbasis: the terms xi^mi eta^ni of an element's polynomial
 constexpr int NumBasis = 20;
@@ -216,22 +264,29 @@ Kokkos::View<bool*, DeviceMemorySpace> FoundMask(LO n, const Missing& missing)
 /// Points of M3DC1Geometry: the (R, Z) projection of the points bound on the
 /// native mesh's (R, Z) geometry, and each point's phi. The found points are
 /// the projection's.
-class M3DC1Binding final : public BoundSource
+class M3DC1Binding final : public BoundPoints
 {
 public:
   M3DC1Binding(std::shared_ptr<const Geometry> geometry,
                const BindRequest& request,
                std::shared_ptr<const Geometry> plane)
-    : BoundSource(std::move(geometry), request), plane_(std::move(plane))
+    : BoundPoints(std::move(geometry), request), plane_(std::move(plane))
   {
     Locate();
   }
 
-  /// The projection's binding: ElementIds() per found point, and
-  /// LocatedPointValues() the (R, Z) of every point.
-  [[nodiscard]] const OmegaHMeshBinding& Plane() const
+  /// The (R, Z) of every point.
+  [[nodiscard]] Kokkos::View<const Real**, DeviceMemorySpace> PlanePoints()
+    const noexcept
   {
-    return static_cast<const OmegaHMeshBinding&>(*plane_bound_);
+    return plane_bound_->LocatedPointValues();
+  }
+
+  /// The element of each found point (omega_h::LocatedElements).
+  [[nodiscard]] Kokkos::View<const LO*, DeviceMemorySpace> Elements()
+    const noexcept
+  {
+    return elements_;
   }
 
   /// phi of every point
@@ -247,7 +302,7 @@ protected:
   [[nodiscard]] bool UnsharedImpl() const noexcept override
   {
     return rz_.use_count() <= 1 && phi_.use_count() <= 1 &&
-           plane_bound_.use_count() <= 1;
+           plane_bound_.use_count() <= 1 && elements_.use_count() <= 1;
   }
 
 private:
@@ -257,8 +312,8 @@ private:
   {
     const LO n = NumPoints();
     const auto points = LocatedPointValues();
-    pcms::detail::ReserveRows(rz_, "m3dc1_rz", static_cast<size_t>(n), 2);
-    pcms::detail::ReserveRows(phi_, "m3dc1_phi", static_cast<size_t>(n));
+    ReserveRows(rz_, "m3dc1_rz", static_cast<size_t>(n), 2);
+    ReserveRows(phi_, "m3dc1_phi", static_cast<size_t>(n));
     const auto rz =
       Kokkos::subview(rz_, Kokkos::make_pair(LO{0}, n), Kokkos::ALL);
     ProjectToPlane(n, points, rz, phi_);
@@ -267,6 +322,7 @@ private:
     plane_bound_ = plane_bound_ == nullptr
                      ? plane_->Bind(projected, Policy())
                      : plane_->Rebind(std::move(plane_bound_), projected);
+    elements_ = omega_h::LocatedElements(*plane_bound_);
     const auto missing = plane_bound_->MissingPoints();
     if (missing.extent(0) == 0) {
       return;
@@ -275,31 +331,24 @@ private:
   }
 
   std::shared_ptr<const Geometry> plane_;
-  std::shared_ptr<const BoundSource> plane_bound_;
+  std::shared_ptr<const BoundPoints> plane_bound_;
   Kokkos::View<Real**, DeviceMemorySpace> rz_;
   Kokkos::View<Real*, DeviceMemorySpace> phi_;
+  Kokkos::View<const LO*, DeviceMemorySpace> elements_;
 };
 
 /// (R, phi, Z) points on the native mesh of an axisymmetric M3D-C1 domain:
 /// CylindricalRThetaZ, as Fusion-IO's (R, phi, Z), with phi = theta. Bind
 /// locates the points' (R, Z) projection on the mesh's (R, Z) geometry and
-/// keeps phi. KnownOwners are ignored (they would name the mesh's elements,
-/// which this geometry's discretization does not expose), and
+/// keeps phi. OwnerHints are ignored (they would name the mesh's elements,
+/// which this geometry does not expose), and
 /// NEAREST_BOUNDARY is not supported.
 class M3DC1Geometry final : public Geometry
 {
 public:
   explicit M3DC1Geometry(std::shared_ptr<const M3DC1NativeMesh> mesh)
-    : mesh_(std::move(mesh)),
-      discretization_(std::make_shared<EmptyDiscretization>()),
-      system_(csys::CylindricalRThetaZ::Create())
+    : mesh_(std::move(mesh)), system_(csys::CreateCylindricalRThetaZ())
   {
-  }
-
-  [[nodiscard]] std::shared_ptr<const Discretization> GetDiscretization()
-    const noexcept override
-  {
-    return discretization_;
   }
 
   [[nodiscard]] const std::shared_ptr<const CoordinateSystem>&
@@ -309,7 +358,7 @@ public:
   }
 
 protected:
-  [[nodiscard]] std::shared_ptr<BoundSource> BindImpl(
+  [[nodiscard]] std::shared_ptr<BoundPoints> BindImpl(
     const BindRequest& request) const override
   {
     return std::make_shared<M3DC1Binding>(shared_from_this(), request,
@@ -318,7 +367,6 @@ protected:
 
 private:
   std::shared_ptr<const M3DC1NativeMesh> mesh_;
-  std::shared_ptr<const Discretization> discretization_;
   std::shared_ptr<const CoordinateSystem> system_;
 };
 
@@ -458,14 +506,14 @@ public:
     }
     return ValueBasis{
       bound_->GetGeometry()->GetCoordinateSystem(), ComponentScaling::Physical,
-      values::Of({Variance::Covariant, Variance::Covariant}), stored.parity};
+      VarianceSignature{Variance::Covariant, Variance::Covariant},
+      stored.parity};
   }
 
 protected:
   void EvaluateImpl(const Field<Real>& field,
                     ValueView<Real, DeviceMemorySpace> values) const override
   {
-    PCMS_FUNCTION_TIMER;
     const auto* data = dynamic_cast<const NativeFieldData*>(&field.GetData());
     if (data == nullptr) {
       throw pcms_error("M3DC1NativeEvaluator: the field is not a native "
@@ -473,10 +521,10 @@ protected:
     }
     const NativeQuantity q = data->quantity;
     const auto out = values.GetValues();
-    const auto rz = bound_->Plane().LocatedPointValues();
+    const auto rz = bound_->PlanePoints();
     const auto phis = bound_->Phi();
     const auto found = bound_->FoundPoints();
-    const auto elements = bound_->Plane().ElementIds();
+    const auto elements = bound_->Elements();
     const int order = Operator() == DifferentialOperator::Value      ? 0
                       : Operator() == DifferentialOperator::Gradient ? 1
                                                                      : 2;
@@ -488,48 +536,21 @@ private:
   M3DC1NativeMesh::Frames frames_;
 };
 
-/// Creates the native evaluators of the quantities of one representation on
-/// an M3DC1Geometry: scalars with Gradient and Hessian, the magnetic field
-/// with Value only.
-class M3DC1NativeEvaluatorFactory final
-  : public TypedPointEvaluatorFactory<Real, M3DC1Binding>
-{
-public:
-  M3DC1NativeEvaluatorFactory(
-    std::shared_ptr<const M3DC1Geometry> geometry,
-    M3DC1NativeMesh::Frames frames, std::shared_ptr<const FieldLayout> layout,
-    std::initializer_list<DifferentialOperator> supported)
-    : TypedPointEvaluatorFactory(std::move(geometry), supported),
-      frames_(std::move(frames)),
-      layout_(std::move(layout))
-  {
-  }
-
-protected:
-  std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
-    std::shared_ptr<const M3DC1Binding> bound,
-    DifferentialOperator op) const override
-  {
-    return std::make_unique<M3DC1NativeEvaluator>(std::move(bound), op, layout_,
-                                                  frames_);
-  }
-
-private:
-  M3DC1NativeMesh::Frames frames_;
-  std::shared_ptr<const FieldLayout> layout_;
-};
-
-/// A space of native quantities with `num_components` components.
-std::shared_ptr<FunctionSpace> CreateNativeSpace(
+/// A space of native quantities with `num_components` components on an
+/// M3DC1Geometry: scalars with Gradient and Hessian, the magnetic field with
+/// Value only.
+std::shared_ptr<const FunctionSpace> CreateNativeSpace(
   std::shared_ptr<const M3DC1Geometry> geometry, const M3DC1NativeMesh& mesh,
-  int num_components, std::initializer_list<DifferentialOperator> supported)
+  int num_components, std::set<DifferentialOperator> supported)
 {
-  auto layout = std::make_shared<EmptyFieldLayout>(
-    geometry->GetCoordinateSystem(), num_components);
-  auto evaluator = std::make_shared<M3DC1NativeEvaluatorFactory>(
-    std::move(geometry), mesh.GetFrames(), layout, supported);
-  return std::make_shared<FunctionSpace>(std::move(layout), CreateNoFieldData,
-                                         std::move(evaluator));
+  return CreateExternalSpace<M3DC1Binding>(
+    "M3DC1Geometry", std::move(geometry), num_components, std::move(supported),
+    [frames = mesh.GetFrames()](std::shared_ptr<const M3DC1Binding> bound,
+                                DifferentialOperator op,
+                                std::shared_ptr<const FieldLayout> layout) {
+      return std::make_unique<M3DC1NativeEvaluator>(std::move(bound), op,
+                                                    std::move(layout), frames);
+    });
 }
 
 /// Whether two M3D-C1 meshes have the same elements.
@@ -911,8 +932,8 @@ private:
   const m3dc1_mesh* domain_mesh_ = nullptr;
   std::shared_ptr<const M3DC1NativeMesh> mesh_;
   std::shared_ptr<const M3DC1Geometry> geometry_;
-  std::shared_ptr<FunctionSpace> scalars_;
-  std::shared_ptr<FunctionSpace> vectors_;
+  std::shared_ptr<const FunctionSpace> scalars_;
+  std::shared_ptr<const FunctionSpace> vectors_;
   mutable std::map<std::pair<std::string, int>, NativeField> fields_;
 };
 
@@ -922,7 +943,7 @@ M3DC1NativeMesh::M3DC1NativeMesh(const m3dc1_mesh& mesh)
   : library_(
       std::make_unique<Omega_h::Library>(nullptr, nullptr, MPI_COMM_SELF)),
     mesh_(BuildMesh(*library_, mesh)),
-    geometry_(CreateOmegaHGeometry(*mesh_, csys::CylindricalRZ::Create())),
+    geometry_(omega_h::CreateGeometry(*mesh_, csys::CreateCylindricalRZ())),
     period_(mesh.period)
 {
   const auto n = static_cast<size_t>(mesh.nelms);

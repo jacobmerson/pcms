@@ -1,5 +1,5 @@
 #include "fusionio/fusionio.hpp"
-#include <pcms/utility/assert.h>
+#include <pcms/utility/assert.hpp>
 
 namespace fusionio
 {

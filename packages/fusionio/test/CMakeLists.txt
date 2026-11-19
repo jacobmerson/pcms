@@ -10,7 +10,10 @@ set(FUSIONIO_TEST_NIMROD_DIR "" CACHE PATH "NIMROD case for the NIMROD tests")
 set(FUSIONIO_TEST_SOURCES)
 if(FUSIONIO_TEST_DATA_DIR)
   list(APPEND FUSIONIO_TEST_SOURCES test_fusion_io.cpp test_source.cpp
-       test_m3dc1_native.cpp test_utilities.cpp bench_transfer.cpp)
+       test_utilities.cpp bench_transfer.cpp)
+  if(FUSIONIO_ENABLE_NATIVE)
+    list(APPEND FUSIONIO_TEST_SOURCES test_m3dc1_native.cpp)
+  endif()
   set_source_files_properties(
     test_fusion_io.cpp test_source.cpp test_m3dc1_native.cpp
     test_utilities.cpp bench_transfer.cpp
@@ -37,6 +40,10 @@ if(FUSIONIO_TEST_SOURCES)
   if(FUSIONIO_ENABLE_NIMROD)
     # the NIMROD tests compare with nimeval directly
     target_link_libraries(fusionio_tests PRIVATE ${NIMROD_NIMEVAL_LIBRARY})
+  endif()
+  if(FUSIONIO_ENABLE_NATIVE)
+    target_compile_definitions(fusionio_tests PRIVATE FUSIONIO_ENABLE_NATIVE)
+    target_link_libraries(fusionio_tests PRIVATE Omega_h::omega_h)
   endif()
   add_test(NAME fusionio_tests COMMAND fusionio_tests)
 endif()

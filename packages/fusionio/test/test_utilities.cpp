@@ -99,10 +99,12 @@ TEST_CASE("fusionio BoundingBox is get_bounding_box")
   REQUIRE(box.has_value());
   RequirePoint(box->min, min, 0.);
   RequirePoint(box->max, max, 0.);
+#ifdef FUSIONIO_ENABLE_NATIVE
   const auto native = fusionio::Open(fusionio::Format::M3DC1, M3DC1File,
                                      fusionio::Evaluation::Native);
   RequirePoint(native->BoundingBox()->min, min, 0.);
   RequirePoint(native->BoundingBox()->max, max, 0.);
+#endif
   // 1.x has none for geqdsk files
   const auto geqdsk = fusionio::Open(fusionio::Format::GEQDSK,
                                      std::string(FUSIONIO_TEST_DATA_DIR) +

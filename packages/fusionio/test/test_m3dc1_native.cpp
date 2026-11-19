@@ -4,8 +4,8 @@
 #include <Kokkos_Core.hpp>
 #include <Omega_h_mesh.hpp>
 #include <fusionio/fusionio.hpp>
-#include <pcms/field/coordinate_systems/cylindrical.hpp>
-#include <pcms/field/evaluator/omega_h_geometry.hpp>
+#include <pcms/utility/coordinate_systems/cylindrical.hpp>
+#include <pcms/backends/omega_h/omega_h.hpp>
 #include <pcms/field/query_points.hpp>
 #include "fusion_io_source.hpp"
 #include "fusion_io_space.hpp"
@@ -224,9 +224,9 @@ TEST_CASE("Native M3D-C1 mesh is the file's elements")
   const auto native =
     std::make_shared<fusionio::detail::M3DC1NativeMesh>(m3dc1);
   const auto geometry = native->GetGeometry();
-  REQUIRE(pcms::SameCoordinateSystem(geometry->GetCoordinateSystem(),
-                                     pcms::csys::CylindricalRZ::Create()));
-  Omega_h::Mesh& mesh = pcms::GetMesh(*geometry);
+  REQUIRE(*geometry->GetCoordinateSystem() ==
+          *pcms::csys::CreateCylindricalRZ());
+  Omega_h::Mesh& mesh = native->GetMesh();
   REQUIRE(mesh.dim() == 2);
   REQUIRE(mesh.nelems() == m3dc1.nelms);
   REQUIRE(native->NumElements() == m3dc1.nelms);
@@ -267,9 +267,8 @@ TEST_CASE("Native M3D-C1 mesh is the file's elements")
   // The geometry's search finds each point in the element it was drawn in.
   const auto points = InsideElements(m3dc1, 1000);
   const auto bound = fusionio::test::Bind(*geometry, points.rz);
-  const auto& binding = dynamic_cast<const pcms::OmegaHMeshBinding&>(*bound);
   const auto elements = Kokkos::create_mirror_view_and_copy(
-    pcms::HostMemorySpace(), binding.ElementIds());
+    pcms::HostMemorySpace(), pcms::omega_h::LocatedElements(*bound));
   REQUIRE(elements.extent(0) == points.elements.size());
   for (size_t i = 0; i < points.elements.size(); ++i) {
     REQUIRE(elements(i) == points.elements[i]);
@@ -282,9 +281,8 @@ TEST_CASE("Native M3D-C1 scalars match Fusion-IO 1.x")
     fusionio::detail::OpenFusionIOSource(fusionio::Format::M3DC1, M3DC1File);
   const auto native = fusionio::Open(fusionio::Format::M3DC1, M3DC1File,
                                      fusionio::Evaluation::Native);
-  REQUIRE(
-    pcms::SameCoordinateSystem(native->GetGeometry()->GetCoordinateSystem(),
-                               pcms::csys::CylindricalRThetaZ::Create()));
+  REQUIRE(*native->GetGeometry()->GetCoordinateSystem() ==
+          *pcms::csys::CreateCylindricalRThetaZ());
   const auto points = InsideElements(*oracle->DomainMesh(), NumPoints);
   const auto electron = fusionio::Species::Electron;
   const auto ion = fusionio::Species::MainIon;
@@ -380,11 +378,10 @@ TEST_CASE("Native M3D-C1 magnetic field matches Fusion-IO 1.x")
     CAPTURE(options.timeslice.value_or(0));
     const auto b = native->CreateFunction(Quantity::MagneticField, options);
     REQUIRE(b.GetLayout().GetNumComponents() == 3);
-    REQUIRE(pcms::SameValueBasis(
-      b.GetData().GetValueBasis(),
-      pcms::ValueBasis{pcms::csys::CylindricalRThetaZ::Create(),
-                       pcms::ComponentScaling::Physical,
-                       pcms::values::Vector}));
+    const pcms::ValueBasis basis = b.GetData().GetValueBasis();
+    REQUIRE(*basis.system == *pcms::csys::CreateCylindricalRThetaZ());
+    REQUIRE(basis.scaling == pcms::ComponentScaling::Physical);
+    REQUIRE(basis.variance == pcms::values::Vector);
     REQUIRE_FALSE(b.GetSpace().Supports(DifferentialOperator::Gradient));
     const auto field = oracle->GetField(
       Quantity::MagneticField, FusionIOOptions(oracle->Get(), options));

@@ -15,12 +15,12 @@
 // (-diiid-i, disabled in trace).
 
 #include <fusionio/fusionio.hpp>
-#include <pcms/field/coordinate_view.hpp>
-#include <pcms/field/function_space.h>
+#include <pcms/utility/coordinate_view.hpp>
+#include <pcms/field/function_space.hpp>
 #include <pcms/field/query_points.hpp>
 #include <pcms/field/value_view.hpp>
-#include <pcms/utility/arrays.h>
-#include <pcms/utility/memory_spaces.h>
+#include <pcms/utility/arrays.hpp>
+#include <pcms/utility/memory_spaces.hpp>
 #include <Kokkos_Core.hpp>
 #include <mpi.h>
 #include <algorithm>
@@ -74,6 +74,16 @@ struct Parameters
   bool native = false;
 };
 
+/// Whether a batch of `n` points is copied and evaluated with plain host
+/// loops: device memory is host memory and the batch is small enough that a
+/// parallel region costs more than the loop (as PCMS does internally).
+constexpr bool IsSmallHostBatch(size_t n) noexcept
+{
+  return Kokkos::SpaceAccessibility<Kokkos::HostSpace,
+                                    pcms::DeviceMemorySpace>::accessible &&
+         n <= 256;
+}
+
 /// Batches of (R, phi, Z) points located on one geometry (a pcms::QueryPoints,
 /// which rebinds in place), and the values of the geometry's functions there.
 /// The point and value views are kept for the next batch of the same size, so
@@ -99,7 +109,7 @@ public:
       points_ = Kokkos::View<Real**, pcms::DeviceMemorySpace>(
         Kokkos::view_alloc(Kokkos::WithoutInitializing, "points"), n, 3);
     }
-    if (pcms::IsSmallHostBatch(n)) {
+    if (IsSmallHostBatch(n)) {
       // a plain copy: deep_copy fences, and may run a parallel region
       for (size_t i = 0; i < n; ++i) {
         for (size_t c = 0; c < 3; ++c) {
@@ -133,7 +143,7 @@ public:
     query_.Evaluate(function, pcms::ValueView<Real, pcms::DeviceMemorySpace>(
                                 function.GetData().GetValueBasis(),
                                 pcms::MakeRank2View(values_)));
-    if (!pcms::IsSmallHostBatch(n)) {
+    if (!IsSmallHostBatch(n)) {
       Kokkos::deep_copy(result_, values_);
     } else if (result_.data() != values_.data()) {
       for (size_t i = 0; i < n; ++i) {

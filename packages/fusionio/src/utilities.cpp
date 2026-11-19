@@ -1,11 +1,11 @@
 #include "fusionio/utilities.hpp"
 #include <Kokkos_Core.hpp>
-#include <pcms/field/coordinate_view.hpp>
-#include <pcms/field/function_space.h>
+#include <pcms/utility/coordinate_view.hpp>
+#include <pcms/field/function_space.hpp>
 #include <pcms/field/query_points.hpp>
 #include <pcms/field/value_view.hpp>
-#include <pcms/utility/arrays.h>
-#include <pcms/utility/memory_spaces.h>
+#include <pcms/utility/arrays.hpp>
+#include <pcms/utility/memory_spaces.hpp>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -80,7 +80,10 @@ public:
     query_.Evaluate(
       function_,
       pcms::ValueView<Real, pcms::DeviceMemorySpace>(
-        pcms::GradientBasis(stored, geometry->GetCoordinateSystem()),
+        // the gradient of a scalar: physical components of the covector
+        pcms::ValueBasis{geometry->GetCoordinateSystem(),
+                         pcms::ComponentScaling::Physical,
+                         pcms::values::Covector},
         pcms::MakeRank2View(gradients)),
       pcms::DifferentialOperator::Gradient);
     const auto host_gradients =

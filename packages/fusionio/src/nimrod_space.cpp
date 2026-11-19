@@ -1,9 +1,6 @@
 #include "nimrod_space.hpp"
 #include "host_evaluation.hpp"
 #include "nimeval.hpp"
-#include "pcms/discretization/discretization/empty.hpp"
-#include "pcms/field/layout/empty.h"
-#include "pcms/utility/profile.h"
 #include <unistd.h>
 #include <algorithm>
 #include <array>
@@ -153,7 +150,7 @@ using NimrodFieldData = ExternalFieldData<NimrodQuantity>;
 // found, so evaluations do not change the binding observably.
 //
 // Not thread safe: neither is nimeval.
-class NimrodBinding final : public HostBoundSource
+class NimrodBinding final : public HostBoundPoints
 {
 public:
   using Guess = std::array<double, 2>;
@@ -162,7 +159,7 @@ public:
   NimrodBinding(std::shared_ptr<const Geometry> geometry,
                 const BindRequest& request,
                 std::shared_ptr<NimrodSource> source)
-    : HostBoundSource(std::move(geometry), request),
+    : HostBoundPoints(std::move(geometry), request),
       source_(std::move(source)),
       guesses_(static_cast<size_t>(NumPoints()), NoGuess)
   {
@@ -227,23 +224,15 @@ private:
 };
 
 // The geometry of an initialized NIMROD dump: (R, theta, Z) points, no
-// discretization PCMS can see, nimeval's point search. KnownOwners are
-// ignored: the dump's mesh is not a PCMS discretization.
+// entities PCMS can see, nimeval's point search. OwnerHints are ignored: the
+// dump's mesh is not a PCMS geometry's.
 // OutOfBoundsMode::NEAREST_BOUNDARY is not supported.
 class NimrodGeometry final : public Geometry
 {
 public:
   explicit NimrodGeometry(std::shared_ptr<NimrodSource> source)
-    : source_(std::move(source)),
-      discretization_(std::make_shared<EmptyDiscretization>()),
-      system_(csys::CylindricalRThetaZ::Create())
+    : source_(std::move(source)), system_(csys::CreateCylindricalRThetaZ())
   {
-  }
-
-  [[nodiscard]] std::shared_ptr<const Discretization> GetDiscretization()
-    const noexcept override
-  {
-    return discretization_;
   }
 
   [[nodiscard]] const std::shared_ptr<const CoordinateSystem>&
@@ -253,7 +242,7 @@ public:
   }
 
 protected:
-  [[nodiscard]] std::shared_ptr<BoundSource> BindImpl(
+  [[nodiscard]] std::shared_ptr<BoundPoints> BindImpl(
     const BindRequest& request) const override
   {
     return std::make_shared<NimrodBinding>(shared_from_this(), request,
@@ -262,7 +251,6 @@ protected:
 
 private:
   std::shared_ptr<NimrodSource> source_;
-  std::shared_ptr<const Discretization> discretization_;
   std::shared_ptr<const CoordinateSystem> system_;
 };
 
@@ -283,7 +271,6 @@ protected:
   void EvaluateImpl(const Field<Real>& field,
                     ValueView<Real, DeviceMemorySpace> values) const override
   {
-    PCMS_FUNCTION_TIMER;
     const auto* data = dynamic_cast<const NimrodFieldData*>(&field.GetData());
     if (data == nullptr) {
       throw pcms_error(
@@ -336,44 +323,21 @@ private:
   std::shared_ptr<const NimrodBinding> bound_;
 };
 
-// Creates the evaluators of the quantities of one component count. NIMROD is
-// one representation: every single-component quantity of a dump has a
-// gradient (dmode 1).
-class NimrodEvaluatorFactory final
-  : public TypedPointEvaluatorFactory<Real, NimrodBinding>
-{
-public:
-  NimrodEvaluatorFactory(std::shared_ptr<const NimrodGeometry> geometry,
-                         std::shared_ptr<const FieldLayout> layout)
-    : TypedPointEvaluatorFactory(std::move(geometry),
-                                 {DifferentialOperator::Gradient}),
-      layout_(std::move(layout))
-  {
-  }
-
-protected:
-  std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
-    std::shared_ptr<const NimrodBinding> bound,
-    DifferentialOperator op) const override
-  {
-    CheckGradientComponents("NimrodGeometry", op, layout_->GetNumComponents());
-    return std::make_unique<NimrodEvaluator>(std::move(bound), op, layout_);
-  }
-
-private:
-  std::shared_ptr<const FieldLayout> layout_;
-};
-
 // The space of the quantities with `num_components` components of a dump.
-std::shared_ptr<FunctionSpace> CreateNimrodSpace(
+// NIMROD is one representation: every single-component quantity of a dump has
+// a gradient (dmode 1).
+std::shared_ptr<const FunctionSpace> CreateNimrodSpace(
   std::shared_ptr<const NimrodGeometry> geometry, int num_components)
 {
-  auto layout = std::make_shared<EmptyFieldLayout>(
-    geometry->GetCoordinateSystem(), num_components);
-  auto evaluator =
-    std::make_shared<NimrodEvaluatorFactory>(std::move(geometry), layout);
-  return std::make_shared<FunctionSpace>(std::move(layout), CreateNoFieldData,
-                                         std::move(evaluator));
+  return CreateExternalSpace<NimrodBinding>(
+    "NimrodGeometry", std::move(geometry), num_components,
+    {DifferentialOperator::Gradient},
+    [](std::shared_ptr<const NimrodBinding> bound, DifferentialOperator op,
+       std::shared_ptr<const FieldLayout> layout) {
+      CheckGradientComponents("NimrodGeometry", op, layout->GetNumComponents());
+      return std::make_unique<NimrodEvaluator>(std::move(bound), op,
+                                               std::move(layout));
+    });
 }
 
 } // namespace
@@ -585,7 +549,7 @@ private:
 
   std::shared_ptr<NimrodSource> source_;
   std::shared_ptr<const NimrodGeometry> geometry_;
-  mutable std::map<int, std::shared_ptr<FunctionSpace>> spaces_;
+  mutable std::map<int, std::shared_ptr<const FunctionSpace>> spaces_;
 };
 
 } // namespace

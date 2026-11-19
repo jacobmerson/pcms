@@ -4,7 +4,7 @@ project(fusionio2 VERSION 2.0.0 LANGUAGES CXX)
 # Fusion-IO 2.0 is built on PCMS and uses only its installed (public) headers.
 # It can be built against an installed PCMS or added to a PCMS build with
 # add_subdirectory.
-if(NOT TARGET pcms::core)
+if(NOT TARGET pcms::pcms)
   find_package(pcms CONFIG REQUIRED)
 endif()
 # Fusion-IO 1.x reads the files and evaluates the fields until PCMS evaluates
@@ -22,11 +22,26 @@ if(FUSIONIO_ENABLE_NIMROD)
   message(STATUS "Found NIMROD nimeval: ${NIMROD_NIMEVAL_LIBRARY}")
 endif()
 
+# The native M3D-C1 evaluator locates points with PCMS's Omega_h geometry.
+# The PCMS package finds Omega_h if and only if PCMS has its Omega_h backend.
+# Without it, Open(..., Evaluation::Native) and fio_trace -native throw.
+if(TARGET Omega_h::omega_h)
+  set(FUSIONIO_NATIVE_DEFAULT ON)
+else()
+  set(FUSIONIO_NATIVE_DEFAULT OFF)
+endif()
+option(FUSIONIO_ENABLE_NATIVE
+       "Build the native M3D-C1 evaluator (needs PCMS's Omega_h backend)"
+       ${FUSIONIO_NATIVE_DEFAULT})
+if(FUSIONIO_ENABLE_NATIVE AND NOT TARGET Omega_h::omega_h)
+  message(FATAL_ERROR "FUSIONIO_ENABLE_NATIVE needs a PCMS built with "
+                      "PCMS_ENABLE_OMEGA_H")
+endif()
+
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-add_library(fusionio src/fusion_io_space.cpp src/m3dc1_native.cpp
-                     src/utilities.cpp)
+add_library(fusionio src/fusion_io_space.cpp src/utilities.cpp)
 add_library(fusionio::fusionio ALIAS fusionio)
 target_compile_features(fusionio PUBLIC cxx_std_20)
 target_include_directories(
@@ -34,10 +49,15 @@ target_include_directories(
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(fusionio PUBLIC pcms::core
+target_link_libraries(fusionio PUBLIC pcms::pcms
                       PRIVATE fusionio::fusionio_fusionio)
 set(FUSIONIO_HEADERS include/fusionio/fusionio.hpp
                      include/fusionio/utilities.hpp)
+if(FUSIONIO_ENABLE_NATIVE)
+  target_sources(fusionio PRIVATE src/m3dc1_native.cpp)
+  target_compile_definitions(fusionio PRIVATE FUSIONIO_ENABLE_NATIVE)
+  target_link_libraries(fusionio PRIVATE Omega_h::omega_h)
+endif()
 if(FUSIONIO_ENABLE_NIMROD)
   target_sources(fusionio PRIVATE src/nimrod_space.cpp)
   target_link_libraries(fusionio PRIVATE ${NIMROD_NIMEVAL_LIBRARY})

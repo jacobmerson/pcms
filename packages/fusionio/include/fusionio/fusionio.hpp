@@ -12,7 +12,7 @@
 /// units, and vector values are physical cylindrical components. Meshes are
 /// serial for now: every rank opens the whole source.
 
-#include <pcms/field/field.h>
+#include <pcms/field/field.hpp>
 #include <pcms/geometry/geometry.hpp>
 #include <array>
 #include <memory>
@@ -189,7 +189,8 @@ enum class Evaluation
 /// time-slice files next to it) or a geqdsk file. Only sources with
 /// cylindrical geometry are supported.
 /// @throws if `evaluation` is Native and the source cannot be evaluated
-///         natively
+///         natively, or Fusion-IO was built without native evaluation
+///         (FUSIONIO_ENABLE_NATIVE, which needs PCMS's Omega_h backend)
 std::shared_ptr<Source> Open(Format format, const std::string& path,
                              Evaluation evaluation = Evaluation::FusionIO);
 

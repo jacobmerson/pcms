@@ -4,16 +4,16 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <Kokkos_Core.hpp>
 #include <pcms/field/coordinate_map.hpp>
-#include <pcms/field/coordinate_systems/cartesian.hpp>
-#include <pcms/field/coordinate_systems/cylindrical.hpp>
-#include <pcms/field/evaluator/uniform_grid_geometry.hpp>
-#include <pcms/field/function_space/lagrange.h>
+#include <pcms/utility/coordinate_systems/cartesian.hpp>
+#include <pcms/utility/coordinate_systems/cylindrical.hpp>
+#include <pcms/backends/uniform_grid/geometry.hpp>
+#include <pcms/field/function_spaces.hpp>
 #include <pcms/field/gradient_source.hpp>
 #include <fusionio/fusionio.hpp>
 #include "fusion_io_space.hpp"
 #include "fusion_io_source.hpp"
-#include <pcms/transfer/interpolator.h>
-#include <pcms/utility/eqdsk.h>
+#include <pcms/transfer/interpolator.hpp>
+#include <pcms/eqdsk/eqdsk.hpp>
 #include "test_utils.hpp"
 #include <algorithm>
 #include <cmath>
@@ -90,10 +90,10 @@ TEST_CASE("Fusion-IO M3D-C1 fields")
   const auto opened = fusionio::Open(fusionio::Format::M3DC1, M3DC1File);
   auto psi = opened->CreateFunction(fusionio::Quantity::PoloidalFlux);
   auto a = opened->CreateFunction(fusionio::Quantity::VectorPotential);
-  REQUIRE(pcms::SameValueBasis(
-    a.GetData().GetValueBasis(),
-    ValueBasis{pcms::csys::CylindricalRThetaZ::Create(),
-               pcms::ComponentScaling::Physical, pcms::values::Vector}));
+  const ValueBasis basis = a.GetData().GetValueBasis();
+  REQUIRE(*basis.system == *pcms::csys::CreateCylindricalRThetaZ());
+  REQUIRE(basis.scaling == pcms::ComponentScaling::Physical);
+  REQUIRE(basis.variance == pcms::values::Vector);
 
   // The binding stores each point's search hint as sizeof_search_hint()
   // zero-initialized bytes (an element guess for M3D-C1). Revisit it if this
@@ -421,8 +421,8 @@ TEST_CASE("Fusion-IO gradients")
     grid.bot_left = {1.5, 0.0, -0.3};
     grid.edge_length = {0.4, 1.0, 0.6};
     grid.divisions = {3, 2, 3};
-    const auto target = pcms::CreateUniformGridGeometry(
-      grid, pcms::csys::CylindricalRThetaZ::Create());
+    const auto target = pcms::uniform_grid::CreateGeometry(
+      grid, pcms::csys::CreateCylindricalRThetaZ());
     auto value_space = pcms::CreateLagrangeSpace(target, 1, 1);
     auto vector_space = pcms::CreateLagrangeSpace(target, 1, 3);
     auto psi_t = value_space->CreateFunction<Real>("psi");
@@ -435,12 +435,13 @@ TEST_CASE("Fusion-IO gradients")
     // points.
     const auto bound = source->GetGeometry()->Bind(
       value_space->GetLayout()->GetDOFHolderCoordinates());
-    pcms::Interpolator<Real>(psi.GetSpace(), *value_space, bound)
-      .Apply(psi, psi_t);
-    pcms::Interpolator<Real>(*pcms::Gradient(psi.GetSpacePtr()), *vector_space,
-                             bound)
-      .Apply(psi, grad_psi_t);
-    pcms::Interpolator<Real>(b.GetSpace(), *vector_space, bound).Apply(b, b_t);
+    pcms::CreateInterpolator<Real>(psi.GetSpacePtr(), value_space, bound)
+      ->Apply(psi, psi_t);
+    pcms::CreateInterpolator<Real>(pcms::Gradient(psi.GetSpacePtr()),
+                                   vector_space, bound)
+      ->Apply(psi, grad_psi_t);
+    pcms::CreateInterpolator<Real>(b.GetSpacePtr(), vector_space, bound)
+      ->Apply(b, b_t);
 
     // Axisymmetric: B_R = -dpsi/dZ / (2 pi R), B_Z = dpsi/dR / (2 pi R).
     const auto coords = fusionio::test::CopyCoordinatesToHost(
@@ -471,11 +472,10 @@ TEST_CASE("Fusion-IO gradients")
     // The points are mapped to the source's (R, phi, Z) by the bind, and the
     // gradient is the space's operator or an operator source over it.
     const auto coords = fusionio::test::CreateDeviceCoordinateView(
-      {r * std::cos(phi), r * std::sin(phi), z},
-      pcms::csys::Cartesian::Create(3), 3);
+      {r * std::cos(phi), r * std::sin(phi), z}, pcms::csys::CreateCartesian(3),
+      3);
     const auto bound = source->GetGeometry()->Bind(
-      coords.coordinate_view, {},
-      std::make_shared<pcms::CartesianToCylindrical>());
+      coords.coordinate_view, {}, pcms::CreateCartesianToCylindrical());
     std::vector<std::unique_ptr<pcms::PointEvaluator<Real>>> evaluators;
     evaluators.push_back(psi.GetSpace().CreatePointEvaluator<Real>(
       bound, pcms::DifferentialOperator::Gradient));
@@ -488,8 +488,7 @@ TEST_CASE("Fusion-IO gradients")
       // rotation reports them as a vector's, which are the same numbers.
       REQUIRE(basis.Rank() == 1);
       REQUIRE(basis.scaling == pcms::ComponentScaling::Physical);
-      REQUIRE(pcms::SameCoordinateSystem(basis.system,
-                                         pcms::csys::Cartesian::Create(3)));
+      REQUIRE(*basis.system == *pcms::csys::CreateCartesian(3));
       const auto host = fusionio::test::EvaluateWith(*evaluator, psi);
       for (int c = 0; c < 3; ++c) {
         CAPTURE(c);

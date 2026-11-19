@@ -1,10 +1,9 @@
 #include "fusion_io_space.hpp"
 #include "fusion_io_source.hpp"
 #include "host_evaluation.hpp"
+#ifdef FUSIONIO_ENABLE_NATIVE
 #include "m3dc1_native.hpp"
-#include "pcms/discretization/discretization/empty.hpp"
-#include "pcms/field/layout/empty.h"
-#include "pcms/utility/profile.h"
+#endif
 #include <algorithm>
 #include <map>
 #include <numbers>
@@ -124,13 +123,13 @@ using FusionIOFieldData = ExternalFieldData<FusionIOQuantity>;
 // change the binding observably; other formats have no hints.
 //
 // Not thread safe: neither is Fusion-IO 1.x.
-class FusionIOBinding final : public HostBoundSource
+class FusionIOBinding final : public HostBoundPoints
 {
 public:
   FusionIOBinding(std::shared_ptr<const Geometry> geometry,
                   const BindRequest& request,
                   std::shared_ptr<FusionIOSource> source)
-    : HostBoundSource(std::move(geometry), request),
+    : HostBoundPoints(std::move(geometry), request),
       source_(std::move(source)),
       hint_size_(static_cast<size_t>(source_->Get().sizeof_search_hint())),
       hints_(hint_size_ * static_cast<size_t>(NumPoints()), 0)
@@ -220,7 +219,6 @@ protected:
   void EvaluateImpl(const Field<Real>& field,
                     ValueView<Real, DeviceMemorySpace> values) const override
   {
-    PCMS_FUNCTION_TIMER;
     const auto* data = dynamic_cast<const FusionIOFieldData*>(&field.GetData());
     if (data == nullptr) {
       throw pcms_error(
@@ -261,37 +259,6 @@ protected:
 
 private:
   std::shared_ptr<const FusionIOBinding> bound_;
-};
-
-// Creates the evaluators of the quantities of one representation.
-class FusionIOEvaluatorFactory final
-  : public TypedPointEvaluatorFactory<Real, FusionIOBinding>
-{
-public:
-  FusionIOEvaluatorFactory(std::shared_ptr<const FusionIOGeometry> geometry,
-                           std::shared_ptr<const FieldLayout> layout,
-                           bool derivatives)
-    : TypedPointEvaluatorFactory(
-        geometry, derivatives
-                    ? std::initializer_list<
-                        DifferentialOperator>{DifferentialOperator::Gradient}
-                    : std::initializer_list<DifferentialOperator>{}),
-      layout_(std::move(layout))
-  {
-  }
-
-protected:
-  std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
-    std::shared_ptr<const FusionIOBinding> bound,
-    DifferentialOperator op) const override
-  {
-    CheckGradientComponents("FusionIOGeometry", op,
-                            layout_->GetNumComponents());
-    return std::make_unique<FusionIOEvaluator>(std::move(bound), op, layout_);
-  }
-
-private:
-  std::shared_ptr<const FieldLayout> layout_;
 };
 
 } // namespace
@@ -444,32 +411,35 @@ std::shared_ptr<FusionIOSource> OpenFusionIOSource(Format format,
 }
 
 FusionIOGeometry::FusionIOGeometry(std::shared_ptr<FusionIOSource> source)
-  : source_(std::move(source)),
-    discretization_(std::make_shared<EmptyDiscretization>()),
-    system_(csys::CylindricalRThetaZ::Create())
+  : source_(std::move(source)), system_(csys::CreateCylindricalRThetaZ())
 {
   if (source_ == nullptr) {
     throw pcms_error("FusionIOGeometry: source must not be null");
   }
 }
 
-std::shared_ptr<BoundSource> FusionIOGeometry::BindImpl(
+std::shared_ptr<BoundPoints> FusionIOGeometry::BindImpl(
   const BindRequest& request) const
 {
   return std::make_shared<FusionIOBinding>(shared_from_this(), request,
                                            source_);
 }
 
-std::shared_ptr<FunctionSpace> CreateFusionIOSpace(
+std::shared_ptr<const FunctionSpace> CreateFusionIOSpace(
   std::shared_ptr<const FusionIOGeometry> geometry, int num_components,
   bool derivatives)
 {
-  auto layout = std::make_shared<EmptyFieldLayout>(
-    geometry->GetCoordinateSystem(), num_components);
-  auto evaluator = std::make_shared<FusionIOEvaluatorFactory>(
-    std::move(geometry), layout, derivatives);
-  return std::make_shared<FunctionSpace>(std::move(layout), CreateNoFieldData,
-                                         std::move(evaluator));
+  using enum DifferentialOperator;
+  return CreateExternalSpace<FusionIOBinding>(
+    "FusionIOGeometry", std::move(geometry), num_components,
+    derivatives ? std::set{Gradient} : std::set<DifferentialOperator>{},
+    [](std::shared_ptr<const FusionIOBinding> bound, DifferentialOperator op,
+       std::shared_ptr<const FieldLayout> layout) {
+      CheckGradientComponents("FusionIOGeometry", op,
+                              layout->GetNumComponents());
+      return std::make_unique<FusionIOEvaluator>(std::move(bound), op,
+                                                 std::move(layout));
+    });
 }
 
 namespace
@@ -595,8 +565,8 @@ public:
 private:
   // The space of a representation: component count and whether Fusion-IO
   // provides the derivatives.
-  const std::shared_ptr<FunctionSpace>& Space(int num_components,
-                                              bool derivatives) const
+  const std::shared_ptr<const FunctionSpace>& Space(int num_components,
+                                                    bool derivatives) const
   {
     auto& space = spaces_[{num_components, derivatives}];
     if (space == nullptr) {
@@ -607,7 +577,7 @@ private:
 
   std::shared_ptr<FusionIOSource> source_;
   std::shared_ptr<const FusionIOGeometry> geometry_;
-  mutable std::map<std::pair<int, bool>, std::shared_ptr<FunctionSpace>>
+  mutable std::map<std::pair<int, bool>, std::shared_ptr<const FunctionSpace>>
     spaces_;
 };
 
@@ -631,11 +601,17 @@ std::shared_ptr<Source> Open(Format format, const std::string& path,
   if (evaluation == Evaluation::FusionIO) {
     return wrapped;
   }
+#ifdef FUSIONIO_ENABLE_NATIVE
   if (format != Format::M3DC1) {
     throw pcms::pcms_error(
       "fusionio::Open: only M3D-C1 sources are evaluated natively");
   }
   return detail::CreateM3DC1NativeSource(std::move(source), std::move(wrapped));
+#else
+  throw pcms::pcms_error("fusionio::Open: Fusion-IO was built without native "
+                         "evaluation (FUSIONIO_ENABLE_NATIVE, which needs "
+                         "PCMS's Omega_h backend)");
+#endif
 }
 
 } // namespace fusionio

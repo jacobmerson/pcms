@@ -5,14 +5,14 @@
 // headers (PCMS's own test utilities are not installed).
 
 #include <Kokkos_Core.hpp>
-#include <pcms/field/coordinate_system.hpp>
-#include <pcms/field/coordinate_view.hpp>
-#include <pcms/field/field.h>
-#include <pcms/field/function_space.h>
+#include <pcms/utility/coordinate_system.hpp>
+#include <pcms/utility/coordinate_view.hpp>
+#include <pcms/field/field.hpp>
+#include <pcms/field/function_space.hpp>
 #include <pcms/field/value_view.hpp>
 #include <pcms/geometry/geometry.hpp>
-#include <pcms/utility/arrays.h>
-#include <pcms/utility/memory_spaces.h>
+#include <pcms/utility/arrays.hpp>
+#include <pcms/utility/memory_spaces.hpp>
 #include <memory>
 #include <vector>
 
@@ -49,8 +49,7 @@ inline DeviceCoordinates CreateDeviceCoordinateView(
   pcms::DeepCopyMismatchLayouts(device, host);
   return DeviceCoordinates{
     device, pcms::CoordinateView<DeviceMemorySpace>{
-              pcms::ResolveCoordinateSystem(std::move(coordinate_system), dim),
-              pcms::MakeRank2View(device)}};
+              std::move(coordinate_system), pcms::MakeRank2View(device)}};
 }
 
 /// Copies device coordinates (any layout) to a host view.
@@ -78,7 +77,7 @@ inline pcms::ValueView<T, DeviceMemorySpace> TagLike(
 
 /// Binds `points` (row-major, the geometry's dimension per point) on
 /// `geometry`.
-inline std::shared_ptr<const pcms::BoundSource> Bind(
+inline std::shared_ptr<const pcms::BoundPoints> Bind(
   const pcms::Geometry& geometry, const std::vector<Real>& points,
   pcms::OutOfBoundsPolicy policy = {})
 {
