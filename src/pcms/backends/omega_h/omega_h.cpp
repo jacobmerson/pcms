@@ -3,9 +3,49 @@
 #include "pcms/backends/omega_h/omega_h_geometry.hpp"
 #include "pcms/backends/point_cloud/geometry.hpp"
 #include "pcms/utility/assert.hpp"
+#include "pcms/utility/detail/memory_spaces.hpp"
 
 namespace pcms::omega_h
 {
+
+namespace
+{
+
+template <int Dim>
+Kokkos::View<const LO*, DeviceMemorySpace> LocatedElementsOf(
+  const pcms::detail::OmegaHMeshBinding& binding, Omega_h::Mesh& mesh)
+{
+  const auto found = binding.FoundPoints();
+  const auto results = binding.Results<Dim>();
+  const auto up = detail::UpAdjacencies<Dim>(mesh);
+  Kokkos::View<LO*, DeviceMemorySpace> elements(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "located_elements"),
+    found.extent(0));
+  pcms::detail::ForEach(
+    "pcms::omega_h::LocatedElements", static_cast<LO>(found.extent(0)),
+    KOKKOS_LAMBDA(const LO k) {
+      elements(k) = detail::ElementOfResult<Dim>(up, results(found(k)));
+    });
+  return elements;
+}
+
+} // namespace
+
+Kokkos::View<const LO*, DeviceMemorySpace> LocatedElements(
+  const BoundPoints& bound)
+{
+  const auto* binding =
+    dynamic_cast<const pcms::detail::OmegaHMeshBinding*>(&bound);
+  const auto* geometry =
+    dynamic_cast<const OmegaHGeometry*>(bound.GetGeometry().get());
+  if (binding == nullptr || geometry == nullptr) {
+    throw pcms_error("pcms::omega_h::LocatedElements: the points were not "
+                     "bound on an Omega_h geometry");
+  }
+  Omega_h::Mesh& mesh = geometry->GetMesh();
+  return mesh.dim() == 2 ? LocatedElementsOf<2>(*binding, mesh)
+                         : LocatedElementsOf<3>(*binding, mesh);
+}
 
 std::shared_ptr<const Geometry> CreateGeometry(
   Omega_h::Mesh& mesh, std::shared_ptr<const CoordinateSystem> system,
