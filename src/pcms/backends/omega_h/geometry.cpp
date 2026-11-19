@@ -1,5 +1,6 @@
 #include "pcms/backends/omega_h/omega_h_geometry.hpp"
 #include "pcms/utility/coordinate_system.hpp"
+#include "pcms/configuration.hpp"
 #include "pcms/backends/omega_h/adj_search.hpp"
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/omega_h_array_utils.hpp"
@@ -32,9 +33,10 @@ static_assert(std::is_same_v<GO, Omega_h::GO>,
 namespace pcms::detail
 {
 
-OmegaHMeshBinding::OmegaHMeshBinding(
-  std::shared_ptr<const Geometry> geometry, const BindRequest& request,
-  const omega_h::GridPointSearchVariant& search, Omega_h::Mesh& mesh)
+OmegaHMeshBinding::OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
+                                     const BindRequest& request,
+                                     const omega_h::PointSearchVariant& search,
+                                     Omega_h::Mesh& mesh)
   : BoundPoints(std::move(geometry), request), search_(search), mesh_(mesh)
 {
   Locate(
@@ -122,8 +124,8 @@ Kokkos::View<const LO*, DeviceMemorySpace> ElementGuesses(
 
 } // namespace detail
 
-GridPointSearchVariant MakeGridSearch(Omega_h::Mesh& mesh,
-                                      const SearchOptions& options)
+PointSearchVariant MakeGridSearch(Omega_h::Mesh& mesh,
+                                  const SearchOptions& options)
 {
   if (mesh.dim() == 2) {
     const LO n = options.divisions > 0
@@ -141,6 +143,27 @@ GridPointSearchVariant MakeGridSearch(Omega_h::Mesh& mesh,
     "MakeGridSearch: only 2D and 3D meshes are supported");
 }
 
+PointSearchVariant MakeSearch(Omega_h::Mesh& mesh, const SearchOptions& options,
+                              OmegaHSearchMethod method)
+{
+  if (method == OmegaHSearchMethod::Grid) {
+    return MakeGridSearch(mesh, options);
+  }
+#ifdef PCMS_ENABLE_ARBORX
+  if (mesh.dim() == 2) {
+    return TreePointSearch2D(mesh, options.tolerance);
+  }
+  if (mesh.dim() == 3) {
+    return TreePointSearch3D(mesh, options.tolerance);
+  }
+  throw std::invalid_argument(
+    "MakeSearch: only 2D and 3D meshes are supported");
+#else
+  throw std::invalid_argument("OmegaHSearchMethod::BoundingVolumeHierarchy "
+                              "needs PCMS built with PCMS_ENABLE_ARBORX");
+#endif
+}
+
 OmegaHGeometry::OmegaHGeometry(Omega_h::Mesh& mesh,
                                std::shared_ptr<const CoordinateSystem> system,
                                OmegaHGeometryOptions options)
@@ -149,8 +172,15 @@ OmegaHGeometry::OmegaHGeometry(Omega_h::Mesh& mesh,
     owned_mask_(std::move(options.owned_mask)),
     system_(
       pcms::detail::ResolveCoordinateSystem(std::move(system), mesh.dim())),
-    search_options_(options.search)
+    search_options_(options.search),
+    search_method_(options.search_method)
 {
+#ifndef PCMS_ENABLE_ARBORX
+  if (search_method_ == OmegaHSearchMethod::BoundingVolumeHierarchy) {
+    throw pcms_error("OmegaHGeometry: the bounding volume hierarchy search "
+                     "needs PCMS built with PCMS_ENABLE_ARBORX");
+  }
+#endif
   if (owned_mask_.size() != 0 && owned_mask_.size() != mesh_.nverts()) {
     throw pcms_error("OmegaHGeometry: the owned mask must have one entry per "
                      "mesh vertex");
@@ -181,11 +211,11 @@ OmegaHGeometry::OmegaHGeometry(std::shared_ptr<Omega_h::Mesh> mesh,
   mesh_owner_ = std::move(mesh);
 }
 
-const GridPointSearchVariant& OmegaHGeometry::Search() const
+const PointSearchVariant& OmegaHGeometry::Search() const
 {
   std::call_once(search_once_, [this] {
-    search_ = std::make_unique<GridPointSearchVariant>(
-      MakeGridSearch(mesh_, search_options_));
+    search_ = std::make_unique<PointSearchVariant>(
+      MakeSearch(mesh_, search_options_, search_method_));
   });
   return *search_;
 }

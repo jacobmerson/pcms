@@ -227,7 +227,7 @@ public:
   /// `mesh` are the geometry's; a rebind searches with them again.
   OmegaHMeshBinding(std::shared_ptr<const Geometry> geometry,
                     const BindRequest& request,
-                    const omega_h::GridPointSearchVariant& search,
+                    const omega_h::PointSearchVariant& search,
                     Omega_h::Mesh& mesh);
 
   /// [query point]: the search's record of each point, the entity it lies on
@@ -267,7 +267,7 @@ private:
   /// results in point_results_ and sets the found points.
   void Locate(Kokkos::View<const LO*, DeviceMemorySpace> hints);
 
-  const omega_h::GridPointSearchVariant& search_;
+  const omega_h::PointSearchVariant& search_;
   Omega_h::Mesh& mesh_;
   // per query point, the search's record, kept across rebinds; the first
   // num_records_ are the last locate's
@@ -366,7 +366,7 @@ protected:
 
 private:
   /// The containing-element search, built on first use.
-  const GridPointSearchVariant& Search() const;
+  const PointSearchVariant& Search() const;
 
   // The library must outlive the mesh and the cached search data.
   std::shared_ptr<Omega_h::Library> library_owner_;
@@ -376,11 +376,12 @@ private:
   Omega_h::Read<Omega_h::I8> owned_mask_;
   std::shared_ptr<const CoordinateSystem> system_;
   SearchOptions search_options_;
+  OmegaHSearchMethod search_method_;
   // The search and Differential are built once, lazily; the geometry is const
   // and shared, hence the once_flags. These are the mutable members and they
   // are caches.
   mutable std::once_flag search_once_;
-  mutable std::unique_ptr<GridPointSearchVariant> search_;
+  mutable std::unique_ptr<PointSearchVariant> search_;
   mutable std::once_flag differential_once_;
   mutable DifferentialView differential_;
 };
@@ -388,8 +389,16 @@ private:
 /// The grid search over a mesh, with options.divisions divisions per axis when
 /// nonzero and DivisionsPerAxisForMesh otherwise.
 /// @throws std::invalid_argument unless the mesh is 2D or 3D
-[[nodiscard]] GridPointSearchVariant MakeGridSearch(
-  Omega_h::Mesh& mesh, const SearchOptions& options);
+[[nodiscard]] PointSearchVariant MakeGridSearch(Omega_h::Mesh& mesh,
+                                                const SearchOptions& options);
+
+/// The search of the method over a mesh: MakeGridSearch for Grid, the
+/// bounding volume hierarchy search for BoundingVolumeHierarchy.
+/// @throws std::invalid_argument for the hierarchy without PCMS_ENABLE_ARBORX,
+///         and unless the mesh is 2D or 3D
+[[nodiscard]] PointSearchVariant MakeSearch(Omega_h::Mesh& mesh,
+                                            const SearchOptions& options,
+                                            OmegaHSearchMethod method);
 
 } // namespace pcms::omega_h
 

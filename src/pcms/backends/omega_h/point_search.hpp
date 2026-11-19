@@ -3,6 +3,7 @@
 
 #include <cassert>
 
+#include <memory>
 #include <utility>
 #include <variant>
 
@@ -11,6 +12,7 @@
 #include <Omega_h_bbox.hpp>
 #include <Omega_h_shape.hpp>
 
+#include "pcms/configuration.hpp"
 #include "pcms/utility/memory_spaces.hpp"
 #include "pcms/utility/types.hpp"
 #include "pcms/utility/uniform_grid.hpp"
@@ -278,12 +280,58 @@ private:
   Omega_h::Graph dual_;
 };
 
-/// A grid search of either spatial dimension, as owned by components that are
-/// dimension-agnostic at compile time (e.g. an evaluator factory over an
+#ifdef PCMS_ENABLE_ARBORX
+/**
+ * Point search with an ArborX bounding volume hierarchy over the elements'
+ * bounding boxes, widened by the tolerance, in place of the uniform grid. It
+ * takes the same options and reports the same records as the grid search: the
+ * candidates of a point are the elements whose widened box contains it, and
+ * the classification of the candidates is shared with GridPointSearch. The
+ * records are identical for every point in the mesh. A point outside the mesh
+ * gets the same kind of record (a negative entity from Result::OutsideId, or
+ * NO_INTERSECT with id -1), but "the nearest candidate" is taken among the
+ * elements whose box contains the point instead of the elements of its grid
+ * cell, so the nearest entity named can differ.
+ */
+template <int dim>
+class TreePointSearch : public PointLocalizationSearch<dim>
+{
+public:
+  using Result = typename PointLocalizationSearch<dim>::Result;
+  static constexpr auto DIM = dim;
+
+  TreePointSearch(Omega_h::Mesh& mesh, Real tolerance);
+
+  Kokkos::View<Result*> operator()(
+    Kokkos::View<const Real* [DIM]> point) const override;
+
+  /// \see GridPointSearch2D::operator()(points, guesses, results)
+  void operator()(Kokkos::View<const Real* [DIM]> points,
+                  Kokkos::View<const LO*> guesses,
+                  Kokkos::View<Result*> results) const;
+
+private:
+  struct Tree;
+  Omega_h::Few<Omega_h::Adj, DIM> down_;
+  Omega_h::Few<Omega_h::Adj, DIM> down_verts_;
+  Omega_h::LOs elem_verts_;
+  Omega_h::Reals coords_;
+  Omega_h::Graph dual_;
+  std::shared_ptr<const Tree> tree_;
+};
+
+using TreePointSearch2D = TreePointSearch<2>;
+using TreePointSearch3D = TreePointSearch<3>;
+
+/// A search of either spatial dimension and kind, as owned by components that
+/// are dimension-agnostic at compile time (e.g. an evaluator factory over an
 /// Omega_h mesh) and handed to consumers that need to locate points on the same
 /// mesh without building a second search.
-using GridPointSearchVariant =
-  std::variant<GridPointSearch2D, GridPointSearch3D>;
+using PointSearchVariant = std::variant<GridPointSearch2D, GridPointSearch3D,
+                                        TreePointSearch2D, TreePointSearch3D>;
+#else
+using PointSearchVariant = std::variant<GridPointSearch2D, GridPointSearch3D>;
+#endif
 
 } // namespace pcms::omega_h
 #endif // PCMS_BACKENDS_OMEGA_H_POINT_SEARCH_HPP

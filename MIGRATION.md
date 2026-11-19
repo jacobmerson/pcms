@@ -34,6 +34,7 @@ else is internal. Behavior and numerical results do not change.
   | `OMEGA_H_MESHFIELDS` | MeshFields spaces on Omega_h meshes | flag `OMEGA_H`, MeshFields |
   | `CONSERVATIVE_PROJECTION` | conservative and control-variate projections | flag `OMEGA_H_MESHFIELDS`, PETSc |
   | `POLYNOMIAL_RECONSTRUCTION` | polynomial-reconstruction (MLS) spaces on point clouds | KokkosKernels |
+  | `ARBORX` | the ArborX bounding volume hierarchy point search of Omega_h geometries (`OmegaHGeometryOptions::search_method`) | flag `OMEGA_H`, ArborX |
   | `XGC` | the XGC backend | flag `OMEGA_H` |
   | `MFEM` | the MFEM backend | MFEM |
   | `COUPLER` | the coupler | redev, ADIOS2 |

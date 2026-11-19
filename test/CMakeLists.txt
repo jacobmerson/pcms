@@ -474,6 +474,9 @@ if(Catch2_FOUND)
       test_bound_points.cpp
       test_query_points.cpp
       test_geometry.cpp)
+    if(PCMS_ENABLE_ARBORX)
+      list(APPEND PCMS_UNIT_TEST_SOURCES test_tree_point_search.cpp)
+    endif()
   endif()
 
   if(PCMS_ENABLE_OMEGA_H AND PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION)

@@ -28,6 +28,10 @@ target_link_libraries(
 if(PCMS_ENABLE_OMEGA_H)
   target_link_libraries(pcms_localization PRIVATE Omega_h::omega_h)
 endif()
+# the bounding volume hierarchy point search of the Omega_h backend
+if(PCMS_ENABLE_ARBORX)
+  target_link_libraries(pcms_localization PRIVATE ArborX::ArborX)
+endif()
 target_compile_features(pcms_localization PUBLIC cxx_std_20)
 
 set_target_properties(

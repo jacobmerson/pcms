@@ -65,6 +65,8 @@ option(PCMS_ENABLE_CONSERVATIVE_PROJECTION
        "Conservative and control-variate projections (needs OMEGA_H_MESHFIELDS, PETSc)" OFF)
 option(PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION
        "Polynomial-reconstruction spaces on point clouds (needs KokkosKernels)" OFF)
+option(PCMS_ENABLE_ARBORX
+       "ArborX bounding volume hierarchy point search on Omega_h meshes (needs OMEGA_H, ArborX)" OFF)
 option(PCMS_ENABLE_XGC "XGC backend (needs OMEGA_H)" OFF)
 option(PCMS_ENABLE_MFEM "MFEM backend (needs MFEM)" OFF)
 option(PCMS_ENABLE_COUPLER "Coupler (needs redev and ADIOS2)" OFF)
@@ -219,6 +221,14 @@ if(PCMS_ENABLE_OMEGA_H)
     message(FATAL_ERROR "PCMS Python with PCMS_ENABLE_OMEGA_H requires "
                         "Omega_h 11.4 or newer.")
   endif()
+endif()
+if(PCMS_ENABLE_ARBORX)
+  if(NOT PCMS_ENABLE_OMEGA_H)
+    message(FATAL_ERROR "PCMS_ENABLE_ARBORX needs PCMS_ENABLE_OMEGA_H: it is "
+                        "the point search of the Omega_h backend.")
+  endif()
+  pcms_find_package(ARBORX ArborX CONFIG)
+  message(STATUS "Found ArborX: ${ArborX_DIR} (found version ${ArborX_VERSION})")
 endif()
 if(PCMS_ENABLE_OMEGA_H_MESHFIELDS)
   pcms_find_package(OMEGA_H_MESHFIELDS meshfields)

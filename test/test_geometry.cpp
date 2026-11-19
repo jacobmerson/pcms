@@ -1141,3 +1141,38 @@ TEST_CASE("MeshFields evaluates P2 fields through the geometry's bind")
     pcms::test::ExactTol);
 }
 #endif
+
+#ifdef PCMS_ENABLE_ARBORX
+TEST_CASE("A bounding volume hierarchy search binds like the grid search")
+{
+  auto lib = Omega_h::Library{};
+  for (const int dim : {2, 3}) {
+    auto mesh = dim == 2 ? pcms::test::BuildSquareMesh(lib, 8)
+                         : Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1,
+                                              1, 1, 4, 4, 4, false);
+    const auto make = [&](pcms::omega_h::OmegaHSearchMethod method) {
+      return pcms::CreateGeometry(
+        mesh, pcms::csys::CreateCartesian(dim),
+        pcms::omega_h::OmegaHGeometryOptions{.search_method = method});
+    };
+    const auto grid = make(pcms::omega_h::OmegaHSearchMethod::Grid);
+    const auto tree =
+      make(pcms::omega_h::OmegaHSearchMethod::BoundingVolumeHierarchy);
+    const auto pts = RandomPoints(dim, 300, 7);
+    const pcms::OutOfBoundsPolicy fill{pcms::OutOfBoundsMode::FILL, -1.0};
+    CheckSameBind(Summarize(pcms::test::Bind(*tree, pts, fill)),
+                  Summarize(pcms::test::Bind(*grid, pts, fill)));
+  }
+}
+#else
+TEST_CASE("The bounding volume hierarchy search needs ArborX")
+{
+  auto lib = Omega_h::Library{};
+  auto mesh = pcms::test::BuildSquareMesh(lib, 4);
+  REQUIRE_THROWS(pcms::CreateGeometry(
+    mesh, pcms::csys::CreateCartesian(2),
+    pcms::omega_h::OmegaHGeometryOptions{
+      .search_method =
+        pcms::omega_h::OmegaHSearchMethod::BoundingVolumeHierarchy}));
+}
+#endif

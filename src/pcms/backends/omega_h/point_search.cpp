@@ -55,6 +55,102 @@ KOKKOS_INLINE_FUNCTION BarycentricWithScales<Dim> barycentric_with_scales(
   return result;
 }
 
+#ifdef PCMS_ENABLE_ARBORX
+#include <ArborX.hpp>
+#include <ArborX_Triangle.hpp>
+// detail headers of ArborX, to attach the element index to a box (see the
+// migration guide of ArborX)
+#include <detail/ArborX_PairValueIndex.hpp>
+#include <detail/ArborX_AttachIndices.hpp>
+#endif
+
+#ifdef PCMS_ENABLE_ARBORX
+namespace pcms::omega_h::detail
+{
+/// The elements of a simplex mesh as seen by ArborX: the bounding boxes of the
+/// elements widened by `inflation`.
+template <int Dim>
+struct ElementBoxes
+{
+  LO size;
+  Omega_h::LOs elem_verts;
+  Omega_h::Reals coords;
+  Real inflation;
+};
+
+/// The searched points as ArborX predicates carrying the index of the point
+/// in the search (k-th searched point, `misses(k)` when it is not all of them).
+template <int Dim>
+struct SearchedPoints
+{
+  Kokkos::View<const Real* [Dim]> points;
+  Kokkos::View<const LO*> misses;
+  LO size;
+};
+} // namespace pcms::omega_h::detail
+
+template <int Dim>
+struct ArborX::AccessTraits<pcms::omega_h::detail::ElementBoxes<Dim>>
+{
+  using memory_space = Omega_h::ExecSpace::memory_space;
+
+  static KOKKOS_FUNCTION int size(
+    const pcms::omega_h::detail::ElementBoxes<Dim>& mesh)
+  {
+    return mesh.size;
+  }
+
+  static KOKKOS_FUNCTION auto get(
+    const pcms::omega_h::detail::ElementBoxes<Dim>& mesh, int i)
+  {
+    ArborX::Point<Dim, pcms::Real> min;
+    ArborX::Point<Dim, pcms::Real> max;
+    for (int k = 0; k < Dim; ++k) {
+      min[k] = INFINITY;
+      max[k] = -INFINITY;
+    }
+    for (int j = 0; j < Dim + 1; ++j) {
+      const auto vert = mesh.elem_verts[(Dim + 1) * i + j];
+      for (int k = 0; k < Dim; ++k) {
+        const pcms::Real x = mesh.coords[vert * Dim + k];
+        if (min[k] > x)
+          min[k] = x;
+        if (max[k] < x)
+          max[k] = x;
+      }
+    }
+    for (int k = 0; k < Dim; ++k) {
+      min[k] -= mesh.inflation;
+      max[k] += mesh.inflation;
+    }
+    return ArborX::Box(min, max);
+  }
+};
+
+template <int Dim>
+struct ArborX::AccessTraits<pcms::omega_h::detail::SearchedPoints<Dim>>
+{
+  using memory_space = Omega_h::ExecSpace::memory_space;
+
+  static KOKKOS_FUNCTION int size(
+    const pcms::omega_h::detail::SearchedPoints<Dim>& searched)
+  {
+    return searched.size;
+  }
+
+  static KOKKOS_FUNCTION auto get(
+    const pcms::omega_h::detail::SearchedPoints<Dim>& searched, int k)
+  {
+    const int p = searched.misses.extent(0) == 0 ? k : searched.misses(k);
+    ArborX::Point<Dim, pcms::Real> point;
+    for (int d = 0; d < Dim; ++d) {
+      point[d] = searched.points(p, d);
+    }
+    return PredicateWithAttachment(intersects(point), k);
+  }
+};
+#endif
+
 namespace pcms::omega_h
 {
 
@@ -666,8 +762,10 @@ KOKKOS_INLINE_FUNCTION bool classify_in_element(
 }
 
 /**
- * Locates points in a simplex mesh with a uniform grid of candidate simplices.
- * Each candidate of the point's grid cell is classified with
+ * Locates points in a simplex mesh from a list of candidate simplices per
+ * point: row `row_of(k, point)` of `candidate_map` is the list of the k-th
+ * searched point (its grid cell for the grid search, its own row for the
+ * bounding volume hierarchy search). Each candidate is classified with
  * entity_of_simplex using the single tolerance `tau`; the entity of lowest
  * dimension wins, then the lowest id (and, for the same entity, the lowest
  * element, whose coordinates give the reduced ones), so the result does not
@@ -679,11 +777,10 @@ KOKKOS_INLINE_FUNCTION bool classify_in_element(
  * Searches the points `misses(0..num_searched)` and writes their results; all
  * points 0..num_searched if `misses` is empty.
  */
-template <int Dim>
-void grid_search(
-  const Kokkos::View<UniformGrid<Dim>[1]>& grid,
+template <int Dim, typename RowOf>
+void search_candidates(
   const Kokkos::Crs<LO, Kokkos::DefaultExecutionSpace, void, LO>& candidate_map,
-  const Omega_h::LOs& elem_verts, const Omega_h::Reals& coords,
+  RowOf row_of, const Omega_h::LOs& elem_verts, const Omega_h::Reals& coords,
   const Omega_h::Few<Omega_h::Adj, Dim>& down,
   const Omega_h::Few<Omega_h::Adj, Dim>& down_verts, Real tau,
   Kokkos::View<const Real* [Dim]> points, Kokkos::View<const LO*> misses,
@@ -695,13 +792,13 @@ void grid_search(
   const auto num_rows = candidate_map.numRows();
   const bool all = misses.extent(0) == 0;
   pcms::detail::ForEach(
-    "GridPointSearch", num_searched, KOKKOS_LAMBDA(const LO k) {
+    "PointSearch::Candidates", num_searched, KOKKOS_LAMBDA(const LO k) {
       const LO p = all ? k : misses(k);
       Omega_h::Vector<Dim> point;
       for (int i = 0; i < Dim; ++i) {
         point[i] = points(p, i);
       }
-      const auto cell_id = grid(0).ClosestCellID(point);
+      const auto cell_id = row_of(k, point);
       assert(cell_id < num_rows && cell_id >= 0);
       (void)num_rows;
 
@@ -768,26 +865,24 @@ void grid_search(
  * element across one of its facets (the dual graph), takes the result of that
  * element's classification; the others (no guess, or a wrong one, including
  * points outside the mesh) are collected, counted first and listed only when
- * there are some, and searched for with grid_search. Without guesses every
- * point is searched on the grid.
+ * there are some, and searched for among their candidates. Without guesses
+ * every point is searched.
  */
-template <int Dim>
+template <int Dim, typename Fallback>
 void guessed_search(
-  const Kokkos::View<UniformGrid<Dim>[1]>& grid,
-  const Kokkos::Crs<LO, Kokkos::DefaultExecutionSpace, void, LO>& candidate_map,
   const Omega_h::LOs& elem_verts, const Omega_h::Reals& coords,
   const Omega_h::Few<Omega_h::Adj, Dim>& down,
   const Omega_h::Few<Omega_h::Adj, Dim>& down_verts, const Omega_h::Graph& dual,
   Real tau, Kokkos::View<const Real* [Dim]> points,
   Kokkos::View<const LO*> guesses,
-  Kokkos::View<typename PointLocalizationSearch<Dim>::Result*> results)
+  Kokkos::View<typename PointLocalizationSearch<Dim>::Result*> results,
+  const Fallback& search_misses)
 {
   using Result = typename PointLocalizationSearch<Dim>::Result;
   constexpr auto Miss = Result::Dimensionality::NO_INTERSECT;
   const auto n = static_cast<LO>(points.extent(0));
   if (guesses.extent(0) == 0) {
-    grid_search<Dim>(grid, candidate_map, elem_verts, coords, down, down_verts,
-                     tau, points, {}, n, results);
+    search_misses({}, n);
     return;
   }
   const auto offsets = dual.a2ab;
@@ -828,8 +923,7 @@ void guessed_search(
         misses(k++) = i;
       }
     }
-    grid_search<Dim>(grid, candidate_map, elem_verts, coords, down, down_verts,
-                     tau, points, misses, num_misses, results);
+    search_misses(misses, num_misses);
     return;
   }
   LO num_misses = 0;
@@ -855,9 +949,25 @@ void guessed_search(
         ++before;
       }
     });
-  grid_search<Dim>(grid, candidate_map, elem_verts, coords, down, down_verts,
-                   tau, points, misses, num_misses, results);
+  search_misses(misses, num_misses);
 }
+
+/// The candidates of a point on a grid: the elements overlapping its cell.
+template <int Dim>
+struct GridRow
+{
+  Kokkos::View<UniformGrid<Dim>[1]> grid;
+  KOKKOS_INLINE_FUNCTION LO operator()(LO, const Omega_h::Vector<Dim>& p) const
+  {
+    return grid(0).ClosestCellID(p);
+  }
+};
+
+/// The points the candidates of which are the rows of a per-point map.
+struct PointRow
+{
+  KOKKOS_INLINE_FUNCTION LO operator()(LO k, const auto&) const { return k; }
+};
 } // namespace
 
 Kokkos::View<GridPointSearch2D::Result*> GridPointSearch2D::operator()(
@@ -874,8 +984,13 @@ void GridPointSearch2D::operator()(Kokkos::View<const Real* [DIM]> points,
                                    Kokkos::View<const LO*> guesses,
                                    Kokkos::View<Result*> results) const
 {
-  guessed_search<DIM>(grid_, candidate_map_, elem_verts_, coords_, down_,
-                      down_verts_, dual_, tolerance_, points, guesses, results);
+  guessed_search<DIM>(
+    elem_verts_, coords_, down_, down_verts_, dual_, tolerance_, points,
+    guesses, results, [&](Kokkos::View<const LO*> misses, LO num_searched) {
+      search_candidates<DIM>(candidate_map_, GridRow<DIM>{grid_}, elem_verts_,
+                             coords_, down_, down_verts_, tolerance_, points,
+                             misses, num_searched, results);
+    });
 }
 
 GridPointSearch2D::GridPointSearch2D(Omega_h::Mesh& mesh, LO Nx, LO Ny)
@@ -918,8 +1033,13 @@ void GridPointSearch3D::operator()(Kokkos::View<const Real* [DIM]> points,
                                    Kokkos::View<const LO*> guesses,
                                    Kokkos::View<Result*> results) const
 {
-  guessed_search<DIM>(grid_, candidate_map_, elem_verts_, coords_, down_,
-                      down_verts_, dual_, tolerance_, points, guesses, results);
+  guessed_search<DIM>(
+    elem_verts_, coords_, down_, down_verts_, dual_, tolerance_, points,
+    guesses, results, [&](Kokkos::View<const LO*> misses, LO num_searched) {
+      search_candidates<DIM>(candidate_map_, GridRow<DIM>{grid_}, elem_verts_,
+                             coords_, down_, down_verts_, tolerance_, points,
+                             misses, num_searched, results);
+    });
 }
 
 GridPointSearch3D::GridPointSearch3D(Omega_h::Mesh& mesh, LO Nx, LO Ny, LO Nz)
@@ -957,4 +1077,132 @@ GridPointSearch3D::GridPointSearch3D(Omega_h::Mesh& mesh, LO Nx, LO Ny, LO Nz,
   down_verts_[1] = mesh.ask_down(Omega_h::EDGE, Omega_h::VERT);
   down_verts_[2] = mesh.ask_down(Omega_h::FACE, Omega_h::VERT);
 }
+#ifdef PCMS_ENABLE_ARBORX
+namespace
+{
+template <int Dim>
+using Hierarchy =
+  ArborX::BVH<Omega_h::ExecSpace::memory_space,
+              ArborX::PairValueIndex<ArborX::Box<Dim, Real>, unsigned>>;
+
+/// Counts the candidates of each searched point, or writes them at `row_map`.
+template <int Dim>
+struct CandidateCallback
+{
+  Kokkos::View<LO*> counts;
+  Kokkos::View<const LO*> row_map; // empty while counting
+  Kokkos::View<LO*> entries;
+
+  template <typename Predicate, typename Value>
+  KOKKOS_FUNCTION void operator()(const Predicate& predicate,
+                                  const Value& value) const
+  {
+    const int k = ArborX::getData(predicate);
+    const LO at = counts(k)++;
+    if (entries.extent(0) > 0) {
+      entries(row_map(k) + at) = static_cast<LO>(value.index);
+    }
+  }
+};
+} // namespace
+
+template <int dim>
+struct TreePointSearch<dim>::Tree
+{
+  Hierarchy<dim> hierarchy;
+};
+
+template <int dim>
+TreePointSearch<dim>::TreePointSearch(Omega_h::Mesh& mesh, Real tolerance)
+  : PointLocalizationSearch<dim>(tolerance)
+{
+  if (mesh.dim() != dim) {
+    throw std::invalid_argument(
+      "TreePointSearch: the mesh dimension differs from the search's");
+  }
+  coords_ = mesh.coords();
+  elem_verts_ = mesh.ask_elem_verts();
+  dual_ = mesh.ask_dual();
+  if constexpr (dim == 2) {
+    down_[1] = mesh.ask_down(Omega_h::FACE, Omega_h::EDGE);
+  } else {
+    down_[1] = mesh.ask_down(Omega_h::REGION, Omega_h::EDGE);
+    down_[2] = mesh.ask_down(Omega_h::REGION, Omega_h::FACE);
+    down_verts_[2] = mesh.ask_down(Omega_h::FACE, Omega_h::VERT);
+  }
+  down_verts_[1] = mesh.ask_down(Omega_h::EDGE, Omega_h::VERT);
+  Omega_h::ExecSpace space;
+  // the boxes are widened by the tolerance like the grid search widens its
+  // cells, so the same elements are candidates of a point on a shared facet
+  tree_ = std::make_shared<const Tree>(Tree{Hierarchy<dim>(
+    space, ArborX::Experimental::attach_indices(detail::ElementBoxes<dim>{
+             mesh.nelems(), elem_verts_, coords_, tolerance}))});
+}
+
+template <int dim>
+Kokkos::View<typename TreePointSearch<dim>::Result*>
+TreePointSearch<dim>::operator()(Kokkos::View<const Real* [DIM]> points) const
+{
+  Kokkos::View<Result*> results(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "point search result"),
+    points.extent(0));
+  (*this)(points, {}, results);
+  return results;
+}
+
+template <int dim>
+void TreePointSearch<dim>::operator()(Kokkos::View<const Real* [DIM]> points,
+                                      Kokkos::View<const LO*> guesses,
+                                      Kokkos::View<Result*> results) const
+{
+  guessed_search<DIM>(
+    elem_verts_, coords_, down_, down_verts_, dual_, this->tolerance_, points,
+    guesses, results, [&](Kokkos::View<const LO*> misses, LO num_searched) {
+      // the candidates of each searched point, one row per searched point
+      Omega_h::ExecSpace space;
+      const detail::SearchedPoints<DIM> searched{points, misses, num_searched};
+      Kokkos::View<LO*> counts("tree search candidate counts", num_searched);
+      tree_->hierarchy.query(space, searched,
+                             CandidateCallback<DIM>{counts, {}, {}});
+      Kokkos::Crs<LO, Kokkos::DefaultExecutionSpace, void, LO> candidates;
+      candidates.row_map =
+        Kokkos::View<LO*>("tree search candidate rows", num_searched + 1);
+      const auto row_map = candidates.row_map;
+      Kokkos::parallel_scan(
+        "TreePointSearch::Rows", num_searched,
+        KOKKOS_LAMBDA(const LO k, LO& before, const bool final) {
+          if (final) {
+            row_map(k) = before;
+          }
+          before += counts(k);
+          if (final && k == num_searched - 1) {
+            row_map(num_searched) = before;
+          }
+        });
+      LO num_entries = 0;
+      if (num_searched > 0) {
+        Kokkos::deep_copy(
+          num_entries,
+          Kokkos::subview(row_map, static_cast<std::size_t>(num_searched)));
+      }
+      candidates.entries =
+        Kokkos::View<LO*>(Kokkos::view_alloc(Kokkos::WithoutInitializing,
+                                             "tree search candidates"),
+                          num_entries);
+      Kokkos::deep_copy(counts, 0);
+      if (num_entries > 0) {
+        tree_->hierarchy.query(
+          space, searched,
+          CandidateCallback<DIM>{counts, row_map, candidates.entries});
+      }
+      search_candidates<DIM>(candidates, PointRow{}, elem_verts_, coords_,
+                             down_, down_verts_, this->tolerance_, points,
+                             misses, num_searched, results);
+    });
+}
+
+template class TreePointSearch<2>;
+template class TreePointSearch<3>;
+#endif
+
 } // namespace pcms::omega_h

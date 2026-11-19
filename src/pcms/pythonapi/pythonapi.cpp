@@ -83,7 +83,7 @@ PYBIND11_MODULE(pcms, m)
   py::dict features;
   for (const char* name :
        {"omega_h", "omega_h_meshfields", "conservative_projection",
-        "polynomial_reconstruction", "xgc", "mfem", "coupler", "c",
+        "polynomial_reconstruction", "arborx", "xgc", "mfem", "coupler", "c",
         "fortran"}) {
     features[name] = false;
   }
@@ -98,6 +98,9 @@ PYBIND11_MODULE(pcms, m)
 #endif
 #ifdef PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION
   features["polynomial_reconstruction"] = true;
+#endif
+#ifdef PCMS_ENABLE_ARBORX
+  features["arborx"] = true;
 #endif
 #ifdef PCMS_ENABLE_XGC
   features["xgc"] = true;
