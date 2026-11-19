@@ -429,7 +429,9 @@ if(Catch2_FOUND)
       test_bounding_box.cpp
       test_error_handling.cpp
       test_spline_interpolator.cpp
-      test_derivatives.cpp)
+      test_derivatives.cpp
+      test_transient_accelerator.cpp
+      test_transient_timestepper.cpp)
   if(PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION)
     list(APPEND PCMS_UNIT_TEST_SOURCES
          test_polynomial_reconstruction_mls_evaluation.cpp
@@ -514,7 +516,7 @@ if(Catch2_FOUND)
   endif()
 
   target_link_libraries(unit_tests PUBLIC Catch2::Catch2 pcms::pcms
-          pcms::transfer MPI::MPI_CXX)
+          pcms::transfer pcms::transient MPI::MPI_CXX)
   if(PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION)
     # test_svd_serial uses KokkosBatched directly
     target_link_libraries(unit_tests PUBLIC Kokkos::kokkoskernels)
@@ -545,10 +547,6 @@ if(Catch2_FOUND)
 
  include(Catch)
    Catch_discover_tests(unit_tests)
-   add_executable(test_transient_timestepper test_transient_timestepper.cpp)
-   target_link_libraries(test_transient_timestepper
-           PRIVATE Catch2::Catch2WithMain pcms::transient)
-   Catch_discover_tests(test_transient_timestepper)
 else()
   message(WARNING "Catch2 not found. Disabling Unit Tests")
 endif()
