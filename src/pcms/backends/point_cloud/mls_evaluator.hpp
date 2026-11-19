@@ -76,7 +76,8 @@ public:
         detail::FlattenRows(LocatedPointValues(), "mls_target_coords")),
       supports_(std::move(supports)),
       site_dim_(site_dim),
-      options_(options)
+      options_(options),
+      metric_(MakeAxisMetric(*GetGeometry()->GetCoordinateSystem()))
   {
     SetFoundFromSupports();
   }
@@ -95,6 +96,9 @@ public:
   {
     return target_coords_;
   }
+
+  /// @return the periods and scales of the axes of the sites
+  [[nodiscard]] const AxisMetric& Metric() const noexcept { return metric_; }
 
   /// @return MLS supports of the query points
   [[nodiscard]] const SupportResults& Supports() const noexcept
@@ -129,6 +133,7 @@ private:
   SupportResults supports_;
   int site_dim_;
   NeighbourhoodOptions options_;
+  AxisMetric metric_;
 };
 
 /// @brief Evaluates a scalar point-cloud field at the bound points by MLS.
@@ -181,7 +186,7 @@ public:
       source_values, binding_->SourceCoordinates(),
       binding_->TargetCoordinates(), binding_->Supports(), dim_,
       static_cast<LO>(options_.degree), options_.basis, options_.lambda,
-      options_.tol, options_.decay_factor);
+      options_.tol, options_.decay_factor, binding_->Metric());
 
     const int n_targets = static_cast<int>(result.size());
     Kokkos::parallel_for(

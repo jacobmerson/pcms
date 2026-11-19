@@ -110,7 +110,8 @@ public:
       pcms::detail::FlattenRows(sites, "src_coords"),
       pcms::detail::FlattenRows(coords.GetValues(), "tgt_coords"),
       static_cast<int>(sites.extent(1)), options.radius, options.min_supports,
-      options.adapt_radius);
+      options.adapt_radius, 100,
+      pcms::detail::MakeAxisMetric(*GetCoordinateSystem()));
   }
 
 protected:

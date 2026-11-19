@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Point clouds and `CreatePolynomialReconstructionSpace` work for coordinates of dimension up to 6
+  (phase space). New `csys::CreateEuclidean(dim)` (1..6, identity metric, not Cartesian) in
+  `pcms/utility/coordinate_systems/euclidean.hpp`; `pcms.csys.create_euclidean(dim)` in Python.
+
 ## 0.4.0
 
 A one-time breaking reorganization so that downstream codes migrate once.

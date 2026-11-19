@@ -3,6 +3,7 @@
 
 #include "pcms/field/mls_options.hpp"
 #include "pcms/geometry/supports.hpp"
+#include "pcms/localization/mls_support_helpers.hpp"
 #include "pcms/utility/memory_spaces.hpp"
 #include "pcms/utility/types.hpp"
 
@@ -65,7 +66,8 @@ Kokkos::View<Real*, DeviceMemorySpace> mls_interpolation(
   Kokkos::View<const Real*, DeviceMemorySpace> source_coordinates,
   Kokkos::View<const Real*, DeviceMemorySpace> target_coordinates,
   const SupportResults& support, LO dim, LO degree, RadialBasisFunction bf,
-  double lambda = 0, double tol = 1e-6, double decay_factor = 5.0);
+  double lambda = 0, double tol = 1e-6, double decay_factor = 5.0,
+  const AxisMetric& metric = {});
 
 } // namespace pcms::detail
 #endif // PCMS_FIELD_EVALUATOR_MLS_INTERPOLATION_HPP

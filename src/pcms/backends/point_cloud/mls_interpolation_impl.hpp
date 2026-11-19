@@ -399,7 +399,7 @@ void mls_interpolation(RealConstDefaultRank1View source_values,
                        const SupportResults& support, const LO& dim,
                        const LO& degree, Func rbf_func,
                        RealDefaultRank1View approx_target_values, double lambda,
-                       double tol)
+                       double tol, const pcms::detail::AxisMetric& metric = {})
 {
   PCMS_FUNCTION_TIMER;
   static_assert(std::is_invocable_r_v<double, Func, double, double>,
@@ -505,14 +505,15 @@ void mls_interpolation(RealConstDefaultRank1View source_values,
         count++;
         auto index = support.supports_idx[j];
         for (int i = 0; i < dim; ++i) {
-          local_source_points(count, i) = source_coordinates[index * dim + i];
+          // the support relative to the target, at its periodic image nearest
+          // the target and in scaled units; the target is then the origin
+          local_source_points(count, i) =
+            metric.Offset(target_coordinates[league_rank * dim + i],
+                          source_coordinates[index * dim + i], i);
         }
       }
 
       double target_point[MAX_DIM] = {};
-      for (int i = 0; i < dim; ++i) {
-        target_point[i] = target_coordinates[league_rank * dim + i];
-      }
 
       /** phi(nsupports) is the array of rbf functions evaluated at the
        * source supports In the actual implementation, Phi(nsupports,
@@ -619,7 +620,7 @@ Kokkos::View<Real*, DeviceMemorySpace> mls_interpolation(
   Kokkos::View<const Real*, DeviceMemorySpace> source_coordinates,
   Kokkos::View<const Real*, DeviceMemorySpace> target_coordinates,
   const SupportResults& support, LO dim, LO degree, Func rbf_func,
-  double lambda, double tol)
+  double lambda, double tol, const pcms::detail::AxisMetric& metric = {})
 {
   const auto ntargets = static_cast<LO>(target_coordinates.size()) / dim;
 
@@ -639,7 +640,8 @@ Kokkos::View<Real*, DeviceMemorySpace> mls_interpolation(
 
   mls_interpolation(source_values_array_view, source_coordinates_array_view,
                     target_coordinates_array_view, support, dim, degree,
-                    rbf_func, interpolated_values_array_view, lambda, tol);
+                    rbf_func, interpolated_values_array_view, lambda, tol,
+                    metric);
 
   return interpolated_values;
 }
