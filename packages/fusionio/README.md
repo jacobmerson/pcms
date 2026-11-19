@@ -72,3 +72,49 @@ accepted ones at the slots of a deterministic exclusive scan, clipping the last
 round at `samples`. The overload with a `MarkerSink` hands each round's markers
 to the caller instead (`gnet2gtc --stream` writes them to the file), so memory
 does not grow with `samples`.
+
+## GNET
+
+With `FUSIONIO_ENABLE_GNET`, `include/fusionio/gnet.hpp`:
+
+- `OpenGnet(path, options)` reads a GNET HDF5 file (the layout of
+  `distribution5D` of the GNET output: `dimensions/{mxrho, mxzeta, mxenergy,
+  mxpitch}`, `range/{engmax_eV, zetamax_rad}`, `data/f5d` of (cell, energy,
+  pitch) and `data/volume3d` of (cell)) and returns the number density
+  `f5d / volume3d` of the bin centres as a function of (rho, theta, zeta,
+  energy, pitch): polynomial reconstruction (`degree` 1, `lambda` 1e-4, no
+  weights, as GNET's tool) on a point cloud in the parameter system
+  `"gnet_phase"`, whose supports are GNET's analytic bin search (the bins
+  below and above the point in each coordinate, `floor(basis size^(1/5)) +
+  1` of each; theta and zeta bins wrap).
+- `GnetOptions::periodic` (default on) declares theta (2 pi) and zeta (the
+  file's `zetamax_rad`) periodic, so the supports across a seam are fit at
+  their images nearest the point. Off, they are fit at their raw coordinates,
+  as the original tool does; the two differ only for points whose supports
+  wrap a bin: above the centre of the last poloidal bin of the radial bins
+  around the point and of the last toroidal bin.
+- `GTCDomain()` is GTC's box (rho [0, 1] drawn as `sqrt`, theta [0, 2 pi],
+  zeta [0, 2 pi / 5], energy [2000, 200000] eV, pitch [-1, 1]) and
+  `GTCMarkerWriter` / `WriteGTCMarkers` write `/gtc_n6d` (N x 6).
+
+`gnet2gtc` (built with the component) maps a file to GTC markers:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--input <file>` | required | GNET HDF5 file |
+| `--output <file>` | required | GTC output HDF5 file (overwritten) |
+| `--samples <n>` | 30000000 | number of GTC markers (max 400000000) |
+| `--batch <n>` | 1000000 | candidate points per sampling round |
+| `--seed <n>` | 14000 | random seed |
+| `--degree <n>` | 1 | polynomial degree |
+| `--lambda <x>` | 1e-4 | regularization |
+| `--threshold-scale <x>` | 1e10 | threshold = scale / max(`volume3d`) |
+| `--no-periodic` | | fit theta and zeta at their raw coordinates |
+| `--stream` | | write each round's markers as accepted |
+| `--help` | | show the options |
+
+Differences from the original tool (`tools/gnet` of PCMS's `gnet-gtc-coupling`
+branch): the candidates are a function of (seed, candidate index), not of a
+Kokkos random pool, so the markers differ from the original's for the same
+seed but do not depend on the number of threads; the markers are in the order
+of the candidates; periodic theta and zeta by default.
