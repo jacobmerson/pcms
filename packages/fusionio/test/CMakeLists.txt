@@ -41,6 +41,7 @@ if(FUSIONIO_ENABLE_GNET)
                              ${CMAKE_CURRENT_SOURCE_DIR})
   add_executable(make_synthetic_gnet make_synthetic_gnet.cpp)
   target_link_libraries(make_synthetic_gnet PRIVATE gnet_synthetic)
+  list(APPEND FUSIONIO_TEST_SOURCES test_gnet_reader.cpp)
 endif()
 
 if(FUSIONIO_TEST_SOURCES)

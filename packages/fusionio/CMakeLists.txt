@@ -121,6 +121,10 @@ if(FUSIONIO_ENABLE_NIMROD)
 else()
   target_sources(fusionio PRIVATE src/nimrod_unavailable.cpp)
 endif()
+if(FUSIONIO_ENABLE_GNET)
+  target_sources(fusionio PRIVATE src/gnet_reader.cpp)
+  target_link_libraries(fusionio PRIVATE HDF5::HDF5)
+endif()
 
 install(TARGETS fusionio EXPORT fusionio2-targets)
 install(FILES ${FUSIONIO_HEADERS}
