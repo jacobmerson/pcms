@@ -4,17 +4,6 @@ PCMS 0.4 reorganizes the library so that downstream codes migrate once: the
 public API is now a small set of interfaces and factory functions, everything
 else is internal. Behavior and numerical results do not change.
 
-Most of the mechanical work is done by `tools/migrate-pcms.sh`:
-
-```sh
-tools/migrate-pcms.sh --dry-run path/to/your/code   # show what would change
-tools/migrate-pcms.sh path/to/your/code             # apply it
-```
-
-It rewrites includes, renamed names, macros, CMake options and targets, and
-Python code, and lists every place that needs a manual change (with the
-replacement). The rest of this document explains those changes.
-
 ## Building and linking
 
 - **Requirements:** CMake 3.23 or newer.
@@ -67,8 +56,7 @@ replacement). The rest of this document explains those changes.
 - Installed headers below a `detail/` folder (`pcms/<library>/detail/`,
   `pcms/backends/<name>/detail/`) and the names in `detail` namespaces are not
   API: they may change in any release.
-- `tools/reorg/header-map.txt` lists every old path and its replacement;
-  headers marked "private" are no longer installed and their classes must be
+- Headers that are no longer installed are private; their classes must be
   replaced by the public API below.
 - Core public headers no longer include Omega_h, MFEM, MeshFields, PETSc,
   ADIOS2 or MPI. Code that got Omega_h or MPI declarations through a PCMS
@@ -225,7 +213,6 @@ for reconstruction spaces) and `Geometry::Neighbourhood`.
   `pcms::localization`, `pcms::field`, `pcms::transfer`, `pcms::coupler`)
   or in its backend's namespace. Installed code that is not API is in
   `pcms::detail` (or `pcms::<backend>::detail`), in headers below `detail/`.
-  `tools/reorg/symbol-map.txt` lists every name that moved.
 - MFEM's namespace `mfem` collides with `pcms::mfem`: inside `namespace pcms`,
   or after `using namespace pcms;`, write MFEM's as `::mfem::`.
 - The MFEM and XGC backends support send and receive only so far (field
@@ -284,95 +271,9 @@ The MLSOptions fields `radius`, `min_req_supports` and `adapt_radius` are
 `pcms.NeighbourhoodOptions` fields (`radius`, `min_supports`,
 `adapt_radius`) of the point-cloud geometry.
 
-`tools/reorg/python_api_names.py` (run by `migrate-pcms.sh`) rewrites these
-calls; it reports the MLSOptions fields that moved.
+## Porting code that used internals
 
-## Porting open pull requests
-
-A pull request written against 0.3 is ported by merging the reorganization in
-two parts, before and after its namespace commit ("refactor: move internal
-code into the sub-library and backend namespaces", `$N` below), and applying
-that commit's spec to the merged tree in between, so that the pull request's
-code moves to the new namespaces with the rest. This needs a pull request
-that builds (in the Full configuration); for one that does not, see the end
-of this section.
-
-`<develop>` is the reorganized develop. The first part does not contain
-`tools/migrate-pcms.sh` yet, so use it from a separate checkout:
-
-```sh
-git worktree add ../pcms-0.4 <develop>
-N=$(git log --format=%H -1 --grep='move internal code into the sub-library and backend namespaces' <develop>)
-```
-
-1. Bring the branch up to date with the last `develop` commit before the
-   reorganization (the parent of the first reorganization commit, "build:
-   require CMake 3.23") and resolve those conflicts as usual.
-2. Merge the reorganization up to the namespace commit. In conflicting C++,
-   Python and Markdown files keep the branch's side of each conflicting hunk;
-   git applies the branch's edits to renamed and moved files:
-
-   ```sh
-   git merge -X find-renames $N~1
-   for f in $(git diff --name-only --diff-filter=U -- '*.cpp' '*.hpp' '*.h' '*.py' '*.md'); do
-     # only files changed on both sides; a file one side deleted or moved
-     # (modify/delete) is left for the by-hand step
-     [ "$(git ls-files -u -- "$f" | wc -l)" -eq 3 ] || continue
-     git show :2:$f > $f.ours; git show :1:$f > $f.base; git show :3:$f > $f.theirs
-     git merge-file --ours $f.ours $f.base $f.theirs && mv $f.ours $f && rm $f.base $f.theirs && git add $f
-   done
-   ```
-
-   Resolve the remaining conflicts by hand (CMake lists and modify/delete
-   conflicts, see below). Then review what the branch changes relative to the
-   reorganization, `git diff $N~1 -- <the branch's files>`: a kept hunk that
-   only edited code the reorganization removed or replaced brings that code
-   back (for example, comment edits on `OverlapMask`'s Omega_h constructors,
-   which became `pcms::omega_h::OverlapMaskFromArray`); take the
-   reorganization's side there. Commit the merge. Do not use
-   `git merge -X ours` for the whole merge: in CMake files it silently drops
-   the reorganization's changes.
-3. Migrate includes, macros, CMake options and Python in the branch's files,
-   but not C++ names (step 4 moves those), and make it build:
-
-   ```sh
-   ../pcms-0.4/tools/migrate-pcms.sh --in-tree --no-names $(git diff --name-only --diff-filter=d HEAD^2)
-   ```
-
-   Commit.
-4. Apply the namespace spec (`tools/reorg/refactor/README.md` lists what the
-   tool needs). A new file in a sub-library or backend directory that should
-   move with it is added to `tools/reorg/refactor/namespaces.spec` first.
-
-   ```sh
-   tools/reorg/refactor/build.sh <bindir>
-   cmake -S . -B <build> -DCMAKE_EXPORT_COMPILE_COMMANDS=ON <every PCMS_ENABLE_* option ON> ...
-   PCMS_REFACTOR=<bindir>/pcms-refactor \
-     tools/reorg/refactor/move_namespaces.sh . <build> tools/reorg/refactor/namespaces.spec
-   clang-format -i $(git diff --name-only -- '*.cpp' '*.hpp' '*.h')   # clang-format 18.1.3
-   ```
-
-   Commit. Outside the branch's files the tree is now the namespace commit's
-   (`git diff --name-only $N` lists only the branch's files).
-5. Record the namespace commit as merged and merge the rest, keeping the
-   branch's side of conflicting hunks as in step 2; then migrate the
-   remaining names and format the branch's files:
-
-   ```sh
-   git merge -s ours $N
-   git merge <develop>
-   # the second namespace commit flattened pcms::backend::<name> to
-   # pcms::<name>; move the branch's code with it
-   sed -i -E 's/pcms::backend::/pcms::/g; s/\bbackend::(omega_h|mfem|xgc|omega_h_meshfields|uniform_grid|point_cloud)::/\1::/g; s/namespace backend::/namespace /' \
-     $(git diff --name-only --diff-filter=d HEAD^2 | grep -E '\.(cpp|hpp|h)$')
-   tools/migrate-pcms.sh --in-tree $(git diff --name-only --diff-filter=d HEAD^2)
-   clang-format -i $(git diff --name-only --diff-filter=d HEAD^2 | grep -E '\.(cpp|hpp|h)$')
-   ```
-
-   `--in-tree` rewrites private headers and internal names to their new
-   locations instead of reporting them.
-
-What is left by hand:
+Notes for code written against 0.3 internals, such as open pull requests:
 
 - CMake source lists: keep the reorganization's list and add the branch's
   new files.
@@ -394,10 +295,7 @@ What is left by hand:
   `FieldData`, `DOFAccess`, `FieldFactory`, `CreateEmptyLayout`, the
   `FunctionSpace` constructor). The concrete helpers moved to `pcms::detail`
   (`SimpleFieldData`, `PointCloudLayout`, the backends' BoundPoints and
-  evaluators, the coupler's communicators and planners, the MLS helpers); the
-  symbol map lists the 0.3 names as `cpp-private`.
-- Uses of APIs that changed shape: `migrate-pcms.sh` reports them (the
-  `manual` entries of `tools/reorg/symbol-map.txt`).
+  evaluators, the coupler's communicators and planners, the MLS helpers).
 - Code that calls the point search directly (pull requests #345, #416 and
   #417): the search `Result` now reports the entity the point lies on
   (`dimensionality`, `entity`; `OutsideId`/`IsOutside` for a point outside;
@@ -416,12 +314,6 @@ the search is now private, in `src/pcms/backends/omega_h/point_search.hpp`)
   `OwnerHints`, to bind them without a search. `intersectTargets` takes the
   source `OmegaHGeometry`.
 
-A pull request that does not build before the reorganization is merged in one
-step instead: step 2 with `<develop>` in place of `$N~1`, then step 5 without
-the two merges. `migrate-pcms.sh --in-tree` then writes the moved names in
-full (`pcms::localization::GridPointSearch2D`) where the tool would have
-written them as briefly as lookup allows. The backend-namespace sed of step 5
-is also needed then.
 
 ## C and Fortran APIs
 
