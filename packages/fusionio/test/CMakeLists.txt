@@ -47,7 +47,7 @@ if(FUSIONIO_ENABLE_GNET)
   add_executable(make_synthetic_gnet make_synthetic_gnet.cpp)
   target_link_libraries(make_synthetic_gnet PRIVATE gnet_synthetic)
   list(APPEND FUSIONIO_TEST_SOURCES test_gnet_reader.cpp
-       test_gnet_sampling.cpp)
+       test_gnet_sampling.cpp test_gnet_reference.cpp)
 endif()
 
 if(FUSIONIO_TEST_SOURCES)
