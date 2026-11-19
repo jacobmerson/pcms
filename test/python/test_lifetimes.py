@@ -20,8 +20,9 @@ def _mesh(world, n=8):
         world, omega_h.Family.SIMPLEX, 1.0, 1.0, 0.0, n, n, 0, False)
 
 
-def _p1(mesh):
-    return pcms.create_lagrange_space(pcms.omega_h.create_geometry(mesh), 1, 1)
+def _p1(mesh, **options):
+    return pcms.create_lagrange_space(pcms.omega_h.create_geometry(mesh), 1, 1,
+                                      **options)
 
 
 def _grid_space():
@@ -109,8 +110,9 @@ def test_interpolator_with_bound_outlives_its_inputs(world):
 def test_conservative_projection_outlives_its_spaces(world):
     source_mesh = _mesh(world, 6)
     target_mesh = _mesh(world, 5)
-    source = _p1(source_mesh)
-    target = _p1(target_mesh)
+    # the projections need Omega_h layouts, not the MeshFields default
+    source = _p1(source_mesh, backend=pcms.LagrangeBackend.OmegaH)
+    target = _p1(target_mesh, backend=pcms.LagrangeBackend.OmegaH)
     f = _linear_function(source)
     out = target.create_function()
     op = pcms.create_conservative_projection(source, target)
@@ -125,8 +127,9 @@ def test_conservative_projection_outlives_its_spaces(world):
 def test_control_variate_projection_outlives_its_inputs(world):
     source_mesh = _mesh(world, 6)
     target_mesh = _mesh(world, 5)
-    source = _p1(source_mesh)
-    target = _p1(target_mesh)
+    # the projections need Omega_h layouts, not the MeshFields default
+    source = _p1(source_mesh, backend=pcms.LagrangeBackend.OmegaH)
+    target = _p1(target_mesh, backend=pcms.LagrangeBackend.OmegaH)
     f = _linear_function(source)
     out = target.create_function()
     op = pcms.create_control_variate_projection(source, target, 4)
