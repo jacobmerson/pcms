@@ -157,6 +157,12 @@ if(FUSIONIO_BUILD_TOOLS AND FUSIONIO_ENABLE_WRAPPED)
   install(TARGETS fio_trace)
 endif()
 
+if(FUSIONIO_BUILD_TOOLS AND FUSIONIO_ENABLE_GNET)
+  add_executable(gnet2gtc tools/gnet/gnet2gtc.cpp)
+  target_link_libraries(gnet2gtc PRIVATE fusionio)
+  install(TARGETS gnet2gtc)
+endif()
+
 include(CTest)
 if(BUILD_TESTING)
   add_subdirectory(test)
