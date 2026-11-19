@@ -426,7 +426,6 @@ if(Catch2_FOUND)
   # uniform grids
   set(PCMS_UNIT_TEST_SOURCES
       unit_test_main.cpp
-      test_bounding_box.cpp
       test_error_handling.cpp
       test_spline_interpolator.cpp
       test_derivatives.cpp)
@@ -459,6 +458,8 @@ if(Catch2_FOUND)
       test_coordinate_transformation.cpp
             test_eqdsk.cpp
       test_uniform_grid.cpp
+      test_bounding_box.cpp
+      test_shapes.cpp
       test_field_evaluation.cpp
       test_field_interpolation.cpp
       test_field_copy.cpp

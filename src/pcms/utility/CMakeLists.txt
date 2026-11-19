@@ -11,7 +11,6 @@ set(
         ../../../include/pcms/utility/detail/array_traits.hpp
         ../../../include/pcms/utility/detail/arrays.hpp
         ../../../include/pcms/utility/detail/assert.hpp
-        ../../../include/pcms/utility/detail/bounding_box.hpp
         ../../../include/pcms/utility/detail/coordinate_system.hpp
         ../../../include/pcms/utility/detail/memory_spaces.hpp
         ../../../include/pcms/utility/detail/print.hpp

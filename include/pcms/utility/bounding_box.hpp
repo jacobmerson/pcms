@@ -17,6 +17,4 @@ struct AABBox
 
 } // namespace pcms
 
-#include "pcms/utility/detail/bounding_box.hpp"
-
 #endif // PCMS_UTILITY_BOUNDING_BOX_HPP

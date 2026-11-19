@@ -1685,3 +1685,77 @@ TEST_CASE("uniform grid search reports the cell and the position in it",
   REQUIRE(outside.parametric[0] == Catch::Approx(-1.0));
   REQUIRE(outside.parametric[1] == Catch::Approx(0.5));
 }
+
+// Baseline for the reused local search: on a mesh with no ghost layer every
+// element is owned and every element centroid must localize to its own
+// element. The distributed search treats a local answer as authoritative only
+// when this holds, so it is the contract the distributed layer builds on.
+TEST_CASE("ghost-free search localizes every element centroid")
+{
+  using pcms::GridPointSearch2D;
+  auto lib = Omega_h::Library{};
+  auto world = lib.world();
+  auto mesh =
+    Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 4, 4, 0, false);
+  REQUIRE(mesh.nghost_layers() == 0);
+
+  const auto n_elems = mesh.nelems();
+  const auto owned = Omega_h::HostRead<Omega_h::I8>(mesh.owned(2));
+  REQUIRE(static_cast<Omega_h::LO>(owned.size()) == n_elems);
+  for (Omega_h::LO i = 0; i < n_elems; ++i) {
+    REQUIRE(owned[i] != 0);
+  }
+
+  const auto n = pcms::detail::DivisionsPerAxisForMesh<2>(mesh.nelems());
+  GridPointSearch2D search{mesh, n, n};
+  const auto centroids = Omega_h::HostRead<Omega_h::Real>(
+    pcms::utility::get_entity_centroids(mesh, 2));
+  Kokkos::View<pcms::Real* [2]> points("query points", n_elems);
+  auto points_h = Kokkos::create_mirror_view(points);
+  for (Omega_h::LO i = 0; i < n_elems; ++i) {
+    points_h(i, 0) = centroids[i * 2 + 0];
+    points_h(i, 1) = centroids[i * 2 + 1];
+  }
+  Kokkos::deep_copy(points, points_h);
+
+  // The search reports the entity a point lies on; lift it to an element.
+  const auto owners_h = LiftOnHost<2>(mesh, search(points)).first;
+  for (Omega_h::LO i = 0; i < n_elems; ++i) {
+    REQUIRE(owners_h(i) == i);
+  }
+}
+
+// The 3D search takes a division count per axis. Unequal counts must locate
+// points exactly as equal counts do: elements are binned by each cell's box,
+// so a cell box computed for the wrong axis would drop candidates silently.
+TEST_CASE("3D point search with unequal divisions per axis",
+          "[point_search][3d]")
+{
+  using pcms::GridPointSearch3D;
+  auto lib = Omega_h::Library{};
+  auto world = lib.world();
+  auto mesh =
+    Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 4, 4, 4, false);
+  GridPointSearch3D search{mesh, 3, 5, 7};
+
+  const auto n_elems = mesh.nelems();
+  const auto centroids = Omega_h::HostRead<Omega_h::Real>(
+    pcms::utility::get_entity_centroids(mesh, 3));
+  Kokkos::View<pcms::Real* [3]> points("query points", n_elems);
+  auto points_h = Kokkos::create_mirror_view(points);
+  for (Omega_h::LO i = 0; i < n_elems; ++i) {
+    for (int d = 0; d < 3; ++d) {
+      points_h(i, d) = centroids[i * 3 + d];
+    }
+  }
+  Kokkos::deep_copy(points, points_h);
+
+  // The search reports the entity a point lies on; lift it to an element.
+  const auto owners_h = LiftOnHost<3>(mesh, search(points)).first;
+  Omega_h::LO n_wrong = 0;
+  for (Omega_h::LO i = 0; i < n_elems; ++i) {
+    n_wrong += owners_h(i) != i;
+  }
+  CAPTURE(n_wrong, n_elems);
+  REQUIRE(n_wrong == 0);
+}
