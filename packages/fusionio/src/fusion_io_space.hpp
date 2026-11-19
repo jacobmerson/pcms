@@ -2,7 +2,7 @@
 #define FUSIONIO_SRC_FUSION_IO_SPACE_HPP
 
 #include "fusionio/fusionio.hpp"
-#include "pcms/field/function_space.h"
+#include "pcms/field/function_space.hpp"
 #include "pcms/geometry/geometry.hpp"
 #include <memory>
 #include <string>
@@ -21,8 +21,8 @@ std::shared_ptr<FusionIOSource> OpenFusionIOSource(Format format,
 
 /// The geometry of an open Fusion-IO 1.x file: (R, phi, Z) points, which is
 /// CylindricalRThetaZ (Fusion-IO's (R, phi, Z) is right-handed, so phi is
-/// theta), no discretization PCMS can see, and the file's own point location
-/// as the search. Every quantity of the file shares its domain, so one
+/// theta), no entities PCMS can see, and the file's own point location as the
+/// search. Every quantity of the file shares its domain, so one
 /// binding serves them all.
 ///
 /// Location at bind (and again on Geometry::Rebind): M3D-C1 sources search
@@ -31,17 +31,11 @@ std::shared_ptr<FusionIOSource> OpenFusionIOSource(Format format,
 /// throws at bind for points outside; other formats evaluate the domain
 /// probe under OutOfBoundsMode::FILL only, and under ERROR evaluation reports
 /// the points outside. OutOfBoundsMode::NEAREST_BOUNDARY is not supported.
-/// KnownOwners are ignored: the file's mesh is not a PCMS discretization.
+/// OwnerHints are ignored: the file's mesh is not a PCMS geometry's.
 class FusionIOGeometry final : public pcms::Geometry
 {
 public:
   explicit FusionIOGeometry(std::shared_ptr<FusionIOSource> source);
-
-  [[nodiscard]] std::shared_ptr<const pcms::Discretization> GetDiscretization()
-    const noexcept override
-  {
-    return discretization_;
-  }
 
   [[nodiscard]] const std::shared_ptr<const pcms::CoordinateSystem>&
   GetCoordinateSystem() const noexcept override
@@ -56,12 +50,11 @@ public:
   }
 
 protected:
-  [[nodiscard]] std::shared_ptr<pcms::BoundSource> BindImpl(
+  [[nodiscard]] std::shared_ptr<pcms::BoundPoints> BindImpl(
     const pcms::BindRequest& request) const override;
 
 private:
   std::shared_ptr<FusionIOSource> source_;
-  std::shared_ptr<const pcms::Discretization> discretization_;
   std::shared_ptr<const pcms::CoordinateSystem> system_;
 };
 
@@ -73,7 +66,7 @@ private:
 /// d/dZ). PCMS holds none of the values: its functions are created by
 /// Source::CreateFunction and can be evaluated and used as transfer sources,
 /// but not read or written.
-std::shared_ptr<pcms::FunctionSpace> CreateFusionIOSpace(
+std::shared_ptr<const pcms::FunctionSpace> CreateFusionIOSpace(
   std::shared_ptr<const FusionIOGeometry> geometry, int num_components,
   bool derivatives);
 

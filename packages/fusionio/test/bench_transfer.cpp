@@ -1,6 +1,6 @@
 // Benchmarks of field transfer from an M3D-C1 source: Fusion-IO 1.x called
 // point by point; fusionio's bind, locate (QueryPoints) and evaluate, wrapping
-// Fusion-IO 1.x and natively; and a PCMS Interpolator onto a mesh. Hidden
+// Fusion-IO 1.x and natively; and a PCMS Interpolator onto a grid. Hidden
 // behind the [!benchmark] tag, so ctest does not run them; run them with
 //   OMP_NUM_THREADS=1 fusionio_tests "[!benchmark]" --benchmark-samples 10
 // (Fusion-IO 1.x is not thread safe; the native rows use the threads). Every
@@ -11,15 +11,12 @@
 #include <catch2/catch_test_macros.hpp>
 #include <fusionio/fusionio.hpp>
 #include <Kokkos_Core.hpp>
-#include <Omega_h_build.hpp>
-#include <Omega_h_library.hpp>
-#include <Omega_h_mesh.hpp>
+#include <pcms/backends/uniform_grid/geometry.hpp>
 #include <pcms/field/coordinate_map.hpp>
-#include <pcms/field/coordinate_systems/cylindrical.hpp>
-#include <pcms/field/evaluator/omega_h_geometry.hpp>
-#include <pcms/field/function_space/lagrange.h>
+#include <pcms/field/function_spaces.hpp>
 #include <pcms/field/query_points.hpp>
-#include <pcms/transfer/interpolator.h>
+#include <pcms/transfer/interpolator.hpp>
+#include <pcms/utility/coordinate_systems/cylindrical.hpp>
 #include "fusion_io_source.hpp"
 #include "test_utils.hpp"
 #include <limits>
@@ -125,21 +122,6 @@ void BenchmarkFio(
   };
 }
 
-/// The rectangle as an Omega_h triangle mesh with Divisions x Divisions
-/// squares; its vertices are the grid points.
-Omega_h::Mesh RectangleMesh(Omega_h::Library& lib)
-{
-  auto mesh = Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, R1 - R0, Z1 - Z0,
-                                 0, Divisions, Divisions, 0, false);
-  const Omega_h::HostRead<Omega_h::Real> unit(mesh.coords());
-  Omega_h::HostWrite<Omega_h::Real> moved(unit.size());
-  for (int i = 0; i < unit.size(); ++i) {
-    moved[i] = unit[i] + (i % 2 == 0 ? R0 : Z0);
-  }
-  mesh.set_coords(Omega_h::Reals(moved.write()));
-  return mesh;
-}
-
 } // namespace
 
 TEST_CASE("Transfer benchmarks: M3D-C1 poloidal flux and magnetic field",
@@ -148,27 +130,37 @@ TEST_CASE("Transfer benchmarks: M3D-C1 poloidal flux and magnetic field",
   const auto points = GridPoints();
   BenchmarkFusionIO("psi", FIO_POLOIDAL_FLUX, points);
   BenchmarkFio("psi", fusionio::Quantity::PoloidalFlux, points);
+#ifdef FUSIONIO_ENABLE_NATIVE
   BenchmarkFio("psi", fusionio::Quantity::PoloidalFlux, points,
                fusionio::Evaluation::Native);
+#endif
   BenchmarkFusionIO("B", FIO_MAGNETIC_FIELD, points);
   BenchmarkFio("B", fusionio::Quantity::MagneticField, points);
+#ifdef FUSIONIO_ENABLE_NATIVE
   BenchmarkFio("B", fusionio::Quantity::MagneticField, points,
                fusionio::Evaluation::Native);
+#endif
 }
 
-TEST_CASE("Transfer benchmarks: M3D-C1 poloidal flux onto a P1 mesh",
+TEST_CASE("Transfer benchmarks: M3D-C1 poloidal flux onto a P1 grid",
           "[!benchmark]")
 {
-  auto lib = Omega_h::Library{};
-  auto mesh = RectangleMesh(lib);
+  // The rectangle as a uniform grid of Divisions x Divisions cells; its
+  // vertices are the grid points.
+  pcms::UniformGrid<2> grid;
+  grid.bot_left = {R0, Z0};
+  grid.edge_length = {R1 - R0, Z1 - Z0};
+  grid.divisions = {Divisions, Divisions};
   const auto source = fusionio::Open(fusionio::Format::M3DC1, M3DC1File);
   const auto psi = source->CreateFunction(fusionio::Quantity::PoloidalFlux);
-  // The mesh is the poloidal plane phi = 0 of the source's (R, phi, Z): the
+  // The grid is the poloidal plane phi = 0 of the source's (R, phi, Z): the
   // map of the bind places its points there.
-  auto target = pcms::CreateLagrangeSpace(
-    pcms::CreateOmegaHGeometry(mesh, pcms::csys::CylindricalRZ::Create()), 1, 1,
-    {.backend = pcms::LagrangeBackend::OmegaH});
-  const auto on_plane = std::make_shared<pcms::PoloidalPlaneEmbedding>(0.0);
+  const auto target = pcms::CreateLagrangeSpace(
+    pcms::uniform_grid::CreateGeometry(grid, pcms::csys::CreateCylindricalRZ()),
+    1, 1);
+  const auto on_plane = pcms::CreateCoordinateEmbedding(
+    pcms::csys::CreateCylindricalRZ(), pcms::csys::CreateCylindricalRThetaZ(),
+    1, 0.0);
   const pcms::OutOfBoundsPolicy fill{pcms::OutOfBoundsMode::FILL,
                                      std::numeric_limits<Real>::quiet_NaN()};
   const auto bind = [&]() {
@@ -179,13 +171,14 @@ TEST_CASE("Transfer benchmarks: M3D-C1 poloidal flux onto a P1 mesh",
           (Divisions + 1) * (Divisions + 1));
   BENCHMARK("psi: Interpolator construction (FILL)")
   {
-    return pcms::Interpolator<Real>(psi.GetSpace(), *target, bind());
+    return pcms::CreateInterpolator<Real>(psi.GetSpacePtr(), target, bind());
   };
-  const pcms::Interpolator<Real> interpolator(psi.GetSpace(), *target, bind());
+  const auto interpolator =
+    pcms::CreateInterpolator<Real>(psi.GetSpacePtr(), target, bind());
   auto psi_t = target->CreateFunction<Real>("psi");
   BENCHMARK("psi: Interpolator apply")
   {
-    interpolator.Apply(psi, psi_t);
+    interpolator->Apply(psi, psi_t);
     Kokkos::fence();
     return &psi_t;
   };

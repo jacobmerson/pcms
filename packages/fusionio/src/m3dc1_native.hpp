@@ -8,7 +8,7 @@
 
 #include "fusionio/fusionio.hpp"
 #include "pcms/geometry/geometry.hpp"
-#include "pcms/utility/memory_spaces.h"
+#include "pcms/utility/memory_spaces.hpp"
 #include <Kokkos_Core.hpp>
 #include <Omega_h_library.hpp>
 #include <Omega_h_mesh.hpp>
@@ -51,6 +51,9 @@ public:
   [[nodiscard]] std::shared_ptr<const pcms::Geometry> GetGeometry() const;
 
   [[nodiscard]] const Frames& GetFrames() const noexcept { return frames_; }
+
+  /// The Omega_h mesh of the geometry.
+  [[nodiscard]] Omega_h::Mesh& GetMesh() const noexcept { return *mesh_; }
 
   [[nodiscard]] pcms::LO NumElements() const noexcept
   {
