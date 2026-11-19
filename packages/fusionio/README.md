@@ -5,6 +5,22 @@ Fusion-IO 1.x, NIMROD through nimeval) as PCMS functions:
 `include/fusionio/fusionio.hpp` is the API. This page maps Fusion-IO 1.x's
 utilities to it.
 
+## Components
+
+Each component is a CMake option; one whose prerequisite is missing is a
+configuration error naming it. `find_package(fusionio2 COMPONENTS ...)` accepts
+the names in the last column and fails for one that was not built.
+
+| Option | Default | Needs | Component |
+| --- | --- | --- | --- |
+| `FUSIONIO_ENABLE_WRAPPED` | on | Fusion-IO 1.x (CMake package `fusionio`) | `Wrapped` |
+| `FUSIONIO_ENABLE_NATIVE` | on with `WRAPPED` and Omega_h in PCMS | `WRAPPED` (1.x reads the M3D-C1 files), PCMS with `PCMS_ENABLE_OMEGA_H` | `Native` |
+| `FUSIONIO_ENABLE_NIMROD` | off | NIMROD's `nimeval` library (`NIMROD_DIR`) | `Nimrod` |
+| `FUSIONIO_ENABLE_GNET` | off | PCMS with `PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION`, HDF5 | `Gnet` |
+
+Without `WRAPPED`, `Open` throws and `fio_trace` is not built; nothing else
+needs Fusion-IO 1.x.
+
 ## Fusion-IO 1.x utilities
 
 The utilities of `fusion_io/isosurface.h` are free functions in
