@@ -6,24 +6,24 @@
 # section (write it after the directory that lists it).
 # All moves are applied in one pass by move_namespaces.sh.
 
-namespace pcms::backend::xgc
+namespace pcms::xgc
   src/pcms/backends/xgc/
   include/pcms/backends/xgc/
-namespace pcms::backend::mfem
+namespace pcms::mfem
   src/pcms/backends/mfem/
   include/pcms/backends/mfem/
-namespace pcms::backend::omega_h_meshfields
+namespace pcms::omega_h_meshfields
   src/pcms/backends/omega_h_meshfields/
-namespace pcms::backend::point_cloud
+namespace pcms::point_cloud
   src/pcms/backends/point_cloud/
   include/pcms/backends/point_cloud/
   !include/pcms/backends/point_cloud/layout.hpp
   !include/pcms/backends/point_cloud/mls_evaluator.hpp
   !src/pcms/backends/point_cloud/layout.cpp
-namespace pcms::backend::uniform_grid
+namespace pcms::uniform_grid
   src/pcms/backends/uniform_grid/
   include/pcms/backends/uniform_grid/
-namespace pcms::backend::omega_h
+namespace pcms::omega_h
   src/pcms/backends/omega_h/
   include/pcms/backends/omega_h/
 

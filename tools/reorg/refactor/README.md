@@ -2,7 +2,7 @@
 
 The reorganization moves internal code from `pcms::` into one namespace per
 sub-library (`pcms::utility`, `pcms::field`, ...) and per backend
-(`pcms::backend::omega_h`, ...). `namespaces.spec` lists which files move
+(`pcms::omega_h`, ...). `namespaces.spec` lists which files move
 where; `move_namespaces.sh` applies all of it in one pass with `pcms-refactor`,
 a Clang LibTooling tool, so every reference is found and checked by the
 compiler, not by pattern matching.
@@ -29,10 +29,10 @@ compiler, not by pattern matching.
      using-declaration depends on the configuration.
    - Public and `detail` names keep a qualifier.
    - Moved code that names something already in its new namespace with a
-     qualifier (`pcms::backend::omega_h::X` in code moving there) is
+     qualifier (`pcms::omega_h::X` in code moving there) is
      shortened the same way.
 4. A global namespace that a new namespace would hide gets a leading `::`
-   (`mfem::Vector` inside `pcms::backend::mfem` becomes `::mfem::Vector`).
+   (`mfem::Vector` inside `pcms::mfem` becomes `::mfem::Vector`).
 
 Uses that cannot be edited safely (in a macro body) are reported, not
 changed. An unqualified call that depends on a template parameter and found

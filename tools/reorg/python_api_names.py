@@ -7,27 +7,30 @@ Usage (from the repository root):
 Rewrites, preserving the arguments:
 
   pcms.LagrangeFunctionSpace.from_mesh(mesh, order, n[, csys][, global_id_name=g][, backend=B])
-    -> pcms.create_lagrange_space(pcms.backend.omega_h.create_geometry(mesh[, csys][, global_id_name=g]),
+    -> pcms.create_lagrange_space(pcms.omega_h.create_geometry(mesh[, csys][, global_id_name=g]),
                                   order, n[, backend=B])
   pcms.LagrangeFunctionSpace.from_uniform_grid(grid, n[, csys][, order])
-    -> pcms.create_lagrange_space(pcms.create_uniform_grid_geometry(grid[, csys]), order(=1), n)
+    -> pcms.create_lagrange_space(pcms.uniform_grid.create_geometry(grid[, csys]), order(=1), n)
   pcms.LagrangeFunctionSpace.Backend.X        -> pcms.LagrangeBackend.X
   pcms.PolynomialReconstructionFunctionSpace.create(coords[, options])
-    -> pcms.create_polynomial_reconstruction_space(pcms.create_point_cloud_geometry(coords)[, options])
+    -> pcms.create_polynomial_reconstruction_space(pcms.point_cloud.create_geometry(coords)[, options])
   pcms.PolynomialReconstructionFunctionSpace.from_mesh(mesh, entity_dim[, csys][, options])
     -> pcms.create_polynomial_reconstruction_space(
-         pcms.backend.omega_h.create_point_cloud_geometry(
-           pcms.backend.omega_h.create_geometry(mesh[, system=csys]), entity_dim)[, options])
+         pcms.omega_h.create_point_cloud_geometry(
+           pcms.omega_h.create_geometry(mesh[, system=csys]), entity_dim)[, options])
   pcms.OmegaHConservativeProjection(...)      -> pcms.create_conservative_projection(...)
   pcms.OmegaHControlVariateProjection(...)    -> pcms.create_control_variate_projection(...)
-  pcms.create_omega_h_geometry(...)           -> pcms.backend.omega_h.create_geometry(...)
+  pcms.create_omega_h_geometry(...)           -> pcms.omega_h.create_geometry(...)
   pcms.create_point_cloud_geometry(geometry, entity_dim[, ...])
-                                              -> pcms.backend.omega_h.create_point_cloud_geometry(...)
-  pcms.create_uniform_grid_binary_field(...)  -> pcms.backend.omega_h.create_uniform_grid_binary_field(...)
-  pcms.create_uniform_grid_from_mesh(...)     -> pcms.backend.omega_h.create_uniform_grid_from_mesh(...)
-  pcms.map_entity_field_to_vertices_X(...)    -> pcms.backend.omega_h.map_entity_field_to_vertices_X(...)
-  pcms.compute_entity_centroids[_few](...)    -> pcms.backend.omega_h.compute_entity_centroids(...)
-  <expr>.mesh()                               -> pcms.backend.omega_h.get_mesh(<expr>.get_geometry())
+                                              -> pcms.omega_h.create_point_cloud_geometry(...)
+  pcms.create_point_cloud_geometry(coords_or_layout[, ...])
+                                              -> pcms.point_cloud.create_geometry(...)
+  pcms.create_uniform_grid_geometry(...)      -> pcms.uniform_grid.create_geometry(...)
+  pcms.create_uniform_grid_binary_field(...)  -> pcms.omega_h.create_uniform_grid_binary_field(...)
+  pcms.create_uniform_grid_from_mesh(...)     -> pcms.omega_h.create_uniform_grid_from_mesh(...)
+  pcms.map_entity_field_to_vertices_X(...)    -> pcms.omega_h.map_entity_field_to_vertices_X(...)
+  pcms.compute_entity_centroids[_few](...)    -> pcms.omega_h.compute_entity_centroids(...)
+  <expr>.mesh()                               -> pcms.omega_h.get_mesh(<expr>.get_geometry())
 
 The keyword mesh_coordinate_system= becomes system= (the coordinate system is
 the geometry's). A module imported as `import pcms as <alias>` is rewritten
@@ -177,7 +180,7 @@ def lagrange_from_mesh(mod, args):
     geometry_args += [f"{KW_RENAME.get(k, k)}={v}" for k, v in kws
                       if k in ("mesh_coordinate_system", "global_id_name")]
     rest = [pos[1], pos[2]] + [f"{k}={v}" for k, v in kws if k == "backend"]
-    geometry = f"{mod}.backend.omega_h.create_geometry({', '.join(geometry_args)})"
+    geometry = f"{mod}.omega_h.create_geometry({', '.join(geometry_args)})"
     return f"{mod}.create_lagrange_space", [geometry] + rest
 
 
@@ -188,7 +191,7 @@ def lagrange_from_uniform_grid(mod, args):
     csys = pos[2] if len(pos) > 2 else kws.pop("mesh_coordinate_system", None)
     order = pos[3] if len(pos) > 3 else kws.pop("order", "1")
     geometry_args = [grid] + ([csys] if csys is not None else [])
-    geometry = f"{mod}.create_uniform_grid_geometry({', '.join(geometry_args)})"
+    geometry = f"{mod}.uniform_grid.create_geometry({', '.join(geometry_args)})"
     out = [geometry, order, ncomp]
     out += [f"{KW_RENAME.get(k, k)}={v}" for k, v in kws.items()]
     return f"{mod}.create_lagrange_space", out
@@ -197,7 +200,7 @@ def lagrange_from_uniform_grid(mod, args):
 def pr_create(mod, args):
     pos = [a for a in args if kw(a)[0] is None]
     kws = [a for a in args if kw(a)[0] is not None]
-    geometry = f"{mod}.create_point_cloud_geometry({pos[0]})"
+    geometry = f"{mod}.point_cloud.create_geometry({pos[0]})"
     return f"{mod}.create_polynomial_reconstruction_space", [geometry] + pos[1:] + kws
 
 
@@ -212,8 +215,8 @@ def pr_from_mesh(mod, args):
     mesh_args = [given["mesh"]]
     if "coordinate_system" in given:
         mesh_args.append(f"system={given['coordinate_system']}")
-    mesh_geometry = f"{mod}.backend.omega_h.create_geometry({', '.join(mesh_args)})"
-    geometry = f"{mod}.backend.omega_h.create_point_cloud_geometry({mesh_geometry}, {given['source_entity_dim']})"
+    mesh_geometry = f"{mod}.omega_h.create_geometry({', '.join(mesh_args)})"
+    geometry = f"{mod}.omega_h.create_point_cloud_geometry({mesh_geometry}, {given['source_entity_dim']})"
     out = [geometry]
     if "options" in given:
         out.append(given["options"])
@@ -229,15 +232,15 @@ def point_cloud_geometry(mod, args):
                     (second is not None and
                      re.fullmatch(r"\d+|\w*dim", second) is not None))
     if not is_mesh_form:
-        raise ValueError("not the mesh form")
-    return f"{mod}.backend.omega_h.create_point_cloud_geometry", args
+        return f"{mod}.point_cloud.create_geometry", args
+    return f"{mod}.omega_h.create_point_cloud_geometry", args
 
 
 def simple(name):
     return lambda mod, args: (f"{mod}.{name}", args)
 
 
-# top-level names that moved to pcms.backend.omega_h
+# top-level names that moved to pcms.omega_h
 MOVED_TO_OMEGA_H = ("create_uniform_grid_binary_field",
                     "create_uniform_grid_from_mesh",
                     "map_entity_field_to_vertices_average",
@@ -246,7 +249,8 @@ MOVED_TO_OMEGA_H = ("create_uniform_grid_binary_field",
 # removed aliases: (old, new)
 ALIASES = (("compute_entity_centroids_few", "compute_entity_centroids"),)
 # renamed (and moved) names: (old, new)
-RENAMED = (("create_omega_h_geometry", "backend.omega_h.create_geometry"),)
+RENAMED = (("create_omega_h_geometry", "omega_h.create_geometry"),
+           ("create_uniform_grid_geometry", "uniform_grid.create_geometry"))
 
 
 def convert(text, mod="pcms"):
@@ -270,7 +274,7 @@ def convert(text, mod="pcms"):
         text = re.sub(rf"(?<![\w.]){m}\.{old}\b", f"{mod}.{new}", text)
     for name in MOVED_TO_OMEGA_H:
         text = re.sub(rf"(?<![\w.]){m}\.{name}\b",
-                      f"{mod}.backend.omega_h.{name}", text)
+                      f"{mod}.omega_h.{name}", text)
     # only receivers known to be PCMS objects: rooted at the module, or a
     # name assigned from a call through the module in this file
     known = set(re.findall(rf"^[ \t]*(\w+)[ \t]*=[ \t]*{m}\.\w", text, re.M))
@@ -279,7 +283,7 @@ def convert(text, mod="pcms"):
     def mesh_call(match):
         if match.group(1).split(".")[0] not in known:
             return match.group(0)
-        return f"{mod}.backend.omega_h.get_mesh({match.group(1)}.get_geometry())"
+        return f"{mod}.omega_h.get_mesh({match.group(1)}.get_geometry())"
 
     return re.sub(r"(?<![\w.])((?:\w+\.)*\w+)\.mesh\(\)", mesh_call, text)
 
@@ -307,7 +311,7 @@ def main(files):
             if re.search(r"(?<![\w.])(?:\w+\.)*\w+\.mesh\(\)", line):
                 print(f"{f}:{n}: .mesh() call not rewritten: the receiver is "
                       "not known to be a PCMS object; if it is, use "
-                      "pcms.backend.omega_h.get_mesh(<expr>.get_geometry()) "
+                      "pcms.omega_h.get_mesh(<expr>.get_geometry()) "
                       "by hand", file=sys.stderr)
             imp = re.match(r"\s*from\s+pcms\s+import\s+(.*)", line)
             if imp:
@@ -322,7 +326,7 @@ def main(files):
                               file=sys.stderr)
                 if moved:
                     print(f"{f}:{n}: {', '.join(moved)} moved to "
-                          "pcms.backend.omega_h; update this import by hand",
+                          "pcms.omega_h; update this import by hand",
                           file=sys.stderr)
         if new != text:
             with open(f, "w", encoding="utf-8") as fh:

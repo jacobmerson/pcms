@@ -14,7 +14,7 @@
 //     references to the moved declarations, references from moved code
 //     whose relative qualifier would resolve differently afterwards, and
 //     global namespaces a new namespace would hide (`mfem::` inside
-//     pcms::backend::mfem becomes `::mfem::`).
+//     pcms::mfem becomes `::mfem::`).
 //
 //   --mode=spell                                        (tree after the moves)
 //     Rewrites every marked qualifier to the shortest spelling that still
@@ -300,7 +300,7 @@ public:
     // whose head will also name something in the target namespace
     std::string from = targetOf(nameLoc);
     // moved code naming something that is already in its target namespace
-    // (pcms::backend::omega_h::X in code moving to pcms::backend::omega_h):
+    // (pcms::omega_h::X in code moving to pcms::omega_h):
     // respelled, i.e. shortened, after the move
     if (q && !from.empty() && !declarator && namespacesOnly(q) &&
         isa<NamespaceDecl>(d->getDeclContext()) &&
@@ -406,7 +406,7 @@ public:
     return "";
   }
 
-  // `mfem::X` inside pcms::backend::mfem would find the new namespace: write
+  // `mfem::X` inside pcms::mfem would find the new namespace: write
   // the global namespace with a leading ::
   void anchorGlobalHead(NestedNameSpecifierLoc head, const DeclContext* useDC)
   {
@@ -648,7 +648,7 @@ public:
       // replaceNestedName compares namespace names, not lookup: it keeps a
       // qualifier when a namespace of the same name exists in any enclosing
       // scope, and shortens to a qualifier that an enclosing namespace of the
-      // same name hides (detail:: inside backend::omega_h::detail). Lookup
+      // same name hides (detail:: inside omega_h::detail). Lookup
       // finds the innermost one, so try every suffix and keep the shortest
       // that resolves to the same entity.
       std::vector<const NamespaceDecl*> chain;
