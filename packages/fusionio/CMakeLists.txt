@@ -31,10 +31,13 @@ function(fusionio_pcms_has name result)
 int main() {}" ${result})
 endfunction()
 
+# SampleMarkers works with any function; its tests (and GNET) use polynomial
+# reconstruction.
+fusionio_pcms_has(PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION
+                  FUSIONIO_PCMS_HAS_POLYNOMIAL_RECONSTRUCTION)
+
 option(FUSIONIO_ENABLE_GNET "Read GNET distributions" OFF)
 if(FUSIONIO_ENABLE_GNET)
-  fusionio_pcms_has(PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION
-                    FUSIONIO_PCMS_HAS_POLYNOMIAL_RECONSTRUCTION)
   if(NOT FUSIONIO_PCMS_HAS_POLYNOMIAL_RECONSTRUCTION)
     message(FATAL_ERROR "FUSIONIO_ENABLE_GNET needs a PCMS built with "
                         "PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION")
@@ -93,7 +96,7 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-add_library(fusionio src/quantity.cpp src/utilities.cpp)
+add_library(fusionio src/quantity.cpp src/utilities.cpp src/sampling.cpp)
 add_library(fusionio::fusionio ALIAS fusionio)
 target_compile_features(fusionio PUBLIC cxx_std_20)
 target_include_directories(
@@ -103,6 +106,7 @@ target_include_directories(
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(fusionio PUBLIC pcms::pcms)
 set(FUSIONIO_HEADERS include/fusionio/fusionio.hpp
+                     include/fusionio/sampling.hpp
                      include/fusionio/utilities.hpp)
 if(FUSIONIO_ENABLE_WRAPPED)
   target_sources(fusionio PRIVATE src/fusion_io_space.cpp)
@@ -143,7 +147,7 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/fusionio2-config.cmake
               ${CMAKE_CURRENT_BINARY_DIR}/fusionio2-config-version.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fusionio2)
 
-option(FUSIONIO_BUILD_TOOLS "Build the Fusion-IO tools (fio_trace)" ON)
+option(FUSIONIO_BUILD_TOOLS "Build the Fusion-IO tools (fio_trace, gnet2gtc)" ON)
 if(FUSIONIO_BUILD_TOOLS AND FUSIONIO_ENABLE_WRAPPED)
   find_package(MPI REQUIRED COMPONENTS CXX)
   add_executable(fio_trace tools/trace/main.cpp)

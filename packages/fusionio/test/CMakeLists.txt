@@ -31,6 +31,11 @@ if(FUSIONIO_ENABLE_NIMROD AND FUSIONIO_TEST_NIMROD_DIR)
                "FUSIONIO_TEST_NIMROD_DIR=\"${FUSIONIO_TEST_NIMROD_DIR}\"")
 endif()
 
+if(FUSIONIO_PCMS_HAS_POLYNOMIAL_RECONSTRUCTION)
+  # SampleMarkers of an analytic function reconstructed on a point cloud
+  list(APPEND FUSIONIO_TEST_SOURCES test_sampling.cpp)
+endif()
+
 if(FUSIONIO_ENABLE_GNET)
   # The synthetic GNET file is written by the tests and by this tool (the input
   # of reference runs of GNET tools).
@@ -65,6 +70,27 @@ if(FUSIONIO_TEST_SOURCES)
     target_link_libraries(fusionio_tests PRIVATE Omega_h::omega_h)
   endif()
   add_test(NAME fusionio_tests COMMAND fusionio_tests)
+endif()
+
+if(FUSIONIO_PCMS_HAS_POLYNOMIAL_RECONSTRUCTION)
+  # the markers do not depend on the number of threads: the files written with
+  # one and with four must be identical
+  foreach(threads 1 4)
+    add_test(NAME sampling_threads_${threads}
+             COMMAND fusionio_tests "[threads]")
+    set_tests_properties(
+      sampling_threads_${threads}
+      PROPERTIES
+        ENVIRONMENT
+        "OMP_NUM_THREADS=${threads};OMP_PROC_BIND=false;FUSIONIO_TEST_MARKERS_FILE=${CMAKE_CURRENT_BINARY_DIR}/markers_${threads}.txt"
+        FIXTURES_SETUP sampling_threads)
+  endforeach()
+  add_test(NAME sampling_threads_equal
+           COMMAND ${CMAKE_COMMAND} -E compare_files
+                   ${CMAKE_CURRENT_BINARY_DIR}/markers_1.txt
+                   ${CMAKE_CURRENT_BINARY_DIR}/markers_4.txt)
+  set_tests_properties(sampling_threads_equal PROPERTIES FIXTURES_REQUIRED
+                                                         sampling_threads)
 endif()
 
 if(TARGET fio_trace AND FUSIONIO_TEST_DATA_DIR)
