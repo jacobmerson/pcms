@@ -53,3 +53,22 @@ batched evaluation per iteration where 1.x evaluates point by point.
 | `fio_surface_average(f, n, x, &a, bpol)` (defined, not declared in `isosurface.h`) | `SurfaceAverage(f, x, bpol)` |
 | `fio_isosurface_jacobian(ns, nphi, ntheta, x, jac)` | `IsosurfaceJacobian(ns, nphi, ntheta, x, jac)`: `false` if the Jacobian changes sign |
 | `fio_eval_on_path(f, n, x, fout)`, `fio_eval_on_surface(f, n, x, a)` | `pcms::Evaluate(function, points, out)` (`pcms/field/query_points.hpp`), or `pcms::QueryPoints` to evaluate several functions at the same points |
+
+## Sampling markers
+
+`include/fusionio/sampling.hpp`: `SampleMarkers(f, domain, options)` draws
+candidates in a box (`Domain`, one `Range` per coordinate of the function's
+coordinate system, drawn uniformly or, for a radial axis, as `sqrt(u)`) and
+keeps those where the scalar function `f` is at least `options.threshold`,
+until `options.samples` are kept. The result is `Markers::rows`, a device
+array `samples x (dimension + 1)` of coordinates and value.
+
+Memory is one batch of candidates and values (`options.batch`) plus the
+markers. Each round fills the candidates in place (a function of the seed and
+the index of the candidate alone, so any number of threads or devices gives
+the same markers), locates and evaluates them with one `pcms::QueryPoints`
+(`FILL`, so points outside the function's domain are rejected), and writes the
+accepted ones at the slots of a deterministic exclusive scan, clipping the last
+round at `samples`. The overload with a `MarkerSink` hands each round's markers
+to the caller instead (`gnet2gtc --stream` writes them to the file), so memory
+does not grow with `samples`.
