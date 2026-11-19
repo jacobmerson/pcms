@@ -63,6 +63,16 @@ namespace pcms::omega_h
   std::shared_ptr<const Geometry> geometry, int entity_dim,
   NeighbourhoodOptions options = {});
 
+/// The element of each found point of a binding on an Omega_h geometry, in
+/// FoundPoints() order: the element the point lies in, or, for a point on an
+/// entity shared by several elements (a vertex, an edge or a face), the lowest
+/// adjacent element, as PCMS's Omega_h evaluators take it. For evaluators of
+/// spaces implemented outside PCMS on an Omega_h geometry.
+/// @param bound a BoundPoints of an Omega_h geometry (from CreateGeometry)
+/// @throws pcms_error if `bound` was not bound on an Omega_h geometry
+[[nodiscard]] Kokkos::View<const LO*, DeviceMemorySpace> LocatedElements(
+  const BoundPoints& bound);
+
 /// 0/1 field on the vertices of a 2D uniform grid marking the vertices that
 /// lie inside mesh. The grid is given, or covers the mesh's bounding box with
 /// the given number of cells per axis.
