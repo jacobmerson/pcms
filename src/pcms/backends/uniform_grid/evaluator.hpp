@@ -15,13 +15,15 @@
 #include "pcms/backends/uniform_grid/multidimarray.hpp"
 
 #include <memory>
+#include <initializer_list>
 #include <utility>
 
 namespace pcms::uniform_grid
 {
 
 /// @brief Evaluates order-0 (cell value) or order-1 (multilinear) fields on a
-///        uniform grid.
+///        uniform grid; on a 1D grid, also df/dx of a scalar order-1 field
+///        (DifferentialOperator::Gradient: the slope of the cell).
 /// @tparam Dim grid dimension
 /// @tparam LayoutPolicy layout of the output view
 template <unsigned Dim = 2,
@@ -32,11 +34,13 @@ class UniformGridPointEvaluator : public PointEvaluator<Real, LayoutPolicy>
 public:
   /// @param layout uniform-grid layout of the evaluated fields
   /// @param binding cells of the query points
+  /// @param op Value, or Gradient (1D grids, order 1, one component)
   UniformGridPointEvaluator(
     std::shared_ptr<const UniformGridFieldLayout<Dim>> layout,
-    std::shared_ptr<const pcms::detail::UniformGridBinding<Dim>> binding)
-    : PointEvaluator<Real, LayoutPolicy>(binding, DifferentialOperator::Value,
-                                         layout),
+    std::shared_ptr<const pcms::detail::UniformGridBinding<Dim>> binding,
+    DifferentialOperator op = DifferentialOperator::Value)
+    : PointEvaluator<Real, LayoutPolicy>(binding, op, layout),
+      op_(op),
       layout_(std::move(layout)),
       grid_(layout_->GetGrid()),
       binding_(std::move(binding))
@@ -63,6 +67,20 @@ public:
     // Every point has a (closest) cell, so all rows are computed; Evaluate
     // overwrites the rows of points outside the grid in FILL mode.
     auto cell_indices = binding_->CellIndices();
+
+    if (op_ == DifferentialOperator::Gradient) {
+      // the slope of the cell: the factory offers it for scalar order-1 fields
+      // on 1D grids only
+      const Real inv_h = grid_.divisions[0] / grid_.edge_length[0];
+      Kokkos::parallel_for(
+        "evaluate_gradient_device",
+        Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, num_points),
+        KOKKOS_LAMBDA(const LO i) {
+          const LO cell = cell_indices(i);
+          values(i, 0) = (dof_data(cell + 1, 0) - dof_data(cell, 0)) * inv_h;
+        });
+      return;
+    }
 
     if (layout_->GetOrder() == 0) {
       Kokkos::parallel_for(
@@ -147,6 +165,7 @@ public:
   }
 
 private:
+  DifferentialOperator op_;
   std::shared_ptr<const UniformGridFieldLayout<Dim>> layout_;
   UniformGrid<Dim> grid_;
   std::shared_ptr<const pcms::detail::UniformGridBinding<Dim>> binding_;
@@ -168,18 +187,21 @@ public:
     std::shared_ptr<const UniformGridGeometry<Dim>> geometry,
     std::shared_ptr<const UniformGridFieldLayout<Dim>> layout)
     : pcms::detail::TypedPointEvaluatorFactory<Real, Bound>(
-        std::move(geometry)),
+        std::move(geometry),
+        Dim == 1 && layout->GetOrder() == 1 && layout->GetNumComponents() == 1
+          ? std::initializer_list<
+              DifferentialOperator>{DifferentialOperator::Gradient}
+          : std::initializer_list<DifferentialOperator>{}),
       layout_(std::move(layout))
   {
   }
 
 protected:
   std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
-    std::shared_ptr<const Bound> bound,
-    DifferentialOperator /*op*/) const override
+    std::shared_ptr<const Bound> bound, DifferentialOperator op) const override
   {
-    return std::make_unique<UniformGridPointEvaluator<Dim>>(layout_,
-                                                            std::move(bound));
+    return std::make_unique<UniformGridPointEvaluator<Dim>>(
+      layout_, std::move(bound), op);
   }
 
 private:
