@@ -23,40 +23,36 @@ struct QuantityEntry
 {
   Quantity quantity;
   field_type type;
-  std::string_view name;
 };
 
-// Fusion-IO 1.x's field types and names (fio_get_field_name), in Quantity
-// order.
+// Fusion-IO 1.x's field types.
 constexpr QuantityEntry QuantityTable[] = {
-  {Quantity::Alpha, FIO_ALPHA, "alpha"},
-  {Quantity::ScalarPotential, FIO_SCALAR_POTENTIAL, "scalar potential"},
-  {Quantity::TotalPressure, FIO_TOTAL_PRESSURE, "total pressure"},
-  {Quantity::PoloidalFlux, FIO_POLOIDAL_FLUX, "poloidal flux"},
-  {Quantity::PoloidalFluxNorm, FIO_POLOIDAL_FLUX_NORM,
-   "normalized poloidal flux"},
-  {Quantity::TotalRadiation, FIO_TOTAL_RADIATION, "total radiation"},
-  {Quantity::Resistivity, FIO_RESISTIVITY, "resistivity"},
-  {Quantity::Viscosity, FIO_VISCOSITY, "viscosity"},
-  {Quantity::ThermalDiffusivity, FIO_THERMAL_DIFFUSIVITY,
-   "thermal diffusivity"},
-  {Quantity::BootstrapCurrent, FIO_JBS, "JpdotB"},
-  {Quantity::BootstrapCurrentDnDpsi, FIO_JBS_dndpsi, "JpdotB_dndpsi"},
-  {Quantity::BootstrapCurrentDteDpsi, FIO_JBS_dtedpsi, "JpdotB_dtedpsi"},
-  {Quantity::BootstrapCurrentDtiDpsi, FIO_JBS_dtidpsi, "JpdotB_dtidpsi"},
-  {Quantity::BootstrapCurrentL31, FIO_JBS_L31, "JpdotB_L31"},
-  {Quantity::BootstrapCurrentL32, FIO_JBS_L32, "JpdotB_L32"},
-  {Quantity::BootstrapCurrentL34, FIO_JBS_L34, "JpdotB_L34"},
-  {Quantity::BootstrapCurrentAlpha, FIO_JBS_alpha, "JpdotB_alpha"},
-  {Quantity::Pressure, FIO_PRESSURE, "pressure"},
-  {Quantity::Density, FIO_DENSITY, "density"},
-  {Quantity::Temperature, FIO_TEMPERATURE, "temperature"},
-  {Quantity::ElectricField, FIO_ELECTRIC_FIELD, "electric field"},
-  {Quantity::VectorPotential, FIO_VECTOR_POTENTIAL, "vector potential"},
-  {Quantity::MagneticField, FIO_MAGNETIC_FIELD, "magnetic field"},
-  {Quantity::CurrentDensity, FIO_CURRENT_DENSITY, "current density"},
-  {Quantity::FluidVelocity, FIO_FLUID_VELOCITY, "fluid velocity"},
-  {Quantity::Velocity, FIO_VELOCITY, "velocity"},
+  {Quantity::Alpha, FIO_ALPHA},
+  {Quantity::ScalarPotential, FIO_SCALAR_POTENTIAL},
+  {Quantity::TotalPressure, FIO_TOTAL_PRESSURE},
+  {Quantity::PoloidalFlux, FIO_POLOIDAL_FLUX},
+  {Quantity::PoloidalFluxNorm, FIO_POLOIDAL_FLUX_NORM},
+  {Quantity::TotalRadiation, FIO_TOTAL_RADIATION},
+  {Quantity::Resistivity, FIO_RESISTIVITY},
+  {Quantity::Viscosity, FIO_VISCOSITY},
+  {Quantity::ThermalDiffusivity, FIO_THERMAL_DIFFUSIVITY},
+  {Quantity::BootstrapCurrent, FIO_JBS},
+  {Quantity::BootstrapCurrentDnDpsi, FIO_JBS_dndpsi},
+  {Quantity::BootstrapCurrentDteDpsi, FIO_JBS_dtedpsi},
+  {Quantity::BootstrapCurrentDtiDpsi, FIO_JBS_dtidpsi},
+  {Quantity::BootstrapCurrentL31, FIO_JBS_L31},
+  {Quantity::BootstrapCurrentL32, FIO_JBS_L32},
+  {Quantity::BootstrapCurrentL34, FIO_JBS_L34},
+  {Quantity::BootstrapCurrentAlpha, FIO_JBS_alpha},
+  {Quantity::Pressure, FIO_PRESSURE},
+  {Quantity::Density, FIO_DENSITY},
+  {Quantity::Temperature, FIO_TEMPERATURE},
+  {Quantity::ElectricField, FIO_ELECTRIC_FIELD},
+  {Quantity::VectorPotential, FIO_VECTOR_POTENTIAL},
+  {Quantity::MagneticField, FIO_MAGNETIC_FIELD},
+  {Quantity::CurrentDensity, FIO_CURRENT_DENSITY},
+  {Quantity::FluidVelocity, FIO_FLUID_VELOCITY},
+  {Quantity::Velocity, FIO_VELOCITY},
 };
 
 int FusionIOPart(Part part)
@@ -582,11 +578,6 @@ private:
 
 namespace fusionio
 {
-
-std::string_view Name(Quantity quantity)
-{
-  return detail::EntryOf(quantity).name;
-}
 
 std::shared_ptr<Source> Open(Format format, const std::string& path,
                              Evaluation evaluation)

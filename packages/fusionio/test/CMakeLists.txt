@@ -8,7 +8,8 @@ set(FUSIONIO_TEST_DATA_DIR "" CACHE PATH "Fusion-IO example data directory")
 set(FUSIONIO_TEST_NIMROD_DIR "" CACHE PATH "NIMROD case for the NIMROD tests")
 
 set(FUSIONIO_TEST_SOURCES)
-if(FUSIONIO_TEST_DATA_DIR)
+# The tests of the wrapped sources need Fusion-IO 1.x.
+if(FUSIONIO_TEST_DATA_DIR AND FUSIONIO_ENABLE_WRAPPED)
   list(APPEND FUSIONIO_TEST_SOURCES test_fusion_io.cpp test_source.cpp
        test_utilities.cpp bench_transfer.cpp)
   if(FUSIONIO_ENABLE_NATIVE)
@@ -19,7 +20,7 @@ if(FUSIONIO_TEST_DATA_DIR)
     test_utilities.cpp bench_transfer.cpp
     PROPERTIES COMPILE_DEFINITIONS
                "FUSIONIO_TEST_DATA_DIR=\"${FUSIONIO_TEST_DATA_DIR}\"")
-else()
+elseif(FUSIONIO_ENABLE_WRAPPED)
   message(STATUS "FUSIONIO_TEST_DATA_DIR not set; Fusion-IO tests disabled")
 endif()
 if(FUSIONIO_ENABLE_NIMROD AND FUSIONIO_TEST_NIMROD_DIR)
@@ -34,9 +35,11 @@ if(FUSIONIO_TEST_SOURCES)
   add_executable(fusionio_tests test_main.cpp ${FUSIONIO_TEST_SOURCES})
   target_include_directories(fusionio_tests
                              PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
-  target_link_libraries(
-    fusionio_tests PRIVATE fusionio pcms::transfer fusionio::fusionio_fusionio
-                            Catch2::Catch2 MPI::MPI_CXX)
+  target_link_libraries(fusionio_tests PRIVATE fusionio pcms::transfer
+                                               Catch2::Catch2 MPI::MPI_CXX)
+  if(FUSIONIO_ENABLE_WRAPPED)
+    target_link_libraries(fusionio_tests PRIVATE fusionio::fusionio_fusionio)
+  endif()
   if(FUSIONIO_ENABLE_NIMROD)
     # the NIMROD tests compare with nimeval directly
     target_link_libraries(fusionio_tests PRIVATE ${NIMROD_NIMEVAL_LIBRARY})
