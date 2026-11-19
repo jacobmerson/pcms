@@ -13,8 +13,15 @@ std::shared_ptr<BoundPoints> UniformGridGeometry<Dim>::BindImpl(
     shared_from_this(), request, grid_);
 }
 
+template class UniformGridGeometry<1>;
 template class UniformGridGeometry<2>;
 template class UniformGridGeometry<3>;
+
+std::shared_ptr<const Geometry> CreateGeometry(
+  UniformGrid<1> grid, std::shared_ptr<const CoordinateSystem> system)
+{
+  return std::make_shared<UniformGridGeometry<1>>(grid, std::move(system));
+}
 
 std::shared_ptr<const Geometry> CreateGeometry(
   UniformGrid<2> grid, std::shared_ptr<const CoordinateSystem> system)

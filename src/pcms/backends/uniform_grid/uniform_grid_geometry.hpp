@@ -150,6 +150,7 @@ private:
 };
 
 // instantiated in geometry.cpp
+extern template class UniformGridGeometry<1>;
 extern template class UniformGridGeometry<2>;
 extern template class UniformGridGeometry<3>;
 

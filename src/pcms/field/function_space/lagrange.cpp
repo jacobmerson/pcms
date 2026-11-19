@@ -190,6 +190,11 @@ std::shared_ptr<const FunctionSpace> CreateLagrangeSpace(
   }
 #endif
   if (auto grid =
+        std::dynamic_pointer_cast<const UniformGridGeometry<1>>(geometry)) {
+    return CreateUniformGridLagrangeSpace<1>(std::move(grid), order,
+                                             num_components, options);
+  }
+  if (auto grid =
         std::dynamic_pointer_cast<const UniformGridGeometry<2>>(geometry)) {
     return CreateUniformGridLagrangeSpace<2>(std::move(grid), order,
                                              num_components, options);

@@ -5,6 +5,7 @@
 - Point clouds and `CreatePolynomialReconstructionSpace` work for coordinates of dimension up to 6
   (phase space). New `csys::CreateEuclidean(dim)` (1..6, identity metric, not Cartesian) in
   `pcms/utility/coordinate_systems/euclidean.hpp`; `pcms.csys.create_euclidean(dim)` in Python.
+- 1D uniform grids (`UniformGrid1D`, `uniform_grid::CreateGeometry`): linear and piecewise-constant Lagrange spaces and a cubic (not-a-knot) spline space, with Value and Gradient evaluation, usable through `Function`, `QueryPoints`, `CreateInterpolator` and Python.
 
 ## 0.4.0
 

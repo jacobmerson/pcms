@@ -16,6 +16,32 @@ void bind_uniform_grid_field_layout_module(py::module& m)
   // Bind UniformGrid setup types. The corresponding layout types remain
   // internal to the Python API; users construct function spaces from grids
   // and work with Field objects.
+  py::class_<UniformGrid<1>>(m, "UniformGrid1D")
+    .def(py::init<>())
+    .def_readwrite("edge_length", &UniformGrid<1>::edge_length,
+                   "Edge length in each dimension")
+    .def_readwrite("bot_left", &UniformGrid<1>::bot_left,
+                   "Bottom-left corner coordinates")
+    .def_readwrite("divisions", &UniformGrid<1>::divisions,
+                   "Number of divisions in each dimension")
+    .def("get_num_cells", &UniformGrid<1>::GetNumCells,
+         "Get the total number of cells in the grid")
+    .def(
+      "closest_cell_id",
+      [](const UniformGrid<1>& self, const NumpyInput<Real>& point_arr) {
+        auto point = NumpyToHostView<1, Real>(point_arr);
+        if (point.extent(0) != 1) {
+          throw std::invalid_argument(
+            "Point must have 1 coordinate for 1D grid");
+        }
+        Kokkos::Array<Real, 1> cell_point{point(0)};
+        return self.ClosestCellID(cell_point);
+      },
+      py::arg("point"),
+      "Get the cell ID that contains or is closest to the given point")
+    .def("get_cell_bbox", &UniformGrid<1>::GetCellBBOX, py::arg("cell_index"),
+         "Get the bounding box of a cell");
+
   py::class_<UniformGrid<2>>(m, "UniformGrid2D")
     .def(py::init<>())
     .def_readwrite("edge_length", &UniformGrid<2>::edge_length,
