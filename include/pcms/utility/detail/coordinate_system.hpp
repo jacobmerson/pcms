@@ -2,6 +2,7 @@
 #define PCMS_UTILITY_DETAIL_COORDINATE_SYSTEM_HPP
 
 #include "pcms/utility/coordinate_system.hpp"
+#include <memory>
 
 namespace pcms::detail
 {

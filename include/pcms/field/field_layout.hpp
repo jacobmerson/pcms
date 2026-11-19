@@ -9,6 +9,7 @@
 #include "pcms/utility/coordinate_system.hpp"
 #include "pcms/utility/coordinate_view.hpp"
 #include "pcms/geometry/bound_points.hpp"
+#include <array>
 
 namespace pcms
 {

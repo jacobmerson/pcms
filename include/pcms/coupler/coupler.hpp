@@ -13,6 +13,10 @@
 #include "pcms/utility/detail/profile.hpp"
 #include "pcms/coupler/detail/global_data_interface.hpp"
 #include <memory>
+#include <map>
+#include <string>
+#include <variant>
+#include <vector>
 
 namespace pcms
 {

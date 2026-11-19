@@ -14,6 +14,8 @@
 #include <stdexcept>
 #include <string>
 #include "pcms/field/detail/point_evaluator.hpp"
+#include <memory>
+#include <variant>
 
 namespace pcms
 {

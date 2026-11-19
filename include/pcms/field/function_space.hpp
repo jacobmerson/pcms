@@ -19,6 +19,7 @@
 #include <memory>
 #include <optional>
 #include <variant>
+#include <string>
 
 namespace pcms
 {

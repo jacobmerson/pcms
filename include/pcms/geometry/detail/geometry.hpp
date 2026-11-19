@@ -2,6 +2,7 @@
 #define PCMS_GEOMETRY_DETAIL_GEOMETRY_HPP
 
 #include "pcms/geometry/geometry.hpp"
+#include <string>
 
 namespace pcms::detail
 {

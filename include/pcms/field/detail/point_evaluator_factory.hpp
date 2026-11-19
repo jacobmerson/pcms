@@ -2,6 +2,8 @@
 #define PCMS_FIELD_DETAIL_POINT_EVALUATOR_FACTORY_HPP
 
 #include "pcms/field/point_evaluator_factory.hpp"
+#include <memory>
+#include <set>
 
 namespace pcms::detail
 {
