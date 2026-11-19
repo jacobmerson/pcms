@@ -30,20 +30,24 @@ def test_unbalanced_text_is_skipped(tmp_path):
     assert "x = pcms.create_conservative_projection(a)" in out
 
 
-def test_mesh_receivers():
-    src = "space = pcms.create_lagrange_space(g, 1, 1)\n" \
-          "a = space.mesh()\nb = other.mesh()\n"
+def test_mesh_calls_and_removed_helpers_reported(tmp_path):
+    out, err = run(tmp_path, "s = pcms.create_lagrange_space(g, 1, 1)\n"
+                   "m = s.mesh()\n"
+                   "c = pcms.compute_entity_centroids(mesh, 2)\n")
+    assert "m = s.mesh()" in out and ".mesh() call not rewritten" in err
+    assert "compute_entity_centroids was removed" in err
+
+
+def test_transfers_and_coordinate_systems_are_factories():
+    src = "op = pcms.Interpolator(a, b)\nc = pcms.Copy(a, b)\n" \
+          "s = pcms.csys.Cartesian.create(3)\n" \
+          "m = pcms.CartesianToCylindrical()\n"
     out = t.convert(src)
-    assert "a = pcms.omega_h.get_mesh(space.get_geometry())" in out
-    assert "b = other.mesh()" in out
-
-
-def test_unknown_mesh_reported_and_alias_only_file(tmp_path):
-    out, err = run(tmp_path, "import pcms as p\nb = other.mesh()\n"
-                   "s = p.create_lagrange_space(g, 1, 1)\nm = s.mesh()\n")
-    assert "b = other.mesh()" in out and ".mesh() call not rewritten" in err
-    assert "m = p.omega_h.get_mesh(s.get_geometry())" in out
-    assert "pcms." not in out
+    assert "op = pcms.create_interpolator(a, b)" in out
+    assert "c = pcms.create_copy(a, b)" in out
+    assert "s = pcms.csys.create_cartesian(3)" in out
+    assert "m = pcms.create_cartesian_to_cylindrical()" in out
+    assert t.convert(out) == out
 
 
 def test_renamed_direct_import_reported(tmp_path):

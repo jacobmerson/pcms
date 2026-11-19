@@ -202,7 +202,7 @@ PY
 
 # Python code
 mapfile -t pyfiles < <(find "$@" -name '*.py' -not -path '*/.git/*' \
-  -exec grep -lE 'LagrangeFunctionSpace|PolynomialReconstructionFunctionSpace|OmegaHConservativeProjection|OmegaHControlVariateProjection|create_uniform_grid_binary_field|create_uniform_grid_from_mesh|compute_entity_centroids|map_entity_field_to_vertices_|create_omega_h_geometry|create_point_cloud_geometry|\.mesh\(\)' {} +)
+  -exec grep -lE 'LagrangeFunctionSpace|PolynomialReconstructionFunctionSpace|OmegaHConservativeProjection|OmegaHControlVariateProjection|create_uniform_grid_binary_field|create_uniform_grid_from_mesh|compute_entity_centroids|map_entity_field_to_vertices_|create_omega_h_geometry|create_point_cloud_geometry|create_uniform_grid_geometry|Interpolator\(|Copy\(|csys\.(Cartesian|Cylindrical)|CartesianToCylindrical|CylindricalToCartesian|patch_size_for_degree|same_coordinate_system|same_value_basis|has_identity_metric|\.mesh\(\)' {} +)
 if [ ${#pyfiles[@]} -gt 0 ]; then
   if [ $dry = 1 ]; then
     printf 'would update (Python) %s\n' "${pyfiles[@]}"

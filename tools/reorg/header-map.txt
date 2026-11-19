@@ -29,20 +29,20 @@ pcms/field/coordinate_view.hpp                                 pcms/utility/coor
 pcms/field/data/mesh_fields.h                                  pcms/backends/omega_h_meshfields/field_data.hpp private
 pcms/field/data/mfem.hpp                                       pcms/backends/mfem/field_data.hpp private
 pcms/field/data/point_cloud.h                                  pcms/backends/point_cloud/field_data.hpp private
-pcms/field/data/simple.h                                       pcms/field/simple_field_data.hpp
+pcms/field/data/simple.h                                       pcms/field/detail/simple_field_data.hpp
 pcms/field/data/xgc.h                                          pcms/backends/xgc/field_data.hpp private
 pcms/field/element_dispatch.h                                  pcms/field/element_dispatch.hpp private
-pcms/field/eqdsk_field.h                                       pcms/field/eqdsk_field.hpp
+pcms/field/eqdsk_field.h                                       pcms/eqdsk/eqdsk.hpp
 pcms/field/evaluation_request.h                                - private
 pcms/field/evaluator/mesh_fields.h                             pcms/backends/omega_h_meshfields/evaluator.hpp private
 pcms/field/evaluator/mesh_fields_backend.h                     pcms/backends/omega_h_meshfields/evaluator_backend.hpp private
-pcms/field/evaluator/mls_options.h                             pcms/localization/mls_options.hpp
-pcms/field/evaluator/mls_point_cloud.h                         pcms/backends/point_cloud/mls_evaluator.hpp
+pcms/field/evaluator/mls_options.h                             pcms/field/mls_options.hpp
+pcms/field/evaluator/mls_point_cloud.h                         pcms/backends/point_cloud/mls_evaluator.hpp private
 pcms/field/evaluator/omega_h_geometry.hpp                      pcms/backends/omega_h/geometry.hpp
 pcms/field/evaluator/omega_h_lagrange.h                        pcms/backends/omega_h/lagrange_evaluator.hpp private
-pcms/field/evaluator/pcms_interpolator_aliases.hpp             pcms/field/evaluator/interpolator_aliases.hpp private
-pcms/field/evaluator/pcms_interpolator_logger.hpp              pcms/field/evaluator/interpolator_logger.hpp private
-pcms/field/evaluator/pcms_interpolator_view_utils.hpp          pcms/field/evaluator/interpolator_view_utils.hpp private
+pcms/field/evaluator/pcms_interpolator_aliases.hpp             pcms/backends/point_cloud/interpolator_aliases.hpp private
+pcms/field/evaluator/pcms_interpolator_logger.hpp              pcms/backends/point_cloud/interpolator_logger.hpp private
+pcms/field/evaluator/pcms_interpolator_view_utils.hpp          pcms/backends/point_cloud/interpolator_view_utils.hpp private
 pcms/field/evaluator/point_cloud.h                             pcms/backends/point_cloud/evaluator.hpp private
 pcms/field/evaluator/point_cloud_geometry.hpp                  pcms/backends/point_cloud/geometry.hpp
 pcms/field/evaluator/spline_interpolator.hpp                   pcms/backends/uniform_grid/spline_interpolator.hpp private
@@ -65,7 +65,7 @@ pcms/field/layout/mesh_fields.h                                pcms/backends/ome
 pcms/field/layout/mfem.hpp                                     pcms/backends/mfem/layout.hpp private
 pcms/field/layout/omega_h_entity.h                             pcms/backends/omega_h/entity_layout.hpp private
 pcms/field/layout/omega_h_lagrange.h                           pcms/backends/omega_h/lagrange_layout.hpp private
-pcms/field/layout/point_cloud.h                                pcms/backends/point_cloud/layout.hpp
+pcms/field/layout/point_cloud.h                                pcms/backends/point_cloud/layout.hpp private
 pcms/field/layout/uniform_grid.h                               pcms/backends/uniform_grid/layout.hpp private
 pcms/field/layout/xgc.h                                        pcms/backends/xgc/layout.hpp private
 pcms/field/out_of_bounds_policy.h                              pcms/field/out_of_bounds_policy.hpp
@@ -77,9 +77,9 @@ pcms/localization/adj_search.hpp                               pcms/backends/ome
 pcms/localization/localization_factory.h                       - private
 pcms/localization/localization_path_selection.h                - private
 pcms/localization/mesh_localization.h                          - private
-pcms/localization/mls_support_helpers.h                        pcms/localization/mls_support_helpers.hpp
+pcms/localization/mls_support_helpers.h                        pcms/localization/mls_support_helpers.hpp private
 pcms/localization/point_cloud_localization.h                   - private
-pcms/localization/point_search.h                               pcms/backends/omega_h/point_search.hpp
+pcms/localization/point_search.h                               pcms/backends/omega_h/point_search.hpp private
 pcms/localization/queue_visited.hpp                            pcms/backends/omega_h/queue_visited.hpp private
 pcms/pythonapi/numpy_array_transform.h                         pcms/pythonapi/numpy_array_transform.hpp private
 pcms/pythonapi/numpy_view.h                                    pcms/pythonapi/numpy_view.hpp private
@@ -99,7 +99,7 @@ pcms/utility/assert.h                                          pcms/utility/asse
 pcms/utility/bounding_box.h                                    pcms/utility/bounding_box.hpp
 pcms/utility/common.h                                          pcms/utility/detail/common.hpp
 pcms/utility/entity_types.h                                    pcms/utility/entity_types.hpp
-pcms/utility/eqdsk.h                                           pcms/utility/eqdsk.hpp
+pcms/utility/eqdsk.h                                           pcms/eqdsk/eqdsk.hpp
 pcms/utility/inclusive_scan.h                                  pcms/utility/detail/inclusive_scan.hpp
 pcms/utility/memory_spaces.h                                   pcms/utility/memory_spaces.hpp
 pcms/utility/mesh_geometry.h                                   pcms/utility/mesh_geometry.hpp private

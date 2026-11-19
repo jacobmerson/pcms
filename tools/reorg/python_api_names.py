@@ -28,18 +28,24 @@ Rewrites, preserving the arguments:
   pcms.create_uniform_grid_geometry(...)      -> pcms.uniform_grid.create_geometry(...)
   pcms.create_uniform_grid_binary_field(...)  -> pcms.omega_h.create_uniform_grid_binary_field(...)
   pcms.create_uniform_grid_from_mesh(...)     -> pcms.omega_h.create_uniform_grid_from_mesh(...)
-  pcms.map_entity_field_to_vertices_X(...)    -> pcms.omega_h.map_entity_field_to_vertices_X(...)
-  pcms.compute_entity_centroids[_few](...)    -> pcms.omega_h.compute_entity_centroids(...)
-  <expr>.mesh()                               -> pcms.omega_h.get_mesh(<expr>.get_geometry())
+  pcms.Interpolator(...)                      -> pcms.create_interpolator(...)
+  pcms.Copy(...)                              -> pcms.create_copy(...)
+  pcms.csys.Cartesian.create(dim)             -> pcms.csys.create_cartesian(dim)
+  pcms.csys.CylindricalRThetaZ.create()       -> pcms.csys.create_cylindrical_r_theta_z()
+  pcms.csys.CylindricalRZ.create()            -> pcms.csys.create_cylindrical_rz()
+  pcms.CartesianToCylindrical()               -> pcms.create_cartesian_to_cylindrical()
+  pcms.CylindricalToCartesian()               -> pcms.create_cylindrical_to_cartesian()
 
 The keyword mesh_coordinate_system= becomes system= (the coordinate system is
 the geometry's). A module imported as `import pcms as <alias>` is rewritten
 under its alias. Running the script twice is a no-op.
 
-Review the result: `<expr>.mesh()` is rewritten only when <expr> starts with
-the module name or a name assigned from a call through it in the same file;
-other `.mesh()` calls are reported, not rewritten (the script does not know
-types); `pcms.create_point_cloud_geometry(a, b)` is
+Reported, not rewritten (they have no direct replacement): `<expr>.mesh()`
+(PCMS does not hand a mesh back: keep the Omega_h mesh the geometry was
+created from), the removed helpers map_entity_field_to_vertices_average/_mls,
+compute_entity_centroids[_few], patch_size_for_degree, same_coordinate_system,
+same_value_basis and has_identity_metric (see REMOVED below for each
+replacement). Review the result: `pcms.create_point_cloud_geometry(a, b)` is
 treated as the Omega_h-geometry form when `b` is an integer literal, a name ending in
 `dim`, or entity_dim= is given; the MLSOptions fields radius,
 min_req_supports and adapt_radius are now NeighbourhoodOptions fields
@@ -242,15 +248,37 @@ def simple(name):
 
 # top-level names that moved to pcms.omega_h
 MOVED_TO_OMEGA_H = ("create_uniform_grid_binary_field",
-                    "create_uniform_grid_from_mesh",
-                    "map_entity_field_to_vertices_average",
-                    "map_entity_field_to_vertices_mls",
-                    "compute_entity_centroids")
+                    "create_uniform_grid_from_mesh")
 # removed aliases: (old, new)
-ALIASES = (("compute_entity_centroids_few", "compute_entity_centroids"),)
+ALIASES = ()
 # renamed (and moved) names: (old, new)
 RENAMED = (("create_omega_h_geometry", "omega_h.create_geometry"),
-           ("create_uniform_grid_geometry", "uniform_grid.create_geometry"))
+           ("create_uniform_grid_geometry", "uniform_grid.create_geometry"),
+           ("csys.Cartesian.create", "csys.create_cartesian"),
+           ("csys.CylindricalRThetaZ.create", "csys.create_cylindrical_r_theta_z"),
+           ("csys.CylindricalRZ.create", "csys.create_cylindrical_rz"),
+           ("CartesianToCylindrical", "create_cartesian_to_cylindrical"),
+           ("CylindricalToCartesian", "create_cylindrical_to_cartesian"))
+# removed names and their replacement, reported
+REMOVED = {
+    "map_entity_field_to_vertices_average":
+        "read the entity values as a P0 field (create_lagrange_space(geometry, "
+        "0, n)) and interpolate it with create_interpolator",
+    "map_entity_field_to_vertices_mls":
+        "create_polynomial_reconstruction_space(omega_h.create_point_cloud_"
+        "geometry(geometry, dim), options) and create_interpolator",
+    "compute_entity_centroids":
+        "the DOF-holder coordinates of a P0 space or of "
+        "omega_h.create_point_cloud_geometry(geometry, dim)",
+    "compute_entity_centroids_few":
+        "the DOF-holder coordinates of a P0 space or of "
+        "omega_h.create_point_cloud_geometry(geometry, dim)",
+    "patch_size_for_degree": "NeighbourhoodOptions.min_supports",
+    "same_coordinate_system": "a == b",
+    "same_value_basis": "a == b",
+    "has_identity_metric":
+        "s.has_orthogonal_basis() and s.has_unit_scale_factors()",
+}
 
 
 def convert(text, mod="pcms"):
@@ -270,22 +298,14 @@ def convert(text, mod="pcms"):
     calls("OmegaHControlVariateProjection",
           simple("create_control_variate_projection"))
     calls("create_point_cloud_geometry", point_cloud_geometry)
+    calls("Interpolator", simple("create_interpolator"))
+    calls("Copy", simple("create_copy"))
     for old, new in ALIASES + RENAMED:
         text = re.sub(rf"(?<![\w.]){m}\.{old}\b", f"{mod}.{new}", text)
     for name in MOVED_TO_OMEGA_H:
         text = re.sub(rf"(?<![\w.]){m}\.{name}\b",
                       f"{mod}.omega_h.{name}", text)
-    # only receivers known to be PCMS objects: rooted at the module, or a
-    # name assigned from a call through the module in this file
-    known = set(re.findall(rf"^[ \t]*(\w+)[ \t]*=[ \t]*{m}\.\w", text, re.M))
-    known.add(mod)
-
-    def mesh_call(match):
-        if match.group(1).split(".")[0] not in known:
-            return match.group(0)
-        return f"{mod}.omega_h.get_mesh({match.group(1)}.get_geometry())"
-
-    return re.sub(r"(?<![\w.])((?:\w+\.)*\w+)\.mesh\(\)", mesh_call, text)
+    return text
 
 
 def main(files):
@@ -309,10 +329,14 @@ def main(files):
                       "adapt_radius) of the point-cloud geometry; update by "
                       "hand", file=sys.stderr)
             if re.search(r"(?<![\w.])(?:\w+\.)*\w+\.mesh\(\)", line):
-                print(f"{f}:{n}: .mesh() call not rewritten: the receiver is "
-                      "not known to be a PCMS object; if it is, use "
-                      "pcms.omega_h.get_mesh(<expr>.get_geometry()) "
-                      "by hand", file=sys.stderr)
+                print(f"{f}:{n}: .mesh() call not rewritten: if the receiver "
+                      "is a PCMS space, use the Omega_h mesh its geometry was "
+                      "created from (PCMS does not hand a mesh back)",
+                      file=sys.stderr)
+            for name, advice in REMOVED.items():
+                if re.search(rf"\b(?:\w+\.)*{name}\b", line):
+                    print(f"{f}:{n}: {name} was removed; use {advice}",
+                          file=sys.stderr)
             imp = re.match(r"\s*from\s+pcms\s+import\s+(.*)", line)
             if imp:
                 moved = [x for x in re.findall(r"\w+", imp.group(1))

@@ -100,12 +100,12 @@ cpp-private   pcms::GidToIndexMaps pcms::field::GidToIndexMaps
 cpp-private   pcms::MakeUnmappedPermutation pcms::field::MakeUnmappedPermutation
 cpp-private   pcms::mls_interpolation pcms::detail::mls_interpolation
 cpp-private   pcms::BuildPointCloudSupports pcms::detail::BuildPointCloudSupports
-cpp   pcms::GridPointSearch2D pcms::omega_h::GridPointSearch2D
-cpp   pcms::GridPointSearch3D pcms::omega_h::GridPointSearch3D
-cpp   pcms::GridPointSearchVariant pcms::omega_h::GridPointSearchVariant
-cpp   pcms::PointLocalizationSearch pcms::omega_h::PointLocalizationSearch
-cpp   pcms::PointLocalizationSearch2D pcms::omega_h::PointLocalizationSearch2D
-cpp   pcms::PointLocalizationSearch3D pcms::omega_h::PointLocalizationSearch3D
+cpp-private   pcms::GridPointSearch2D pcms::omega_h::GridPointSearch2D
+cpp-private   pcms::GridPointSearch3D pcms::omega_h::GridPointSearch3D
+cpp-private   pcms::GridPointSearchVariant pcms::omega_h::GridPointSearchVariant
+cpp-private   pcms::PointLocalizationSearch pcms::omega_h::PointLocalizationSearch
+cpp-private   pcms::PointLocalizationSearch2D pcms::omega_h::PointLocalizationSearch2D
+cpp-private   pcms::PointLocalizationSearch3D pcms::omega_h::PointLocalizationSearch3D
 cpp-private   pcms::adapt_radii pcms::detail::adapt_radii
 cpp-private   pcms::minmax pcms::detail::minmax
 cpp-private   pcms::triangle_intersects_bbox pcms::localization::triangle_intersects_bbox
@@ -170,7 +170,7 @@ manual        pcms::LagrangeFunctionSpace::FromUniformGrid  ->  pcms::CreateLagr
 manual        pcms::LagrangeFunctionSpace::Backend  ->  pcms::LagrangeBackend (in pcms::LagrangeOptions)
 manual        pcms::SplineFunctionSpace::FromUniformGrid  ->  pcms::CreateSplineSpace(pcms::uniform_grid::CreateGeometry(grid, csys))
 manual        pcms::PolynomialReconstructionFunctionSpace::Create  ->  pcms::CreatePolynomialReconstructionSpace(pcms::point_cloud::CreateGeometry(points, neighbourhood), options)
-manual        pcms::PolynomialReconstructionFunctionSpace::FromMesh  ->  pcms::CreatePolynomialReconstructionSpace(pcms::omega_h::CreatePointCloudGeometry(mesh, entity_dim, csys, neighbourhood), options)
+manual        pcms::PolynomialReconstructionFunctionSpace::FromMesh  ->  pcms::CreatePolynomialReconstructionSpace(pcms::omega_h::CreatePointCloudGeometry(pcms::omega_h::CreateGeometry(mesh, csys), entity_dim, neighbourhood), options)
 manual        pcms::OmegaHConservativeProjection  ->  pcms::CreateConservativeProjection(source_space, target_space, {mass_matrix_type})
 manual        pcms::OmegaHControlVariateProjection  ->  pcms::CreateControlVariateProjection(source, target_space, {samples_per_element, seed, mass_matrix_type, to_source})
 manual        pcms::XGCFieldFactory  ->  pcms::xgc::CreateFieldFactory(rc, num_plane_nodes, layout_name)
@@ -181,12 +181,12 @@ manual        pcms::EmptyFieldLayout  ->  pcms::CreateEmptyLayout(csys, num_comp
 manual        pcms::OverlapMask(size, Omega_h::Read<I8>)  ->  pcms::OverlapMask(size, pcms::omega_h::OverlapMaskFromArray(mask, size))
 manual        pcms::MakeConstRank2View(Omega_h::Read<T>, dim)  ->  pcms::omega_h::MakeConstRank2View(array, dim)
 manual        redev::Mode (in ApplicationComm/FieldHandle/DataHandle Send/Receive)  ->  pcms::Mode
-manual        FunctionSpace::mesh() (Python)  ->  pcms.omega_h.get_mesh(space.get_geometry())
+manual        FunctionSpace::mesh() (Python)  ->  removed: PCMS does not hand a mesh back; keep the Omega_h mesh the geometry was created from
 manual        pcms::EvaluationRequest  ->  source.GetGeometry()->Bind(coords, policy), then source.CreatePointEvaluator<T>(bound)
 manual        pcms::TransformedSource  ->  geometry->Bind(coords, policy, map): the coordinate map is an argument of the bind
-manual        pcms::InterpolationBase  ->  pcms::Interpolator (with a polynomial-reconstruction source space)
-manual        pcms::MLSMeshInterpolation  ->  pcms::Interpolator (with a polynomial-reconstruction source space)
-manual        pcms::MLSPointCloudInterpolation  ->  pcms::Interpolator (with a polynomial-reconstruction source space)
+manual        pcms::InterpolationBase  ->  pcms::CreateInterpolator(source, target_space) (with a polynomial-reconstruction source space)
+manual        pcms::MLSMeshInterpolation  ->  pcms::CreateInterpolator(source, target_space) (with a polynomial-reconstruction source space)
+manual        pcms::MLSPointCloudInterpolation  ->  pcms::CreateInterpolator(source, target_space) (with a polynomial-reconstruction source space)
 manual        pcms::LocalizationFactory  ->  pcms::Geometry::Neighbourhood
 manual        pcms::FindOwningElements  ->  removed (the search reports entities; see MIGRATION.md)
 manual        pcms::GetOwningElementId  ->  removed (the search reports entities; see MIGRATION.md)
@@ -195,4 +195,30 @@ manual        pcms::SupportResults  ->  members are Kokkos::View<const LO*, Devi
 manual        pcms::FunctionSpace::GetDiscretization  ->  space->GetGeometry() (Discretization is removed)
 manual        pcms::FieldLayout::GetDiscretization  ->  layout->GetGeometry()
 manual        pcms::Geometry::GetDiscretization  ->  removed
-manual        pcms::omega_h::GetMesh(geometry)  ->  the member OmegaHGeometry::GetMesh() (cast the geometry to the kind)
+manual        pcms::omega_h::GetMesh(geometry)  ->  removed: PCMS does not hand a mesh back; keep the Omega_h mesh the geometry was created from
+cpp-private   pcms::inclusive_scan pcms::detail::inclusive_scan
+cpp-private   pcms::OwnedLayoutData pcms::detail::OwnedLayoutData
+cpp-private   pcms::BuildOwnedLayoutData pcms::detail::BuildOwnedLayoutData
+cpp-private   pcms::apply_to_type pcms::detail::apply_to_type
+cpp-private   pcms::intersects pcms::detail::intersects
+cpp-private   pcms::printError pcms::detail::printError
+cpp-private   pcms::printInfo pcms::detail::printInfo
+cpp-private   pcms::printDebugInfo pcms::detail::printDebugInfo
+cpp-private   pcms::getStdout pcms::detail::getStdout
+cpp-private   pcms::getStderr pcms::detail::getStderr
+cpp-private   pcms::is_supported_field_type_v pcms::detail::is_supported_field_type_v
+cpp-private   pcms::GlobalDataInterface pcms::detail::GlobalDataInterface
+cpp-private   pcms::GlobalDataVariant pcms::detail::GlobalDataVariant
+manual        pcms::ReversePartitionMap  ->  removed (unused)
+manual        pcms::Interpolator  ->  pcms::CreateInterpolator<T>(source, target_space[, policy | bound]) (shared_ptr arguments; returns std::unique_ptr<TransferOperator<T>>)
+manual        pcms::Copy  ->  pcms::CreateCopy<T>(source_space, target_space) (shared_ptr arguments; returns std::unique_ptr<TransferOperator<T>>)
+manual        pcms::csys::Cartesian  ->  pcms::csys::CreateCartesian(dim) (returns std::shared_ptr<const CoordinateSystem>)
+manual        pcms::csys::CylindricalRThetaZ  ->  pcms::csys::CreateCylindricalRThetaZ()
+manual        pcms::csys::CylindricalRZ  ->  pcms::csys::CreateCylindricalRZ()
+manual        pcms::CartesianToCylindrical  ->  pcms::CreateCartesianToCylindrical() (returns std::shared_ptr<const CoordinateMap>)
+manual        pcms::CylindricalToCartesian  ->  pcms::CreateCylindricalToCartesian()
+manual        pcms::PoloidalPlaneEmbedding  ->  pcms::CreatePoloidalPlaneEmbedding(theta0)
+manual        pcms::FixedTimestepper  ->  pcms::CreateFixedTimestepper(dt) (returns std::unique_ptr<Timestepper>)
+manual        pcms::MakeEQDSKField  ->  pcms::CreateEQDSKFunction(eqdsk_data) (returns Function<Real>) or pcms::ReadEQDSK(filename) (pcms/eqdsk/eqdsk.hpp)
+manual        pcms::EQDSKField  ->  pcms::Function<Real> from pcms::CreateEQDSKFunction (its space is GetSpacePtr())
+manual        pcms::EQDSKFieldWithData  ->  pcms::EQDSKFunction {data, psi} from pcms::ReadEQDSK

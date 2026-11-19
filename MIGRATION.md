@@ -60,6 +60,13 @@ replacement). The rest of this document explains those changes.
   separately (`pcms/backends/omega_h/omega_h.hpp`,
   `pcms/backends/mfem/mfem.hpp`, `pcms/backends/xgc/xgc.hpp`).
 - The top-level `pcms.h` is replaced by `pcms/pcms.hpp`.
+- The geometry factories of the uniform-grid and point-cloud backends are in
+  `pcms/backends/uniform_grid/geometry.hpp` and
+  `pcms/backends/point_cloud/geometry.hpp`; `MLSOptions` is in
+  `pcms/field/mls_options.hpp`.
+- Installed headers below a `detail/` folder (`pcms/<library>/detail/`,
+  `pcms/backends/<name>/detail/`) and the names in `detail` namespaces are not
+  API: they may change in any release.
 - `tools/reorg/header-map.txt` lists every old path and its replacement;
   headers marked "private" are no longer installed and their classes must be
   replaced by the public API below.
@@ -111,12 +118,36 @@ system and the point search; use the factories, which return the interfaces
 | `MakeConstRank2View(omega_h_array, dim)` | `omega_h::MakeConstRank2View(omega_h_array, dim)` |
 | `CreateUniformGridFromMesh<dim>(mesh, ...)` | `omega_h::CreateUniformGridFromMesh<dim>(mesh, ...)` |
 | `CreateUniformGridBinaryField<2>(mesh, ...).second` | `omega_h::CreateUniformGridBinaryField(mesh, ...)` |
+| `Interpolator<T> interp(src, tgt[, policy \| bound])` | `auto interp = CreateInterpolator<T>(src, tgt[, policy \| bound])` |
+| `Copy<T> copy(src, tgt)` | `auto copy = CreateCopy<T>(src, tgt)` |
+| `csys::Cartesian::Create(dim)` | `csys::CreateCartesian(dim)` |
+| `csys::CylindricalRThetaZ::Create()`, `csys::CylindricalRZ::Create()` | `csys::CreateCylindricalRThetaZ()`, `csys::CreateCylindricalRZ()` |
+| `CartesianToCylindrical()`, `CylindricalToCartesian()` | `CreateCartesianToCylindrical()`, `CreateCylindricalToCartesian()` |
+| `PoloidalPlaneEmbedding(theta0)` | `CreatePoloidalPlaneEmbedding(theta0)` |
+| `FixedTimestepper(dt)` | `CreateFixedTimestepper(dt)` |
 
-(`` is `pcms::`; all other names are in `pcms::`.) Factories
+(`omega_h::`, `uniform_grid::`, `point_cloud::`, `xgc::` and `mfem::` are
+`pcms::omega_h::` and so on; all other names are in `pcms::`.) Factories
 for a combination PCMS does not support (e.g. a Lagrange space on a
 point-cloud geometry) throw `pcms_error`. The projection factories throw in a
 build without PETSc and MeshFields.
 
+- Factories return the interface: `std::shared_ptr<const Geometry>`,
+  `std::shared_ptr<const CoordinateSystem>`, `std::shared_ptr<const
+  CoordinateMap>`, `std::unique_ptr<TransferOperator<T>>`,
+  `std::unique_ptr<Timestepper>`. The concrete classes (the geometry kinds,
+  `Interpolator`, `Copy`, the coordinate systems and maps,
+  `FixedTimestepper`) are internal. A function that needs a particular kind
+  checks it at runtime and throws `pcms_error` (e.g.
+  `omega_h::CreatePointCloudGeometry` for a geometry that is not an Omega_h
+  geometry).
+- Objects hold what they need: the transfer factories take
+  `std::shared_ptr<const PointEvaluatorFactory>` and
+  `std::shared_ptr<const FunctionSpace>` (pass the pointer, not `*space`)
+  and the operators keep them alive.
+- The `FunctionSpace` constructor (for spaces implemented outside PCMS)
+  takes the geometry as a required argument; it throws `pcms_error` if the
+  geometry is null or is not the evaluator source's.
 - A geometry must be owned by a `std::shared_ptr` (the factories return one);
   spaces and BoundPoints hold it, and what it refers to (the Omega_h mesh)
   must outlive it. Creating a geometry builds the mesh's containing-element
@@ -125,8 +156,8 @@ build without PETSc and MeshFields.
 - There are no discretization factories (`Discretization` is removed; layouts
   hold their geometry), and a geometry owns its
   global-id tag and ownership mask (`OmegaHGeometryOptions`).
-  `OmegaHGeometry::GetMesh()` returns the mesh of an Omega_h geometry; the
-  geometry kinds are public and their factories return them.
+  PCMS does not hand a mesh back: keep the Omega_h mesh you created the
+  geometry from.
 - The coordinate system belongs to the geometry; the space factories no
   longer take one.
 - `MLSOptions` keeps `degree`, `lambda`, `tol`, `decay_factor` and `basis`;
@@ -136,8 +167,13 @@ build without PETSc and MeshFields.
 - `MonteCarloSampling` is removed: the control-variate projection samples
   uniformly at random.
 
-`MakeEQDSKField` is unchanged except that `EQDSKField::space` is a
-`std::shared_ptr<FunctionSpace>`.
+EQDSK moved to `pcms/eqdsk/eqdsk.hpp` (no longer included by
+`pcms/pcms.hpp`; it is expected to move to FusionIO 2.0) together with
+`EQDSKData` (from `pcms/utility/eqdsk.hpp`). `MakeEQDSKField(data)` is
+`CreateEQDSKFunction(data)`, which returns the psi `Function<Real>` (it owns
+its spline space: `GetSpace()`), and `MakeEQDSKField(filename)` is
+`ReadEQDSK(filename)`, which returns `EQDSKFunction {data, psi}`.
+`EQDSKField` and `EQDSKFieldWithData` are removed.
 
 `UniformGrid::ClosestCellID` and `IsPointInBounds` accept any point type
 indexable with `[i]` (`Kokkos::Array`, a subview, `Omega_h::Vector`).
@@ -153,18 +189,16 @@ again. `EvaluationRequest` and its `From*` factories are removed, and so is
 | 0.3 | 0.4 |
 |---|---|
 | `source.CreatePointEvaluator<T>(EvaluationRequest::FromCoordinates(coords, policy))` | `source.CreatePointEvaluator<T>(source.GetGeometry()->Bind(coords, policy))` |
-| `source.CreatePointEvaluator<T>(EvaluationRequest::FromFunctionSpace(space, policy))` | `source.CreatePointEvaluator<T>(source.GetGeometry()->Bind(space.GetLayout()->GetDOFHolderCoordinates(), policy))`, or an `Interpolator` |
+| `source.CreatePointEvaluator<T>(EvaluationRequest::FromFunctionSpace(space, policy))` | `source.CreatePointEvaluator<T>(source.GetGeometry()->Bind(space.GetLayout()->GetDOFHolderCoordinates(), policy))`, or `CreateInterpolator` |
 | `TransformedSource(source, map)` | `geometry->Bind(coords, policy, map)`: the points are in the map's source coordinate system, are located at their images, and the evaluators re-express the values through the map |
-| (none) | `source.CreatePointEvaluator<T>(bound, DifferentialOperator::Gradient)`; `Gradient(source)`, `Divergence(source)`, `Curl(source)` are sources whose evaluators write the operator applied to the field (`pcms/field/gradient_source.hpp`); `Supports(op)` tells which a source implements |
+| (none) | `source.CreatePointEvaluator<T>(bound, DifferentialOperator::Gradient)`; `Gradient(source)`, `Divergence(source)`, `Curl(source)` are sources whose evaluators write the operator applied to the field (`pcms/field/gradient_source.hpp`, public); `Supports(op)` tells which a source implements |
 | (none) | `geometry->Bind(coords, OwnerHints{...}, policy, map)`: points whose owners are known (generated in the elements of the geometry) skip the search; `geometry->Rebind(previous, coords)` recycles the storage of a BoundPoints nothing else holds |
 | (none) | `QueryPoints query(geometry, policy, map); query.Locate(coords); query.Evaluate(function, out, op)`: evaluation at points that move between calls; `Evaluate(function, points, out, op, policy, map)` (`pcms/field/query_points.hpp`) does one evaluation |
 | (none) | `geometry->Neighbourhood(coords, NeighbourhoodOptions, owners)`: the supports of reconstruction spaces; `geometry->Differential(bound)`: the Jacobian at the bound points |
 
 A `PointEvaluatorFactory` implemented outside PCMS implements
 `GetGeometry()`, `Supports(op)` and `CreatePointEvaluatorImpl(type, bound,
-op)` (`pcms/field/point_evaluator_factory.hpp`; deriving from
-`TypedPointEvaluatorFactory<T, Bound>` and implementing `CreateEvaluator`
-gets the value-type and operator checks), and a `Geometry` implemented
+op)` (`pcms/field/point_evaluator_factory.hpp`), and a `Geometry` implemented
 outside PCMS implements `GetCoordinateSystem()` and
 `BindImpl(request)` (`pcms/geometry/geometry.hpp` and `bound_points.hpp`:
 `BoundPoints` is the per-point data of a bind). A `PointEvaluator`
@@ -176,17 +210,27 @@ the BoundPoints did not find.
 `MLSPointCloudInterpolation`, `LocalizationFactory` and its two
 implementations, `FindOwningElements` (removed),
 `GetOwningElementId(s)`, the COO assembly utilities and `MonteCarloSampling`
-are removed; the replacements are the bind above, `Interpolator` (also for
-reconstruction spaces) and `Geometry::Neighbourhood`.
+are removed; the replacements are the bind above, `CreateInterpolator` (also
+for reconstruction spaces) and `Geometry::Neighbourhood`.
 
 ## Namespaces
 
-- The public API stays in `pcms::`.
-- Backend code is in `pcms::<name>` (`omega_h`, `mfem`, `xgc`,
-  `point_cloud`, `uniform_grid`, `omega_h_meshfields`).
-- Internal code is in `pcms::utility`, `pcms::discretization`,
-  `pcms::localization`, `pcms::field`, `pcms::transfer` and `pcms::coupler`.
+- The public API stays in `pcms::` (coordinate systems in `pcms::csys::`).
+- Each backend has one flat namespace, `pcms::<name>` (`omega_h`, `mfem`,
+  `xgc`, `point_cloud`, `uniform_grid`, `omega_h_meshfields`); its public
+  entry points are there (`omega_h::CreateGeometry`,
+  `uniform_grid::CreateGeometry`, `point_cloud::CreateGeometry`, ...).
+  There is no `pcms::backend::` and no Python `pcms.backend`.
+- Internal code is in one namespace per library (`pcms::utility`,
+  `pcms::localization`, `pcms::field`, `pcms::transfer`, `pcms::coupler`)
+  or in its backend's namespace. Installed code that is not API is in
+  `pcms::detail` (or `pcms::<backend>::detail`), in headers below `detail/`.
   `tools/reorg/symbol-map.txt` lists every name that moved.
+- MFEM's namespace `mfem` collides with `pcms::mfem`: inside `namespace pcms`,
+  or after `using namespace pcms;`, write MFEM's as `::mfem::`.
+- The MFEM and XGC backends support send and receive only so far (field
+  factories for the coupler); they have no geometry, spaces or evaluators
+  yet.
 
 ## Coupler
 
@@ -215,13 +259,25 @@ are removed:
 | `pcms.PolynomialReconstructionFunctionSpace.from_mesh(mesh, dim, csys, opts)` | `pcms.create_polynomial_reconstruction_space(pcms.omega_h.create_point_cloud_geometry(pcms.omega_h.create_geometry(mesh, system=csys), dim), opts)` |
 | `pcms.OmegaHConservativeProjection(src, tgt, ...)` | `pcms.create_conservative_projection(src, tgt, ...)` |
 | `pcms.OmegaHControlVariateProjection(src, tgt, ...)` | `pcms.create_control_variate_projection(src, tgt, ...)` |
-| `space.mesh()` | `pcms.omega_h.get_mesh(space.get_geometry())` |
 | `pcms.create_uniform_grid_binary_field(mesh, divs)` | `pcms.omega_h.create_uniform_grid_binary_field(mesh, divs)` |
 | `pcms.create_uniform_grid_from_mesh(mesh, divs)` | `pcms.omega_h.create_uniform_grid_from_mesh(mesh, divs)` |
-| `pcms.map_entity_field_to_vertices_{average,mls}(mesh, ...)` | `pcms.omega_h.map_entity_field_to_vertices_{average,mls}(mesh, ...)` |
-| `pcms.compute_entity_centroids(mesh, dim)`, `pcms.compute_entity_centroids_few(mesh, dim)` | `pcms.omega_h.compute_entity_centroids(mesh, dim)` |
+| `pcms.map_entity_field_to_vertices_average(mesh, values, dim)` | read the values as a P0 field (`pcms.create_lagrange_space(geometry, 0, n)`) and interpolate it with `pcms.create_interpolator` |
+| `pcms.map_entity_field_to_vertices_mls(mesh, values, dim)` | `pcms.create_polynomial_reconstruction_space(pcms.omega_h.create_point_cloud_geometry(geometry, dim), opts)` and `pcms.create_interpolator` |
+| `pcms.compute_entity_centroids(mesh, dim)` | the DOF-holder coordinates of a P0 space (`space.get_layout().get_dof_holder_coordinates()`) |
+| `pcms.Interpolator(src, tgt[, policy \| bound])` | `pcms.create_interpolator(src, tgt[, policy \| bound])` |
+| `pcms.Copy(src, tgt)` | `pcms.create_copy(src, tgt)` |
+| `pcms.csys.Cartesian.create(dim)`, `pcms.csys.CylindricalRThetaZ.create()`, `pcms.csys.CylindricalRZ.create()` | `pcms.csys.create_cartesian(dim)`, `pcms.csys.create_cylindrical_r_theta_z()`, `pcms.csys.create_cylindrical_rz()` |
+| `pcms.CartesianToCylindrical()`, `pcms.CylindricalToCartesian()` | `pcms.create_cartesian_to_cylindrical()`, `pcms.create_cylindrical_to_cartesian()` |
+| `pcms.same_coordinate_system(a, b)`, `pcms.same_value_basis(a, b)` | `a == b` |
+| `pcms.has_identity_metric(s)` | `s.has_orthogonal_basis() and s.has_unit_scale_factors()` |
+| `pcms.patch_size_for_degree(d)` | removed (set `NeighbourhoodOptions.min_supports`) |
 
-A geometry keeps its mesh alive and a space keeps its geometry alive;
+Geometries are opaque `pcms.Geometry` objects (the `pcms.OmegaHGeometry`
+class is removed) and coordinate systems are `pcms.CoordinateSystem` objects
+(compare them with `==`, or use `kind()`). An object keeps alive what it was
+created from: a geometry its mesh, a space its geometry, an evaluator its
+source and bound points, a transfer operator its source and target spaces.
+PCMS does not hand a mesh back (`pcms.omega_h.get_mesh` is removed).
 `pcms.Geometry.bind`, `pcms.QueryPoints`, `pcms.gradient` and
 `pcms.evaluate` are the Python forms of the bind and the evaluation above.
 The MLSOptions fields `radius`, `min_req_supports` and `adapt_radius` are
@@ -305,6 +361,10 @@ N=$(git log --format=%H -1 --grep='move internal code into the sub-library and b
    ```sh
    git merge -s ours $N
    git merge <develop>
+   # the second namespace commit flattened pcms::backend::<name> to
+   # pcms::<name>; move the branch's code with it
+   sed -i -E 's/pcms::backend::/pcms::/g; s/\bbackend::(omega_h|mfem|xgc|omega_h_meshfields|uniform_grid|point_cloud)::/\1::/g; s/namespace backend::/namespace /' \
+     $(git diff --name-only --diff-filter=d HEAD^2 | grep -E '\.(cpp|hpp|h)$')
    tools/migrate-pcms.sh --in-tree $(git diff --name-only --diff-filter=d HEAD^2)
    clang-format -i $(git diff --name-only --diff-filter=d HEAD^2 | grep -E '\.(cpp|hpp|h)$')
    ```
@@ -340,7 +400,8 @@ What is left by hand:
   `manual` entries of `tools/reorg/symbol-map.txt`).
 - Code that calls the point search directly (pull requests #345, #416 and
   #417): the search `Result` now reports the entity the point lies on
-  (`dimensionality`, `entity`; `OutsideId`/`IsOutside` for a point outside)
+  (`dimensionality`, `entity`; `OutsideId`/`IsOutside` for a point outside;
+the search is now private, in `src/pcms/backends/omega_h/point_search.hpp`)
   and its `parametric` coordinates on that entity, not an element and its
   barycentric coordinates. The search does not choose an element: a consumer
   that needs one takes the lowest adjacent element for a point on a shared
@@ -359,7 +420,8 @@ A pull request that does not build before the reorganization is merged in one
 step instead: step 2 with `<develop>` in place of `$N~1`, then step 5 without
 the two merges. `migrate-pcms.sh --in-tree` then writes the moved names in
 full (`pcms::localization::GridPointSearch2D`) where the tool would have
-written them as briefly as lookup allows.
+written them as briefly as lookup allows. The backend-namespace sed of step 5
+is also needed then.
 
 ## C and Fortran APIs
 
