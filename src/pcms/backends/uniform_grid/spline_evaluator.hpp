@@ -53,14 +53,16 @@ inline void GatherPoints(Kokkos::View<const Real**, DeviceMemorySpace> points,
 } // namespace detail
 
 /// @brief Evaluates the bicubic spline of a field's grid values, or its
-///        gradient (df/dx, df/dy) for DifferentialOperator::Gradient.
+///        gradient (df/dx, df/dy) for DifferentialOperator::Gradient. Each
+///        component is splined on its own; component c of the gradient is at
+///        columns 2 c and 2 c + 1.
 template <typename LayoutPolicy =
             pcms::detail::default_layout_for_memory_space_t<DeviceMemorySpace>>
 class UniformGridSplinePointEvaluator2D
   : public PointEvaluator<Real, LayoutPolicy>
 {
 public:
-  /// @param layout order-1 single-component uniform-grid layout
+  /// @param layout order-1 uniform-grid layout
   /// @param binding cells of the query points
   /// @param op Value or Gradient
   UniformGridSplinePointEvaluator2D(
@@ -68,6 +70,7 @@ public:
     std::shared_ptr<const pcms::detail::UniformGridBinding<2>> binding,
     DifferentialOperator op = DifferentialOperator::Value)
     : PointEvaluator<Real, LayoutPolicy>(binding, op, layout),
+      layout_(layout),
       grid_(layout->GetGrid()),
       x_coords_("uniform_grid_spline_x", grid_.divisions[0] + 1),
       y_coords_("uniform_grid_spline_y", grid_.divisions[1] + 1),
@@ -110,60 +113,62 @@ public:
     ValueView<Real, DeviceMemorySpace, LayoutPolicy> out) const override
   {
     const auto values = out.GetValues();
-    if (field.GetLayout().GetNumComponents() != 1) {
-      throw pcms_error("UniformGridSplinePointEvaluator2D: only scalar "
-                       "(num_components==1) fields are supported");
-    }
     const auto dof_data = field.GetDOFHolderData().GetValues();
+    const int num_components = layout_->GetNumComponents();
     LO nx = grid_.divisions[0] + 1;
     LO ny = grid_.divisions[1] + 1;
-    PCMS_ALWAYS_ASSERT(static_cast<LO>(dof_data.size()) == nx * ny);
-
-    Kokkos::View<Real*, DeviceMemorySpace> spline_values(
-      "uniform_grid_spline_values", static_cast<size_t>(nx * ny));
-    Kokkos::parallel_for(
-      "copy_spline_values_device",
-      Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {ny, nx}),
-      KOKKOS_LAMBDA(const LO iy, const LO ix) {
-        spline_values(ix * ny + iy) = dof_data(iy * nx + ix, 0);
-      });
+    PCMS_ALWAYS_ASSERT(static_cast<LO>(dof_data.size()) ==
+                       nx * ny * num_components);
 
     const auto found = found_;
     const auto num_in_bounds = static_cast<LO>(found.extent(0));
     if (num_in_bounds == 0) {
       return;
     }
+    Kokkos::View<Real*, DeviceMemorySpace> spline_values(
+      "uniform_grid_spline_values", static_cast<size_t>(nx * ny));
     const auto empty_bc =
       Rank1View<Real, DeviceMemorySpace>(empty_bc_.data(), 0);
-    CompactBiCubicSplineInterpolator<Real, DeviceMemorySpace> interpolator(
-      Rank1View<Real, DeviceMemorySpace>(x_coords_.data(), x_coords_.extent(0)),
-      Rank1View<Real, DeviceMemorySpace>(y_coords_.data(), y_coords_.extent(0)),
-      Rank1View<Real, DeviceMemorySpace>(spline_values.data(),
-                                         spline_values.extent(0)),
-      BoundaryCondition::NOT_A_KNOT, empty_bc, BoundaryCondition::NOT_A_KNOT,
-      empty_bc, BoundaryCondition::NOT_A_KNOT, empty_bc,
-      BoundaryCondition::NOT_A_KNOT, empty_bc);
     // one column per selected spline output: f, or (df/dx, df/dy)
     const auto spline_output = spline_output_;
     const auto num_outputs = static_cast<int>(spline_output.extent(1));
-    interpolator.evaluate(
-      select_,
-      Rank1View<Real, DeviceMemorySpace>(eval_x_.data(), eval_x_.extent(0)),
-      Rank1View<Real, DeviceMemorySpace>(eval_y_.data(), eval_y_.extent(0)),
-      Rank2View<Real, DeviceMemorySpace>(spline_output.data(),
-                                         spline_output.extent(0), num_outputs));
-
-    Kokkos::parallel_for(
-      "copy_in_bounds_values",
-      Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, num_in_bounds),
-      KOKKOS_LAMBDA(LO k) {
-        for (int c = 0; c < num_outputs; ++c) {
-          values(found(k), c) = spline_output(k, c);
-        }
-      });
+    for (int component = 0; component < num_components; ++component) {
+      Kokkos::parallel_for(
+        "copy_spline_values_device",
+        Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {ny, nx}),
+        KOKKOS_LAMBDA(const LO iy, const LO ix) {
+          spline_values(ix * ny + iy) = dof_data(iy * nx + ix, component);
+        });
+      CompactBiCubicSplineInterpolator<Real, DeviceMemorySpace> interpolator(
+        Rank1View<Real, DeviceMemorySpace>(x_coords_.data(),
+                                           x_coords_.extent(0)),
+        Rank1View<Real, DeviceMemorySpace>(y_coords_.data(),
+                                           y_coords_.extent(0)),
+        Rank1View<Real, DeviceMemorySpace>(spline_values.data(),
+                                           spline_values.extent(0)),
+        BoundaryCondition::NOT_A_KNOT, empty_bc, BoundaryCondition::NOT_A_KNOT,
+        empty_bc, BoundaryCondition::NOT_A_KNOT, empty_bc,
+        BoundaryCondition::NOT_A_KNOT, empty_bc);
+      interpolator.evaluate(
+        select_,
+        Rank1View<Real, DeviceMemorySpace>(eval_x_.data(), eval_x_.extent(0)),
+        Rank1View<Real, DeviceMemorySpace>(eval_y_.data(), eval_y_.extent(0)),
+        Rank2View<Real, DeviceMemorySpace>(
+          spline_output.data(), spline_output.extent(0), num_outputs));
+      Kokkos::parallel_for(
+        "copy_in_bounds_values",
+        Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0,
+                                                                num_in_bounds),
+        KOKKOS_LAMBDA(LO k) {
+          for (int c = 0; c < num_outputs; ++c) {
+            values(found(k), component * num_outputs + c) = spline_output(k, c);
+          }
+        });
+    }
   }
 
 private:
+  std::shared_ptr<const UniformGridFieldLayout<2>> layout_;
   UniformGrid<2> grid_;
   Kokkos::View<Real*, DeviceMemorySpace> x_coords_;
   Kokkos::View<Real*, DeviceMemorySpace> y_coords_;
@@ -186,8 +191,8 @@ class UniformGridSplineEvaluatorFactory2D
 
 public:
   /// @param geometry geometry of the layout's grid
-  /// @param layout order-1 single-component uniform-grid layout
-  /// @throws pcms_error if the layout is not order 1 with one component
+  /// @param layout order-1 uniform-grid layout
+  /// @throws pcms_error if the layout is not order 1
   UniformGridSplineEvaluatorFactory2D(
     std::shared_ptr<const UniformGridGeometry<2>> geometry,
     std::shared_ptr<const UniformGridFieldLayout<2>> layout)
@@ -199,11 +204,6 @@ public:
       throw pcms_error(
         "UniformGridSplineEvaluatorFactory2D: spline evaluation requires an "
         "order-1 uniform-grid layout");
-    }
-    if (layout_->GetNumComponents() != 1) {
-      throw pcms_error(
-        "UniformGridSplineEvaluatorFactory2D: spline evaluation only supports "
-        "single-component fields");
     }
   }
 

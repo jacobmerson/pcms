@@ -42,6 +42,11 @@ public:
     return static_cast<LO>(mapped_.extent(0));
   }
 
+  /// @return J(p, i, j) = d x_j / d xi_i, the Jacobian of the map at the
+  ///         bound points (xi: source coordinates, x: mapped coordinates)
+  /// @throws pcms_error for maps that do not provide it
+  [[nodiscard]] virtual View<3, const Real, DeviceMemorySpace> Jacobian() const;
+
   /// Value basis produced for rank >= 1 values stored in `stored`. Throws when
   /// this map cannot re-express that basis.
   [[nodiscard]] virtual ValueBasis OutputBasis(const ValueBasis& stored) const;

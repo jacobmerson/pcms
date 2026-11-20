@@ -17,7 +17,7 @@ namespace pcms
 {
 
 std::shared_ptr<const FunctionSpace> CreateSplineSpace(
-  std::shared_ptr<const Geometry> geometry)
+  std::shared_ptr<const Geometry> geometry, int num_components)
 {
   if (geometry == nullptr) {
     throw pcms_error("CreateSplineSpace: the geometry must not be null");
@@ -28,8 +28,8 @@ std::shared_ptr<const FunctionSpace> CreateSplineSpace(
     throw pcms_error(
       "CreateSplineSpace: only 2D uniform-grid geometries are supported");
   }
-  auto layout =
-    std::make_shared<UniformGridFieldLayout<2>>(grid_geometry, 1, 1);
+  auto layout = std::make_shared<UniformGridFieldLayout<2>>(grid_geometry,
+                                                            num_components, 1);
   auto evaluator_factory =
     std::make_shared<UniformGridSplineEvaluatorFactory2D>(
       std::move(grid_geometry), layout);
