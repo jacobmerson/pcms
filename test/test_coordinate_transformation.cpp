@@ -393,7 +393,7 @@ TEST_CASE("bound map: physical covectors rotate like physical vectors")
 TEST_CASE("the plane insertion passes covectors and refuses vectors")
 {
   auto data = pcms::test::CreateDeviceRank2View({2.0, 0.5, 3.0, -1.0}, 2);
-  const auto bound = pcms::CreatePoloidalPlaneEmbedding(0.3)->Bind(
+  const auto bound = pcms::CreatePoloidalPlaneInsertion(0.3)->Bind(
     pcms::test::MakeCoords(data, pcms::csys::CreateCylindricalRZ()));
   const auto& transform = bound->ValueTransform();
   const ValueBasis covector{pcms::csys::CreateCylindricalRThetaZ(),

@@ -140,7 +140,7 @@ CreateCylindricalToCartesian();
 /// geometry's Bind. Scalars and covectors pass (covectors by J^T); vectors
 /// would need the inverse of its 2 x 3 Jacobian and are refused.
 /// @param theta0 toroidal angle of the plane, in radians
-[[nodiscard]] std::shared_ptr<const CoordinateMap> CreatePoloidalPlaneEmbedding(
+[[nodiscard]] std::shared_ptr<const CoordinateMap> CreatePoloidalPlaneInsertion(
   Real theta0);
 
 } // namespace pcms
