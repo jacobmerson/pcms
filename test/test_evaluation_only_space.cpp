@@ -222,13 +222,13 @@ TEST_CASE("Evaluation-only space interpolates onto a poloidal plane")
     }
   }
 
-  // The embedding maps points only, so vector values cannot pass through it.
+  // Vectors would need the inverse of the embedding's 2 x 3 Jacobian.
   auto evaluator = source->CreatePointEvaluator<Real>(on_plane);
   REQUIRE_THROWS_WITH(
     evaluator->OutputBasis(ValueBasis{pcms::csys::CreateCylindricalRThetaZ(),
                                       pcms::ComponentScaling::Physical,
                                       pcms::values::Vector}),
-    ContainsSubstring("cannot re-express"));
+    ContainsSubstring("not square"));
 }
 
 TEST_CASE("Functions of an evaluation-only space hold no values")
