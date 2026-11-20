@@ -63,6 +63,11 @@ public:
       "PointEvaluator::Evaluate", values.GetBasis(),
       OutputBasis(field.GetData().GetValueBasis()));
     EvaluateImpl(field, values);
+    if (op_ == DifferentialOperator::Gradient) {
+      // the kinds write partials along the coordinates; the basis promises
+      // physical components where the system's basis is orthogonal
+      detail::ScalePartialsToPhysical(values, *bound_);
+    }
     const auto filled = FilledPoints();
     if (filled.extent(0) > 0) {
       detail::FillRows(values.GetValues(), filled,
