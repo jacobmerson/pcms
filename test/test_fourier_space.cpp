@@ -241,11 +241,37 @@ private:
   std::shared_ptr<const pcms::FieldLayout> layout_;
 };
 
+// The Fourier space: its natural quadrature integrates the product of two of
+// its functions, the trigonometric polynomials of degree 2N.
+class FourierSpace final : public pcms::FunctionSpace
+{
+public:
+  FourierSpace(std::shared_ptr<const pcms::FieldLayout> layout,
+               std::function<pcms::FieldDataVariant(pcms::Type, pcms::ValueBasis)>
+                 create_field_data,
+               std::shared_ptr<const pcms::PointEvaluatorFactory> evaluator,
+               std::shared_ptr<const pcms::Geometry> geometry, int harmonics)
+    : pcms::FunctionSpace(std::move(layout), std::move(create_field_data),
+                          std::move(evaluator), geometry),
+      geometry_(std::move(geometry)),
+      harmonics_(harmonics)
+  {}
+
+  [[nodiscard]] pcms::Quadrature CreateQuadrature() const override
+  {
+    return geometry_->CreateQuadrature({.order = 2 * harmonics_});
+  }
+
+private:
+  std::shared_ptr<const pcms::Geometry> geometry_;
+  int harmonics_;
+};
+
 std::shared_ptr<const pcms::FunctionSpace> MakeFourierSpace(
   const std::shared_ptr<const pcms::Geometry>& geometry, int harmonics)
 {
   const auto layout = std::make_shared<FourierLayout>(geometry, harmonics);
-  return std::make_shared<pcms::FunctionSpace>(
+  return std::make_shared<FourierSpace>(
     layout,
     [layout](pcms::Type type,
              pcms::ValueBasis basis) -> pcms::FieldDataVariant {
@@ -256,9 +282,7 @@ std::shared_ptr<const pcms::FunctionSpace> MakeFourierSpace(
         layout, std::move(basis));
     },
     std::make_shared<FourierEvaluatorFactory>(geometry, layout), geometry,
-    [geometry, harmonics]() {
-      return geometry->CreateQuadrature({.order = 2 * harmonics});
-    });
+    harmonics);
 }
 
 void SetCoefficients(pcms::Field<Real>& field, const std::vector<Real>& c)

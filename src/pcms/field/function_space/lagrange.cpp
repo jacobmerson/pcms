@@ -44,6 +44,34 @@ namespace
 {
 
 #ifdef PCMS_ENABLE_OMEGA_H
+/// A Lagrange space of an Omega_h geometry: its natural quadrature is the
+/// geometry's rule of degree 2p, the degree of the product of two functions of
+/// order p (the rules start at order 1, which is exact for order 0).
+class OmegaHLagrangeFunctionSpace final : public FunctionSpace
+{
+public:
+  OmegaHLagrangeFunctionSpace(
+    std::shared_ptr<const FieldLayout> layout,
+    std::function<FieldDataVariant(Type, ValueBasis)> create_field_data,
+    std::shared_ptr<const PointEvaluatorFactory> evaluator,
+    std::shared_ptr<const Geometry> geometry, int order)
+    : FunctionSpace(std::move(layout), std::move(create_field_data),
+                    std::move(evaluator), geometry),
+      geometry_(std::move(geometry)),
+      order_(order)
+  {}
+
+  [[nodiscard]] Quadrature CreateQuadrature() const override
+  {
+    return geometry_->CreateQuadrature(
+      QuadratureOptions{.order = std::max(1, 2 * order_)});
+  }
+
+private:
+  std::shared_ptr<const Geometry> geometry_;
+  int order_;
+};
+
 /// Checks that `backend` supports Lagrange order `order` (and an owned mask
 /// if `owned_mask`) before anything is built.
 /// @return the backend to use: MeshFields falls back to OmegaH for order 0
@@ -98,7 +126,7 @@ std::shared_ptr<const FunctionSpace> CreateOmegaHLagrangeSpace(
     auto eval_factory =
       std::make_shared<omega_h_meshfields::MeshFieldsEvaluatorFactory<Real>>(
         geometry, mesh_layout);
-    return std::make_shared<FunctionSpace>(
+    return std::make_shared<OmegaHLagrangeFunctionSpace>(
       mesh_layout,
       [mesh_layout](Type t, ValueBasis basis) -> FieldDataVariant {
         if (t == Type::Float) {
@@ -120,18 +148,14 @@ std::shared_ptr<const FunctionSpace> CreateOmegaHLagrangeSpace(
                          "supports the MeshFields scalar types enabled in "
                          "this build");
       },
-      eval_factory, eval_factory->GetGeometry(),
-      [geometry = eval_factory->GetGeometry(), order]() {
-        return geometry->CreateQuadrature(
-          QuadratureOptions{.order = std::max(1, 2 * order)});
-      });
+      eval_factory, eval_factory->GetGeometry(), order);
 #endif
   }
   auto layout = std::make_shared<OmegaHLagrangeLayout>(
     geometry, order, num_components, options.layout_name);
   auto eval_factory = std::make_shared<OmegaHLagrangeEvaluatorFactory<Real>>(
     std::move(geometry), layout);
-  return std::make_shared<FunctionSpace>(
+  return std::make_shared<OmegaHLagrangeFunctionSpace>(
     layout,
     [layout](Type t, ValueBasis basis) -> FieldDataVariant {
       return detail::apply_to_type(t, [&](auto tag) -> FieldDataVariant {
@@ -143,12 +167,7 @@ std::shared_ptr<const FunctionSpace> CreateOmegaHLagrangeSpace(
         }
       });
     },
-    eval_factory, eval_factory->GetGeometry(),
-    // the product of two functions of order p has degree 2p (the rules start at
-    // order 1, which is exact for the constants of order 0)
-    [geometry = eval_factory->GetGeometry(), order]() {
-      return geometry->CreateQuadrature(QuadratureOptions{.order = std::max(1, 2 * order)});
-    });
+    eval_factory, eval_factory->GetGeometry(), order);
 }
 
 #endif // PCMS_ENABLE_OMEGA_H

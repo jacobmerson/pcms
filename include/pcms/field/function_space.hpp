@@ -11,7 +11,6 @@
 #include "pcms/field/out_of_bounds_policy.hpp"
 #include "pcms/field/point_evaluator.hpp"
 #include "pcms/field/point_evaluator_factory.hpp"
-#include "pcms/geometry/detail/geometry.hpp"
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/memory_spaces.hpp"
@@ -29,12 +28,13 @@ namespace pcms
 // evaluator source that evaluates them at points, and the coordinate
 // interpretation. It produces Functions (a Field bound to this space).
 //
-// It is the one concrete space; backends differ in the components they hand
-// to its constructor, and the Create* factories (CreateLagrangeSpace, ...)
-// assemble them. A Function co-owns its space via shared_ptr (obtained through
+// It is concrete: backends differ in the components they hand to its
+// constructor, and the Create* factories (CreateLagrangeSpace, ...) assemble
+// them. A kind with behaviour that is not a component (the natural quadrature)
+// derives from it and overrides the virtual. A Function co-owns its space via shared_ptr (obtained through
 // enable_shared_from_this), so spaces are always shared-owned:
 // CreateFunction throws for a space that is not.
-class FunctionSpace final
+class FunctionSpace
   : public PointEvaluatorFactory
   , public std::enable_shared_from_this<FunctionSpace>
 {
@@ -51,22 +51,17 @@ public:
   ///        points
   /// @param geometry the geometry the space is on: the evaluator source's,
   ///        when there is one
-  /// @param create_quadrature the space's natural quadrature (see
-  ///        CreateQuadrature), or empty for a space that has none. (A
-  ///        component like the others: the space is concrete, not virtual.)
   /// @throws pcms_error if `geometry` is null or is not the evaluator
   ///         source's geometry
   explicit FunctionSpace(
     std::shared_ptr<const FieldLayout> layout,
     std::function<FieldDataVariant(Type, ValueBasis)> create_field_data,
     std::shared_ptr<const PointEvaluatorFactory> evaluator,
-    std::shared_ptr<const Geometry> geometry,
-    std::function<Quadrature()> create_quadrature = {})
+    std::shared_ptr<const Geometry> geometry)
     : layout_(std::move(layout)),
       create_field_data_(std::move(create_field_data)),
       evaluator_(std::move(evaluator)),
-      geometry_(std::move(geometry)),
-      create_quadrature_(std::move(create_quadrature))
+      geometry_(std::move(geometry))
   {
     if (geometry_ == nullptr) {
       throw pcms_error("FunctionSpace: the geometry must not be null");
@@ -100,16 +95,11 @@ public:
   ///        and weights that integrate the product of two functions of the
   ///        space exactly (degree 2p for Lagrange order p; 2N + 1 points for
   ///        N Fourier modes).
-  /// @throws pcms_error for a space that has none
-  [[nodiscard]] Quadrature CreateQuadrature() const
+  /// @throws pcms_error unless the kind overrides it
+  [[nodiscard]] virtual Quadrature CreateQuadrature() const
   {
-    pcms::detail::CheckCartesianMeasure(*geometry_,
-                                        "FunctionSpace::CreateQuadrature");
-    if (!create_quadrature_) {
-      throw pcms_error("FunctionSpace::CreateQuadrature: this space has no "
-                       "natural quadrature");
-    }
-    return create_quadrature_();
+    throw pcms_error("FunctionSpace::CreateQuadrature: this space has no "
+                     "natural quadrature");
   }
 
   /// @return whether the space's evaluator source supports `op`; for a space
@@ -174,7 +164,6 @@ private:
   std::function<FieldDataVariant(Type, ValueBasis)> create_field_data_;
   std::shared_ptr<const PointEvaluatorFactory> evaluator_;
   std::shared_ptr<const Geometry> geometry_;
-  std::function<Quadrature()> create_quadrature_;
 };
 
 template <typename T>
