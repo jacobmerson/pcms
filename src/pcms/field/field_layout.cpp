@@ -11,6 +11,12 @@ using field::BuildSortedGidPermutation;
 namespace pcms
 {
 
+const std::shared_ptr<const Communicator>& FieldLayout::GetCommunicator() const
+{
+  return geometry_ != nullptr ? geometry_->GetCommunicator()
+                              : Communicator::Self();
+}
+
 OwnerHints DOFHolderOwners(const FieldLayout& layout)
 {
   const int entity_dim = layout.GetDOFHolderEntityDim();

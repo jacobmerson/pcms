@@ -335,3 +335,18 @@ TEST_CASE("OmegaHLagrangeField: field valid after layout destruction")
   auto data = field->GetDOFHolderDataHost();
   REQUIRE(data.size() > 0);
 }
+
+TEST_CASE("The communicator of an Omega_h geometry and its layouts")
+{
+  auto lib = Omega_h::Library{};
+  auto mesh = MakeBox2D(lib.world());
+  const auto geometry = pcms::test::MakeOmegaHGeometry(mesh);
+  const auto& comm = geometry->GetCommunicator();
+  REQUIRE(comm != nullptr);
+  REQUIRE(comm->Size() == mesh.comm()->size());
+  REQUIRE(comm->Rank() == mesh.comm()->rank());
+  // wrapped once per geometry; a layout on the geometry shares it
+  REQUIRE(comm == geometry->GetCommunicator());
+  const pcms::OmegaHLagrangeLayout layout(geometry, 1, 1);
+  REQUIRE(layout.GetCommunicator() == comm);
+}

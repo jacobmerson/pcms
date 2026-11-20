@@ -1,6 +1,7 @@
 #ifndef PCMS_GEOMETRY_GEOMETRY_HPP
 #define PCMS_GEOMETRY_GEOMETRY_HPP
 
+#include "pcms/utility/communicator.hpp"
 #include "pcms/utility/coordinate_system.hpp"
 #include "pcms/utility/coordinate_view.hpp"
 #include "pcms/field/out_of_bounds_policy.hpp"
@@ -86,6 +87,14 @@ public:
   /// @return the native coordinate system: Bind takes points in it
   [[nodiscard]] virtual const std::shared_ptr<const CoordinateSystem>&
   GetCoordinateSystem() const noexcept = 0;
+
+  /// @return the ranks the cells of this geometry are partitioned over;
+  ///         Communicator::Self() (the default) if it is not partitioned
+  [[nodiscard]] virtual const std::shared_ptr<const Communicator>&
+  GetCommunicator() const
+  {
+    return Communicator::Self();
+  }
 
   /// @return whether Bind accepts OutOfBoundsMode::NEAREST_BOUNDARY
   [[nodiscard]] virtual bool SupportsNearestBoundary() const noexcept

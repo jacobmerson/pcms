@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "pcms/utility/communicator.hpp"
 #include "pcms/utility/types.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/coordinate_system.hpp"
@@ -48,6 +49,14 @@ public:
   {
     return geometry_;
   }
+
+  /// The ranks across which the owned sets partition the DOFs. The default is
+  /// the communicator of the layout's geometry, or Communicator::Self() for a
+  /// layout without one; a layout whose DOFs are distributed differently than
+  /// its geometry's cells (no geometry, a product, a replicated geometry)
+  /// overrides it.
+  [[nodiscard]] virtual const std::shared_ptr<const Communicator>&
+  GetCommunicator() const;
 
   // number of components
   int virtual GetNumComponents() const = 0;

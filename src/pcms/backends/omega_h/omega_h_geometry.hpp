@@ -296,6 +296,8 @@ class OmegaHGeometry final : public Geometry
 public:
   /// Own it by std::shared_ptr, as CreateGeometry
   /// (pcms/backends/omega_h/omega_h.hpp) does: Bind uses shared_from_this().
+  /// Collective over the mesh's communicator (it is duplicated, see
+  /// CreateCommunicator).
   /// @throws pcms_error if the options' owned mask is not empty and does not
   ///         have one entry per mesh vertex
   OmegaHGeometry(Omega_h::Mesh& mesh,
@@ -311,6 +313,14 @@ public:
   GetCoordinateSystem() const noexcept override
   {
     return system_;
+  }
+
+  /// @return the communicator of the mesh's ranks, wrapped once when the
+  ///         geometry is created
+  [[nodiscard]] const std::shared_ptr<const Communicator>& GetCommunicator()
+    const override
+  {
+    return communicator_;
   }
 
   [[nodiscard]] Omega_h::Mesh& GetMesh() const noexcept { return mesh_; }
@@ -376,6 +386,7 @@ private:
   Omega_h::Read<Omega_h::I8> owned_mask_;
   std::shared_ptr<const CoordinateSystem> system_;
   SearchOptions search_options_;
+  std::shared_ptr<const Communicator> communicator_;
   // The search and Differential are built once, lazily; the geometry is const
   // and shared, hence the once_flags. These are the mutable members and they
   // are caches.

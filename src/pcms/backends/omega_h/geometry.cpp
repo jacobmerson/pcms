@@ -1,7 +1,11 @@
 #include "pcms/backends/omega_h/omega_h_geometry.hpp"
 #include "pcms/utility/coordinate_system.hpp"
 #include "pcms/backends/omega_h/adj_search.hpp"
+#include "pcms/configuration.hpp"
 #include "pcms/utility/assert.hpp"
+#ifdef PCMS_ENABLE_MPI
+#include "pcms/utility/mpi.hpp"
+#endif
 #include "pcms/utility/omega_h_array_utils.hpp"
 #include "pcms/utility/detail/profile.hpp"
 #include "pcms/utility/types.hpp"
@@ -141,6 +145,22 @@ GridPointSearchVariant MakeGridSearch(Omega_h::Mesh& mesh,
     "MakeGridSearch: only 2D and 3D meshes are supported");
 }
 
+namespace
+{
+// the mesh's ranks as a Communicator; Omega_h without MPI has one rank
+std::shared_ptr<const Communicator> MeshCommunicator(Omega_h::Mesh& mesh)
+{
+#if defined(PCMS_ENABLE_MPI) && defined(OMEGA_H_USE_MPI)
+  if (mesh.comm() != nullptr) {
+    return CreateCommunicator(mesh.comm()->get_impl());
+  }
+#else
+  (void)mesh;
+#endif
+  return Communicator::Self();
+}
+} // namespace
+
 OmegaHGeometry::OmegaHGeometry(Omega_h::Mesh& mesh,
                                std::shared_ptr<const CoordinateSystem> system,
                                OmegaHGeometryOptions options)
@@ -149,7 +169,8 @@ OmegaHGeometry::OmegaHGeometry(Omega_h::Mesh& mesh,
     owned_mask_(std::move(options.owned_mask)),
     system_(
       pcms::detail::ResolveCoordinateSystem(std::move(system), mesh.dim())),
-    search_options_(options.search)
+    search_options_(options.search),
+    communicator_(MeshCommunicator(mesh))
 {
   if (owned_mask_.size() != 0 && owned_mask_.size() != mesh_.nverts()) {
     throw pcms_error("OmegaHGeometry: the owned mask must have one entry per "
