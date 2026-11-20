@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 namespace pcms
 {
 
@@ -17,6 +18,13 @@ struct UniformGrid
   Kokkos::Array<LO, dim> divisions;
 
 public:
+  /// Relative to the largest of the extent and the coordinates of an axis's
+  /// ends (the ulp of a boundary coordinate is set by its magnitude, not the
+  /// extent): a point this close to the grid counts as on its boundary. A few
+  /// ulp, for the roundoff of computing a boundary point as origin + n *
+  /// spacing; not a geometric tolerance.
+  static constexpr Real BoundsTol = 8 * std::numeric_limits<Real>::epsilon();
+
   [[nodiscard]] constexpr LO GetNumCells() const
   {
     LO total = 1;
@@ -80,8 +88,9 @@ public:
     return {.center = center, .half_width = half_width};
   }
 
-  /// Check if a point is within the grid bounds. `point` is any type
-  /// indexable with point[i] for i < dim.
+  /// Check if a point is within the grid bounds, or on them up to BoundsTol
+  /// (such a point is binned into the first or last cell by AxisCellIndex).
+  /// `point` is any type indexable with point[i] for i < dim.
   template <typename Point>
   [[nodiscard]] KOKKOS_INLINE_FUNCTION constexpr bool IsPointInBounds(
     const Point& point) const
@@ -90,7 +99,10 @@ public:
       Real coord = point[i];
       Real grid_min = bot_left[i];
       Real grid_max = bot_left[i] + edge_length[i];
-      if (coord < grid_min || coord > grid_max) {
+      const Real tol =
+        BoundsTol *
+        Kokkos::max(Kokkos::max(edge_length[i], grid_max), -grid_min);
+      if (coord < grid_min - tol || coord > grid_max + tol) {
         return false;
       }
     }

@@ -16,6 +16,8 @@
 #include "pcms/utility/arrays.hpp"
 #include "field_test_utils.hpp"
 #include <cmath>
+#include <limits>
+#include <vector>
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
 #include "pcms/backends/omega_h/omega_h.hpp"
 
@@ -789,4 +791,157 @@ TEST_CASE("UniformGrid Order-0 multi-component field (regression)")
   REQUIRE(results_host(2, 1) == 30.0);
   REQUIRE(results_host(3, 0) == 4.0);
   REQUIRE(results_host(3, 1) == 40.0);
+}
+
+namespace
+{
+// Binds `pts` on the geometry of `grid` and returns the number of points
+// found, the cells of the found points and their positions in the cell.
+template <unsigned Dim>
+struct BoundaryBind
+{
+  int missing;
+  std::vector<pcms::LO> cells;
+  std::vector<pcms::Real> parametric;
+};
+
+template <unsigned Dim>
+BoundaryBind<Dim> BindOnGrid(const pcms::UniformGrid<Dim>& grid,
+                             const std::vector<pcms::Real>& pts,
+                             pcms::OutOfBoundsPolicy policy)
+{
+  const auto geometry =
+    pcms::uniform_grid::CreateGeometry(grid, pcms::detail::DeferredCartesian());
+  const auto bound = pcms::test::Bind(*geometry, pts, policy);
+  const auto& binding =
+    dynamic_cast<const pcms::detail::UniformGridBinding<Dim>&>(*bound);
+  const auto cells = Kokkos::create_mirror_view_and_copy(
+    pcms::HostMemorySpace(), binding.CellIndices());
+  const auto parametric = Kokkos::create_mirror_view_and_copy(
+    pcms::HostMemorySpace(), binding.Parametric());
+  BoundaryBind<Dim> result{
+    static_cast<int>(bound->MissingPoints().extent(0)), {}, {}};
+  for (std::size_t i = 0; i < cells.extent(0); ++i) {
+    result.cells.push_back(cells(i));
+    for (unsigned d = 0; d < Dim; ++d) {
+      result.parametric.push_back(parametric(i, d));
+    }
+  }
+  return result;
+}
+
+template <unsigned Dim>
+void CheckBoundaryPoints(const pcms::UniformGrid<Dim>& grid)
+{
+  using pcms::Real;
+  Real max[Dim];
+  Real min[Dim];
+  pcms::LO last = 0;
+  pcms::LO stride = 1;
+  for (unsigned d = 0; d < Dim; ++d) {
+    min[d] = grid.bot_left[d];
+    max[d] = grid.bot_left[d] + grid.edge_length[d];
+    last += (grid.divisions[d] - 1) * stride;
+    stride *= grid.divisions[d];
+  }
+  const Real inf = std::numeric_limits<Real>::infinity();
+  // every corner of the grid, each coordinate moved by `ulps` outward
+  auto corners = [&](int ulps) {
+    std::vector<Real> pts;
+    for (unsigned corner = 0; corner < (1u << Dim); ++corner) {
+      for (unsigned d = 0; d < Dim; ++d) {
+        const bool upper = (corner >> d) & 1u;
+        Real x = upper ? max[d] : min[d];
+        for (int u = 0; u < ulps; ++u) {
+          x = std::nextafter(x, upper ? inf : -inf);
+        }
+        pts.push_back(x);
+      }
+    }
+    return pts;
+  };
+  const pcms::OutOfBoundsPolicy fill{pcms::OutOfBoundsMode::FILL, -1.0};
+  const pcms::OutOfBoundsPolicy error{pcms::OutOfBoundsMode::ERROR};
+  for (const auto& policy : {fill, error}) {
+    for (int ulps : {0, 1, 4}) {
+      INFO("ulps outside the boundary: " << ulps);
+      const auto bound = BindOnGrid(grid, corners(ulps), policy);
+      REQUIRE(bound.missing == 0);
+      for (unsigned corner = 0; corner < (1u << Dim); ++corner) {
+        pcms::LO expected = 0;
+        pcms::LO s = 1;
+        for (unsigned d = 0; d < Dim; ++d) {
+          if ((corner >> d) & 1u) {
+            expected += (grid.divisions[d] - 1) * s;
+          }
+          s *= grid.divisions[d];
+        }
+        REQUIRE(bound.cells[corner] == expected);
+        for (unsigned d = 0; d < Dim; ++d) {
+          const Real p = bound.parametric[corner * Dim + d];
+          REQUIRE(
+            p == Catch::Approx(((corner >> d) & 1u) ? 1.0 : 0.0).margin(1e-12));
+        }
+      }
+    }
+  }
+  REQUIRE(last == BindOnGrid(grid, corners(0), fill).cells.back());
+
+  // a point a fraction of a cell outside is still outside
+  for (unsigned d = 0; d < Dim; ++d) {
+    for (const bool upper : {false, true}) {
+      std::vector<Real> pt(Dim);
+      for (unsigned e = 0; e < Dim; ++e) {
+        pt[e] = 0.5 * (min[e] + max[e]);
+      }
+      const Real cell = grid.edge_length[d] / grid.divisions[d];
+      pt[d] = upper ? max[d] + 1e-6 * cell : min[d] - 1e-6 * cell;
+      REQUIRE(BindOnGrid(grid, pt, fill).missing == 1);
+      pt[d] = upper ? max[d] + cell : min[d] - cell;
+      REQUIRE(BindOnGrid(grid, pt, fill).missing == 1);
+    }
+  }
+}
+} // namespace
+
+TEST_CASE("UniformGrid binds points on the boundary up to roundoff")
+{
+  SECTION("2D, spacing 0.1 is not representable")
+  {
+    pcms::UniformGrid<2> grid;
+    grid.bot_left = {-0.1, 0.3};
+    grid.edge_length = {0.7, 1.1};
+    grid.divisions = {7, 11};
+    CheckBoundaryPoints(grid);
+    // the upper edge reached as origin + n * spacing
+    const pcms::Real spacing = 0.1;
+    const auto bound = BindOnGrid(
+      pcms::UniformGrid<2>{
+        .edge_length = {0.7, 0.7}, .bot_left = {0.0, 0.0}, .divisions = {7, 7}},
+      {7 * spacing, 7 * spacing}, {pcms::OutOfBoundsMode::FILL, 0.0});
+    REQUIRE(bound.missing == 0);
+    REQUIRE(bound.cells[0] == 48);
+  }
+  SECTION("3D")
+  {
+    pcms::UniformGrid<3> grid;
+    grid.bot_left = {-0.1, 0.3, 0.7};
+    grid.edge_length = {0.7, 1.1, 0.3};
+    grid.divisions = {7, 11, 3};
+    CheckBoundaryPoints(grid);
+  }
+}
+
+TEST_CASE("UniformGrid interior points are unchanged by the boundary tolerance")
+{
+  pcms::UniformGrid<2> grid;
+  grid.bot_left = {0.0, 0.0};
+  grid.edge_length = {10.0, 10.0};
+  grid.divisions = {2, 2};
+  const auto bound = BindOnGrid(grid, {2.5, 2.5, 7.5, 2.5, 5.0, 5.0, 10.0, 0.0},
+                                {pcms::OutOfBoundsMode::FILL, 0.0});
+  REQUIRE(bound.missing == 0);
+  REQUIRE(bound.cells == std::vector<pcms::LO>{0, 1, 3, 1});
+  REQUIRE(bound.parametric[0] == Catch::Approx(0.5));
+  REQUIRE(bound.parametric[1] == Catch::Approx(0.5));
 }
