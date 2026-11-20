@@ -36,6 +36,43 @@ namespace pcms
   std::shared_ptr<const Function<Real>> position,
   std::shared_ptr<const CoordinateSystem> target);
 
+/// @brief A geometry whose cells are those of a structured parameter geometry
+///        and whose coordinate system is the embedding's target.
+///
+/// Bind of physical points inverts the embedding: the images of the cells
+/// are binned by their bounding boxes, and Gauss-Newton (Newton for a square
+/// Jacobian) finds the parameter coordinates in the candidate cells of a
+/// point's bin. Periodic axes of the target system are wrapped. Bind also
+/// accepts points in the parameter system, located directly (no search). The
+/// BoundPoints carry the parameter coordinates, so the evaluators of spaces
+/// on the parameter geometry evaluate unchanged (CreateEmbeddedSpace);
+/// BoundPoints::Differential is the Jacobian of the embedding. The geometry
+/// does not support OutOfBoundsMode::NEAREST_BOUNDARY, and a Rebind searches
+/// anew.
+/// @param parameter_geometry a uniform-grid geometry (the cells are boxes in
+///        the parameter space)
+/// @param embedding an embedding (CreateEmbedding) whose position is a
+///        function on `parameter_geometry`
+/// @param options `divisions` is the number of search bins per axis (0
+///        derives it from the cell count); `tolerance` the relative slack of
+///        the point-in-cell test
+/// @throws pcms_error if the geometry is not a uniform grid or the embedding
+///         is not one of this geometry
+[[nodiscard]] std::shared_ptr<const Geometry> CreateEmbeddedGeometry(
+  std::shared_ptr<const Geometry> parameter_geometry,
+  std::shared_ptr<const CoordinateMap> embedding, SearchOptions options = {});
+
+/// @brief The space `space`, on the parameter geometry, as a space on the
+///        embedded geometry built from it: same layout and values, evaluated
+///        at BoundPoints of the embedded geometry.
+/// Only Value is supported, and the fields are plain DOF holders data (the
+/// data of a SimpleFieldData), which is what uniform-grid spaces use.
+/// @throws pcms_error if `embedded` is not an embedded geometry of
+///         `space`'s geometry
+[[nodiscard]] std::shared_ptr<const FunctionSpace> CreateEmbeddedSpace(
+  std::shared_ptr<const FunctionSpace> space,
+  std::shared_ptr<const Geometry> embedded);
+
 } // namespace pcms
 
 #endif // PCMS_FIELD_EMBEDDING_HPP
