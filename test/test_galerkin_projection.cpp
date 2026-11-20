@@ -530,7 +530,8 @@ TEST_CASE("ApplyTranspose of an interpolator is its adjoint, and preserves "
   interpolator->ApplyTranspose(loads, distributed);
   const auto values = distributed.GetDOFHolderDataHost().GetValues();
   double total = 0;
-  for (std::size_t i = 0; i < values.extent(0) * values.extent(1); ++i) {
+  for (std::size_t i = 0;
+       i < static_cast<std::size_t>(values.extent(0)) * values.extent(1); ++i) {
     total += values.data_handle()[i];
   }
   CHECK(total == Catch::Approx(ones.size()).epsilon(1e-12));
