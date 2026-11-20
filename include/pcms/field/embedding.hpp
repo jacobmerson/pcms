@@ -7,6 +7,7 @@
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/utility/coordinate_system.hpp"
 #include <memory>
+#include <optional>
 
 namespace pcms
 {
@@ -36,6 +37,16 @@ namespace pcms
   std::shared_ptr<const Function<Real>> position,
   std::shared_ptr<const CoordinateSystem> target);
 
+/// @brief A translation symmetry of the domain of an embedded geometry: the
+///        domain is invariant under adding `length` to coordinate `axis` of
+///        the embedding's target system, and its cells cover one `length`
+///        (e.g. a 1/zperiod toroidal wedge: axis phi, length 2 pi / zperiod).
+struct TranslationSymmetry
+{
+  int axis = 0;
+  Real length = 0;
+};
+
 /// @brief A geometry whose cells are those of a structured parameter geometry
 ///        and whose coordinate system is the embedding's target.
 ///
@@ -53,14 +64,21 @@ namespace pcms
 ///        the parameter space)
 /// @param embedding an embedding (CreateEmbedding) whose position is a
 ///        function on `parameter_geometry`
+/// @param symmetry a symmetry of the domain: a query is reduced by it before
+///        the search (as by a period of the target system), and the
+///        BoundPoints keep the reduced coordinates as their located points.
+///        The reduction replaces the period of the axis, so a symmetry must
+///        divide it; none by default
 /// @param options `divisions` is the number of search bins per axis (0
 ///        derives it from the cell count); `tolerance` the relative slack of
 ///        the point-in-cell test
-/// @throws pcms_error if the geometry is not a uniform grid or the embedding
-///         is not one of this geometry
+/// @throws pcms_error if the geometry is not a uniform grid, the embedding
+///         is not one of this geometry, or the symmetry has an axis outside
+///         the target system or a non-positive length
 [[nodiscard]] std::shared_ptr<const Geometry> CreateEmbeddedGeometry(
   std::shared_ptr<const Geometry> parameter_geometry,
-  std::shared_ptr<const CoordinateMap> embedding, SearchOptions options = {});
+  std::shared_ptr<const CoordinateMap> embedding, SearchOptions options = {},
+  std::optional<TranslationSymmetry> symmetry = std::nullopt);
 
 /// @brief The space `space`, on the parameter geometry, as a space on the
 ///        embedded geometry built from it: same layout and values, evaluated
