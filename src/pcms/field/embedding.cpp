@@ -77,6 +77,53 @@ void InduceMetric(View<3, const Real, DeviceMemorySpace> jacobian,
     });
 }
 
+// The covariant metric g_ab of the parameter chart from the values of a
+// given metric, [point][a * dp + b] (g^ab, inverted, if `contravariant`), and
+// its volume factor sqrt(det g).
+void GivenMetric(DeviceView<const Real**> values, bool contravariant,
+                 DeviceView<Real***> metric, DeviceView<Real*> volume)
+{
+  const int dp = metric.extent(1);
+  detail::ForEach(
+    "embedding_given_metric", static_cast<LO>(metric.extent(0)),
+    KOKKOS_LAMBDA(const LO p) {
+      Real g[3][3] = {};
+      for (int a = 0; a < dp; ++a) {
+        for (int b = 0; b < dp; ++b) {
+          g[a][b] = values(p, a * dp + b);
+        }
+      }
+      if (contravariant) {
+        Real inverse[3][3] = {};
+        for (int c = 0; c < dp; ++c) {
+          Real m[3][3] = {};
+          Real column[3] = {};
+          for (int a = 0; a < dp; ++a) {
+            for (int b = 0; b < dp; ++b) {
+              m[a][b] = g[a][b];
+            }
+          }
+          column[c] = 1;
+          detail::Solve(m, dp, column);
+          for (int a = 0; a < dp; ++a) {
+            inverse[a][c] = column[a];
+          }
+        }
+        for (int a = 0; a < dp; ++a) {
+          for (int b = 0; b < dp; ++b) {
+            g[a][b] = inverse[a][b];
+          }
+        }
+      }
+      for (int a = 0; a < dp; ++a) {
+        for (int b = 0; b < dp; ++b) {
+          metric(p, a, b) = g[a][b];
+        }
+      }
+      volume(p) = Kokkos::sqrt(detail::Determinant(g, dp));
+    });
+}
+
 struct Evaluation
 {
   DeviceView<Real**> mapped;    // [point][chart dimension]
@@ -463,8 +510,9 @@ public:
   }
 
   /// J from the Gradient of the position at the parameter coordinates of the
-  /// points, and the metric J^T G J it induces; computed on the first call
-  /// (like the rest of a BoundPoints, not thread-safe).
+  /// points, and the given metric there or the metric J^T G J the position
+  /// induces; computed on the first call (like the rest of a BoundPoints, not
+  /// thread-safe).
   [[nodiscard]] detail::GeometricFactors Factors(FactorsKey) const override
   {
     return Evaluate();
@@ -488,8 +536,11 @@ public:
 
 protected:
   EmbeddedBound(std::shared_ptr<const Geometry> geometry,
-                const BindRequest& request, Position position)
-    : BoundPoints(std::move(geometry), request), position_(std::move(position))
+                const BindRequest& request, Position position,
+                std::shared_ptr<const Function<Real>> metric)
+    : BoundPoints(std::move(geometry), request),
+      position_(std::move(position)),
+      metric_(std::move(metric))
   {
   }
 
@@ -518,14 +569,25 @@ private:
     const auto n = xi_.extent(0);
     const int dp = position_.ParameterChart()->Dimension();
     const int dt = position_.Chart()->Dimension();
-    const auto chart = position_.Chart()->Bind(MakeConstRank2View(e.mapped));
-    DeviceView<Real***> metric("induced_metric", n, dp, dp);
-    DeviceView<Real*> volume("induced_volume_factor", n);
-    InduceMetric(
-      View<3, const Real, DeviceMemorySpace>(e.jacobian.data(), n, dp, dt),
-      *chart, metric, volume);
-    // the chart's bound metric is released on return
-    Kokkos::fence("EmbeddedBound::Evaluate");
+    DeviceView<Real***> metric("parameter_metric", n, dp, dp);
+    DeviceView<Real*> volume("parameter_volume_factor", n);
+    if (metric_ != nullptr) {
+      const ValueBasis basis = metric_->GetData().GetValueBasis();
+      DeviceView<Real**> values("given_metric", n,
+                                static_cast<std::size_t>(dp) * dp);
+      metric_->GetSpace().CreatePointEvaluator<Real>(inner_)->Evaluate(
+        *metric_,
+        ValueView<Real, DeviceMemorySpace>(basis, MakeRank2View(values)));
+      GivenMetric(values, basis.variance[0] == Variance::Contravariant, metric,
+                  volume);
+    } else {
+      const auto chart = position_.Chart()->Bind(MakeConstRank2View(e.mapped));
+      InduceMetric(
+        View<3, const Real, DeviceMemorySpace>(e.jacobian.data(), n, dp, dt),
+        *chart, metric, volume);
+      // the chart's bound metric is released on return
+      Kokkos::fence("EmbeddedBound::Evaluate");
+    }
     mapped_ = e.mapped;
     return factors_.emplace(static_cast<LO>(n), e.jacobian,
                             std::make_shared<const BoundCoordinateSystem>(
@@ -533,6 +595,7 @@ private:
   }
 
   Position position_;
+  std::shared_ptr<const Function<Real>> metric_;
   std::shared_ptr<const BoundPoints> inner_;
   DeviceView<Real**> xi_;
   mutable DeviceView<Real**> mapped_;
@@ -569,6 +632,11 @@ public:
   {
     return parameter_;
   }
+  [[nodiscard]] std::shared_ptr<const Function<Real>> GetMetric()
+    const noexcept override
+  {
+    return metric_;
+  }
   [[nodiscard]] const Position& PositionOf() const noexcept
   {
     return position_;
@@ -576,9 +644,11 @@ public:
 
 protected:
   EmbeddedGeometryBase(std::shared_ptr<const Geometry> parameter,
-                       Position position)
+                       Position position,
+                       std::shared_ptr<const Function<Real>> metric)
     : parameter_(std::move(parameter)),
       position_(std::move(position)),
+      metric_(std::move(metric)),
       chart_(position_.Chart())
   {
   }
@@ -593,6 +663,7 @@ protected:
 
   std::shared_ptr<const Geometry> parameter_;
   Position position_;
+  std::shared_ptr<const Function<Real>> metric_;
   std::shared_ptr<const CoordinateSystem> chart_;
 };
 
@@ -603,7 +674,7 @@ public:
   EmbeddedGeometry(
     std::shared_ptr<const uniform_grid::UniformGridGeometry<Dim>> parameter,
     Position position, const EmbeddingOptions& options)
-    : EmbeddedGeometryBase(parameter, std::move(position)),
+    : EmbeddedGeometryBase(parameter, std::move(position), options.metric),
       grid_(parameter->GetGrid()),
       options_(options.search)
   {
@@ -866,7 +937,8 @@ class EmbeddedBinding final : public EmbeddedBound
 public:
   EmbeddedBinding(std::shared_ptr<const EmbeddedGeometry<Dim>> geometry,
                   const BindRequest& request)
-    : EmbeddedBound(geometry, request, geometry->PositionOf()),
+    : EmbeddedBound(geometry, request, geometry->PositionOf(),
+                    geometry->GetMetric()),
       geometry_(std::move(geometry))
   {
     Locate();
@@ -1044,6 +1116,18 @@ std::shared_ptr<const Geometry> CreateEmbeddedGeometry(
                    symmetry->axis >= checked.Chart()->Dimension())) {
     throw pcms_error("CreateEmbeddedGeometry: the symmetry must translate an "
                      "axis of the position's chart by a positive length");
+  }
+  if (const auto& metric = options.metric) {
+    const ValueBasis& basis = metric->GetData().GetValueBasis();
+    if (metric->GetSpace().GetGeometry() != parameter_geometry ||
+        basis.Rank() != 2 ||
+        !detail::SameCoordinateSystem(basis.system, checked.ParameterChart()) ||
+        basis.variance[0] != basis.variance[1]) {
+      throw pcms_error("CreateEmbeddedGeometry: the metric must be a Function "
+                       "on the parameter geometry of rank 2 in the parameter "
+                       "chart, with both indices covariant (g_ij) or both "
+                       "contravariant (g^ij)");
+    }
   }
   if (detail::SameCoordinateSystem(checked.ParameterChart(), checked.Chart())) {
     throw pcms_error("CreateEmbeddedGeometry: the parameter geometry's chart "

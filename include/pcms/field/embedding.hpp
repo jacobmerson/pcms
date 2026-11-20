@@ -48,6 +48,13 @@ struct EmbeddingOptions
   /// coordinates as their located points. The reduction replaces the period
   /// of the axis, so a symmetry must divide it; none by default
   std::optional<TranslationSymmetry> symmetry;
+  /// the metric of the parameter chart, if it is given rather than induced
+  /// by the position: a rank-2 Function on the parameter geometry in the
+  /// parameter chart, g_ij (both indices covariant) or its inverse g^ij (both
+  /// contravariant, inverted at the points). Its volume factor is sqrt(det
+  /// g), so a metric given for a chart reduced by a symmetry must include
+  /// the ignored direction. Null: the metric induced by the position
+  std::shared_ptr<const Function<Real>> metric;
 };
 
 /// @brief A geometry whose cells are those of a structured parameter geometry
@@ -63,20 +70,23 @@ struct EmbeddingOptions
 /// search). The BoundPoints carry the parameter coordinates, so the
 /// evaluators of spaces on the parameter geometry evaluate unchanged
 /// (CreateEmbeddedSpace). The geometric factors at the points are J, the
-/// Gradient of the position, and the metric it induces, g = J^T G J (G the
-/// chart's metric at the image); their volume factor is the physical volume
-/// per unit of parameter volume. The geometry does not support
+/// Gradient of the position, and the given metric (EmbeddingOptions::metric)
+/// or the one the position induces, g = J^T G J (G the chart's metric at the
+/// image); their volume factor is the physical volume per unit of parameter
+/// volume. GetMetric() is the given metric. The geometry does not support
 /// OutOfBoundsMode::NEAREST_BOUNDARY, and a Rebind searches anew.
 /// @param parameter_geometry a uniform-grid geometry (the cells are boxes in
 ///        the parameter space), whose chart is a parameter chart
 ///        (csys::CreateParameterChart) or at least not the position's chart
 /// @param position a Function on `parameter_geometry` with a
 ///        ValueBasis::Coordinates basis, whose space evaluates Gradient
-/// @param options the options of the search and the symmetry
+/// @param options the options of the search, the symmetry and the metric
 /// @throws pcms_error if the geometry is not a uniform grid, the position is
 ///         not a Function of coordinates on it with a Gradient, the
-///         parameter chart is the position's chart, or the symmetry has an
-///         axis outside the chart or a non-positive length
+///         parameter chart is the position's chart, the symmetry has an
+///         axis outside the chart or a non-positive length, or the metric is
+///         not a rank-2 Function on the parameter geometry in the parameter
+///         chart with indices of one variance
 [[nodiscard]] std::shared_ptr<const Geometry> CreateEmbeddedGeometry(
   std::shared_ptr<const Geometry> parameter_geometry,
   std::shared_ptr<const Function<Real>> position,
