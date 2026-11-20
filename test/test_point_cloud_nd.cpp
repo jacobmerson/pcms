@@ -207,7 +207,7 @@ public:
     ++calls;
     const LO n = static_cast<LO>(coords.GetValues().extent(0));
     Kokkos::View<LO*, HostMemorySpace> ptr("ptr", n + 1);
-    Kokkos::View<LO*, HostMemorySpace> idx("idx", n * count_);
+    Kokkos::View<LO*, HostMemorySpace> idx("idx", std::size_t(n) * count_);
     Kokkos::View<Real*, HostMemorySpace> radii2("radii2", n);
     for (LO i = 0; i < n; ++i) {
       ptr(i + 1) = (i + 1) * count_;
@@ -217,7 +217,7 @@ public:
       }
     }
     Kokkos::View<LO*, DeviceMemorySpace> d_ptr("ptr", n + 1);
-    Kokkos::View<LO*, DeviceMemorySpace> d_idx("idx", n * count_);
+    Kokkos::View<LO*, DeviceMemorySpace> d_idx("idx", std::size_t(n) * count_);
     Kokkos::View<Real*, DeviceMemorySpace> d_radii2("radii2", n);
     Kokkos::deep_copy(d_ptr, ptr);
     Kokkos::deep_copy(d_idx, idx);
@@ -275,7 +275,7 @@ TEST_CASE("point-cloud MLS in 4D and 6D")
 
 TEST_CASE("a point cloud of more than 6 coordinates is refused")
 {
-  std::vector<Real> pts(7 * 10, 0.0);
+  std::vector<Real> pts(std::size_t(7) * 10, 0.0);
   pcms::Rank2View<Real, HostMemorySpace> view(pts.data(), 10, 7);
   REQUIRE_THROWS_AS(
     pcms::point_cloud::CreateGeometry(pcms::CoordinateView<HostMemorySpace>(
@@ -350,7 +350,7 @@ TEST_CASE("Euclidean axes: description, validation and equality")
   const auto axes = pcms::csys::GetAxes(*system);
   REQUIRE(axes.size() == 2);
   REQUIRE(axes[0].name == "theta");
-  REQUIRE(*axes[0].period == TwoPi);
+  REQUIRE(axes[0].period == std::optional<Real>(TwoPi));
   REQUIRE_FALSE(axes[1].period.has_value());
   REQUIRE(axes[1].scale == 1e-5);
   REQUIRE(*system ==
@@ -386,7 +386,7 @@ TEST_CASE("point-cloud MLS uses the supports across a period")
     auto space = MakeSpace(sites, system, options);
     auto f = space->CreateFunction<Real>();
     Kokkos::View<Real*, HostMemorySpace> data("data", 200);
-    for (int i = 0; i < 200; ++i) {
+    for (std::size_t i = 0; i < 200; ++i) {
       data(i) = Sawtooth(sites[2 * i], sites[2 * i + 1]);
     }
     f.SetDOFHolderDataHost(pcms::ValueView<const Real, HostMemorySpace>(
@@ -408,7 +408,7 @@ TEST_CASE("point-cloud MLS uses the supports across a period")
     pcms::csys::CreateEuclidean({Axis{"theta", TwoPi, 1.0}, Axis{"x"}}),
     missing);
   REQUIRE(missing == 0);
-  for (int i = 0; i < 4; ++i) {
+  for (std::size_t i = 0; i < 4; ++i) {
     REQUIRE_THAT(periodic(i, 0),
                  WithinAbs(Sawtooth(targets[2 * i], targets[2 * i + 1]), 1e-8));
   }
@@ -444,8 +444,8 @@ TEST_CASE("point-cloud supports use the scales of the axes")
     return ptr(20);
   };
   int expected = 0;
-  for (int t = 0; t < 20; ++t) {
-    for (int s = 0; s < 300; ++s) {
+  for (std::size_t t = 0; t < 20; ++t) {
+    for (std::size_t s = 0; s < 300; ++s) {
       const Real dx = targets[2 * t] - sites[2 * s];
       const Real dy = 1e-3 * (targets[2 * t + 1] - sites[2 * s + 1]);
       expected += dx * dx + dy * dy <= Radius * Radius;
