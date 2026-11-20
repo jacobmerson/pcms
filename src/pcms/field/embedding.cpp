@@ -207,16 +207,25 @@ struct BinGrid
   Real period[3] = {}; // 0: not periodic
 };
 
-// Wraps the points into their periods and finds the candidate cells of each:
-// the range [start, start + count) of the bins' cell list.
-void FindCandidates(Rank2View<const Real, DeviceMemorySpace> points,
-                    BinGrid bins, DeviceView<const LO*> bin_offsets,
+// Wraps the points into their periods (and shifts them by `shift` periods:
+// where the image of the geometry is wider than a period, a point can be the
+// image of a cell in either of two windows) and finds the candidate cells of
+// each: the range [start, start + count) of the bins' cell list.
+void FindCandidates(Rank2View<const Real, DeviceMemorySpace> points, int shift,
+                    DeviceView<const bool*> found, BinGrid bins,
+                    DeviceView<const LO*> bin_offsets,
                     DeviceView<Real**> wrapped, DeviceView<LO*> start,
                     DeviceView<LO*> count)
 {
   detail::ForEach(
     "embedded_candidates", static_cast<LO>(points.extent(0)),
     KOKKOS_LAMBDA(const LO p) {
+      if (found(p)) {
+        // keeps the reduced coordinates of the window it was found in
+        start(p) = 0;
+        count(p) = 0;
+        return;
+      }
       LO bin = 0;
       bool inside = true;
       for (int d = bins.dim - 1; d >= 0; --d) {
@@ -224,7 +233,7 @@ void FindCandidates(Rank2View<const Real, DeviceMemorySpace> points,
         if (bins.period[d] > 0) {
           const Real t = q - bins.wrap_lo[d];
           q = bins.wrap_lo[d] + t -
-              bins.period[d] * Kokkos::floor(t / bins.period[d]);
+              bins.period[d] * (Kokkos::floor(t / bins.period[d]) - shift);
         }
         wrapped(p, d) = q;
         const Real t = (q - bins.lo[d]) / bins.width[d];
@@ -596,13 +605,15 @@ public:
       grid_(parameter->GetGrid()),
       options_(options.search)
   {
-    BuildSearch();
+    BuildSearch(options.symmetry);
   }
 
   struct Located
   {
-    DeviceView<Real**> xi;   // [point][parameter dimension]
-    DeviceView<bool*> found; // [point]
+    DeviceView<Real**> xi;      // [point][parameter dimension]
+    DeviceView<bool*> found;    // [point]
+    DeviceView<Real**> reduced; // [point][chart dimension]: the points
+                                // reduced by the periods and symmetry
   };
 
   /// @brief The parameter coordinates of points of the target system: the
@@ -620,27 +631,32 @@ public:
     DeviceView<bool*> active("embedded_active", n);
     DeviceView<bool*> converged("embedded_converged", n);
     Located located{DeviceView<Real**>("embedded_xi", n, Dim),
-                    DeviceView<bool*>("embedded_found", n)};
-    FindCandidates(points, bins_, bin_offsets_, wrapped, start, count);
+                    DeviceView<bool*>("embedded_found", n), wrapped};
     const auto target = MakeConstRank2View(wrapped);
-    for (int round = 0; round < max_candidates_; ++round) {
-      StartRound<Dim>(round, grid_, bin_cells_, start, count, located.found,
-                      active, converged, cell, located.xi);
-      for (int iteration = 0; iteration <= MaxNewtonIterations; ++iteration) {
-        const auto e = position_.Evaluate(MakeConstRank2View(located.xi));
-        const LO stepped =
-          NewtonStep<Dim>(grid_, residual_tolerance_,
-                          iteration < MaxNewtonIterations, target, e.mapped,
-                          View<3, const Real, DeviceMemorySpace>(
-                            e.jacobian.data(), e.jacobian.extent(0),
-                            e.jacobian.extent(1), e.jacobian.extent(2)),
-                          active, converged, cell, located.xi);
-        if (stepped == 0) {
-          break;
+    // the points not found in the first window of a periodic axis are tried
+    // in the next one
+    for (int shift = 0; shift <= (two_windows_ ? 1 : 0); ++shift) {
+      FindCandidates(points, shift, located.found, bins_, bin_offsets_, wrapped,
+                     start, count);
+      for (int round = 0; round < max_candidates_; ++round) {
+        StartRound<Dim>(round, grid_, bin_cells_, start, count, located.found,
+                        active, converged, cell, located.xi);
+        for (int iteration = 0; iteration <= MaxNewtonIterations; ++iteration) {
+          const auto e = position_.Evaluate(MakeConstRank2View(located.xi));
+          const LO stepped =
+            NewtonStep<Dim>(grid_, residual_tolerance_,
+                            iteration < MaxNewtonIterations, target, e.mapped,
+                            View<3, const Real, DeviceMemorySpace>(
+                              e.jacobian.data(), e.jacobian.extent(0),
+                              e.jacobian.extent(1), e.jacobian.extent(2)),
+                            active, converged, cell, located.xi);
+          if (stepped == 0) {
+            break;
+          }
         }
+        AcceptRound<Dim>(grid_, options_.tolerance, active, converged, cell,
+                         located.xi, located.found);
       }
-      AcceptRound<Dim>(grid_, options_.tolerance, active, converged, cell,
-                       located.xi, located.found);
     }
     return located;
   }
@@ -691,7 +707,7 @@ protected:
 private:
   // Bins the images of the cells: their bounding boxes, from a lattice of
   // sample points of each cell, padded.
-  void BuildSearch()
+  void BuildSearch(const std::optional<TranslationSymmetry>& symmetry)
   {
     const int dt = GetCoordinateSystem()->Dimension();
     const LO num_cells = grid_.GetNumCells();
@@ -772,6 +788,12 @@ private:
         std::max((bin_hi[j] - bin_lo[j]) / bins_.count[j], 1e-300);
       bins_.wrap_lo[j] = image_lo[j];
       bins_.period[j] = GetCoordinateSystem()->Period(j).value_or(0);
+      if (symmetry && symmetry->axis == j) {
+        bins_.period[j] = symmetry->length;
+      }
+      two_windows_ = two_windows_ ||
+                     (bins_.period[j] > 0 && image_hi[j] - image_lo[j] >
+                                               bins_.period[j] * (1 + 1e-12));
       num_bins *= bins_.count[j];
     }
 
@@ -832,6 +854,8 @@ private:
   DeviceView<LO*> bin_cells_;
   LO max_candidates_ = 0;
   Real residual_tolerance_ = 0;
+  // the image is wider than a period of a periodic axis
+  bool two_windows_ = false;
 };
 
 template <unsigned Dim>
@@ -870,6 +894,9 @@ private:
       MarkFound(Inner()->FoundPoints(), found);
     } else {
       const auto located = geometry_->Locate(MakeConstRank2View(points));
+      if (GetBoundMap() == nullptr) {
+        ReplaceLocatedPoints(located.reduced);
+      }
       SetParameters(*geometry_->ParameterGeometry(), located.xi,
                     OutOfBoundsPolicy{OutOfBoundsMode::NEAREST_BOUNDARY});
       found = located.found;
@@ -955,6 +982,12 @@ std::shared_ptr<const Geometry> CreateEmbeddedGeometry(
       checked.Get()->GetSpace().GetGeometry() != parameter_geometry) {
     throw pcms_error("CreateEmbeddedGeometry: the position must be a Function "
                      "on the parameter geometry");
+  }
+  const auto& symmetry = options.symmetry;
+  if (symmetry && (symmetry->length <= 0 || symmetry->axis < 0 ||
+                   symmetry->axis >= checked.Chart()->Dimension())) {
+    throw pcms_error("CreateEmbeddedGeometry: the symmetry must translate an "
+                     "axis of the position's chart by a positive length");
   }
   if (detail::SameCoordinateSystem(checked.ParameterChart(), checked.Chart())) {
     throw pcms_error("CreateEmbeddedGeometry: the parameter geometry's chart "
