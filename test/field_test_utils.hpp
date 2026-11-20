@@ -737,6 +737,17 @@ inline void CheckOwnersMatchSearch(CoordinateView<DeviceMemorySpace> points,
 }
 #endif // PCMS_ENABLE_OMEGA_H
 
+/// The entries of a pcms view as a host Kokkos view over its storage (index it
+/// with the view's mapping).
+template <typename View>
+Kokkos::View<const Real*, HostMemorySpace> ToHostFlat(const View& view)
+{
+  const Kokkos::View<const Real*, DeviceMemorySpace,
+                     Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+    flat(view.data_handle(), view.mapping().required_span_size());
+  return Kokkos::create_mirror_view_and_copy(HostMemorySpace(), flat);
+}
+
 } // namespace pcms::test
 
 #endif // PCMS_TEST_FIELD_TEST_UTILS_HPP
