@@ -7,6 +7,7 @@
 #include "pcms/backends/omega_h/lagrange_layout.hpp"
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/backends/omega_h/mesh_intersection.hpp"
+#include "pcms/backends/omega_h/simplex_quadrature.hpp"
 #include "pcms/utility/assert.hpp"
 #include <MeshField_Integrate.hpp>
 #include <MeshField_Shape.hpp>
@@ -16,6 +17,12 @@
 
 namespace pcms::transfer::detail
 {
+
+// the reference rules and the barycentric map moved to the Omega_h backend,
+// which generates the quadratures
+using omega_h::detail::GlobalFromBarycentric;
+using omega_h::detail::IntegrationData;
+using omega_h::detail::SimplexTopology;
 
 // The layout and Omega_h geometry of a scalar Lagrange space on a simplex mesh
 // (triangles in 2D, tetrahedra in 3D) in Cartesian coordinates.
@@ -85,53 +92,8 @@ inline Kokkos::View<Real*, DeviceMemorySpace> ElementMeasuresAtPoints(
   const OwnerHints& owners, const char* context)
 {
   const auto bound = geometry.Bind(points, owners);
-  const DifferentialView differential = bound->Differential();
-  if (differential.Empty()) {
-    throw pcms_error(std::string(context) +
-                     ": the geometry provides no differential to take element "
-                     "measures from");
-  }
-  PCMS_ALWAYS_ASSERT(owners.entities.extent(0) ==
-                     static_cast<size_t>(bound->NumPoints()));
-  const int dim =
-    dynamic_cast<const omega_h::OmegaHGeometry&>(geometry).GetMesh().dim();
-  const Real reference_measure = dim == 3 ? 1.0 / 6.0 : 0.5;
-  const auto determinant = differential.determinant;
-  const bool per_element = differential.per_element;
-  const auto element_ids = owners.entities;
-  const LO n = bound->NumPoints();
-  Kokkos::View<Real*, DeviceMemorySpace> measures(
-    Kokkos::view_alloc(Kokkos::WithoutInitializing, "element_measures"), n);
-  Kokkos::parallel_for(
-    "ElementMeasuresAtPoints",
-    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
-    KOKKOS_LAMBDA(const LO i) {
-      // the points lie in their elements, so they are all found and row i of
-      // a per-point differential is point i
-      const LO row = per_element ? element_ids(i) : i;
-      measures(i) = Kokkos::fabs(determinant(row)) * reference_measure;
-    });
-  return measures;
-}
-
-// Map barycentric coordinates on a simplex (Dim+1 barycentric components) to
-// the global point, given the simplex's Dim+1 vertex coordinates. The
-// intersection uses it on the sub-simplices r3d produces.
-template <int Dim>
-[[nodiscard]] OMEGA_H_INLINE Omega_h::Vector<Dim> GlobalFromBarycentric(
-  const Omega_h::Vector<Dim + 1>& barycentric_coord,
-  const Omega_h::Few<Omega_h::Vector<Dim>, Dim + 1>& verts_coord)
-{
-  Omega_h::Vector<Dim> real_coords;
-  for (int d = 0; d < Dim; ++d) {
-    real_coords[d] = 0.0;
-  }
-  for (int i = 0; i < Dim + 1; ++i) {
-    for (int d = 0; d < Dim; ++d) {
-      real_coords[d] += barycentric_coord[i] * verts_coord[i][d];
-    }
-  }
-  return real_coords;
+  return omega_h::detail::ElementMeasuresAtPoints(geometry, *bound, owners,
+                                                  context);
 }
 
 // Walk each face of a clipped r3d polyhedron exactly once and fan it into
@@ -313,73 +275,6 @@ OMEGA_H_INLINE void ForEachIntersectionSubsimplex(
           Omega_h::Real measure) { op(simplex, current_src_elm, measure); });
   }
 }
-
-// Maps spatial dimension to the MeshField simplex topology whose reference
-// quadrature rules we use (triangle in 2D, tetrahedron in 3D).
-template <int Dim>
-struct SimplexTopology;
-template <>
-struct SimplexTopology<2>
-{
-  static constexpr MeshField::Mesh_Topology value = MeshField::Triangle;
-};
-template <>
-struct SimplexTopology<3>
-{
-  static constexpr MeshField::Mesh_Topology value = MeshField::Tetrahedron;
-};
-
-// Barycentric integration points and weights for a reference simplex (triangle
-// in 2D, tetrahedron in 3D), taken from MeshField's predefined quadrature rules
-// and staged on device for use in element integration kernels.
-//
-// MeshField::getIntegrationPoints returns a host std::vector, which cannot be
-// dereferenced inside a device kernel, so the (tiny) rule is copied into device
-// Kokkos views once at construction. Each barycentric point has Dim+1
-// components.
-//
-// The quadrature order is a runtime argument because the required polynomial
-// accuracy depends on the source and target element orders (degree =
-// source_order + target_order), which are only known at construction.
-template <int Dim>
-struct IntegrationData
-{
-  Kokkos::View<Omega_h::Real * [Dim + 1]>
-    bary_coords;                        // barycentric coordinates
-  Kokkos::View<Omega_h::Real*> weights; // quadrature weights
-
-  explicit IntegrationData(int order)
-  {
-    auto ip_vec =
-      MeshField::getIntegrationPoints<SimplexTopology<Dim>::value>(order);
-    const std::size_t num_ip = ip_vec.size();
-
-    bary_coords =
-      Kokkos::View<Omega_h::Real * [Dim + 1]>("bary_coords", num_ip);
-    weights = Kokkos::View<Omega_h::Real*>("weights", num_ip);
-
-    auto bary_coords_host = Kokkos::create_mirror_view(bary_coords);
-    auto weights_host = Kokkos::create_mirror_view(weights);
-    for (std::size_t i = 0; i < num_ip; ++i) {
-      // MeshField returns points in reduced parametric coordinates: only the
-      // first Dim barycentric components are stored, with the last implied by
-      // the partition of unity. Expand to the full Dim+1 barycentric form
-      // consumed by GlobalFromBarycentric.
-      Omega_h::Real last = 1.0;
-      for (int d = 0; d < Dim; ++d) {
-        const Omega_h::Real xi = ip_vec[i].param[d];
-        bary_coords_host(i, d) = xi;
-        last -= xi;
-      }
-      bary_coords_host(i, Dim) = last;
-      weights_host(i) = ip_vec[i].weight;
-    }
-    Kokkos::deep_copy(bary_coords, bary_coords_host);
-    Kokkos::deep_copy(weights, weights_host);
-  }
-
-  int size() const { return bary_coords.extent(0); }
-};
 
 // Target Lagrange basis on a simplex (triangle in 2D, tetrahedron in 3D),
 // parameterized by spatial dimension and element order, for the

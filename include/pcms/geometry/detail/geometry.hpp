@@ -30,6 +30,16 @@ void CheckEntityIds(Kokkos::View<const LO*, DeviceMemorySpace> ids,
                     LO num_entities, const std::string& caller,
                     const std::string& entity);
 
+/// @brief Multiplies quadrature weights by the volume factor of a coordinate
+///        system at the points: weights that carry the measure of the cells
+///        in the system's coordinates become physical measures.
+/// @param weights one weight per point; scaled in place
+/// @param system the coordinate system of `points`
+/// @param points [points][dimension] coordinates in `system`
+void ScaleByVolumeFactor(Kokkos::View<Real*, DeviceMemorySpace> weights,
+                         const CoordinateSystem& system,
+                         Rank2View<const Real, DeviceMemorySpace> points);
+
 } // namespace pcms::detail
 
 #endif // PCMS_GEOMETRY_DETAIL_GEOMETRY_HPP
