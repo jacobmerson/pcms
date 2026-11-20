@@ -1,4 +1,5 @@
 #include "pcms/transfer/galerkin_projection.hpp"
+#include "pcms/field/detail/field_ops.hpp"
 #include "pcms/field/field_ops.hpp"
 #include "pcms/utility/arrays.hpp"
 #include <Kokkos_Core.hpp>
@@ -47,6 +48,7 @@ GalerkinProjection::GalerkinProjection(
     source_->CreatePointEvaluator<Real>(detail::BindQuadrature(
       source_geometry, right_hand_side_.GetQuadrature(), options.to_source));
   functional_.emplace(target_space.CreateFunction<Real>());
+  coefficients_.emplace(target_space.CreateFunction<Real>());
   if (options.mass_matrix_type == MassMatrixType::Lumped) {
     lumped_.emplace(target_space.CreateFunction<Real>());
     mass_.AssembleLumped(*lumped_);
@@ -118,6 +120,39 @@ void GalerkinProjection::Apply(const Field<Real>& source,
   if (interpolator_) {
     Axpy(Real(1), *control_variate_, target);
   }
+}
+
+bool GalerkinProjection::SupportsTranspose() const noexcept
+{
+  return !interpolator_ && source_at_points_->SupportsTranspose();
+}
+
+void GalerkinProjection::ApplyTranspose(const Field<Real>& source,
+                                        Field<Real>& target) const
+{
+  if (!SupportsTranspose()) {
+    throw pcms_error("GalerkinProjection::ApplyTranspose: needs a source "
+                     "evaluator with the transpose and no control variate");
+  }
+  if (&source.GetLayout() != target_space_->GetLayout().get()) {
+    throw pcms_error("GalerkinProjection::ApplyTranspose: the source must be "
+                     "a field of the target space's layout");
+  }
+  // z = M^-1 b, E z at the points, W, then S^T into the functional
+  if (lumped_) {
+    detail::Divide(source, *lumped_, *coefficients_);
+  } else {
+    solver_->Solve(source, *coefficients_);
+  }
+  right_hand_side_.Evaluator().Evaluate(
+    *coefficients_,
+    ValueView<Real, DeviceMemorySpace>(coefficients_->GetData().GetValueBasis(),
+                                       MakeRank2View(samples_)));
+  const auto weighted =
+    right_hand_side_.Weight(ValueView<const Real, DeviceMemorySpace>(
+      target.GetData().GetValueBasis(), MakeConstRank2View(samples_)));
+  pcms::detail::SetZero(target);
+  source_at_points_->EvaluateTranspose(weighted, target);
 }
 
 } // namespace pcms::transfer
