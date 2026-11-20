@@ -247,19 +247,18 @@ class FourierSpace final : public pcms::FunctionSpace
 {
 public:
   FourierSpace(std::shared_ptr<const pcms::FieldLayout> layout,
-               std::function<pcms::FieldDataVariant(pcms::Type, pcms::ValueBasis)>
-                 create_field_data,
                std::shared_ptr<const pcms::PointEvaluatorFactory> evaluator,
                std::shared_ptr<const pcms::Geometry> geometry, int harmonics)
-    : pcms::FunctionSpace(std::move(layout), std::move(create_field_data),
-                          std::move(evaluator), geometry),
+    : pcms::FunctionSpace(std::move(layout), std::move(evaluator), geometry),
       geometry_(std::move(geometry)),
       harmonics_(harmonics)
   {}
 
-  [[nodiscard]] pcms::Quadrature CreateQuadrature() const override
+  [[nodiscard]] pcms::Quadrature CreateQuadrature(
+    std::optional<int> order) const override
   {
-    return geometry_->CreateQuadrature({.order = 2 * harmonics_});
+    return geometry_->CreateQuadrature(
+      {.order = order.value_or(2 * harmonics_)});
   }
 
 private:
@@ -273,14 +272,6 @@ std::shared_ptr<const pcms::FunctionSpace> MakeFourierSpace(
   const auto layout = std::make_shared<FourierLayout>(geometry, harmonics);
   return std::make_shared<FourierSpace>(
     layout,
-    [layout](pcms::Type type,
-             pcms::ValueBasis basis) -> pcms::FieldDataVariant {
-      if (type != pcms::Type::Real) {
-        throw pcms::pcms_error("the Fourier fixture has Real fields only");
-      }
-      return std::make_unique<pcms::detail::SimpleFieldData<Real>>(
-        layout, std::move(basis));
-    },
     std::make_shared<FourierEvaluatorFactory>(geometry, layout), geometry,
     harmonics);
 }
