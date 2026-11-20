@@ -150,13 +150,15 @@ public:
   ///        of; the same for every component, so that component c of the
   ///        values is E times component c of the DOFs.
   ///
-  /// Only for DifferentialOperator::Value. The rows of missing points are
-  /// empty or zero; a row may hold explicit zero entries.
-  /// @throws pcms_error if SupportsMatrix() is false or the operator is not
-  ///         Value
+  /// For DifferentialOperator::Value; an evaluator of the Gradient operator
+  /// that supports the matrix has the matrix of the partials, whose row
+  /// p * d + j is the partial j of point p (d the output columns of the
+  /// operator), which the product spaces combine. The rows of missing points
+  /// are empty or zero; a row may hold explicit zero entries.
+  /// @throws pcms_error if SupportsMatrix() is false
   [[nodiscard]] PointMatrix<T> GetMatrix() const
   {
-    if (!SupportsMatrix() || op_ != DifferentialOperator::Value) {
+    if (!SupportsMatrix()) {
       throw pcms_error("PointEvaluator::GetMatrix: not supported by this "
                        "evaluator");
     }
