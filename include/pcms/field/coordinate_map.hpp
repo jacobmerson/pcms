@@ -119,7 +119,7 @@ CreateCylindricalToCartesian();
 /// geometry's Bind. Only scalar values (including multi-component scalars) are
 /// currently supported.
 /// @param theta0 toroidal angle of the plane, in radians
-[[nodiscard]] std::shared_ptr<const CoordinateMap> CreatePoloidalPlaneEmbedding(
+[[nodiscard]] std::shared_ptr<const CoordinateMap> CreatePoloidalPlaneInsertion(
   Real theta0);
 
 } // namespace pcms

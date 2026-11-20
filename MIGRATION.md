@@ -159,7 +159,7 @@ system and the point search; use the factories, which return the interfaces
 | `csys::Cartesian::Create(dim)` | `csys::CreateCartesian(dim)` |
 | `csys::CylindricalRThetaZ::Create()`, `csys::CylindricalRZ::Create()` | `csys::CreateCylindricalRThetaZ()`, `csys::CreateCylindricalRZ()` |
 | `CartesianToCylindrical()`, `CylindricalToCartesian()` | `CreateCartesianToCylindrical()`, `CreateCylindricalToCartesian()` |
-| `PoloidalPlaneEmbedding(theta0)` | `CreatePoloidalPlaneEmbedding(theta0)` |
+| `PoloidalPlaneEmbedding(theta0)` | `CreatePoloidalPlaneInsertion(theta0)` |
 | `FixedTimestepper(dt)` | `CreateFixedTimestepper(dt)` |
 
 (`omega_h::`, `uniform_grid::`, `point_cloud::`, `xgc::` and `mfem::` are
