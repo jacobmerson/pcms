@@ -339,3 +339,61 @@ TEST_CASE("Product space: projection of an analytic source (matrix-free)",
     }
   }
 }
+
+TEST_CASE("Product space: twist-shift identification wraps the plane's y into "
+          "its interval and shifts z by the number of periods times a function "
+          "of x",
+          "[product][twist]")
+{
+  Omega_h::Library lib;
+  auto mesh = pcms::test::BuildSquareMesh(lib, 3);
+  const auto plane = pcms::CreateLagrangeSpace(
+    pcms::omega_h::CreateGeometry(mesh, pcms::detail::DeferredCartesian()), 1, 1,
+    {.backend = pcms::LagrangeBackend::OmegaH});
+  const auto zs = pcms::CreateFourierSpace(Periodic(5), {0, 1, 2});
+  // the shift of z across y = 1: 0.3 + 0.8 cos(2 pi x), a function of x
+  const auto xs = pcms::CreateFourierSpace(Periodic(4, 1.0), {0, 1});
+  auto shift = xs->CreateFunction<Real>();
+  SetDofs(shift, {0.3, 0.8, 0.0});
+  const auto delta = [](Real x) { return 0.3 + 0.8 * std::cos(TwoPi * x); };
+  const auto geometry = pcms::CreateProductGeometry(
+    plane->GetGeometry(), zs->GetGeometry(),
+    pcms::ProductIdentification{
+      .wrap_axis = 1,
+      .lower = 0.0,
+      .period = 1.0,
+      .shift = std::make_shared<const pcms::Function<Real>>(std::move(shift))});
+  const auto space = pcms::CreateProductSpace(plane, zs, geometry);
+  auto u = space->CreateFunction<Real>();
+  SetDofs(u, Outer(NodalValues(*plane->GetLayout(),
+                               [](Real x, Real y) { return x + 2 * y; }),
+                   ZCoefficients));
+  // (x, y + n, z) is (x, y, z + n delta(x)): u there is (x + 2 y) f(z + n delta)
+  for (const int n : {-2, -1, 0, 1, 3}) {
+    CAPTURE(n);
+    std::vector<std::vector<Real>> points;
+    for (const Real x : {0.1, 0.45, 0.8}) {
+      points.push_back({x, 0.37 + n, 1.9});
+    }
+    const auto value = EvaluateAt(*space, u, points);
+    for (std::size_t p = 0; p < points.size(); ++p) {
+      const Real x = points[p][0];
+      CHECK(value[p][0] ==
+            Catch::Approx((x + 2 * 0.37) * Z(1.9 + n * delta(x))).margin(1e-10));
+    }
+  }
+  // without the identification a point outside the plane is an error
+  const auto plain = pcms::CreateProductSpace(plane, zs);
+  CHECK_THROWS(EvaluateAt(*plain, plain->CreateFunction<Real>(), {{0.5, 1.37, 0.0}}));
+  // the adjoint identity holds for points across the wrap
+  auto pts = Points(31, 3, 0.02, 0.98);
+  for (auto& p : pts) {
+    p[1] = (p[1] - 0.5) * 6;
+    p[2] = (p[2] - 0.5) * 20;
+  }
+  pcms::test::CheckAdjointAndMatrix(space, pts);
+  // invalid identifications
+  CHECK_THROWS(pcms::CreateProductGeometry(
+    plane->GetGeometry(), zs->GetGeometry(),
+    pcms::ProductIdentification{.wrap_axis = 2, .period = 1.0, .shift = nullptr}));
+}

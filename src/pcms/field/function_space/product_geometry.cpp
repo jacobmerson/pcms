@@ -1,4 +1,5 @@
 #include "pcms/geometry/product_geometry.hpp"
+#include "pcms/field/function_space.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
@@ -25,6 +26,47 @@ Kokkos::View<Real**, DeviceMemorySpace> Columns(
       }
     });
   return out;
+}
+
+/// The twist-shift: moves the wrap axis of `xa` into the interval and shifts
+/// the first column of `xb` by the number of periods times `shift`, evaluated
+/// at the other columns of `xa`.
+void ApplyIdentification(const ProductIdentification& id,
+                         Kokkos::View<Real**, DeviceMemorySpace> xa,
+                         Kokkos::View<Real**, DeviceMemorySpace> xb)
+{
+  const int da = static_cast<int>(xa.extent(1));
+  const int axis = id.wrap_axis;
+  Kokkos::View<Real**, DeviceMemorySpace> other("identification_other",
+                                                xa.extent(0), da - 1);
+  pcms::detail::ForEach(
+    "IdentificationOther", static_cast<LO>(xa.extent(0)),
+    KOKKOS_LAMBDA(const LO p) {
+      for (int d = 0, k = 0; d < da; ++d) {
+        if (d != axis) {
+          other(p, k++) = xa(p, d);
+        }
+      }
+    });
+  const FunctionSpace& space = id.shift->GetSpace();
+  const auto geometry = space.GetGeometry();
+  const auto evaluator = space.CreatePointEvaluator<Real>(
+    geometry->Bind(CoordinateView<DeviceMemorySpace>(
+      geometry->GetCoordinateSystem(), MakeConstRank2View(other))));
+  Kokkos::View<Real**, DeviceMemorySpace> shift("identification_shift",
+                                                xa.extent(0), 1);
+  evaluator->Evaluate(
+    *id.shift, ValueView<Real, DeviceMemorySpace>(
+                 evaluator->OutputBasis(id.shift->GetData().GetValueBasis()),
+                 MakeRank2View(shift)));
+  const Real lower = id.lower;
+  const Real period = id.period;
+  pcms::detail::ForEach(
+    "Identification", static_cast<LO>(xa.extent(0)), KOKKOS_LAMBDA(const LO p) {
+      const Real periods = Kokkos::floor((xa(p, axis) - lower) / period);
+      xa(p, axis) -= periods * period;
+      xb(p, 0) += periods * shift(p, 0);
+    });
 }
 
 /// found = found in both factors
@@ -72,6 +114,9 @@ void ProductBinding::Locate(bool rebind)
   const int db = product.FactorB()->GetCoordinateSystem()->Dimension();
   const auto xa = Columns(MakeConstRank2View(points), 0, da);
   const auto xb = Columns(MakeConstRank2View(points), da, db);
+  if (product.Identification()) {
+    ApplyIdentification(*product.Identification(), xa, xb);
+  }
   const auto view_a = FactorView(*product.FactorA(), xa);
   const auto view_b = FactorView(*product.FactorB(), xb);
   if (rebind) {
@@ -86,9 +131,10 @@ void ProductBinding::Locate(bool rebind)
   }
 }
 
-ProductGeometry::ProductGeometry(std::shared_ptr<const Geometry> a,
-                                 std::shared_ptr<const Geometry> b)
-  : a_(std::move(a)), b_(std::move(b))
+ProductGeometry::ProductGeometry(
+  std::shared_ptr<const Geometry> a, std::shared_ptr<const Geometry> b,
+  std::optional<ProductIdentification> identification)
+  : a_(std::move(a)), b_(std::move(b)), identification_(std::move(identification))
 {
   if (a_ == nullptr || b_ == nullptr) {
     throw pcms_error("CreateProductGeometry: the factors must not be null");
@@ -100,6 +146,18 @@ ProductGeometry::ProductGeometry(std::shared_ptr<const Geometry> a,
   }
   system_ = csys::CreateCartesian(a_->GetCoordinateSystem()->Dimension() +
                                   b_->GetCoordinateSystem()->Dimension());
+  if (identification_) {
+    const int da = a_->GetCoordinateSystem()->Dimension();
+    const auto& id = *identification_;
+    if (id.wrap_axis < 0 || id.wrap_axis >= da || da < 2 || !(id.period > 0) ||
+        id.shift == nullptr ||
+        id.shift->GetSpace().GetGeometry()->GetCoordinateSystem()->Dimension() !=
+          da - 1) {
+      throw pcms_error("CreateProductGeometry: the identification needs a wrap "
+                       "axis of a (of dimension 2 or more), a positive period "
+                       "and a shift function of the other coordinates of a");
+    }
+  }
 }
 
 std::shared_ptr<BoundPoints> ProductGeometry::BindImpl(
@@ -193,9 +251,11 @@ Quadrature ProductGeometry::CreateQuadrature(
 }
 
 std::shared_ptr<const Geometry> CreateProductGeometry(
-  std::shared_ptr<const Geometry> a, std::shared_ptr<const Geometry> b)
+  std::shared_ptr<const Geometry> a, std::shared_ptr<const Geometry> b,
+  std::optional<ProductIdentification> identification)
 {
-  return std::make_shared<ProductGeometry>(std::move(a), std::move(b));
+  return std::make_shared<ProductGeometry>(std::move(a), std::move(b),
+                                           std::move(identification));
 }
 
 } // namespace pcms

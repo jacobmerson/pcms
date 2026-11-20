@@ -9,6 +9,7 @@
 #include "pcms/utility/detail/memory_spaces.hpp"
 #include <Kokkos_Core.hpp>
 #include <memory>
+#include <optional>
 
 namespace pcms
 {
@@ -48,7 +49,8 @@ class ProductGeometry final : public Geometry
 {
 public:
   ProductGeometry(std::shared_ptr<const Geometry> a,
-                  std::shared_ptr<const Geometry> b);
+                  std::shared_ptr<const Geometry> b,
+                  std::optional<ProductIdentification> identification);
 
   [[nodiscard]] const std::shared_ptr<const CoordinateSystem>&
   GetCoordinateSystem() const noexcept override
@@ -66,6 +68,12 @@ public:
   [[nodiscard]] const std::shared_ptr<const Geometry>& FactorB() const noexcept
   {
     return b_;
+  }
+
+  [[nodiscard]] const std::optional<ProductIdentification>& Identification()
+    const noexcept
+  {
+    return identification_;
   }
 
   // moves to BoundPoints::Differential() (S4/S5)
@@ -88,6 +96,7 @@ private:
   std::shared_ptr<const Geometry> a_;
   std::shared_ptr<const Geometry> b_;
   std::shared_ptr<const CoordinateSystem> system_;
+  std::optional<ProductIdentification> identification_;
 };
 
 } // namespace pcms
