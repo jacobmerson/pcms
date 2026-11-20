@@ -20,7 +20,7 @@ namespace pcms::detail
 [[nodiscard]] inline bool HasIdentityMetric(
   const CoordinateSystem& system) noexcept
 {
-  return system.HasOrthogonalBasis() && system.HasUnitScaleFactors();
+  return system.IsOrthogonal() && system.IsConstantMetric();
 }
 
 /// A Cartesian system whose dimension is not yet known ("cartesian
