@@ -301,6 +301,12 @@ CoordinateView<DeviceMemorySpace> BoundCoordinateMap::MappedPoints() const
                                            MakeConstRank2View(mapped_));
 }
 
+View<3, const Real, DeviceMemorySpace> BoundCoordinateMap::Jacobian() const
+{
+  throw pcms_error("BoundCoordinateMap::Jacobian: this coordinate map does "
+                   "not provide its Jacobian");
+}
+
 ValueBasis BoundCoordinateMap::OutputBasis(const ValueBasis&) const
 {
   throw pcms_error("BoundCoordinateMap::OutputBasis: this coordinate map maps "
