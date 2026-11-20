@@ -19,7 +19,8 @@ namespace pcms::detail
 
 /// Point evaluator at the points of a BoundPoints with a coordinate map: the
 /// inner evaluator evaluates at the mapped points, and this one re-expresses
-/// the evaluated components in the bound map's output basis.
+/// the evaluated components through the bound map's ValueTransform (scalars
+/// pass through).
 /// PointEvaluatorFactory::CreatePointEvaluator creates it for every bound
 /// source whose GetBoundMap() is set.
 template <typename T>
@@ -52,10 +53,20 @@ public:
       return;
     }
     if constexpr (std::is_same_v<T, Real>) {
+      const auto out = values.GetValues();
+      const int din = inner_out.system->Dimension();
+      const int dout = values.GetBasis().system->Dimension();
+      // in place, unless the map changes the number of components
+      Kokkos::View<Real**, DeviceMemorySpace> scratch;
+      if (din != dout) {
+        scratch = Kokkos::View<Real**, DeviceMemorySpace>(
+          Kokkos::view_alloc(Kokkos::WithoutInitializing, "map_source_values"),
+          out.extent(0), static_cast<std::size_t>(out.extent(1) / dout) * din);
+      }
       const ValueView<Real, DeviceMemorySpace> source_values(
-        inner_out, values.GetValues());
+        inner_out, din != dout ? MakeRank2View(scratch) : out);
       inner_->Evaluate(field, source_values);
-      map_->TransformValues(source_values);
+      map_->ValueTransform().Apply(source_values, values);
     } else {
       throw pcms_error("TransformedPointEvaluator::Evaluate: basis "
                        "transformations require T == Real");
@@ -68,7 +79,7 @@ public:
     if (inner_out.Rank() == 0) {
       return inner_out;
     }
-    return map_->OutputBasis(inner_out);
+    return map_->ValueTransform().OutputBasis(inner_out);
   }
 
 private:
