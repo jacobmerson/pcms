@@ -3,6 +3,7 @@
 
 #include "pcms/backends/omega_h/omega_h_geometry.hpp"
 #include "pcms/backends/omega_h/lagrange_layout.hpp"
+#include "pcms/field/detail/field_ops.hpp"
 #include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/field/point_evaluator.hpp"
 #include "pcms/field/field_data.hpp"
@@ -192,26 +193,6 @@ Kokkos::View<T**, DeviceMemorySpace> SumGhostsIntoOwners(
   return owned;
 }
 
-/// owned[o][c] += addend[o][c]
-template <typename T>
-Kokkos::View<T**, DeviceMemorySpace> AddOwned(
-  const Rank2View<const T, DeviceMemorySpace>& current,
-  const Kokkos::View<T**, DeviceMemorySpace>& addend)
-{
-  Kokkos::View<T**, DeviceMemorySpace> sum(
-    Kokkos::view_alloc(Kokkos::WithoutInitializing, "omega_h_lagrange_sum"),
-    addend.extent(0), addend.extent(1));
-  const auto n = static_cast<int>(sum.extent(0));
-  const auto nc = static_cast<int>(sum.extent(1));
-  Kokkos::parallel_for(
-    "OmegaHLagrangePointEvaluator::AddOwned",
-    Kokkos::RangePolicy<DefaultExecutionSpace>(0, n * nc),
-    KOKKOS_LAMBDA(const int k) {
-      sum(k / nc, k % nc) = current(k / nc, k % nc) + addend(k / nc, k % nc);
-    });
-  return sum;
-}
-
 } // namespace detail
 
 // OmegaHLagrangePointEvaluator<T> implements PointEvaluator<T> for simplex
@@ -290,10 +271,7 @@ public:
     detail::EvaluateTransposeOmegaHLagrange<T>(
       basis_, binding_->FoundPoints(), values, dofs, n_comp);
     const auto owned = detail::SumGhostsIntoOwners<T>(*layout_, dofs);
-    const auto sum =
-      detail::AddOwned<T>(functional.GetDOFHolderData().GetValues(), owned);
-    functional.SetDOFHolderDataUnchecked(MakeConstRank2View(sum));
-    functional.Synchronize();
+    pcms::detail::AddToField(functional, owned);
   }
 
   [[nodiscard]] bool SupportsMatrix() const noexcept override { return true; }
