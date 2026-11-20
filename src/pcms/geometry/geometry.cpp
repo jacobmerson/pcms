@@ -152,6 +152,19 @@ void detail::CheckNeighbourhoodArguments(
   }
 }
 
+void detail::CheckCartesianMeasure(const Geometry& geometry,
+                                   const std::string& caller)
+{
+  // Until coordinate systems provide a metric (S5)
+  if (!pcms::detail::IsCartesian(*geometry.GetCoordinateSystem())) {
+    throw pcms_error(caller + ": the geometry's coordinate system '" +
+                     std::string(geometry.GetCoordinateSystem()->Kind()) +
+                     "' is not Cartesian; quadrature weights carry no "
+                     "coordinate-system metric yet, so the integral would be "
+                     "wrong. Map the data to a Cartesian geometry");
+  }
+}
+
 void detail::CheckEntityIds(Kokkos::View<const LO*, DeviceMemorySpace> ids,
                             LO num_entities, const std::string& caller,
                             const std::string& entity)

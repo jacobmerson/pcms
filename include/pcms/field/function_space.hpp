@@ -11,6 +11,7 @@
 #include "pcms/field/out_of_bounds_policy.hpp"
 #include "pcms/field/point_evaluator.hpp"
 #include "pcms/field/point_evaluator_factory.hpp"
+#include "pcms/geometry/detail/geometry.hpp"
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/memory_spaces.hpp"
@@ -102,6 +103,8 @@ public:
   /// @throws pcms_error for a space that has none
   [[nodiscard]] Quadrature CreateQuadrature() const
   {
+    pcms::detail::CheckCartesianMeasure(*geometry_,
+                                        "FunctionSpace::CreateQuadrature");
     if (!create_quadrature_) {
       throw pcms_error("FunctionSpace::CreateQuadrature: this space has no "
                        "natural quadrature");

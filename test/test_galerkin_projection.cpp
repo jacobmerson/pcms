@@ -10,6 +10,7 @@
 #include <pcms/backends/omega_h/omega_h.hpp>
 #include <pcms/transfer/forms.hpp>
 #include <pcms/transfer/interpolator.hpp>
+#include <pcms/utility/coordinate_systems/cylindrical.hpp>
 #include <pcms/transfer/l2_inner_product.hpp>
 #include <pcms/transfer/linear_solver.hpp>
 #include "field_test_utils.hpp"
@@ -571,4 +572,23 @@ TEST_CASE("ApplyTranspose of a projection is its adjoint, for both solve "
   auto b = target_space->CreateFunction<pcms::Real>();
   auto out = source_space->CreateFunction<pcms::Real>();
   CHECK_THROWS(control_variate->ApplyTranspose(b, out));
+}
+
+TEST_CASE("quadrature consumers refuse a non-Cartesian geometry",
+          "[quadrature][projection][l2]")
+{
+  // Until coordinate systems provide a metric (S5)
+  Omega_h::Library lib;
+  auto mesh = pcms::test::BuildUnitSquare(lib, 0);
+  const auto cylindrical = pcms::test::MakeP1Space(
+    pcms::omega_h::CreateGeometry(mesh, pcms::csys::CreateCylindricalRZ()));
+  const auto cartesian = pcms::test::MakeP1Space(mesh);
+  CHECK_THROWS_AS(cylindrical->CreateQuadrature(), pcms::pcms_error);
+  CHECK_THROWS_AS(pcms::CreateProjection(cartesian, cylindrical),
+                  pcms::pcms_error);
+  CHECK_THROWS_AS(pcms::CreateProjection(cylindrical, cartesian),
+                  pcms::pcms_error);
+  CHECK_THROWS_AS(pcms::L2Integral(cylindrical), pcms::pcms_error);
+  CHECK_THROWS_AS(pcms::L2InnerProduct(cylindrical, cylindrical),
+                  pcms::pcms_error);
 }

@@ -7,6 +7,7 @@
 
 #include "pcms/backends/omega_h/omega_h_geometry.hpp"
 #include "pcms/configuration.hpp"
+#include "pcms/geometry/detail/geometry.hpp"
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
@@ -39,12 +40,7 @@ inline void CheckCartesianSimplexMesh(const OmegaHGeometry& geometry,
     throw pcms_error(prefix +
                      "the mesh must be a simplex (triangle/tetrahedron) mesh");
   }
-  if (!pcms::detail::SameCoordinateSystem(
-        geometry.GetCoordinateSystem(), csys::CreateCartesian(mesh.dim()))) {
-    throw pcms_error(prefix +
-                     "the geometry must use the Cartesian coordinate system "
-                     "of its mesh dimension; map other systems explicitly");
-  }
+  pcms::detail::CheckCartesianMeasure(geometry, context);
 }
 
 // Measure of the element of each point of `bound`, a bind of the points on

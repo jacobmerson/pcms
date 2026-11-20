@@ -30,6 +30,15 @@ void CheckEntityIds(Kokkos::View<const LO*, DeviceMemorySpace> ids,
                     LO num_entities, const std::string& caller,
                     const std::string& entity);
 
+/// @brief Checks that the weights of a quadrature over `geometry` are
+///        measures: they carry |det J| only, which is the physical measure in
+///        Cartesian coordinates alone.
+/// @param geometry the geometry the quadrature integrates over
+/// @param caller name of the calling function, for the message
+/// @throws pcms_error if the geometry's coordinate system is not Cartesian
+// Until coordinate systems provide a metric (S5)
+void CheckCartesianMeasure(const Geometry& geometry, const std::string& caller);
+
 } // namespace pcms::detail
 
 #endif // PCMS_GEOMETRY_DETAIL_GEOMETRY_HPP

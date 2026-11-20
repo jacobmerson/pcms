@@ -1,5 +1,6 @@
 #include "pcms/transfer/l2_inner_product.hpp"
 #include "pcms/transfer/forms.hpp"
+#include "pcms/geometry/detail/geometry.hpp"
 #include "pcms/utility/assert.hpp"
 #include <cmath>
 
@@ -12,6 +13,7 @@ namespace
 Quadrature MakeQuadrature(const FunctionSpace& space,
                           const std::optional<QuadratureOptions>& options)
 {
+  pcms::detail::CheckCartesianMeasure(*space.GetGeometry(), "L2 quadrature");
   return options ? space.GetGeometry()->CreateQuadrature(*options)
                  : space.CreateQuadrature();
 }

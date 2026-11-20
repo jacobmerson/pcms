@@ -1,4 +1,5 @@
 #include "pcms/transfer/forms.hpp"
+#include "pcms/geometry/detail/geometry.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/assert.hpp"
 #include <Kokkos_Core.hpp>
@@ -95,6 +96,7 @@ LinearForm::LinearForm(std::shared_ptr<const FunctionSpace> space,
     throw pcms_error("LinearForm: the quadrature must be bound on the "
                      "space's geometry and have one weight per point");
   }
+  pcms::detail::CheckCartesianMeasure(*space_->GetGeometry(), "LinearForm");
   evaluator_ = space_->CreatePointEvaluator<Real>(quadrature_.points);
   if (!evaluator_->SupportsTranspose()) {
     throw pcms_error("LinearForm: the space's evaluator does not support the "
