@@ -43,7 +43,7 @@ TEST_CASE("MLS repeated evaluation timing", "[mls][timing]")
     });
   std::mt19937 rng(3);
   std::uniform_real_distribution<double> uniform(0.05, 0.95);
-  std::vector<pcms::Real> points(4000 * 2);
+  std::vector<pcms::Real> points(std::size_t{4000} * 2);
   for (auto& p : points) {
     p = uniform(rng);
   }
@@ -84,7 +84,8 @@ std::shared_ptr<const pcms::FunctionSpace> MakeCloudSpace(
   int n, int num_components, int degree,
   pcms::NeighbourhoodOptions supports = {.radius = 0.45, .min_supports = 8})
 {
-  Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> coords("cloud", n * n, 2);
+  Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace> coords(
+    "cloud", static_cast<std::size_t>(n) * n, 2);
   auto host = Kokkos::create_mirror_view(coords);
   for (int j = 0; j < n; ++j) {
     for (int i = 0; i < n; ++i) {
@@ -144,7 +145,7 @@ TEST_CASE("MLS evaluator: several components, the same rows for each",
   evaluator->Evaluate(field, pcms::test::TagLike(field, out));
   const auto host =
     Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace{}, out);
-  for (int i = 0; i < 100; ++i) {
+  for (std::size_t i = 0; i < 100; ++i) {
     const double x = points[2 * i], y = points[2 * i + 1];
     CHECK(host(i, 0) == Catch::Approx(1 + x - 2 * y).margin(1e-10));
     CHECK(host(i, 1) == Catch::Approx(3 * x + y).margin(1e-10));
