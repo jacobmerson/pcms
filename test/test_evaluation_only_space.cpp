@@ -206,7 +206,8 @@ TEST_CASE("Evaluation-only space interpolates onto a poloidal plane")
   const auto interpolator =
     pcms::CreateInterpolator<Real>(source, target, on_plane);
 
-  auto f = source->CreateFunction<Real>("f", std::make_unique<MockData>());
+  auto f =
+    source->CreateFunction<Real>({.name = "f"}, std::make_unique<MockData>());
   auto g = target->CreateFunction<Real>("g");
   interpolator->Apply(f, g);
 
@@ -234,7 +235,8 @@ TEST_CASE("Evaluation-only space interpolates onto a poloidal plane")
 TEST_CASE("Functions of an evaluation-only space hold no values")
 {
   auto source = MakeMockSpace(1);
-  auto f = source->CreateFunction<Real>("f", std::make_unique<MockData>());
+  auto f =
+    source->CreateFunction<Real>({.name = "f"}, std::make_unique<MockData>());
   REQUIRE(f.GetLayout().GetNumDofHolder() == 0);
   REQUIRE_THROWS_WITH(f.GetDOFHolderData(), ContainsSubstring("no DOFAccess"));
   REQUIRE_THROWS_WITH(source->CreateFunction<Real>("default"),

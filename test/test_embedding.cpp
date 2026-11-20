@@ -261,8 +261,8 @@ TEST_CASE("Parameter-chart vectors and covectors come out in the chart of an "
     // the constant field e_xi1 (or dxi1)
     // components on the parameter chart (the space's default is the chart of
     // the embedded geometry)
-    auto field = space->CreateFunction<Real>("e1", variance,
-                                             f.embedded->GetParameterSystem());
+    auto field = space->CreateFunction<Real>(
+      "e1", {.system = f.embedded->GetParameterSystem(), .variance = variance});
     pcms::test::SetFieldComponents(field, [](Real, Real, Real* out) {
       out[0] = 1.0;
       out[1] = 0.0;
@@ -428,10 +428,11 @@ TEST_CASE("EvaluateTranspose through an embedded space is the transpose of "
   // parameter-chart components, which come out in the chart's
   for (const auto variance :
        {pcms::values::Scalar, pcms::values::Vector, pcms::values::Covector}) {
-    auto x = space->CreateFunction<Real>("x", variance,
-                                         f.embedded->GetParameterSystem());
+    auto x = space->CreateFunction<Real>(
+      "x", {.system = f.embedded->GetParameterSystem(), .variance = variance});
     auto functional = space->CreateFunction<Real>(
-      "functional", variance, f.embedded->GetParameterSystem());
+      "functional",
+      {.system = f.embedded->GetParameterSystem(), .variance = variance});
     const auto basis = evaluator->OutputBasis(x.GetData().GetValueBasis());
     CHECK((variance == pcms::values::Scalar ||
            basis.system->Kind() == "cylindrical_rz"));
@@ -627,7 +628,7 @@ std::shared_ptr<const pcms::Function<Real>> ConstantMetric(
     g = {g[3] / det, -g[1] / det, -g[2] / det, g[0] / det};
   }
   auto metric = std::make_shared<pcms::Function<Real>>(
-    space->CreateFunction<Real>("g", variance));
+    space->CreateFunction<Real>("g", {.variance = variance}));
   pcms::test::SetFieldComponents(*metric, [g](Real, Real, Real* out) {
     for (int k = 0; k < 4; ++k) {
       out[k] = g[k];
@@ -695,8 +696,8 @@ TEST_CASE("An embedded geometry uses a given metric",
     const auto space = pcms::CreateLagrangeSpace(grid, 1, 4);
     const auto mixed =
       std::make_shared<pcms::Function<Real>>(space->CreateFunction<Real>(
-        "g", pcms::VarianceSignature{pcms::Variance::Contravariant,
-                                     pcms::Variance::Covariant}));
+        "g", {.variance = pcms::VarianceSignature{pcms::Variance::Contravariant,
+                                                  pcms::Variance::Covariant}}));
     CHECK_THROWS_WITH(
       pcms::CreateEmbeddedGeometry(grid, position, {.metric = mixed}),
       ContainsSubstring("rank 2 in the parameter chart"));

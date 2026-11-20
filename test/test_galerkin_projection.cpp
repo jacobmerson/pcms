@@ -66,7 +66,7 @@ void CheckAdjoint(const std::shared_ptr<const pcms::FunctionSpace>& space,
   std::uniform_real_distribution<double> uniform(-1.0, 1.0);
   const auto x = RandomDofs(*space->GetLayout(), rng);
 
-  auto field = space->CreateFunction<pcms::Real>("x", variance);
+  auto field = space->CreateFunction<pcms::Real>("x", {.variance = variance});
   SetDofs(field, x);
   const auto basis = evaluator.OutputBasis(field.GetData().GetValueBasis());
   const int num_values =
@@ -93,7 +93,8 @@ void CheckAdjoint(const std::shared_ptr<const pcms::FunctionSpace>& space,
   const pcms::ValueView<const pcms::Real, pcms::DeviceMemorySpace> y_view(
     basis, pcms::MakeConstRank2View(y_device));
 
-  auto functional = space->CreateFunction<pcms::Real>("functional", variance);
+  auto functional =
+    space->CreateFunction<pcms::Real>("functional", {.variance = variance});
   evaluator.EvaluateTranspose(y_view, functional);
   const auto e_x_host =
     Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace{}, e_x);
@@ -214,7 +215,8 @@ TEST_CASE("EvaluateTranspose through a coordinate map is the transpose of "
       geometry, 1, 3,
       pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
     const auto evaluator = space->CreatePointEvaluator<pcms::Real>(bound);
-    const auto f = space->CreateFunction<pcms::Real>("v", pcms::values::Vector);
+    const auto f = space->CreateFunction<pcms::Real>(
+      "v", {.variance = pcms::values::Vector});
     CHECK(evaluator->OutputBasis(f.GetData().GetValueBasis()).system->Kind() ==
           "cylindrical_rthetaz");
     CheckAdjoint(space, *evaluator, 17, pcms::values::Vector);
@@ -676,7 +678,8 @@ TEST_CASE("L2 inner products of vectors refuse systems with a varying "
   const pcms::L2InnerProduct product(cylindrical, cylindrical);
   auto scalar = cylindrical->CreateFunction<pcms::Real>("scalar");
   auto vector = cylindrical->CreateFunction<pcms::Real>(
-    "vector", pcms::values::Vector, pcms::ComponentScaling::Physical);
+    "vector", {.scaling = pcms::ComponentScaling::Physical,
+               .variance = pcms::values::Vector});
   CHECK_NOTHROW(product.Apply(scalar, scalar));
   CHECK_THROWS_AS(product.Apply(vector, vector), pcms::pcms_error);
 }

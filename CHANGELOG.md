@@ -61,6 +61,26 @@ The reorganization does not change numerical behavior. See [MIGRATION.md](MIGRAT
 
 ### Added
 
+- Field metadata: a `Field` carries `FieldMetadata` (name, optional `Units`,
+  optional `Extent`: `Intensive` or `Extensive`; `GetMetadata`). Fields are
+  created with their metadata and a `ValueBasis`:
+  `CreateFunction<T>(FieldMetadata, ValueBasis = {})`,
+  `CreateFunction<T>(std::string name = "", ValueBasis = {})` and
+  `CreateFunction<T>(FieldMetadata, std::unique_ptr<FieldData<T>>)`, and the
+  same three `CreateField` on `FieldFactory` (the variance, system and
+  scaling arguments are `ValueBasis` members; an unset scaling is derived).
+  `TransferOperator::Apply` and `ApplyTranspose` (copies, interpolators and
+  all projections) are non-virtual: `Apply` throws if a field is declared
+  `Extensive`, `ApplyTranspose` if one is declared `Intensive`, and both throw
+  when both fields have units and they differ; they then give a target the
+  units and extent it lacked from the source. What is unknown is not checked.
+  PCMS does not convert units.
+- `PCMS_ENABLE_UNITS` (LLNL/units, found with `find_package(units CONFIG)`)
+  parses and compares units: `Units::Parse` reads SI, CF/UDUNITS and IMAS
+  strings (`UnitSyntax`) and the checks run. Without it a `Units` holds its
+  text, which is carried, sent and learned but never validated or compared.
+  `pcms.features["units"]` reports it. The presets other than `minimal`
+  enable it.
 - `PCMS_ENABLE_COUPLER` to build without redev and ADIOS2.
 - A build without Omega_h (`PCMS_ENABLE_OMEGA_H=OFF`, with the server, the
   coupler, XGC and MeshFields off): the uniform-grid Lagrange and spline

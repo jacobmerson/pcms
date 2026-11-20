@@ -465,7 +465,9 @@ void bind_create_field_module(py::module& m)
          const std::optional<Immutable<CoordinateSystem>>& system,
          std::optional<ComponentScaling> scaling) {
         return self.ptr->CreateFunction<Real>(
-          std::move(name), variance, system ? system->ptr : nullptr, scaling);
+          std::move(name), {.system = system ? system->ptr : nullptr,
+                            .scaling = scaling,
+                            .variance = variance});
       },
       py::arg("name") = "", py::arg("variance") = values::Scalar,
       py::arg("system") = py::none(), py::arg("scaling") = py::none(),

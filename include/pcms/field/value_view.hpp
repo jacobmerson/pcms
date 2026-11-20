@@ -110,10 +110,12 @@ enum class Parity
 /// Basis the components of a value are expressed in: coordinate system,
 /// component scaling, index variance and parity. Curl produces Odd output;
 /// reflections negate Odd values.
+/// An unset `system` (scaling) at creation is the space's own (derived from
+/// the system).
 struct ValueBasis
 {
   std::shared_ptr<const CoordinateSystem> system = nullptr;
-  ComponentScaling scaling = ComponentScaling::Physical;
+  std::optional<ComponentScaling> scaling = std::nullopt;
   VarianceSignature variance{};
   Parity parity = Parity::Even;
   /// the values are points of `system`, one component per coordinate
