@@ -20,7 +20,8 @@ namespace pcms::detail
 /// Point evaluator at the points of a BoundPoints with a coordinate map: the
 /// inner evaluator evaluates at the mapped points, and this one re-expresses
 /// the evaluated components through the bound map's ValueTransform (scalars
-/// pass through).
+/// pass through); its transpose applies the transpose of the value transform
+/// and then that of the inner evaluator.
 /// PointEvaluatorFactory::CreatePointEvaluator creates it for every bound
 /// source whose GetBoundMap() is set.
 template <typename T>
@@ -69,6 +70,47 @@ public:
       map_->ValueTransform().Apply(source_values, values);
     } else {
       throw pcms_error("TransformedPointEvaluator::Evaluate: basis "
+                       "transformations require T == Real");
+    }
+  }
+
+  /// @return whether the inner evaluator supports the transpose
+  [[nodiscard]] bool SupportsTranspose() const noexcept override
+  {
+    return inner_->SupportsTranspose();
+  }
+
+  // Public because CUDA forbids extended lambdas in non-public member
+  // functions. User should call EvaluateTranspose
+  void EvaluateTransposeImpl(Rank2View<const T, DeviceMemorySpace> values,
+                             Field<T>& functional) const override
+  {
+    PCMS_FUNCTION_TIMER;
+    const ValueBasis inner_out =
+      inner_->OutputBasis(functional.GetData().GetValueBasis());
+    if (inner_out.Rank() == 0) {
+      inner_->EvaluateTranspose(
+        ValueView<const T, DeviceMemorySpace>(inner_out, values), functional);
+      return;
+    }
+    if constexpr (std::is_same_v<T, Real>) {
+      // E^T T^T: the transpose of the value transform first
+      const auto& transform = map_->ValueTransform();
+      const ValueBasis outer = transform.OutputBasis(inner_out);
+      const int din = inner_out.system->Dimension();
+      const int dout = outer.system->Dimension();
+      Kokkos::View<Real**, DeviceMemorySpace> source(
+        Kokkos::view_alloc(Kokkos::WithoutInitializing, "map_source_values"),
+        values.extent(0),
+        static_cast<std::size_t>(values.extent(1) / dout) * din);
+      transform.ApplyTranspose(
+        ValueView<const Real, DeviceMemorySpace>(outer, values),
+        ValueView<Real, DeviceMemorySpace>(inner_out, MakeRank2View(source)));
+      inner_->EvaluateTranspose(ValueView<const Real, DeviceMemorySpace>(
+                                  inner_out, MakeConstRank2View(source)),
+                                functional);
+    } else {
+      throw pcms_error("TransformedPointEvaluator::EvaluateTranspose: basis "
                        "transformations require T == Real");
     }
   }
