@@ -475,7 +475,8 @@ if(Catch2_FOUND)
       test_bound_points.cpp
       test_query_points.cpp
       test_geometry.cpp
-      test_periodic_geometry.cpp)
+      test_periodic_geometry.cpp
+      test_periodic_spaces.cpp)
   endif()
 
   if(PCMS_ENABLE_OMEGA_H AND PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION)
@@ -498,7 +499,6 @@ if(Catch2_FOUND)
       test_galerkin_projection.cpp
       test_bilinear_form.cpp
       test_l2_inner_product.cpp
-      test_fourier_space.cpp
       test_monte_carlo_projection.cpp
       test_mesh_intersection_field_transfer.cpp
       test_mesh_intersection_prefilter.cpp
