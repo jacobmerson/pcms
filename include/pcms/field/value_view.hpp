@@ -116,8 +116,27 @@ struct ValueBasis
   ComponentScaling scaling = ComponentScaling::Physical;
   VarianceSignature variance{};
   Parity parity = Parity::Even;
+  /// the values are points of `system`, one component per coordinate
+  /// (Coordinates), not components on a basis
+  bool coordinates = false;
 
   [[nodiscard]] int Rank() const noexcept { return variance.Rank(); }
+
+  /// @brief The basis of values that are points of `chart`: the position of
+  ///        an embedded geometry.
+  ///
+  /// Rank 0 with one component per coordinate of `chart`. A point is the same
+  /// point whatever chart it is queried from, so a ValueTransform passes such
+  /// values through unchanged (they are not components). The Gradient of a
+  /// Function with this basis is the Jacobian of the map it describes,
+  /// shaped [component][derivative]: column j * (parameter dimension) + i is
+  /// d x_j / d xi_i.
+  [[nodiscard]] static ValueBasis Coordinates(
+    std::shared_ptr<const CoordinateSystem> chart)
+  {
+    return ValueBasis{std::move(chart), ComponentScaling::Natural,
+                      VarianceSignature{}, Parity::Even, true};
+  }
 
   friend bool operator==(const ValueBasis&, const ValueBasis&) = default;
 };

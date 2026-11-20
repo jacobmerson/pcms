@@ -39,7 +39,8 @@ namespace pcms::detail
                                          const ValueBasis& b) noexcept
 {
   if (a.Rank() == 0 && b.Rank() == 0) {
-    return true;
+    return a.coordinates == b.coordinates &&
+           (!a.coordinates || detail::SameCoordinateSystem(a.system, b.system));
   }
   if (a.Rank() != b.Rank() ||
       !detail::SameCoordinateSystem(a.system, b.system) ||
@@ -67,6 +68,10 @@ inline void CheckWrittenValueBasis(const char* context,
 
 inline void ValidateValueBasis(const ValueBasis& basis)
 {
+  if (basis.coordinates && (basis.system == nullptr || basis.Rank() != 0)) {
+    throw pcms_error("ValidateValueBasis: coordinates are rank-0 values of a "
+                     "coordinate system");
+  }
   if (basis.Rank() == 0) {
     return;
   }
@@ -100,6 +105,12 @@ inline void ValidateValueSemantics(const ValueBasis& basis, int num_components,
 {
   ValidateValueBasis(basis);
   const int rank = basis.Rank();
+  if (basis.coordinates && num_components != basis.system->Dimension()) {
+    throw pcms_error("ValidateValueSemantics: coordinates of '" +
+                     std::string(basis.system->Kind()) + "' require " +
+                     std::to_string(basis.system->Dimension()) +
+                     " components, got " + std::to_string(num_components));
+  }
   if (rank == 0) {
     return;
   }
