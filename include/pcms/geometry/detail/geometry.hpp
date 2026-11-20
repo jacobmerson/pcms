@@ -30,6 +30,15 @@ void CheckEntityIds(Kokkos::View<const LO*, DeviceMemorySpace> ids,
                     LO num_entities, const std::string& caller,
                     const std::string& entity);
 
+/// @brief Multiplies quadrature weights by the volume factor of the
+///        geometric factors at their bound points: weights that carry the
+///        measure in the parameter coordinates of the points become physical
+///        measures.
+/// @param weights one weight per point of `bound`; scaled in place
+/// @param bound the bound points of the weights
+void ScaleByVolumeFactor(Kokkos::View<Real*, DeviceMemorySpace> weights,
+                         const BoundPoints& bound);
+
 } // namespace pcms::detail
 
 #endif // PCMS_GEOMETRY_DETAIL_GEOMETRY_HPP
