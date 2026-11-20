@@ -638,12 +638,12 @@ Kokkos::View<Real*, DeviceMemorySpace> mls_interpolation(
     "source_coordinates_size = %d\n",
     static_cast<int>(source_values.size()),
     static_cast<int>(source_coordinates.size() / dim));
-  const auto coefficients = mls_coefficients(
-    source_coordinates, target_coordinates, support, dim, degree, rbf_func,
-    lambda, tol);
-  return apply_mls_coefficients(
-    coefficients, source_values, support,
-    static_cast<LO>(target_coordinates.size()) / dim);
+  const auto coefficients =
+    mls_coefficients(source_coordinates, target_coordinates, support, dim,
+                     degree, rbf_func, lambda, tol);
+  return apply_mls_coefficients(coefficients, source_values, support,
+                                static_cast<LO>(target_coordinates.size()) /
+                                  dim);
 }
 
 } // namespace detail

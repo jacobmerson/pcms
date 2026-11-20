@@ -40,10 +40,9 @@ struct OmegaHLagrangeSpace
 // without a metric, which is only the physical measure in Cartesian
 // coordinates; other systems are refused until the geometry's metric enters
 // the measures.
-inline OmegaHLagrangeSpace ResolveOmegaHLagrangeSpace(const FunctionSpace& space,
-                                                  int min_order, int max_order,
-                                                  const char* context,
-                                                  const char* role)
+inline OmegaHLagrangeSpace ResolveOmegaHLagrangeSpace(
+  const FunctionSpace& space, int min_order, int max_order, const char* context,
+  const char* role)
 {
   const std::string prefix = std::string(context) + ": " + role + " ";
   auto layout = std::dynamic_pointer_cast<const omega_h::OmegaHLagrangeLayout>(

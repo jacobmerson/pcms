@@ -106,7 +106,8 @@ public:
   PeriodicBound(std::shared_ptr<const pcms::Geometry> geometry,
                 const pcms::BindRequest& request)
     : BoundPoints(std::move(geometry), request)
-  {}
+  {
+  }
 
 protected:
   void RebindImpl() override {}
@@ -161,7 +162,8 @@ public:
     : PointEvaluator(std::move(bound), pcms::DifferentialOperator::Value,
                      layout),
       layout_(std::move(layout))
-  {}
+  {
+  }
   bool SupportsTranspose() const noexcept override { return true; }
 
   void EvaluateImpl(
@@ -217,7 +219,8 @@ public:
   FourierEvaluatorFactory(std::shared_ptr<const pcms::Geometry> geometry,
                           std::shared_ptr<const pcms::FieldLayout> layout)
     : geometry_(std::move(geometry)), layout_(std::move(layout))
-  {}
+  {
+  }
   std::shared_ptr<const pcms::Geometry> GetGeometry() const noexcept override
   {
     return geometry_;
@@ -246,16 +249,18 @@ private:
 class FourierSpace final : public pcms::FunctionSpace
 {
 public:
-  FourierSpace(std::shared_ptr<const pcms::FieldLayout> layout,
-               std::function<pcms::FieldDataVariant(pcms::Type, pcms::ValueBasis)>
-                 create_field_data,
-               std::shared_ptr<const pcms::PointEvaluatorFactory> evaluator,
-               std::shared_ptr<const pcms::Geometry> geometry, int harmonics)
+  FourierSpace(
+    std::shared_ptr<const pcms::FieldLayout> layout,
+    std::function<pcms::FieldDataVariant(pcms::Type, pcms::ValueBasis)>
+      create_field_data,
+    std::shared_ptr<const pcms::PointEvaluatorFactory> evaluator,
+    std::shared_ptr<const pcms::Geometry> geometry, int harmonics)
     : pcms::FunctionSpace(std::move(layout), std::move(create_field_data),
                           std::move(evaluator), geometry),
       geometry_(std::move(geometry)),
       harmonics_(harmonics)
-  {}
+  {
+  }
 
   [[nodiscard]] pcms::Quadrature CreateQuadrature() const override
   {

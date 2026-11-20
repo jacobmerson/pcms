@@ -61,10 +61,10 @@ Quadrature CreateIntersectionQuadratureImpl(
   // integration point on device.
   Kokkos::View<Real**, DeviceMemorySpace> coords("quadrature_coords", num_pts,
                                                  Dim);
-  Kokkos::View<LO*, DeviceMemorySpace> target_elements("quadrature_target_elems",
-                                                       num_pts);
-  Kokkos::View<LO*, DeviceMemorySpace> source_elements("quadrature_source_elems",
-                                                       num_pts);
+  Kokkos::View<LO*, DeviceMemorySpace> target_elements(
+    "quadrature_target_elems", num_pts);
+  Kokkos::View<LO*, DeviceMemorySpace> source_elements(
+    "quadrature_source_elems", num_pts);
   Kokkos::View<Real*, DeviceMemorySpace> weights("quadrature_weights", num_pts);
 
   Kokkos::parallel_for(
@@ -102,8 +102,8 @@ Quadrature CreateIntersectionQuadratureImpl(
   const CoordinateView<DeviceMemorySpace> points(
     target_geometry->GetCoordinateSystem(), MakeConstRank2View(coords));
   return Quadrature{
-    target_geometry->Bind(
-      points, OwnerHints{target_geometry, Dim, target_elements}),
+    target_geometry->Bind(points,
+                          OwnerHints{target_geometry, Dim, target_elements}),
     weights, OwnerHints{source_geometry, Dim, source_elements}};
 }
 
@@ -111,7 +111,8 @@ Quadrature CreateIntersectionQuadratureImpl(
 
 Quadrature CreateIntersectionQuadrature(
   std::shared_ptr<const OmegaHGeometry> source,
-  std::shared_ptr<const OmegaHGeometry> target, const QuadratureOptions& options)
+  std::shared_ptr<const OmegaHGeometry> target,
+  const QuadratureOptions& options)
 {
   if (source == nullptr || target == nullptr) {
     throw pcms_error("CreateIntersectionQuadrature: the geometries must not "

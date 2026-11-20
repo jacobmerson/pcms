@@ -39,7 +39,9 @@ std::vector<pcms::Real> CoveragePerTargetElement(Omega_h::Mesh& source_mesh,
 
   // Lumped: for a P0 target the mass matrix is diagonal either way, so this
   // is an exact division by the element volume and adds no error of its own.
-  auto projection = pcms::CreateConservativeProjection(source_space, target_space, {.mass_matrix_type = pcms::MassMatrixType::Lumped});
+  auto projection = pcms::CreateConservativeProjection(
+    source_space, target_space,
+    {.mass_matrix_type = pcms::MassMatrixType::Lumped});
   projection->Apply(source, target);
 
   const auto values =

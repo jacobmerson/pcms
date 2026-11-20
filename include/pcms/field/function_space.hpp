@@ -31,9 +31,9 @@ namespace pcms
 // It is concrete: backends differ in the components they hand to its
 // constructor, and the Create* factories (CreateLagrangeSpace, ...) assemble
 // them. A kind with behaviour that is not a component (the natural quadrature)
-// derives from it and overrides the virtual. A Function co-owns its space via shared_ptr (obtained through
-// enable_shared_from_this), so spaces are always shared-owned:
-// CreateFunction throws for a space that is not.
+// derives from it and overrides the virtual. A Function co-owns its space via
+// shared_ptr (obtained through enable_shared_from_this), so spaces are always
+// shared-owned: CreateFunction throws for a space that is not.
 class FunctionSpace
   : public PointEvaluatorFactory
   , public std::enable_shared_from_this<FunctionSpace>

@@ -136,7 +136,8 @@ BilinearForm::BilinearForm(std::shared_ptr<const FunctionSpace> space,
   : form_(std::move(space), std::move(quadrature)),
     samples_("bilinear_form_samples", form_.GetQuadrature().points->NumPoints(),
              form_.Space()->GetLayout()->GetNumComponents())
-{}
+{
+}
 
 void BilinearForm::Apply(const Field<Real>& u, Field<Real>& functional) const
 {

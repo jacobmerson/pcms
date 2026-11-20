@@ -140,7 +140,8 @@ TEST_CASE(
     });
 
   auto reference = target_space->CreateFunction<pcms::Real>();
-  auto ref_proj = pcms::CreateConservativeProjection(source_space, target_space);
+  auto ref_proj =
+    pcms::CreateConservativeProjection(source_space, target_space);
   ref_proj->Apply(source, reference);
   const auto ref_vals = pcms::detail::FlattenToRank1View(
     reference.GetDOFHolderDataHost().GetValues());

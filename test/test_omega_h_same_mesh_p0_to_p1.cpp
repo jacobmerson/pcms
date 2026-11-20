@@ -367,7 +367,8 @@ std::vector<double> ProjectSameMesh(Omega_h::Mesh& mesh,
   auto target = target_space->CreateFunction<pcms::Real>();
   pcms::test::SetField(source, SourceFunction<Dim>{});
 
-  auto projection = pcms::CreateConservativeProjection(source_space, target_space, {.mass_matrix_type = mass_type});
+  auto projection = pcms::CreateConservativeProjection(
+    source_space, target_space, {.mass_matrix_type = mass_type});
   projection->Apply(source, target);
 
   source_values = ToVector(pcms::detail::FlattenToRank1View(

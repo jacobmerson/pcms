@@ -29,7 +29,8 @@ namespace pcms::omega_h
 //         meshes' dimensions differ, or MeshFields is not enabled
 Quadrature CreateIntersectionQuadrature(
   std::shared_ptr<const OmegaHGeometry> source,
-  std::shared_ptr<const OmegaHGeometry> target, const QuadratureOptions& options);
+  std::shared_ptr<const OmegaHGeometry> target,
+  const QuadratureOptions& options);
 
 } // namespace pcms::omega_h
 

@@ -56,8 +56,8 @@ public:
   // They write the owned values and leave ghost copies stale (Synchronize).
   virtual void Scale(T a) // this *= a
   {
-    Access().SetValues(MakeConstRank2View(
-      detail::ScaleValues<T>(a, Access().GetValues())));
+    Access().SetValues(
+      MakeConstRank2View(detail::ScaleValues<T>(a, Access().GetValues())));
   }
   virtual void Axpy(T a, const FieldData<T>& x) // this += a x
   {

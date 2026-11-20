@@ -157,8 +157,9 @@ void FillReferenceRule(int nelems, int order, const Omega_h::LOs& elems2nodes,
 
 // The weight of each sample is its unit weight times the measure of its
 // element.
-void ScaleByMeasures(const Kokkos::View<Real*, DeviceMemorySpace>& unit,
-                     const Kokkos::View<const Real*, DeviceMemorySpace>& measures)
+void ScaleByMeasures(
+  const Kokkos::View<Real*, DeviceMemorySpace>& unit,
+  const Kokkos::View<const Real*, DeviceMemorySpace>& measures)
 {
   Kokkos::parallel_for(
     "quadrature_weights",
@@ -193,9 +194,8 @@ Quadrature OmegaHGeometry::CreateQuadrature(
   int per_cell = options.samples_per_cell;
 #ifdef PCMS_ENABLE_OMEGA_H_MESHFIELDS
   if (!random) {
-    per_cell = dim == 3
-                 ? detail::IntegrationData<3>(options.order).size()
-                 : detail::IntegrationData<2>(options.order).size();
+    per_cell = dim == 3 ? detail::IntegrationData<3>(options.order).size()
+                        : detail::IntegrationData<2>(options.order).size();
   }
 #endif
   const auto num_points = static_cast<std::size_t>(nelems) * per_cell;
@@ -209,11 +209,11 @@ Quadrature OmegaHGeometry::CreateQuadrature(
   if (random) {
     Kokkos::deep_copy(weights, 1.0 / per_cell);
     if (dim == 3) {
-      FillRandomSamples<3>(nelems, per_cell, elems2nodes, mesh_coords,
-                           elements, coords, options.seed);
+      FillRandomSamples<3>(nelems, per_cell, elems2nodes, mesh_coords, elements,
+                           coords, options.seed);
     } else {
-      FillRandomSamples<2>(nelems, per_cell, elems2nodes, mesh_coords,
-                           elements, coords, options.seed);
+      FillRandomSamples<2>(nelems, per_cell, elems2nodes, mesh_coords, elements,
+                           coords, options.seed);
     }
   } else {
 #ifdef PCMS_ENABLE_OMEGA_H_MESHFIELDS
@@ -234,10 +234,9 @@ Quadrature OmegaHGeometry::CreateQuadrature(
   auto bound = Bind(CoordinateView<DeviceMemorySpace>(
                       GetCoordinateSystem(), MakeConstRank2View(coords)),
                     owners);
-  ScaleByMeasures(
-    weights,
-    detail::ElementMeasuresAtPoints(*this, *bound, owners,
-                                    "OmegaHGeometry::CreateQuadrature"));
+  ScaleByMeasures(weights,
+                  detail::ElementMeasuresAtPoints(
+                    *this, *bound, owners, "OmegaHGeometry::CreateQuadrature"));
   return Quadrature{std::move(bound), weights, {}};
 }
 

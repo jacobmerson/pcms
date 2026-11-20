@@ -230,9 +230,8 @@ public:
     Field<Real>& functional) const override
   {
     const int n_comp = layout_->GetNumComponents();
-    Kokkos::View<Real**, DeviceMemorySpace> dofs("mls_transpose",
-                                                 layout_->GetNumDofHolder(),
-                                                 n_comp);
+    Kokkos::View<Real**, DeviceMemorySpace> dofs(
+      "mls_transpose", layout_->GetNumDofHolder(), n_comp);
     ApplyMLSRowsTranspose(binding_->Supports(), rows_, values, dofs, n_comp);
     pcms::detail::AddToField(functional, dofs);
   }
@@ -250,8 +249,8 @@ public:
     }
     const auto gids =
       Kokkos::create_mirror_view_and_copy(DeviceMemorySpace{}, gids_h);
-    Kokkos::View<GO*, DeviceMemorySpace> columns("mls_columns",
-                                                 supports.supports_idx.extent(0));
+    Kokkos::View<GO*, DeviceMemorySpace> columns(
+      "mls_columns", supports.supports_idx.extent(0));
     const auto idx = supports.supports_idx;
     pcms::detail::ForEach(
       "MLSPointEvaluator::GetMatrix", static_cast<LO>(columns.extent(0)),

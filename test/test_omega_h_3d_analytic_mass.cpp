@@ -41,12 +41,12 @@ TEST_CASE("BilinearForm (3D): P1 mass on reference tet matches "
   const pcms::transfer::detail::BilinearForm form(space,
                                                   space->CreateQuadrature());
   const auto coo = form.AssembleCoo();
-  const auto rows = Kokkos::create_mirror_view_and_copy(
-    pcms::HostMemorySpace{}, coo.rows);
-  const auto columns = Kokkos::create_mirror_view_and_copy(
-    pcms::HostMemorySpace{}, coo.columns);
-  const auto values = Kokkos::create_mirror_view_and_copy(
-    pcms::HostMemorySpace{}, coo.values);
+  const auto rows =
+    Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace{}, coo.rows);
+  const auto columns =
+    Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace{}, coo.columns);
+  const auto values =
+    Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace{}, coo.values);
   const auto layout =
     std::dynamic_pointer_cast<const pcms::OmegaHLagrangeLayout>(
       space->GetLayout());
@@ -89,8 +89,8 @@ TEST_CASE("BilinearForm (3D): P0 mass on reference tet equals volume",
   const pcms::transfer::detail::BilinearForm form(space,
                                                   space->CreateQuadrature());
   const auto coo = form.AssembleCoo();
-  const auto values = Kokkos::create_mirror_view_and_copy(
-    pcms::HostMemorySpace{}, coo.values);
+  const auto values =
+    Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace{}, coo.values);
   pcms::Real total = 0.0;
   for (std::size_t k = 0; k < values.extent(0); ++k) {
     total += values(k);

@@ -52,8 +52,8 @@ template <typename Make>
 void CheckPolynomialExactness(Omega_h::Mesh& mesh, Make make)
 {
   const int dim = mesh.dim();
-  auto geometry = pcms::omega_h::CreateGeometry(
-    mesh, pcms::detail::DeferredCartesian());
+  auto geometry =
+    pcms::omega_h::CreateGeometry(mesh, pcms::detail::DeferredCartesian());
   const int max_order = GENERATE(1, 2);
   CAPTURE(dim, max_order);
   const auto quadrature = make(*geometry, max_order);
@@ -155,12 +155,14 @@ TEST_CASE("CreateIntersectionQuadrature: weights sum to the domain, the rule "
                               : pcms::test::BuildUnitCube(lib, 2);
   auto target_mesh = dim == 2 ? pcms::test::BuildUnitSquare(lib, 0)
                               : pcms::test::BuildUnitCube(lib, 1);
-  const auto source = std::dynamic_pointer_cast<const pcms::omega_h::OmegaHGeometry>(
-    pcms::omega_h::CreateGeometry(source_mesh,
-                                  pcms::detail::DeferredCartesian()));
-  const auto target = std::dynamic_pointer_cast<const pcms::omega_h::OmegaHGeometry>(
-    pcms::omega_h::CreateGeometry(target_mesh,
-                                  pcms::detail::DeferredCartesian()));
+  const auto source =
+    std::dynamic_pointer_cast<const pcms::omega_h::OmegaHGeometry>(
+      pcms::omega_h::CreateGeometry(source_mesh,
+                                    pcms::detail::DeferredCartesian()));
+  const auto target =
+    std::dynamic_pointer_cast<const pcms::omega_h::OmegaHGeometry>(
+      pcms::omega_h::CreateGeometry(target_mesh,
+                                    pcms::detail::DeferredCartesian()));
   const int order = 2;
   const auto quadrature = pcms::omega_h::CreateIntersectionQuadrature(
     source, target, pcms::QuadratureOptions{.order = order});
@@ -177,7 +179,8 @@ TEST_CASE("CreateIntersectionQuadrature: weights sum to the domain, the rule "
         return std::pow(x[0], a) * std::pow(x[1], b) * std::pow(x[2], c);
       });
       CAPTURE(a, b, c);
-      CHECK(integral == Catch::Approx(ExactMonomial(a, b, c, dim)).margin(1e-12));
+      CHECK(integral ==
+            Catch::Approx(ExactMonomial(a, b, c, dim)).margin(1e-12));
     }
   }
   // the source binds to the points in the elements they were generated in
@@ -200,16 +203,17 @@ std::shared_ptr<const pcms::omega_h::OmegaHGeometry> CartesianGeometry(
 
 } // namespace
 
-TEST_CASE("CreateIntersectionQuadrature: a tet inside a tet", "[quadrature][3d]")
+TEST_CASE("CreateIntersectionQuadrature: a tet inside a tet",
+          "[quadrature][3d]")
 {
   // Source is the reference tet (volume 1/6). Target is the similar tet at the
   // (1,0,0) corner, cut by the plane x=0.5, which sits entirely inside the
   // source (volume (1/6)*(1/2)^3 = 1/48).
   Omega_h::Library lib;
   auto source_mesh = pcms::test::BuildReferenceTet(lib);
-  auto target_mesh = pcms::test::BuildTet(
-    lib, Omega_h::Reals({1.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.5, 0.5, 0.0, 0.5, 0.0,
-                         0.5}));
+  auto target_mesh =
+    pcms::test::BuildTet(lib, Omega_h::Reals({1.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.5,
+                                              0.5, 0.0, 0.5, 0.0, 0.5}));
   const auto quadrature = pcms::omega_h::CreateIntersectionQuadrature(
     CartesianGeometry(source_mesh), CartesianGeometry(target_mesh),
     pcms::QuadratureOptions{.order = 2});
@@ -232,17 +236,18 @@ TEST_CASE("CreateIntersectionQuadrature: dual tets overlap in an octahedron",
   // volume 4/3.
   Omega_h::Library lib;
   auto source_mesh = pcms::test::BuildTet(
-    lib, Omega_h::Reals({1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, 1.0, -1.0,
-                         1.0, -1.0}));
-  auto target_mesh = pcms::test::BuildTet(
-    lib, Omega_h::Reals({-1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0,
-                         1.0, -1.0}));
+    lib, Omega_h::Reals(
+           {1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, 1.0, -1.0, 1.0, -1.0}));
+  auto target_mesh =
+    pcms::test::BuildTet(lib, Omega_h::Reals({-1.0, -1.0, -1.0, -1.0, 1.0, 1.0,
+                                              1.0, -1.0, 1.0, 1.0, 1.0, -1.0}));
   const auto quadrature = pcms::omega_h::CreateIntersectionQuadrature(
     CartesianGeometry(source_mesh), CartesianGeometry(target_mesh),
     pcms::QuadratureOptions{.order = 2});
   CHECK(WeightSum(quadrature) == Catch::Approx(4.0 / 3.0).margin(1e-10));
-  CHECK(Integrate(quadrature, [](const double* x) { return x[0] + x[1] + x[2]; }) ==
-        Catch::Approx(0.0).margin(1e-10));
+  CHECK(Integrate(quadrature, [](const double* x) {
+          return x[0] + x[1] + x[2];
+        }) == Catch::Approx(0.0).margin(1e-10));
   const auto points = Kokkos::create_mirror_view_and_copy(
     pcms::HostMemorySpace{}, quadrature.points->LocatedPointValues());
   for (std::size_t i = 0; i < points.extent(0); ++i) {
@@ -258,13 +263,14 @@ TEST_CASE("quadratures refuse a non-Cartesian coordinate system",
   Omega_h::Library lib;
   auto mesh = pcms::test::BuildUnitSquare(lib, 0);
   auto cartesian = CartesianGeometry(mesh);
-  auto cylindrical = std::dynamic_pointer_cast<const pcms::omega_h::OmegaHGeometry>(
-    pcms::omega_h::CreateGeometry(mesh, pcms::csys::CreateCylindricalRZ()));
+  auto cylindrical =
+    std::dynamic_pointer_cast<const pcms::omega_h::OmegaHGeometry>(
+      pcms::omega_h::CreateGeometry(mesh, pcms::csys::CreateCylindricalRZ()));
   CHECK_THROWS_AS(cylindrical->CreateQuadrature({}), pcms::pcms_error);
-  CHECK_THROWS_AS(pcms::omega_h::CreateIntersectionQuadrature(cylindrical,
-                                                              cartesian, {}),
-                  pcms::pcms_error);
-  CHECK_THROWS_AS(pcms::omega_h::CreateIntersectionQuadrature(cartesian,
-                                                              cylindrical, {}),
-                  pcms::pcms_error);
+  CHECK_THROWS_AS(
+    pcms::omega_h::CreateIntersectionQuadrature(cylindrical, cartesian, {}),
+    pcms::pcms_error);
+  CHECK_THROWS_AS(
+    pcms::omega_h::CreateIntersectionQuadrature(cartesian, cylindrical, {}),
+    pcms::pcms_error);
 }

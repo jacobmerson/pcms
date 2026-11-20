@@ -65,8 +65,9 @@ void CheckAdjoint(const std::shared_ptr<const pcms::FunctionSpace>& space,
   SetDofs(field, x);
   Device2D e_x("Ex", num_points, num_components);
   const auto basis = field.GetData().GetValueBasis();
-  evaluator.Evaluate(field, pcms::ValueView<pcms::Real, pcms::DeviceMemorySpace>(
-                              basis, pcms::MakeRank2View(e_x)));
+  evaluator.Evaluate(field,
+                     pcms::ValueView<pcms::Real, pcms::DeviceMemorySpace>(
+                       basis, pcms::MakeRank2View(e_x)));
   const auto y_device =
     Kokkos::create_mirror_view_and_copy(pcms::DeviceMemorySpace{}, y);
   const pcms::ValueView<const pcms::Real, pcms::DeviceMemorySpace> y_view(
@@ -178,10 +179,10 @@ TEST_CASE("EvaluateTranspose checks its arguments", "[adjoint]")
   using View = pcms::ValueView<const pcms::Real, pcms::DeviceMemorySpace>;
   CHECK_NOTHROW(evaluator->EvaluateTranspose(
     View(basis, pcms::MakeConstRank2View(values)), functional));
-  CHECK_THROWS_AS(evaluator->EvaluateTranspose(
-                    View(basis, pcms::MakeConstRank2View(wrong_shape)),
-                    functional),
-                  std::invalid_argument);
+  CHECK_THROWS_AS(
+    evaluator->EvaluateTranspose(
+      View(basis, pcms::MakeConstRank2View(wrong_shape)), functional),
+    std::invalid_argument);
   // a functional of another layout than the evaluator's
   CHECK_THROWS_AS(evaluator->EvaluateTranspose(
                     View(basis, pcms::MakeConstRank2View(values)), foreign),
@@ -234,8 +235,8 @@ namespace
 
 std::vector<double> FieldValues(const pcms::Field<pcms::Real>& field)
 {
-  const auto values = pcms::detail::FlattenToRank1View(
-    field.GetDOFHolderDataHost().GetValues());
+  const auto values =
+    pcms::detail::FlattenToRank1View(field.GetDOFHolderDataHost().GetValues());
   return std::vector<double>(values.data_handle(),
                              values.data_handle() + values.size());
 }
@@ -264,16 +265,13 @@ TEST_CASE("CreateProjection with a reference-rule quadrature reproduces fields "
   const auto source_geometry = MakeGeometry(source_mesh);
   const auto target_geometry = MakeGeometry(target_mesh);
   const auto source_space = pcms::test::MakeP1Space(source_geometry);
-  const auto target_space =
-    pcms::CreateLagrangeSpace(target_geometry, target_order, 1,
-                              pcms::LagrangeOptions{
-                                .backend = pcms::LagrangeBackend::OmegaH});
+  const auto target_space = pcms::CreateLagrangeSpace(
+    target_geometry, target_order, 1,
+    pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
   auto source = source_space->CreateFunction<pcms::Real>();
   auto target = target_space->CreateFunction<pcms::Real>();
   pcms::test::SetFieldComponents(
-    source, [](pcms::Real x, pcms::Real y, pcms::Real* out) {
-      out[0] = 2.0;
-    });
+    source, [](pcms::Real x, pcms::Real y, pcms::Real* out) { out[0] = 2.0; });
   pcms::ProjectionOptions options;
   options.quadrature_options.order = 2;
   auto projection = pcms::CreateProjection(source_space, target_space, options);
@@ -292,8 +290,8 @@ TEST_CASE("CreateProjection projects several components at once",
   auto target_mesh = pcms::test::BuildSquareMesh(lib, 3);
   const auto source_geometry = MakeGeometry(source_mesh);
   const auto target_geometry = MakeGeometry(target_mesh);
-  const auto options = pcms::LagrangeOptions{.backend =
-                                               pcms::LagrangeBackend::OmegaH};
+  const auto options =
+    pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH};
   const auto source_space =
     pcms::CreateLagrangeSpace(source_geometry, 1, 2, options);
   const auto target_space =
@@ -414,9 +412,10 @@ TEST_CASE("projection: both solve methods and the lumped mass",
   const auto source_space = pcms::test::MakeP1Space(source_geometry);
   const auto target_space = pcms::test::MakeP1Space(target_mesh);
   auto source = source_space->CreateFunction<pcms::Real>();
-  pcms::test::SetField(source, OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) {
-    return std::sin(4 * x) * std::cos(3 * y);
-  });
+  pcms::test::SetField(
+    source, OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) {
+      return std::sin(4 * x) * std::cos(3 * y);
+    });
   const auto project = [&](pcms::ProjectionOptions options) {
     auto target = target_space->CreateFunction<pcms::Real>();
     pcms::CreateProjection(source_space, target_space, options)
@@ -510,15 +509,16 @@ TEST_CASE("ApplyTranspose of an interpolator is its adjoint, and preserves "
                               : pcms::test::BuildUnitCube(lib, 3);
   auto target_mesh = dim == 2 ? pcms::test::BuildSquareMesh(lib, 3)
                               : pcms::test::BuildUnitCube(lib, 2);
-  const auto options = pcms::LagrangeOptions{.backend =
-                                               pcms::LagrangeBackend::OmegaH};
-  const auto source_space = pcms::CreateLagrangeSpace(
-    MakeGeometry(source_mesh), 1, components, options);
-  const auto target_space = pcms::CreateLagrangeSpace(
-    MakeGeometry(target_mesh), 1, components, options);
+  const auto options =
+    pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH};
+  const auto source_space = pcms::CreateLagrangeSpace(MakeGeometry(source_mesh),
+                                                      1, components, options);
+  const auto target_space = pcms::CreateLagrangeSpace(MakeGeometry(target_mesh),
+                                                      1, components, options);
   const auto interpolator =
     pcms::CreateInterpolator<pcms::Real>(source_space, target_space);
-  const auto [lhs, rhs] = AdjointPair(*interpolator, source_space, target_space);
+  const auto [lhs, rhs] =
+    AdjointPair(*interpolator, source_space, target_space);
   CHECK(lhs == Catch::Approx(rhs).epsilon(1e-12));
 
   // loads: P1 reproduces constants, so the loads sum to the same total
@@ -547,12 +547,12 @@ TEST_CASE("ApplyTranspose of a projection is its adjoint, for both solve "
   CAPTURE(target_order, assembled, lumped);
   auto source_mesh = pcms::test::BuildSquareMesh(lib, 5);
   auto target_mesh = pcms::test::BuildSquareMesh(lib, 3);
-  const auto options = pcms::LagrangeOptions{.backend =
-                                               pcms::LagrangeBackend::OmegaH};
+  const auto options =
+    pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH};
   const auto source_space =
     pcms::CreateLagrangeSpace(MakeGeometry(source_mesh), 1, 2, options);
-  const auto target_space = pcms::CreateLagrangeSpace(
-    MakeGeometry(target_mesh), target_order, 2, options);
+  const auto target_space = pcms::CreateLagrangeSpace(MakeGeometry(target_mesh),
+                                                      target_order, 2, options);
   pcms::ProjectionOptions projection_options;
   if (assembled) {
     projection_options.solve.method =
@@ -566,8 +566,8 @@ TEST_CASE("ApplyTranspose of a projection is its adjoint, for both solve "
   const auto [lhs, rhs] = AdjointPair(*projection, source_space, target_space);
   CHECK(lhs == Catch::Approx(rhs).epsilon(1e-10));
   // a control variate is not supported
-  const auto control_variate = pcms::CreateControlVariateProjection(
-    source_space, target_space);
+  const auto control_variate =
+    pcms::CreateControlVariateProjection(source_space, target_space);
   CHECK_FALSE(control_variate->SupportsTranspose());
   auto b = target_space->CreateFunction<pcms::Real>();
   auto out = source_space->CreateFunction<pcms::Real>();

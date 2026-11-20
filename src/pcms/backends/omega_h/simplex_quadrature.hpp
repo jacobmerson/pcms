@@ -58,8 +58,7 @@ inline Kokkos::View<Real*, DeviceMemorySpace> ElementMeasuresAtPoints(
   }
   PCMS_ALWAYS_ASSERT(owners.entities.extent(0) ==
                      static_cast<size_t>(bound.NumPoints()));
-  const int dim =
-    dynamic_cast<const OmegaHGeometry&>(geometry).GetMesh().dim();
+  const int dim = dynamic_cast<const OmegaHGeometry&>(geometry).GetMesh().dim();
   const Real reference_measure = dim == 3 ? 1.0 / 6.0 : 0.5;
   const auto determinant = differential.determinant;
   const bool per_element = differential.per_element;
@@ -88,7 +87,6 @@ inline Kokkos::View<Real*, DeviceMemorySpace> ElementMeasuresAtPoints(
                                  owners, context);
 }
 
-
 // Map barycentric coordinates on a simplex (Dim+1 barycentric components) to
 // the global point, given the simplex's Dim+1 vertex coordinates. The
 // intersection uses it on the sub-simplices r3d produces.
@@ -108,7 +106,6 @@ template <int Dim>
   }
   return real_coords;
 }
-
 
 #ifdef PCMS_ENABLE_OMEGA_H_MESHFIELDS
 // Maps spatial dimension to the MeshField simplex topology whose reference

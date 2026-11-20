@@ -110,11 +110,10 @@ public:
                        "field of the target space's layout");
     }
     detail::SetZero(target);
-    evaluator_->EvaluateTranspose(
-      ValueView<const T, DeviceMemorySpace>(
-        target.GetData().GetValueBasis(),
-        source.GetDOFHolderData().GetValues()),
-      target);
+    evaluator_->EvaluateTranspose(ValueView<const T, DeviceMemorySpace>(
+                                    target.GetData().GetValueBasis(),
+                                    source.GetDOFHolderData().GetValues()),
+                                  target);
   }
 
 private:

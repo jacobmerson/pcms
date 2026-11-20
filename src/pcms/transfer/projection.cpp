@@ -53,8 +53,8 @@ std::unique_ptr<TransferOperator<Real>> CreateConservativeProjection(
   projection.mass_matrix_type = options.mass_matrix_type;
   projection.quadrature = omega_h::CreateIntersectionQuadrature(
     source_geometry, target_geometry,
-    QuadratureOptions{
-      .order = source_layout->GetOrder() + target_layout->GetOrder()});
+    QuadratureOptions{.order =
+                        source_layout->GetOrder() + target_layout->GetOrder()});
   return CreateProjection(std::move(source_space), std::move(target_space),
                           std::move(projection));
 #else

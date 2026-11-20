@@ -59,7 +59,8 @@ public:
                     std::move(evaluator), geometry),
       geometry_(std::move(geometry)),
       order_(order)
-  {}
+  {
+  }
 
   [[nodiscard]] Quadrature CreateQuadrature() const override
   {

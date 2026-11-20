@@ -51,7 +51,7 @@ struct OmegaHLagrangeTagValues
 struct OmegaHLagrangeBasis
 {
   int stride = 0;
-  Kokkos::View<LO*, DeviceMemorySpace> holders; // [points * stride]
+  Kokkos::View<LO*, DeviceMemorySpace> holders;   // [points * stride]
   Kokkos::View<Real*, DeviceMemorySpace> weights; // [points * stride]
 };
 
@@ -101,10 +101,10 @@ OmegaHLagrangeBasis BuildOmegaHLagrangeBasis(
 /// Evaluates an order 0 or 1 Lagrange field at the found points: the values
 /// are the cached weights applied to the DOFs of the cached holders.
 template <typename T, typename Dof, typename Values>
-void EvaluateOmegaHLagrange(const OmegaHLagrangeBasis& basis,
-                            const Kokkos::View<const LO*, DeviceMemorySpace>& found,
-                            const Dof& dof_data, int n_comp,
-                            const Values& values)
+void EvaluateOmegaHLagrange(
+  const OmegaHLagrangeBasis& basis,
+  const Kokkos::View<const LO*, DeviceMemorySpace>& found, const Dof& dof_data,
+  int n_comp, const Values& values)
 {
   const auto n_valid = static_cast<LO>(found.extent(0));
   const auto holders = basis.holders;
@@ -165,11 +165,12 @@ Kokkos::View<T**, DeviceMemorySpace> SumGhostsIntoOwners(
   }
   using TagValue = utility::OmegaHValue_t<T>;
   const int n_comp = layout.GetNumComponents();
-  Omega_h::Write<TagValue> contributions(
-    static_cast<LO>(dofs.extent(0)) * n_comp);
+  Omega_h::Write<TagValue> contributions(static_cast<LO>(dofs.extent(0)) *
+                                         n_comp);
   Kokkos::parallel_for(
     "SumGhostsIntoOwners::pack",
-    Kokkos::RangePolicy<DefaultExecutionSpace>(0, static_cast<LO>(dofs.extent(0))),
+    Kokkos::RangePolicy<DefaultExecutionSpace>(0,
+                                               static_cast<LO>(dofs.extent(0))),
     KOKKOS_LAMBDA(const LO i) {
       for (int c = 0; c < n_comp; ++c) {
         contributions[i * n_comp + c] = static_cast<TagValue>(dofs(i, c));
@@ -223,10 +224,11 @@ public:
     // The basis at the points is computed once and serves Evaluate,
     // EvaluateTranspose and GetMatrix.
     Omega_h::Mesh& mesh = const_cast<Omega_h::Mesh&>(layout_->GetMesh());
-    basis_ = mesh.dim() == 2 ? detail::BuildOmegaHLagrangeBasis<2>(
-                                 mesh, layout_->GetOrder(), *binding_)
-                             : detail::BuildOmegaHLagrangeBasis<3>(
-                                 mesh, layout_->GetOrder(), *binding_);
+    basis_ = mesh.dim() == 2
+               ? detail::BuildOmegaHLagrangeBasis<2>(mesh, layout_->GetOrder(),
+                                                     *binding_)
+               : detail::BuildOmegaHLagrangeBasis<3>(mesh, layout_->GetOrder(),
+                                                     *binding_);
   }
 
   // Public because CUDA forbids extended lambdas in non-public member
@@ -246,9 +248,8 @@ public:
       layout_->GetMesh().get_array<TagValue>(layout_->GetDOFHolderEntityDim(),
                                              data.GetTagName()),
       layout_->GetNumComponents()};
-    detail::EvaluateOmegaHLagrange<T>(basis_, binding_->FoundPoints(),
-                                      dof_data, layout_->GetNumComponents(),
-                                      values);
+    detail::EvaluateOmegaHLagrange<T>(basis_, binding_->FoundPoints(), dof_data,
+                                      layout_->GetNumComponents(), values);
   }
 
   [[nodiscard]] bool SupportsTranspose() const noexcept override
@@ -268,8 +269,8 @@ public:
     Kokkos::View<T**, DeviceMemorySpace> dofs(
       "omega_h_lagrange_transpose",
       static_cast<std::size_t>(layout_->GetNumDofHolderWithGhosts()), n_comp);
-    detail::EvaluateTransposeOmegaHLagrange<T>(
-      basis_, binding_->FoundPoints(), values, dofs, n_comp);
+    detail::EvaluateTransposeOmegaHLagrange<T>(basis_, binding_->FoundPoints(),
+                                               values, dofs, n_comp);
     const auto owned = detail::SumGhostsIntoOwners<T>(*layout_, dofs);
     pcms::detail::AddToField(functional, owned);
   }

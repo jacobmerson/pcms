@@ -109,8 +109,9 @@ public:
   ///         or `values` claims another basis than the functional's
   /// @throws std::invalid_argument if `values` is not shaped [NumPoints()]
   ///         [components]
-  void EvaluateTranspose(ValueView<const T, DeviceMemorySpace, LayoutPolicy> values,
-                         Field<T>& functional) const
+  void EvaluateTranspose(
+    ValueView<const T, DeviceMemorySpace, LayoutPolicy> values,
+    Field<T>& functional) const
   {
     if (!SupportsTranspose() || op_ != DifferentialOperator::Value) {
       throw pcms_error("PointEvaluator::EvaluateTranspose: not supported by "
@@ -121,9 +122,9 @@ public:
       throw pcms_error("PointEvaluator::EvaluateTranspose: the functional is "
                        "not a field of the layout of this evaluator");
     }
-    detail::CheckWrittenValueBasis(
-      "PointEvaluator::EvaluateTranspose", values.GetBasis(),
-      functional.GetData().GetValueBasis());
+    detail::CheckWrittenValueBasis("PointEvaluator::EvaluateTranspose",
+                                   values.GetBasis(),
+                                   functional.GetData().GetValueBasis());
     if (values.extent(0) != static_cast<size_t>(NumPoints()) ||
         values.extent(1) !=
           static_cast<size_t>(functional.GetLayout().GetNumComponents())) {

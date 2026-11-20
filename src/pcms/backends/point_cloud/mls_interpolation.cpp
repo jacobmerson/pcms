@@ -205,9 +205,9 @@ Kokkos::View<Real*, DeviceMemorySpace> mls_interpolation(
   double lambda, double tol, double decay_factor)
 {
   return WithRadialBasis(bf, decay_factor, [&](auto rbf) {
-    return field::detail::mls_interpolation(
-      source_values, source_coordinates, target_coordinates, support, dim,
-      degree, rbf, lambda, tol);
+    return field::detail::mls_interpolation(source_values, source_coordinates,
+                                            target_coordinates, support, dim,
+                                            degree, rbf, lambda, tol);
   });
 }
 
