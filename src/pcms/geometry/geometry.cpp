@@ -113,11 +113,6 @@ SupportResults Geometry::Neighbourhood(CoordinateView<DeviceMemorySpace>, int,
                    "neighbourhood search");
 }
 
-DifferentialView Geometry::Differential(const BoundPoints&) const
-{
-  return {};
-}
-
 void detail::CheckNeighbourhoodArguments(
   const Geometry& geometry, const CoordinateView<DeviceMemorySpace>& coords,
   const NeighbourhoodOptions& options, const std::string& caller)
@@ -134,7 +129,7 @@ void detail::CheckNeighbourhoodArguments(
     throw pcms_error(
       caller +
       ": requires a coordinate system whose metric is the "
-      "identity (orthogonal basis and unit scale factors); got '" +
+      "identity (an orthogonal basis and a constant metric); got '" +
       std::string(geometry.GetCoordinateSystem()->Kind()) + "'");
   }
   if (options.max_supports != 0 &&

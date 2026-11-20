@@ -85,7 +85,7 @@ inline Kokkos::View<Real*, DeviceMemorySpace> ElementMeasuresAtPoints(
   const OwnerHints& owners, const char* context)
 {
   const auto bound = geometry.Bind(points, owners);
-  const DifferentialView differential = geometry.Differential(*bound);
+  const DifferentialView differential = bound->Differential();
   if (differential.Empty()) {
     throw pcms_error(std::string(context) +
                      ": the geometry provides no differential to take element "

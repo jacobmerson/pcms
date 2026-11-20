@@ -20,6 +20,10 @@
 namespace pcms::omega_h
 {
 
+/// Per-element Jacobians [element][i][j]; the views over them
+/// (DifferentialView) take the layout of a Kokkos view of the device space.
+using OmegaHJacobian = Kokkos::View<Real***, DeviceMemorySpace>;
+
 namespace detail
 {
 
@@ -251,6 +255,9 @@ public:
                            Kokkos::make_pair(LO{0}, NumPoints()));
   }
 
+  /// The geometry's per-element Jacobian (OmegaHGeometry::CellDifferential).
+  [[nodiscard]] DifferentialView Differential() const override;
+
 protected:
   void RebindImpl() override;
 
@@ -357,8 +364,7 @@ public:
 
   /// The per-element constant Jacobian of the affine simplex map, computed
   /// for all elements on the first call.
-  [[nodiscard]] DifferentialView Differential(
-    const BoundPoints& bound) const override;
+  [[nodiscard]] DifferentialView CellDifferential() const;
 
 protected:
   [[nodiscard]] std::shared_ptr<BoundPoints> BindImpl(
@@ -382,7 +388,8 @@ private:
   mutable std::once_flag search_once_;
   mutable std::unique_ptr<GridPointSearchVariant> search_;
   mutable std::once_flag differential_once_;
-  mutable DifferentialView differential_;
+  mutable OmegaHJacobian jacobian_;
+  mutable Kokkos::View<Real*, DeviceMemorySpace> determinant_;
 };
 
 /// The grid search over a mesh, with options.divisions divisions per axis when

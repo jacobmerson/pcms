@@ -94,12 +94,24 @@ std::shared_ptr<const FunctionSpace> MakeSpace(
 
 /// Checks the orientation convention of the Jacobian of element `e`: row i is
 /// x_{i+1} - x_0 for the element's vertices x_0, ..., x_Dim.
+/// The entries of a pcms view as a host Kokkos view over its storage.
+template <typename View>
+Kokkos::View<const Real*, HostMemorySpace> ToHostFlat(const View& view)
+{
+  const Kokkos::View<const Real*, DeviceMemorySpace,
+                     Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+    flat(view.data_handle(), view.mapping().required_span_size());
+  return Kokkos::create_mirror_view_and_copy(HostMemorySpace(), flat);
+}
+
 template <int Dim>
 void CheckJacobianRows(Omega_h::Mesh& mesh,
                        const pcms::DifferentialView& differential, LO e)
 {
-  const auto jacobian = Kokkos::create_mirror_view_and_copy(
-    HostMemorySpace(), differential.jacobian);
+  const auto flat = ToHostFlat(differential.jacobian);
+  const auto jacobian = [&](LO e, int i, int d) {
+    return flat(differential.jacobian.mapping()(e, i, d));
+  };
   const auto elem_verts = Omega_h::HostRead<Omega_h::LO>(mesh.ask_elem_verts());
   const auto coords = Omega_h::HostRead<Omega_h::Real>(mesh.coords());
   const LO v0 = elem_verts[(Dim + 1) * e];
@@ -412,13 +424,11 @@ TEST_CASE("Differential gives the element measure")
     auto mesh = pcms::test::BuildSquareMesh(lib, 5);
     auto geometry = MakeGeometry(mesh);
     const auto pts = pcms::test::StandardEvalCoords2D();
-    const auto differential =
-      geometry->Differential(*pcms::test::Bind(*geometry, pts));
+    const auto differential = pcms::test::Bind(*geometry, pts)->Differential();
     REQUIRE(differential.per_element);
     REQUIRE(differential.jacobian.extent(0) ==
             static_cast<size_t>(mesh.nelems()));
-    const auto det = Kokkos::create_mirror_view_and_copy(
-      HostMemorySpace(), differential.determinant);
+    const auto det = ToHostFlat(differential.determinant);
     const auto measures =
       Omega_h::HostRead<Omega_h::Real>(Omega_h::measure_elements_real(&mesh));
     for (LO e = 0; e < mesh.nelems(); ++e) {
@@ -426,19 +436,14 @@ TEST_CASE("Differential gives the element measure")
       REQUIRE_THAT(det(e) / 2.0, WithinAbs(measures[e], pcms::test::ExactTol));
     }
     CheckJacobianRows<2>(mesh, differential, mesh.nelems() / 2);
-    // the BoundPoints must be one of this geometry
-    auto other = MakeGeometry(mesh);
-    REQUIRE_THROWS_WITH(geometry->Differential(*pcms::test::Bind(*other, pts)),
-                        ContainsSubstring("belongs to another geometry"));
   }
   SECTION("tetrahedra")
   {
     auto mesh = pcms::test::BuildUnitCube(lib, 2);
     auto geometry = pcms::CreateGeometry(mesh, pcms::csys::CreateCartesian(3));
     const auto differential =
-      geometry->Differential(*pcms::test::Bind(*geometry, {0.5, 0.5, 0.5}));
-    const auto det = Kokkos::create_mirror_view_and_copy(
-      HostMemorySpace(), differential.determinant);
+      pcms::test::Bind(*geometry, {0.5, 0.5, 0.5})->Differential();
+    const auto det = ToHostFlat(differential.determinant);
     const auto measures =
       Omega_h::HostRead<Omega_h::Real>(Omega_h::measure_elements_real(&mesh));
     for (LO e = 0; e < mesh.nelems(); ++e) {

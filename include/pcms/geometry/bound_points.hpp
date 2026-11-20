@@ -1,6 +1,7 @@
 #ifndef PCMS_GEOMETRY_BOUND_SOURCE_HPP
 #define PCMS_GEOMETRY_BOUND_SOURCE_HPP
 
+#include "pcms/utility/arrays.hpp"
 #include "pcms/utility/coordinate_view.hpp"
 #include "pcms/field/out_of_bounds_policy.hpp"
 #include "pcms/utility/memory_spaces.hpp"
@@ -18,6 +19,19 @@ namespace pcms
 class Geometry;
 class BoundCoordinateMap;
 class CoordinateMap;
+
+/// @brief Jacobian of the geometry map at bound points.
+///
+/// jacobian(r, i, j) = d x_j / d xi_i, determinant(r) = det. When
+/// per_element is true, r is an element id; otherwise r indexes the bound
+/// source's FoundPoints().
+struct DifferentialView
+{
+  View<3, const Real, DeviceMemorySpace> jacobian;
+  Rank1View<const Real, DeviceMemorySpace> determinant;
+  bool per_element = false;
+  [[nodiscard]] bool Empty() const noexcept { return jacobian.extent(0) == 0; }
+};
 
 /// @brief Claimed owners of the query points: entities of a geometry the
 ///        points are believed to lie in, to start a bind or neighbourhood
@@ -131,6 +145,10 @@ public:
   ///         map
   [[nodiscard]] Kokkos::View<const Real**, DeviceMemorySpace>
   LocatedPointValues() const noexcept;
+
+  /// @brief Jacobian of the geometry map where the points were located.
+  /// @return an empty view unless the kind provides it
+  [[nodiscard]] virtual DifferentialView Differential() const { return {}; }
 
   /// @return indices of the query points the source evaluates, ascending
   [[nodiscard]] Kokkos::View<const LO*, DeviceMemorySpace> FoundPoints()
