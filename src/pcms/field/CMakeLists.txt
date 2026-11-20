@@ -1,5 +1,7 @@
 set(PCMS_FIELD_HEADERS
         ../../../include/pcms/field/field.hpp
+        ../../../include/pcms/field/field_metadata.hpp
+        ../../../include/pcms/field/units.hpp
         ../../../include/pcms/field/coordinate_map.hpp
         ../../../include/pcms/field/embedding.hpp
         ../../../include/pcms/field/value_transform.hpp
@@ -35,6 +37,8 @@ set(PCMS_FIELD_HEADERS
         ../../../include/pcms/field/mls_options.hpp
 )
 set(PCMS_FIELD_SOURCES
+        field_metadata.cpp
+        units.cpp
         embedding.cpp
         field_layout.cpp
         function_space.cpp
@@ -73,6 +77,7 @@ target_link_libraries(pcms_field PUBLIC
         pcms::utility
         pcms::localization
         pcms::geometry)
+target_link_libraries(pcms_field PRIVATE units::units)
 
 if(PCMS_ENABLE_OMEGA_H)
     # private: core public headers do not include Omega_h. The Omega_h backend

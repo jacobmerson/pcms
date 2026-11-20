@@ -61,6 +61,14 @@ The reorganization does not change numerical behavior. See [MIGRATION.md](MIGRAT
 
 ### Added
 
+- Field metadata: a `Field` carries `FieldMetadata` (name, optional `Units`,
+  properties `Conserved`, `DivergenceFree`, `NonNegative`; `GetMetadata`,
+  `SetUnits`, `SetProperties`, and `FunctionSpace::CreateFunction(metadata)`).
+  `Units::Parse` reads SI, CF/UDUNITS and IMAS unit strings (LLNL/units, a new
+  private dependency of every build). Values carry units and PCMS does not
+  convert them: `TransferOperator::Apply` and `ApplyTranspose` (copies,
+  interpolators and all projections) throw when both fields have units and
+  they differ; absent units are not checked.
 - `PCMS_ENABLE_COUPLER` to build without redev and ADIOS2.
 - A build without Omega_h (`PCMS_ENABLE_OMEGA_H=OFF`, with the server, the
   coupler, XGC and MeshFields off): the uniform-grid Lagrange and spline

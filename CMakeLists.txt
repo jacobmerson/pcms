@@ -207,6 +207,9 @@ if(PCMS_ENABLE_COUPLER)
   pcms_find_package(COUPLER ADIOS2 CONFIG 2.10.2)
 endif()
 find_package(Kokkos CONFIG 4.5 REQUIRED)
+# LLNL/units parses and compares field units (a private dependency of
+# pcms::field).
+find_package(units CONFIG REQUIRED)
 if(PCMS_ENABLE_OMEGA_H)
   pcms_find_package(OMEGA_H Omega_h)
   message(

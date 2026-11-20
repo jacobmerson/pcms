@@ -30,6 +30,7 @@ endif()
 # Private dependencies: a shared PCMS resolves them itself (RPATH); a static
 # PCMS needs them at the consumer's link step.
 if(NOT @PCMS_BUILD_SHARED@)
+    find_dependency(units CONFIG)
     if(@PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION@)
         find_dependency(KokkosKernels CONFIG)
     endif()

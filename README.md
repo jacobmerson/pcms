@@ -42,7 +42,8 @@ There are two supported ways to build PCMS from source:
 - [Spack](#build-with-spack) works on any Linux or macOS system.
 - On [SCOREC systems](#build-on-scorec-systems), use the module-based scripts.
 
-A plain CMake configure builds the core and needs only Kokkos and MPI. Every
+A plain CMake configure builds the core and needs only Kokkos, MPI and
+[LLNL units](https://github.com/LLNL/units) (field units). Every
 optional capability (Omega_h, MeshFields, the PETSc projection solve, polynomial
 reconstruction, XGC, MFEM, the coupler, the C and Fortran APIs, Python, examples) is
 a `PCMS_ENABLE_<NAME>` flag that is off by default; see
@@ -55,7 +56,7 @@ and tests (Ninja, Release, tests and examples on):
 
 | Preset | Capabilities |
 | --- | --- |
-| `minimal` | none: Kokkos and MPI only |
+| `minimal` | none: Kokkos, MPI and units only |
 | `polynomial-reconstruction` | `POLYNOMIAL_RECONSTRUCTION` |
 | `unstructured` | `OMEGA_H`, `OMEGA_H_MESHFIELDS` |
 | `conservative` | `unstructured` and `PETSC` |

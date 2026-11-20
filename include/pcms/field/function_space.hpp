@@ -114,6 +114,14 @@ public:
     std::string name = "", VarianceSignature variance = values::Scalar,
     std::optional<ComponentScaling> scaling = std::nullopt) const;
 
+  /// @brief Creates a Function with the name, units and properties of
+  ///        `metadata`.
+  /// @throws pcms_error if the space is not owned by a std::shared_ptr
+  template <typename T>
+  [[nodiscard]] Function<T> CreateFunction(
+    FieldMetadata metadata, VarianceSignature variance = values::Scalar,
+    std::optional<ComponentScaling> scaling = std::nullopt) const;
+
   /// @throws pcms_error if the space is not owned by a std::shared_ptr
   template <typename T>
   [[nodiscard]] Function<T> CreateFunction(
@@ -196,6 +204,18 @@ Function<T> FunctionSpace::CreateFunction(
   std::optional<ComponentScaling> scaling) const
 {
   return CreateFunction<T>(std::move(name), variance, nullptr, scaling);
+}
+
+template <typename T>
+Function<T> FunctionSpace::CreateFunction(
+  FieldMetadata metadata, VarianceSignature variance,
+  std::optional<ComponentScaling> scaling) const
+{
+  auto function =
+    CreateFunction<T>(std::move(metadata.name), variance, scaling);
+  function.SetUnits(std::move(metadata.units));
+  function.SetProperties(metadata.properties);
+  return function;
 }
 
 template <typename T>

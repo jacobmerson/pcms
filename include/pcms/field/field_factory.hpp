@@ -80,7 +80,7 @@ Field<T> FieldFactory::CreateField(
   detail::ValidateValueSemantics(basis, GetLayout()->GetNumComponents());
   Field<T> field = std::get<Field<T>>(
     CreateFieldImpl(detail::TypeEnumFromType<T>(), std::move(basis)));
-  field.name_ = std::move(name);
+  field.metadata_.name = std::move(name);
   return field;
 }
 
@@ -97,7 +97,7 @@ Field<T> FieldFactory::CreateField(std::string name,
                                  GetLayout()->GetNumComponents());
   Field<T> field =
     std::get<Field<T>>(CreateFieldImpl(FieldDataVariant{std::move(data)}));
-  field.name_ = std::move(name);
+  field.metadata_.name = std::move(name);
   return field;
 }
 

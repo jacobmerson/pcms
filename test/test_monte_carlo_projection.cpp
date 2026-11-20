@@ -1,10 +1,12 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include <Omega_h_build.hpp>
 #include <Omega_h_library.hpp>
 #include <Omega_h_mesh.hpp>
 #include <pcms/field/function_spaces.hpp>
+#include <pcms/field/field_metadata.hpp>
 #include <pcms/transfer/projection.hpp>
 #include <pcms/field/coordinate_map.hpp>
 #include <pcms/utility/coordinate_systems/cartesian.hpp>
@@ -225,5 +227,39 @@ TEST_CASE("CreateControlVariateProjection through a coordinate map maps the "
     const double expected = 3.0 * coords_h(i, 1) - coords_h(i, 0) + 0.25;
     CAPTURE(i, expected, values[i]);
     CHECK(values[i] == Catch::Approx(expected).margin(1e-9));
+  }
+}
+
+TEST_CASE("the conservative and control variate projections check units",
+          "[projection][metadata]")
+{
+  Omega_h::Library lib;
+  auto source_mesh = pcms::test::BuildUnitSquare(lib, 1);
+  auto target_mesh = pcms::test::BuildUnitSquare(lib, 0);
+  auto source_space = pcms::test::MakeP1Space(source_mesh);
+  auto target_space = pcms::test::MakeP1Space(target_mesh);
+  const auto conservative =
+    pcms::CreateConservativeProjection(source_space, target_space);
+  const auto control_variate =
+    pcms::CreateControlVariateProjection(source_space, target_space);
+
+  auto source = source_space->CreateFunction<pcms::Real>("source");
+  auto target = target_space->CreateFunction<pcms::Real>("target");
+  pcms::test::SetField(
+    source, OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) { return x + y; });
+  for (const auto* projection : {conservative.get(), control_variate.get()}) {
+    source.SetUnits(pcms::Units::Parse("m^-3"));
+    target.SetUnits(pcms::Units::Parse("1/m^3"));
+    REQUIRE_NOTHROW(projection->Apply(source, target));
+    target.SetUnits(pcms::Units::Parse("cm^-3"));
+    REQUIRE_THROWS_WITH(
+      projection->Apply(source, target),
+      Catch::Matchers::ContainsSubstring("differ in scale or offset"));
+    target.SetUnits(pcms::Units::Parse("K"));
+    REQUIRE_THROWS_WITH(
+      projection->Apply(source, target),
+      Catch::Matchers::ContainsSubstring("different dimensions"));
+    target.SetUnits(std::nullopt);
+    REQUIRE_NOTHROW(projection->Apply(source, target));
   }
 }
