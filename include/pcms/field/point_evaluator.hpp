@@ -23,6 +23,18 @@ namespace pcms
 template <typename T>
 class Field;
 
+/// @brief The evaluation at the points as a sparse matrix in CSR form: row p
+///        holds the entries row_offsets(p) .. row_offsets(p + 1) - 1, whose
+///        columns are the global ids of the DOF holders (the gids of the
+///        layout) and whose values are the weights of their DOFs.
+template <typename T>
+struct PointMatrix
+{
+  Kokkos::View<const LO*, DeviceMemorySpace> row_offsets; // [points + 1]
+  Kokkos::View<const GO*, DeviceMemorySpace> columns;     // [entries]
+  Kokkos::View<const T*, DeviceMemorySpace> values;       // [entries]
+};
+
 /// @brief Evaluates fields at the points of a BoundPoints.
 ///
 /// Created by PointEvaluatorFactory::CreatePointEvaluator. Evaluate writes
@@ -73,6 +85,80 @@ public:
       detail::FillRows(values.GetValues(), filled,
                        static_cast<T>(bound_->Policy().fill_value));
     }
+  }
+
+  /// @return whether EvaluateTranspose is implemented for this evaluator
+  [[nodiscard]] virtual bool SupportsTranspose() const noexcept
+  {
+    return false;
+  }
+
+  /// @brief Adds the transpose of the evaluation to a functional:
+  ///        functional += E^T values, where E is the linear map from the DOFs
+  ///        of a field of the evaluator's layout to its values at the points
+  ///        (the rows of the FoundPoints(); the rows of missing points are
+  ///        zero), so that <E x, y> = <x, E^T y>.
+  ///
+  /// Only for DifferentialOperator::Value. The functional is a plain Field of
+  /// the evaluator's layout (not a Function: it is dual to the coefficients),
+  /// accumulated into, never zeroed. The kind sums the contributions to DOF
+  /// holders that other ranks own into their owners, so that the result is
+  /// the same as on one rank (collective), and leaves the functional's data
+  /// consistent. The weights of a quadrature are applied to `values` by the
+  /// caller: b = E^T (W f).
+  /// @param values one row per query point, one column per component of the
+  ///        layout, tagged with the basis of the functional's data
+  /// @param functional the field to accumulate into
+  /// @throws pcms_error if SupportsTranspose() is false, the operator is not
+  ///         Value, `functional` is not of the layout this evaluator accepts
+  ///         or `values` claims another basis than the functional's
+  /// @throws std::invalid_argument if `values` is not shaped [NumPoints()]
+  ///         [components]
+  void EvaluateTranspose(
+    ValueView<const T, DeviceMemorySpace, LayoutPolicy> values,
+    Field<T>& functional) const
+  {
+    if (!SupportsTranspose() || op_ != DifferentialOperator::Value) {
+      throw pcms_error("PointEvaluator::EvaluateTranspose: not supported by "
+                       "this evaluator");
+    }
+    if (accepted_layout_ != nullptr &&
+        &functional.GetLayout() != accepted_layout_.get()) {
+      throw pcms_error("PointEvaluator::EvaluateTranspose: the functional is "
+                       "not a field of the layout of this evaluator");
+    }
+    detail::CheckWrittenValueBasis("PointEvaluator::EvaluateTranspose",
+                                   values.GetBasis(),
+                                   functional.GetData().GetValueBasis());
+    if (values.extent(0) != static_cast<size_t>(NumPoints()) ||
+        values.extent(1) !=
+          static_cast<size_t>(functional.GetLayout().GetNumComponents())) {
+      throw std::invalid_argument(
+        "PointEvaluator::EvaluateTranspose: values must be shaped [query "
+        "points][components of the layout]");
+    }
+    EvaluateTransposeImpl(values.GetValues(), functional);
+  }
+
+  /// @return whether GetMatrix is implemented for this evaluator
+  [[nodiscard]] virtual bool SupportsMatrix() const noexcept { return false; }
+
+  /// @brief The evaluation as a sparse matrix E: the row of a query point
+  ///        holds the weights of the DOF holders its value is a combination
+  ///        of; the same for every component, so that component c of the
+  ///        values is E times component c of the DOFs.
+  ///
+  /// Only for DifferentialOperator::Value. The rows of missing points are
+  /// empty or zero; a row may hold explicit zero entries.
+  /// @throws pcms_error if SupportsMatrix() is false or the operator is not
+  ///         Value
+  [[nodiscard]] PointMatrix<T> GetMatrix() const
+  {
+    if (!SupportsMatrix() || op_ != DifferentialOperator::Value) {
+      throw pcms_error("PointEvaluator::GetMatrix: not supported by this "
+                       "evaluator");
+    }
+    return GetMatrixImpl();
   }
 
   /// @return number of query points
@@ -143,6 +229,23 @@ protected:
   virtual void EvaluateImpl(
     const Field<T>& field,
     ValueView<T, DeviceMemorySpace, LayoutPolicy> values) const = 0;
+
+  /// @brief Adds E^T values to the functional; the layout of the functional,
+  ///        the basis and the shape of `values` are checked.
+  /// @throws pcms_error unless the evaluator overrides it
+  virtual void EvaluateTransposeImpl(
+    Rank2View<const T, DeviceMemorySpace, LayoutPolicy>, Field<T>&) const
+  {
+    throw pcms_error("PointEvaluator::EvaluateTranspose: not implemented by "
+                     "this evaluator");
+  }
+
+  /// @throws pcms_error unless the evaluator overrides it
+  virtual PointMatrix<T> GetMatrixImpl() const
+  {
+    throw pcms_error("PointEvaluator::GetMatrix: not implemented by this "
+                     "evaluator");
+  }
 
 private:
   /// @brief Checks that `values` has one row per query point and one column
