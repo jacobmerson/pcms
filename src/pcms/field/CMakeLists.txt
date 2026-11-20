@@ -4,6 +4,7 @@ set(PCMS_FIELD_HEADERS
         ../../../include/pcms/field/value_view.hpp
         element_dispatch.hpp
         gid_permutation.hpp
+        holder_of_gid.hpp
         ../../../include/pcms/field/field_layout.hpp
         layout/empty.hpp
         ../../../include/pcms/field/out_of_bounds_policy.hpp
@@ -41,6 +42,7 @@ set(PCMS_FIELD_SOURCES
         function_space/spline.cpp
         function_space/periodic.cpp
         function_space/product_geometry.cpp
+        function_space/product_space.cpp
 )
 list(APPEND PCMS_FIELD_HEADERS
 )

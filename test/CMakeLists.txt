@@ -477,7 +477,8 @@ if(Catch2_FOUND)
       test_geometry.cpp
       test_periodic_geometry.cpp
       test_periodic_spaces.cpp
-      test_product_geometry.cpp)
+      test_product_geometry.cpp
+      test_product_space.cpp)
   endif()
 
   if(PCMS_ENABLE_OMEGA_H AND PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION)
