@@ -4,12 +4,17 @@
 #include <Omega_h_build.hpp>
 #include <Omega_h_library.hpp>
 #include <Omega_h_mesh.hpp>
+#include <pcms/field/field_ops.hpp>
 #include <pcms/field/function_spaces.hpp>
 #include <pcms/transfer/projection.hpp>
 #include <pcms/backends/omega_h/omega_h.hpp>
+#include <pcms/transfer/forms.hpp>
+#include <pcms/transfer/l2_inner_product.hpp>
+#include <pcms/transfer/linear_solver.hpp>
 #include "field_test_utils.hpp"
 #include <cmath>
 #include <cstdio>
+#include <map>
 #include <random>
 #include <vector>
 
@@ -19,73 +24,104 @@ namespace
 using Host2D = Kokkos::View<pcms::Real**, pcms::HostMemorySpace>;
 using Device2D = Kokkos::View<pcms::Real**, pcms::DeviceMemorySpace>;
 
+void SetDofs(pcms::Field<pcms::Real>& field, const Host2D& x)
+{
+  field.SetDOFHolderDataHost(
+    pcms::ValueView<const pcms::Real, pcms::HostMemorySpace>(
+      field.GetData().GetValueBasis(), pcms::MakeConstRank2View(x)));
+}
+
+Host2D RandomDofs(const pcms::FieldLayout& layout, std::mt19937& rng)
+{
+  std::uniform_real_distribution<double> uniform(-1.0, 1.0);
+  Host2D x("x", layout.GetNumDofHolder(), layout.GetNumComponents());
+  for (std::size_t i = 0; i < x.size(); ++i) {
+    x.data()[i] = uniform(rng);
+  }
+  return x;
+}
+
 // The generic adjoint test: <E x, y> == <x, E^T y> for random DOFs x of the
 // space and random point values y, for any evaluator that SupportsTranspose.
 // The space must be unghosted (serial), so that the holders are the owned ones.
-void CheckAdjoint(const pcms::FunctionSpace& space,
+void CheckAdjoint(const std::shared_ptr<const pcms::FunctionSpace>& space,
                   const pcms::PointEvaluator<pcms::Real>& evaluator,
                   unsigned seed)
 {
   REQUIRE(evaluator.SupportsTranspose());
-  const int num_components = space.GetLayout()->GetNumComponents();
-  const int num_holders = space.GetLayout()->GetNumDofHolder();
+  const int num_components = space->GetLayout()->GetNumComponents();
   const int num_points = evaluator.NumPoints();
   std::mt19937 rng(seed);
   std::uniform_real_distribution<double> uniform(-1.0, 1.0);
-
-  Host2D x("x", num_holders, num_components);
+  const auto x = RandomDofs(*space->GetLayout(), rng);
   Host2D y("y", num_points, num_components);
-  for (std::size_t i = 0; i < x.size(); ++i) {
-    x.data()[i] = uniform(rng);
-  }
   for (std::size_t i = 0; i < y.size(); ++i) {
     y.data()[i] = uniform(rng);
   }
 
-  auto field = space.CreateFunction<pcms::Real>();
-  field.SetDOFHolderDataHost(
-    pcms::ValueView<const pcms::Real, pcms::HostMemorySpace>(
-      field.GetData().GetValueBasis(),
-      pcms::Rank2View<const pcms::Real, pcms::HostMemorySpace>(
-        x.data(), num_holders, num_components)));
-
+  auto field = space->CreateFunction<pcms::Real>();
+  SetDofs(field, x);
   Device2D e_x("Ex", num_points, num_components);
+  const auto basis = field.GetData().GetValueBasis();
   evaluator.Evaluate(field, pcms::ValueView<pcms::Real, pcms::DeviceMemorySpace>(
-                              field.GetData().GetValueBasis(),
-                              pcms::MakeRank2View(e_x)));
-
+                              basis, pcms::MakeRank2View(e_x)));
   const auto y_device =
     Kokkos::create_mirror_view_and_copy(pcms::DeviceMemorySpace{}, y);
-  Device2D transposed("ETy", num_holders, num_components);
-  evaluator.EvaluateTranspose(pcms::MakeConstRank2View(y_device),
-                              pcms::MakeRank2View(transposed));
+  const pcms::ValueView<const pcms::Real, pcms::DeviceMemorySpace> y_view(
+    basis, pcms::MakeConstRank2View(y_device));
 
+  auto functional = space->CreateFunction<pcms::Real>();
+  evaluator.EvaluateTranspose(y_view, functional);
   const auto e_x_host =
     Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace{}, e_x);
-  const auto transposed_host =
-    Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace{}, transposed);
-  // (a mirror aliases the view in a host build: keep a copy of E^T y)
-  const std::vector<double> once(transposed_host.data(),
-                                 transposed_host.data() + x.size());
+  const auto transposed = functional.GetDOFHolderDataHost().GetValues();
+  const std::vector<double> once(transposed.data_handle(),
+                                 transposed.data_handle() + x.size());
   double lhs = 0, rhs = 0, scale = 0;
   for (std::size_t i = 0; i < y.size(); ++i) {
     lhs += e_x_host.data()[i] * y.data()[i];
     scale += std::abs(e_x_host.data()[i] * y.data()[i]);
   }
   for (std::size_t i = 0; i < x.size(); ++i) {
-    rhs += x.data()[i] * transposed_host.data()[i];
+    rhs += x.data()[i] * once[i];
   }
   CAPTURE(lhs, rhs);
   CHECK(std::abs(lhs - rhs) <= 1e-12 * std::max(1.0, scale));
+  // the pairing of the functional with the function is the same number
+  CHECK(std::abs(pcms::Apply(functional, field) - lhs) <=
+        1e-12 * std::max(1.0, scale));
 
   // accumulates: a second call doubles the result
-  evaluator.EvaluateTranspose(pcms::MakeConstRank2View(y_device),
-                              pcms::MakeRank2View(transposed));
-  const auto twice =
-    Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace{}, transposed);
+  evaluator.EvaluateTranspose(y_view, functional);
+  const auto twice = functional.GetDOFHolderDataHost().GetValues();
   for (std::size_t i = 0; i < x.size(); ++i) {
-    CHECK(twice.data()[i] ==
-          Catch::Approx(2 * once[i]).margin(1e-14));
+    CHECK(twice.data_handle()[i] == Catch::Approx(2 * once[i]).margin(1e-14));
+  }
+
+  // the matrix form: E x from the CSR rows equals Evaluate
+  if (evaluator.SupportsMatrix()) {
+    const auto matrix = evaluator.GetMatrix();
+    const auto offsets = Kokkos::create_mirror_view_and_copy(
+      pcms::HostMemorySpace{}, matrix.row_offsets);
+    const auto columns = Kokkos::create_mirror_view_and_copy(
+      pcms::HostMemorySpace{}, matrix.columns);
+    const auto values = Kokkos::create_mirror_view_and_copy(
+      pcms::HostMemorySpace{}, matrix.values);
+    const auto gids = space->GetLayout()->GetGidsHost();
+    std::map<pcms::GO, int> holder_of;
+    for (std::size_t h = 0; h < gids.extent(0); ++h) {
+      holder_of[gids(h)] = static_cast<int>(h);
+    }
+    REQUIRE(offsets.extent(0) == static_cast<std::size_t>(num_points) + 1);
+    for (int p = 0; p < num_points; ++p) {
+      for (int c = 0; c < num_components; ++c) {
+        double sum = 0;
+        for (int k = offsets(p); k < offsets(p + 1); ++k) {
+          sum += values(k) * x(holder_of.at(columns(k)), c);
+        }
+        CHECK(sum == Catch::Approx(e_x_host(p, c)).margin(1e-13));
+      }
+    }
   }
 }
 
@@ -119,25 +155,76 @@ TEST_CASE("EvaluateTranspose is the adjoint of Evaluate (Omega_h Lagrange)",
     pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
   const auto bound = pcms::test::Bind(*geometry, RandomPoints(dim, 200, 3));
   const auto evaluator = space->CreatePointEvaluator<pcms::Real>(bound);
-  CheckAdjoint(*space, *evaluator, 11);
+  CheckAdjoint(space, *evaluator, 11);
 }
 
-TEST_CASE("EvaluateTranspose: evaluators without it say so", "[adjoint]")
+TEST_CASE("EvaluateTranspose checks its arguments", "[adjoint]")
 {
   Omega_h::Library lib;
   auto mesh = pcms::test::BuildSquareMesh(lib, 1);
   auto geometry =
     pcms::omega_h::CreateGeometry(mesh, pcms::detail::DeferredCartesian());
   const auto space = pcms::test::MakeP1Space(geometry);
-  // the values of an evaluator that is gradient-valued are not a Value map
+  const auto other_space = pcms::test::MakeP1Space(geometry);
   const auto bound = pcms::test::Bind(*geometry, RandomPoints(2, 4, 1));
   const auto evaluator = space->CreatePointEvaluator<pcms::Real>(bound);
+  auto functional = space->CreateFunction<pcms::Real>();
+  auto foreign = other_space->CreateFunction<pcms::Real>();
+  const auto basis = functional.GetData().GetValueBasis();
   Device2D values("v", 4, 1);
   Device2D wrong_shape("d", 3, 1);
-  CHECK_THROWS_AS(
-    evaluator->EvaluateTranspose(pcms::MakeConstRank2View(values),
-                                 pcms::MakeRank2View(wrong_shape)),
-    std::invalid_argument);
+  using View = pcms::ValueView<const pcms::Real, pcms::DeviceMemorySpace>;
+  CHECK_NOTHROW(evaluator->EvaluateTranspose(
+    View(basis, pcms::MakeConstRank2View(values)), functional));
+  CHECK_THROWS_AS(evaluator->EvaluateTranspose(
+                    View(basis, pcms::MakeConstRank2View(wrong_shape)),
+                    functional),
+                  std::invalid_argument);
+  // a functional of another layout than the evaluator's
+  CHECK_THROWS_AS(evaluator->EvaluateTranspose(
+                    View(basis, pcms::MakeConstRank2View(values)), foreign),
+                  pcms::pcms_error);
+}
+
+TEST_CASE("field operations: Scale, Axpy, Dot, norms and the pairing",
+          "[field_ops]")
+{
+  Omega_h::Library lib;
+  auto mesh = pcms::test::BuildSquareMesh(lib, 3);
+  const auto space = pcms::test::MakeP1Space(mesh);
+  std::mt19937 rng(7);
+  const auto a = RandomDofs(*space->GetLayout(), rng);
+  const auto b = RandomDofs(*space->GetLayout(), rng);
+  auto x = space->CreateFunction<pcms::Real>();
+  auto y = space->CreateFunction<pcms::Real>();
+  SetDofs(x, a);
+  SetDofs(y, b);
+  double dot = 0, xx = 0, inf = 0;
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    dot += a.data()[i] * b.data()[i];
+    xx += a.data()[i] * a.data()[i];
+    inf = std::max(inf, std::abs(a.data()[i]));
+  }
+  CHECK(pcms::Dot(x, y) == Catch::Approx(dot).epsilon(1e-14));
+  CHECK(pcms::Apply(x, y) == Catch::Approx(dot).epsilon(1e-14));
+  CHECK(pcms::Norm2(x) == Catch::Approx(std::sqrt(xx)).epsilon(1e-14));
+  CHECK(pcms::NormInf(x) == Catch::Approx(inf).epsilon(1e-14));
+  auto w = space->CreateFunction<pcms::Real>();
+  Host2D twos("w", a.extent(0), 1);
+  Kokkos::deep_copy(twos, 2.0);
+  SetDofs(w, twos);
+  CHECK(pcms::WeightedRmsNorm(x, w) ==
+        Catch::Approx(2 * std::sqrt(xx / a.size())).epsilon(1e-14));
+  pcms::Axpy(3.0, x, y); // y = b + 3 a
+  pcms::Scale(0.5, y);   // y = (b + 3 a) / 2
+  const auto values = y.GetDOFHolderDataHost().GetValues();
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    CHECK(values.data_handle()[i] ==
+          Catch::Approx(0.5 * (b.data()[i] + 3 * a.data()[i])).epsilon(1e-14));
+  }
+  // fields of another layout are refused
+  auto other = pcms::test::MakeP1Space(mesh)->CreateFunction<pcms::Real>();
+  CHECK_THROWS_AS(pcms::Dot(x, other), pcms::pcms_error);
 }
 
 namespace
@@ -231,279 +318,152 @@ TEST_CASE("CreateProjection projects several components at once",
 }
 
 // ---------------------------------------------------------------------------
-// Matrix-free solve and conditioning
+// The solvers: MatrixFree against Assembled
 // ---------------------------------------------------------------------------
 
 namespace
 {
 
-// The mass operator x -> E^T W E x of a P1 space on a quadrature, using only
-// Evaluate and EvaluateTranspose.
-class MatrixFreeMass
+// The max difference of the two solves of M x = b for a random functional b,
+// and the CG iterations
+struct SolveComparison
 {
-public:
-  MatrixFreeMass(const pcms::FunctionSpace& space,
-                 const pcms::Quadrature& quadrature)
-    : space_(space),
-      evaluator_(space.CreatePointEvaluator<pcms::Real>(quadrature.points)),
-      weights_(Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace{},
-                                                   quadrature.weights)),
-      field_(space.CreateFunction<pcms::Real>()),
-      size_(space.GetLayout()->GetNumDofHolder())
-  {
-  }
-
-  int Size() const { return size_; }
-
-  // y = E^T diag(scale) (E x + shift)
-  std::vector<double> Apply(const std::vector<double>& x) const
-  {
-    field_.SetDOFHolderDataHost(
-      pcms::ValueView<const pcms::Real, pcms::HostMemorySpace>(
-        field_.GetData().GetValueBasis(),
-        pcms::Rank2View<const pcms::Real, pcms::HostMemorySpace>(x.data(),
-                                                                 size_, 1)));
-    Device2D values("values", evaluator_->NumPoints(), 1);
-    evaluator_->Evaluate(field_,
-                         pcms::ValueView<pcms::Real, pcms::DeviceMemorySpace>(
-                           field_.GetData().GetValueBasis(),
-                           pcms::MakeRank2View(values)));
-    return Transpose(values);
-  }
-
-  // E^T (W values), the values being one per point
-  std::vector<double> Transpose(Device2D values) const
-  {
-    auto host = Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace{},
-                                                    values);
-    for (std::size_t p = 0; p < host.extent(0); ++p) {
-      host(p, 0) *= weights_(p);
-    }
-    const auto weighted =
-      Kokkos::create_mirror_view_and_copy(pcms::DeviceMemorySpace{}, host);
-    Device2D dofs("dofs", size_, 1);
-    evaluator_->EvaluateTranspose(pcms::MakeConstRank2View(weighted),
-                                  pcms::MakeRank2View(dofs));
-    const auto dofs_host =
-      Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace{}, dofs);
-    return std::vector<double>(dofs_host.data(), dofs_host.data() + size_);
-  }
-
-  const pcms::PointEvaluator<pcms::Real>& Evaluator() const
-  {
-    return *evaluator_;
-  }
-
-private:
-  const pcms::FunctionSpace& space_;
-  std::unique_ptr<pcms::PointEvaluator<pcms::Real>> evaluator_;
-  Kokkos::View<const pcms::Real*, pcms::HostMemorySpace> weights_;
-  mutable pcms::Field<pcms::Real> field_;
-  int size_;
+  double max_difference; // relative to the largest entry
+  int iterations;
+  int unknowns;
 };
 
-double Dot(const std::vector<double>& a, const std::vector<double>& b)
+SolveComparison CompareSolvers(
+  const std::shared_ptr<const pcms::FunctionSpace>& space)
 {
-  double sum = 0;
-  for (std::size_t i = 0; i < a.size(); ++i) {
-    sum += a[i] * b[i];
-  }
-  return sum;
-}
-
-// Conjugate gradients on a symmetric positive definite operator; returns the
-// number of iterations to reach a relative residual of `tolerance`.
-template <typename Operator>
-int ConjugateGradients(const Operator& apply, const std::vector<double>& b,
-                       std::vector<double>& x, double tolerance)
-{
-  x.assign(b.size(), 0.0);
-  std::vector<double> r = b, p = b;
-  double rr = Dot(r, r);
-  const double target = tolerance * tolerance * Dot(b, b);
-  int iterations = 0;
-  while (rr > target && iterations < 1000) {
-    const auto ap = apply(p);
-    const double alpha = rr / Dot(p, ap);
-    for (std::size_t i = 0; i < x.size(); ++i) {
-      x[i] += alpha * p[i];
-      r[i] -= alpha * ap[i];
-    }
-    const double rr_new = Dot(r, r);
-    const double beta = rr_new / rr;
-    for (std::size_t i = 0; i < p.size(); ++i) {
-      p[i] = r[i] + beta * p[i];
-    }
-    rr = rr_new;
-    ++iterations;
-  }
-  return iterations;
-}
-
-// Eigenvalues (min, max) of a dense symmetric matrix by cyclic Jacobi sweeps
-std::pair<double, double> ExtremeEigenvalues(std::vector<std::vector<double>> a)
-{
-  const std::size_t n = a.size();
-  for (int sweep = 0; sweep < 60; ++sweep) {
-    double off = 0;
-    for (std::size_t i = 0; i < n; ++i) {
-      for (std::size_t j = i + 1; j < n; ++j) {
-        off += a[i][j] * a[i][j];
-      }
-    }
-    if (off < 1e-28) {
-      break;
-    }
-    for (std::size_t p = 0; p < n; ++p) {
-      for (std::size_t q = p + 1; q < n; ++q) {
-        if (std::abs(a[p][q]) < 1e-300) {
-          continue;
-        }
-        const double theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
-        const double t =
-          (theta >= 0 ? 1.0 : -1.0) /
-          (std::abs(theta) + std::sqrt(theta * theta + 1));
-        const double c = 1 / std::sqrt(t * t + 1), s = t * c;
-        for (std::size_t k = 0; k < n; ++k) {
-          const double akp = a[k][p], akq = a[k][q];
-          a[k][p] = c * akp - s * akq;
-          a[k][q] = s * akp + c * akq;
-        }
-        for (std::size_t k = 0; k < n; ++k) {
-          const double apk = a[p][k], aqk = a[q][k];
-          a[p][k] = c * apk - s * aqk;
-          a[q][k] = s * apk + c * aqk;
-        }
-      }
-    }
-  }
-  double low = a[0][0], high = a[0][0];
-  for (std::size_t i = 0; i < n; ++i) {
-    low = std::min(low, a[i][i]);
-    high = std::max(high, a[i][i]);
-  }
-  return {low, high};
-}
-
-double Factorial(int n)
-{
-  return n <= 1 ? 1.0 : n * Factorial(n - 1);
+  using namespace pcms::transfer::detail;
+  const BilinearForm form(space, space->CreateQuadrature());
+  LinearSolver matrix_free(form, pcms::LinearSolveOptions{});
+  LinearSolver assembled(
+    form, pcms::LinearSolveOptions{
+            .method = pcms::LinearSolveOptions::Method::Assembled});
+  std::mt19937 rng(5);
+  auto b = space->CreateFunction<pcms::Real>();
+  SetDofs(b, RandomDofs(*space->GetLayout(), rng));
+  auto x_free = space->CreateFunction<pcms::Real>();
+  auto x_direct = space->CreateFunction<pcms::Real>();
+  const int iterations = matrix_free.Solve(b, x_free);
+  assembled.Solve(b, x_direct);
+  const double scale = pcms::NormInf(x_direct);
+  pcms::Axpy(-1.0, x_direct, x_free);
+  return {pcms::NormInf(x_free) / scale, iterations,
+          space->GetLayout()->GetNumDofHolder() *
+            space->GetLayout()->GetNumComponents()};
 }
 
 } // namespace
 
-TEST_CASE("a matrix-free CG on E^T W E x = E^T W f reproduces the PETSc "
-          "projection, with the conditioning of the mass matrix",
-          "[quadrature][matrix_free]")
+TEST_CASE("matrix-free Jacobi-PCG matches the assembled direct solve",
+          "[quadrature][solver]")
+{
+  Omega_h::Library lib;
+  for (const int n : {4, 8, 16}) {
+    auto mesh = pcms::test::BuildSquareMesh(lib, n);
+    const auto result = CompareSolvers(pcms::test::MakeP1Space(mesh));
+    CHECK(result.max_difference < 1e-11);
+    std::printf("[solver] P1 %dx%d square, %d unknowns: CG iterations = %d, "
+                "relative max |x_cg - x_lu| = %.2e\n",
+                n, n, result.unknowns, result.iterations,
+                result.max_difference);
+  }
+  {
+    auto mesh = pcms::test::BuildSquareMesh(lib, 8);
+    const auto result = CompareSolvers(pcms::test::MakeP0Space(mesh));
+    CHECK(result.max_difference < 1e-11);
+    std::printf("[solver] P0 8x8 square, %d unknowns: CG iterations = %d, "
+                "relative max |x_cg - x_lu| = %.2e\n",
+                result.unknowns, result.iterations, result.max_difference);
+  }
+  {
+    auto mesh = pcms::test::BuildSquareMesh(lib, 8);
+    auto geometry =
+      pcms::omega_h::CreateGeometry(mesh, pcms::detail::DeferredCartesian());
+    const auto space = pcms::CreateLagrangeSpace(
+      geometry, 1, 3,
+      pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
+    const auto result = CompareSolvers(space);
+    CHECK(result.max_difference < 1e-11);
+    std::printf("[solver] P1 8x8 square, 3 components, %d unknowns: CG "
+                "iterations = %d, relative max |x_cg - x_lu| = %.2e\n",
+                result.unknowns, result.iterations, result.max_difference);
+  }
+  {
+    auto mesh = pcms::test::BuildUnitCube(lib, 3);
+    const auto result = CompareSolvers(pcms::test::MakeP1Space(mesh));
+    CHECK(result.max_difference < 1e-11);
+    std::printf("[solver] P1 3D cube, %d unknowns: CG iterations = %d, "
+                "relative max |x_cg - x_lu| = %.2e\n",
+                result.unknowns, result.iterations, result.max_difference);
+  }
+}
+
+TEST_CASE("projection: both solve methods and the lumped mass",
+          "[quadrature][projection]")
 {
   Omega_h::Library lib;
   auto source_mesh = pcms::test::BuildSquareMesh(lib, 6);
   auto target_mesh = pcms::test::BuildSquareMesh(lib, 4);
   const auto source_geometry = MakeGeometry(source_mesh);
-  const auto target_geometry = MakeGeometry(target_mesh);
   const auto source_space = pcms::test::MakeP1Space(source_geometry);
-  const auto target_space = pcms::test::MakeP1Space(target_geometry);
+  const auto target_space = pcms::test::MakeP1Space(target_mesh);
   auto source = source_space->CreateFunction<pcms::Real>();
   pcms::test::SetField(source, OMEGA_H_LAMBDA(pcms::Real x, pcms::Real y) {
     return std::sin(4 * x) * std::cos(3 * y);
   });
+  const auto project = [&](pcms::ProjectionOptions options) {
+    auto target = target_space->CreateFunction<pcms::Real>();
+    pcms::CreateProjection(source_space, target_space, options)
+      ->Apply(source, target);
+    return target;
+  };
+  auto free = project({});
+  auto direct = project(pcms::ProjectionOptions{
+    .solve = {.method = pcms::LinearSolveOptions::Method::Assembled}});
+  auto lumped = project(
+    pcms::ProjectionOptions{.mass_matrix_type = pcms::MassMatrixType::Lumped});
+  auto difference = project({});
+  pcms::Axpy(-1.0, direct, difference);
+  const double max_difference = pcms::NormInf(difference);
+  CHECK(max_difference < 1e-11);
+  std::printf("[projection] MatrixFree vs Assembled: max difference %.2e\n",
+              max_difference);
+  // the lumped projection is another operator, but it has the integral of the
+  // consistent one (1^T M_L x = 1^T b = 1^T M x)
+  const pcms::L2Integral integral(target_space);
+  CHECK(integral.Apply(lumped) ==
+        Catch::Approx(integral.Apply(direct)).epsilon(1e-10));
+  // MaxIterations too small to converge is an error
+  CHECK_THROWS(pcms::CreateProjection(
+                 source_space, target_space,
+                 pcms::ProjectionOptions{
+                   .solve = {.relative_tolerance = 1e-14, .max_iterations = 1}})
+                 ->Apply(source, free));
+}
 
-  pcms::ProjectionOptions options;
-  options.quadrature_options.order = 2;
-  auto target = target_space->CreateFunction<pcms::Real>();
-  pcms::CreateProjection(source_space, target_space, options)
-    ->Apply(source, target);
-
-  // the same right-hand side, by hand
-  const auto quadrature =
-    target_geometry->CreateQuadrature(options.quadrature_options);
-  const MatrixFreeMass mass(*target_space, quadrature);
-  const pcms::CoordinateView<pcms::DeviceMemorySpace> points(
-    quadrature.points->GetCoordinateSystem(),
-    pcms::MakeConstRank2View(quadrature.points->LocatedPointValues()));
-  const auto source_at_points = source_space->CreatePointEvaluator<pcms::Real>(
-    source_geometry->Bind(points));
-  Device2D f("f", source_at_points->NumPoints(), 1);
-  source_at_points->Evaluate(
-    source, pcms::ValueView<pcms::Real, pcms::DeviceMemorySpace>(
-              source.GetData().GetValueBasis(), pcms::MakeRank2View(f)));
-  const auto b = mass.Transpose(f);
-
-  std::vector<double> x;
-  const int iterations = ConjugateGradients(
-    [&](const std::vector<double>& v) { return mass.Apply(v); }, b, x, 1e-13);
-  const auto expected = FieldValues(target);
-  REQUIRE(expected.size() == x.size());
-  double max_difference = 0;
-  for (std::size_t i = 0; i < x.size(); ++i) {
-    max_difference = std::max(max_difference, std::abs(x[i] - expected[i]));
-  }
-  CAPTURE(iterations, max_difference);
-  CHECK(max_difference < 1e-10);
-  std::printf("[matrix-free] P1 mass %d unknowns: CG iterations to 1e-13 = %d, "
-              "max |x_cg - x_petsc| = %.2e\n",
-              mass.Size(), iterations, max_difference);
-
-  // dense M = E^T W E for a few meshes: conditioning of the Lagrange basis
-  for (const int n : {2, 4, 8}) {
-    auto mesh = pcms::test::BuildSquareMesh(lib, n);
-    const auto geometry = MakeGeometry(mesh);
-    const auto space = pcms::test::MakeP1Space(geometry);
-    const MatrixFreeMass operator_(
-      *space, geometry->CreateQuadrature(options.quadrature_options));
-    const int size = operator_.Size();
-    std::vector<std::vector<double>> dense(size);
+TEST_CASE("FunctionSpace::CreateQuadrature is exact for products of two "
+          "functions of the space",
+          "[quadrature]")
+{
+  Omega_h::Library lib;
+  auto mesh = pcms::test::BuildSquareMesh(lib, 3);
+  for (const int order : {0, 1}) {
+    auto geometry =
+      pcms::omega_h::CreateGeometry(mesh, pcms::detail::DeferredCartesian());
+    const auto space = pcms::CreateLagrangeSpace(
+      geometry, order, 1,
+      pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
+    const auto quadrature = space->CreateQuadrature();
+    const auto weights = Kokkos::create_mirror_view_and_copy(
+      pcms::HostMemorySpace{}, quadrature.weights);
     double total = 0;
-    for (int j = 0; j < size; ++j) {
-      std::vector<double> unit(size, 0.0);
-      unit[j] = 1.0;
-      const auto column = operator_.Apply(unit);
-      for (int i = 0; i < size; ++i) {
-        dense[i].resize(size);
-        dense[i][j] = column[i];
-        total += column[i];
-      }
+    for (std::size_t i = 0; i < weights.extent(0); ++i) {
+      total += weights(i);
     }
-    CHECK(total == Catch::Approx(1.0).margin(1e-12)); // 1^T M 1 = area
-    const auto [low, high] = ExtremeEigenvalues(dense);
-    CHECK(low > 0);
-    std::printf("[conditioning] P1 mass, %dx%d square, %d unknowns: "
-                "lambda_min = %.3e, lambda_max = %.3e, cond = %.2f\n",
-                n, n, size, low, high, high / low);
-    // CG iterations on a random right-hand side
-    std::vector<double> rhs(size, 1.0), solution;
-    std::mt19937 rng(5);
-    std::uniform_real_distribution<double> uniform(-1.0, 1.0);
-    for (auto& v : rhs) {
-      v = uniform(rng);
-    }
-    const int cg = ConjugateGradients(
-      [&](const std::vector<double>& v) { return operator_.Apply(v); }, rhs,
-      solution, 1e-10);
-    std::printf("[conditioning]   CG iterations to 1e-10 = %d\n", cg);
-  }
-
-  // the monomial basis x^a y^b, a + b <= p, on the reference triangle:
-  // M = int x^(a+c) y^(b+d) = (a+c)! (b+d)! / (a+b+c+d+2)!
-  for (const int degree : {1, 2, 3, 4, 5}) {
-    std::vector<std::pair<int, int>> basis;
-    for (int a = 0; a <= degree; ++a) {
-      for (int b = 0; a + b <= degree; ++b) {
-        basis.emplace_back(a, b);
-      }
-    }
-    std::vector<std::vector<double>> dense(basis.size(),
-                                           std::vector<double>(basis.size()));
-    for (std::size_t i = 0; i < basis.size(); ++i) {
-      for (std::size_t j = 0; j < basis.size(); ++j) {
-        const int a = basis[i].first + basis[j].first;
-        const int c = basis[i].second + basis[j].second;
-        dense[i][j] = Factorial(a) * Factorial(c) / Factorial(a + c + 2);
-      }
-    }
-    const auto [low, high] = ExtremeEigenvalues(dense);
-    std::printf("[conditioning] monomial mass, degree %d on the reference "
-                "triangle (%zu functions): cond = %.3e\n",
-                degree, basis.size(), high / low);
+    CHECK(total == Catch::Approx(1.0).epsilon(1e-13));
   }
 }

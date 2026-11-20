@@ -50,17 +50,22 @@ public:
   ///        points
   /// @param geometry the geometry the space is on: the evaluator source's,
   ///        when there is one
+  /// @param create_quadrature the space's natural quadrature (see
+  ///        CreateQuadrature), or empty for a space that has none. (A
+  ///        component like the others: the space is concrete, not virtual.)
   /// @throws pcms_error if `geometry` is null or is not the evaluator
   ///         source's geometry
   explicit FunctionSpace(
     std::shared_ptr<const FieldLayout> layout,
     std::function<FieldDataVariant(Type, ValueBasis)> create_field_data,
     std::shared_ptr<const PointEvaluatorFactory> evaluator,
-    std::shared_ptr<const Geometry> geometry)
+    std::shared_ptr<const Geometry> geometry,
+    std::function<Quadrature()> create_quadrature = {})
     : layout_(std::move(layout)),
       create_field_data_(std::move(create_field_data)),
       evaluator_(std::move(evaluator)),
-      geometry_(std::move(geometry))
+      geometry_(std::move(geometry)),
+      create_quadrature_(std::move(create_quadrature))
   {
     if (geometry_ == nullptr) {
       throw pcms_error("FunctionSpace: the geometry must not be null");
@@ -88,6 +93,20 @@ public:
   GetCoordinateSystem() const noexcept
   {
     return geometry_->GetCoordinateSystem();
+  }
+
+  /// @brief The natural quadrature of the space: points bound on its geometry
+  ///        and weights that integrate the product of two functions of the
+  ///        space exactly (degree 2p for Lagrange order p; 2N + 1 points for
+  ///        N Fourier modes).
+  /// @throws pcms_error for a space that has none
+  [[nodiscard]] Quadrature CreateQuadrature() const
+  {
+    if (!create_quadrature_) {
+      throw pcms_error("FunctionSpace::CreateQuadrature: this space has no "
+                       "natural quadrature");
+    }
+    return create_quadrature_();
   }
 
   /// @return whether the space's evaluator source supports `op`; for a space
@@ -152,6 +171,7 @@ private:
   std::function<FieldDataVariant(Type, ValueBasis)> create_field_data_;
   std::shared_ptr<const PointEvaluatorFactory> evaluator_;
   std::shared_ptr<const Geometry> geometry_;
+  std::function<Quadrature()> create_quadrature_;
 };
 
 template <typename T>

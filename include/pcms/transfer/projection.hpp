@@ -16,9 +16,33 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 
 namespace pcms
 {
+
+/// How the mass system of a projection is solved.
+struct LinearSolveOptions
+{
+  enum class Method
+  {
+    /// Jacobi-preconditioned conjugate gradients on all components jointly,
+    /// written on the evaluation and the vector operations of the kinds: no
+    /// matrix, no host round trips
+    MatrixFree,
+    /// the matrix E^T W E is assembled from the evaluation matrix into PETSc
+    /// (serial) and solved by a KSP: a direct factorization unless the
+    /// options of `petsc_options_prefix` say otherwise
+    Assembled
+  };
+  Method method = Method::MatrixFree;
+  /// MatrixFree: relative residual to stop at
+  Real relative_tolerance = 1e-12;
+  /// MatrixFree: iteration limit; 0 is the number of unknowns
+  int max_iterations = 0;
+  /// Assembled: the prefix of the PETSc options of the KSP and its PC
+  std::string petsc_options_prefix;
+};
 
 struct ProjectionOptions
 {
@@ -37,7 +61,9 @@ struct ProjectionOptions
   /// right-hand side then estimates: far less variance, and exact for
   /// fields of the target space
   bool control_variate = false;
+  /// Consistent: the mass matrix E^T W E; Lumped: its row sums, a diagonal
   MassMatrixType mass_matrix_type = MassMatrixType::Consistent;
+  LinearSolveOptions solve;
   /// map from the target's coordinate system to the source's, or null if they
   /// are the same; the source is evaluated at the mapped points
   std::shared_ptr<const CoordinateMap> to_source;
@@ -47,13 +73,13 @@ struct ProjectionOptions
 /// the mass system M x = b with b = E^T W f, where E evaluates the target
 /// space at the points of a quadrature, W holds its weights and f is the
 /// source at the points (through PointEvaluator::EvaluateTranspose). The
-/// target space must be a Lagrange space on an Omega_h discretization (the
-/// mass matrix and the solve are Omega_h's); a field with several components
-/// is projected component by component. The operator holds `source` and
-/// `target_space`.
+/// mass matrix M = E^T W E takes the target space's natural quadrature
+/// (FunctionSpace::CreateQuadrature), and is exact for it. A field with several
+/// components is projected jointly (the components do not couple). The
+/// operator holds `source` and `target_space`.
 /// @throws pcms_error if `source` or `target_space` is null, the source has no
 ///         geometry, or the target space's evaluator does not support the
-///         transpose
+///         transpose or has no natural quadrature
 std::unique_ptr<TransferOperator<Real>> CreateProjection(
   std::shared_ptr<const PointEvaluatorFactory> source,
   std::shared_ptr<const FunctionSpace> target_space,

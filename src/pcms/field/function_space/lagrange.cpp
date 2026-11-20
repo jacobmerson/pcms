@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "pcms/field/function_spaces.hpp"
 #include "pcms/configuration.hpp"
 #include "pcms/utility/assert.hpp"
@@ -119,7 +120,11 @@ std::shared_ptr<const FunctionSpace> CreateOmegaHLagrangeSpace(
                          "supports the MeshFields scalar types enabled in "
                          "this build");
       },
-      eval_factory, eval_factory->GetGeometry());
+      eval_factory, eval_factory->GetGeometry(),
+      [geometry = eval_factory->GetGeometry(), order]() {
+        return geometry->CreateQuadrature(
+          QuadratureOptions{.order = std::max(1, 2 * order)});
+      });
 #endif
   }
   auto layout = std::make_shared<OmegaHLagrangeLayout>(
@@ -138,7 +143,12 @@ std::shared_ptr<const FunctionSpace> CreateOmegaHLagrangeSpace(
         }
       });
     },
-    eval_factory, eval_factory->GetGeometry());
+    eval_factory, eval_factory->GetGeometry(),
+    // the product of two functions of order p has degree 2p (the rules start at
+    // order 1, which is exact for the constants of order 0)
+    [geometry = eval_factory->GetGeometry(), order]() {
+      return geometry->CreateQuadrature(QuadratureOptions{.order = std::max(1, 2 * order)});
+    });
 }
 
 #endif // PCMS_ENABLE_OMEGA_H
