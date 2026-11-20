@@ -202,6 +202,11 @@ build without PETSc and MeshFields.
   whose support search is the geometry's.
 - `MonteCarloSampling` is removed: the control-variate projection samples
   uniformly at random.
+- A scalar (a rank-0 `ValueKind::Tensor`, the default `ValueBasis`) has one
+  component. A field of a space with several components that are not the
+  components of a vector or tensor takes `ValueBasis{.kind =
+  ValueKind::Array}` (never transformed); Python: `create_function(...,
+  kind=pcms.ValueKind.Array)`.
 
 EQDSK moved to `pcms/eqdsk/eqdsk.hpp` (no longer included by
 `pcms/pcms.hpp`; it is expected to move to FusionIO 2.0) together with
