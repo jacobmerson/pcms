@@ -272,7 +272,7 @@ KOKKOS_INLINE_FUNCTION Real SimplexDeterminant(const Real (&j)[Dim][Dim])
 /// Per-element Jacobian rows J_i = x_{i+1} - x_0 of the affine simplex map
 /// and its determinant.
 template <int Dim>
-DifferentialView SimplexDifferential(Omega_h::Mesh& mesh)
+CellJacobians SimplexJacobians(Omega_h::Mesh& mesh)
 {
   const LO nelems = mesh.nelems();
   Kokkos::View<Real***, DeviceMemorySpace> jacobian("omega_h_jacobian", nelems,
@@ -282,7 +282,7 @@ DifferentialView SimplexDifferential(Omega_h::Mesh& mesh)
   const auto elem_verts = mesh.ask_elem_verts();
   const auto coords = mesh.coords();
   Kokkos::parallel_for(
-    "OmegaHGeometry::Differential",
+    "OmegaHGeometry::CellJacobian",
     Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, nelems),
     KOKKOS_LAMBDA(const LO e) {
       const LO v0 = elem_verts[e * (Dim + 1)];
@@ -296,22 +296,18 @@ DifferentialView SimplexDifferential(Omega_h::Mesh& mesh)
       }
       determinant(e) = SimplexDeterminant<Dim>(j);
     });
-  return DifferentialView{jacobian, determinant, /*per_element=*/true};
+  return CellJacobians{jacobian, determinant};
 }
 
 } // namespace
 
-DifferentialView OmegaHGeometry::Differential(const BoundPoints& bound) const
+CellJacobians OmegaHGeometry::CellJacobian() const
 {
-  if (bound.GetGeometry().get() != this) {
-    throw pcms_error(
-      "Differential: the BoundPoints belongs to another geometry");
-  }
-  std::call_once(differential_once_, [this] {
-    differential_ = mesh_.dim() == 2 ? SimplexDifferential<2>(mesh_)
-                                     : SimplexDifferential<3>(mesh_);
+  std::call_once(jacobian_once_, [this] {
+    cell_jacobians_ = mesh_.dim() == 2 ? SimplexJacobians<2>(mesh_)
+                                       : SimplexJacobians<3>(mesh_);
   });
-  return differential_;
+  return cell_jacobians_;
 }
 
 } // namespace pcms::omega_h

@@ -230,7 +230,7 @@ again. `EvaluationRequest` and its `From*` factories are removed, and so is
 | (none) | `source.CreatePointEvaluator<T>(bound, DifferentialOperator::Gradient)`; `Gradient(source)`, `Divergence(source)`, `Curl(source)` are sources whose evaluators write the operator applied to the field (`pcms/field/gradient_source.hpp`, public); `Supports(op)` tells which a source implements |
 | (none) | `geometry->Bind(coords, OwnerHints{...}, policy, map)`: points whose owners are known (generated in the elements of the geometry) skip the search; `geometry->Rebind(previous, coords)` recycles the storage of a BoundPoints nothing else holds |
 | (none) | `QueryPoints query(geometry, policy, map); query.Locate(coords); query.Evaluate(function, out, op)`: evaluation at points that move between calls; `Evaluate(function, points, out, op, policy, map)` (`pcms/field/query_points.hpp`) does one evaluation |
-| (none) | `geometry->Neighbourhood(coords, NeighbourhoodOptions, owners)`: the supports of reconstruction spaces; `geometry->Differential(bound)`: the Jacobian at the bound points |
+| (none) | `geometry->Neighbourhood(coords, NeighbourhoodOptions, owners)`: the supports of reconstruction spaces. The Jacobian, metric and volume factor at bound points are internal to the library (there is no public `Differential`) |
 
 A `PointEvaluatorFactory` implemented outside PCMS implements
 `GetGeometry()`, `Supports(op)` and `CreatePointEvaluatorImpl(type, bound,
@@ -339,7 +339,7 @@ Notes for code written against 0.3 internals, such as open pull requests:
   lines.
 - Extending PCMS: the types a public signature or a protected hook names stay
   public (`PointEvaluator`, `PointEvaluatorFactory`, `BindRequest`,
-  `DifferentialView`, `SupportResults`, `OwnerHints`, `DOFHolderOwners`,
+  `SupportResults`, `OwnerHints`, `DOFHolderOwners`,
   `FieldData`, `DOFAccess`, `FieldFactory`, `CreateEmptyLayout`, the
   `FunctionSpace` constructor). The concrete helpers moved to `pcms::detail`
   (`SimpleFieldData`, `PointCloudLayout`, the backends' BoundPoints and

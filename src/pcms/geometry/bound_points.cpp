@@ -148,4 +148,30 @@ void BoundPoints::SetFound(Kokkos::View<const bool*, DeviceMemorySpace> found)
   num_found_ = num_found;
 }
 
+detail::GeometricFactors BoundPoints::Factors(FactorsKey) const
+{
+  return detail::ChartFactors(*geometry_->GetCoordinateSystem(),
+                              LocatedPointValues());
+}
+
+detail::GeometricFactors detail::ChartFactors(
+  const CoordinateSystem& chart,
+  Kokkos::View<const Real**, DeviceMemorySpace> points)
+{
+  if (!chart.HasMetric()) {
+    throw pcms_error("BoundPoints: the geometric factors need a metric; the "
+                     "chart '" +
+                     std::string(chart.Kind()) + "' has none");
+  }
+  const int dim = chart.Dimension();
+  Kokkos::View<Real***, DeviceMemorySpace> identity("identity_jacobian", 1, dim,
+                                                    dim);
+  Kokkos::parallel_for(
+    "identity_jacobian",
+    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, dim),
+    KOKKOS_LAMBDA(const int i) { identity(0, i, i) = 1.0; });
+  return GeometricFactors(static_cast<LO>(points.extent(0)), identity,
+                          chart.Bind(MakeConstRank2View(points)));
+}
+
 } // namespace pcms

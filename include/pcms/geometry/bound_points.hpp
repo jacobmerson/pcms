@@ -149,6 +149,26 @@ public:
                            Kokkos::make_pair(num_found_, num_points_));
   }
 
+  /// @brief Passkey of Factors: its constructor is protected, and the
+  ///        library (detail::GeometricFactorsAccess) derives the type that
+  ///        creates it.
+  class FactorsKey
+  {
+  protected:
+    FactorsKey() = default;
+  };
+
+  /// @brief The geometric factors at the points: J (parameter coordinates
+  ///        to the chart), the metric and the volume factor; library-internal
+  ///        through the key.
+  ///
+  /// The default is the chart's: J = I and the closed-form metric of the
+  /// geometry's coordinate system at LocatedPointValues(). A kind whose
+  /// points carry parameter coordinates of their own (an embedded geometry,
+  /// a product) overrides it.
+  /// @throws pcms_error if the geometry's chart has no metric (default)
+  [[nodiscard]] virtual detail::GeometricFactors Factors(FactorsKey) const;
+
   /// @brief Passkey of Rebind: its constructor is protected, and only
   ///        Geometry derives the type that creates it.
   class RebindKey
