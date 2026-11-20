@@ -74,7 +74,11 @@ public:
 
   /// @return whether the metric is the identity at every point, so that no
   ///         per-point data is needed and physical and natural components
-  ///         coincide
+  ///         coincide. (BoundCoordinateSystem already supports a constant
+  ///         non-identity metric, e.g. diag(scale^2) of a scaled Euclidean
+  ///         axis; a system with one needs its own "identity" query, which
+  ///         HasIdentityMetric, DerivedComponentScaling and the L2 vector
+  ///         check would use in place of this one.)
   [[nodiscard]] virtual bool IsConstantMetric() const noexcept = 0;
 
   /// @return the period of coordinate `axis` if the system is periodic along
