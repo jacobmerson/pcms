@@ -1,7 +1,10 @@
 #include "pcms/utility/assert.hpp"
+#include "pcms/configuration.hpp"
 #include "pcms/utility/detail/print.hpp"
 
+#ifdef PCMS_ENABLE_MPI
 #include <mpi.h>
+#endif
 
 #include <cstdlib>
 
@@ -18,6 +21,7 @@ void Pcms_Assert_Fail(const char* msg)
 void AssertFail(const char* cond, const char* file, int line, const char* msg)
 {
   int rank = -1;
+#ifdef PCMS_ENABLE_MPI
   int initialized = 0;
   int finalized = 0;
   MPI_Initialized(&initialized);
@@ -25,6 +29,7 @@ void AssertFail(const char* cond, const char* file, int line, const char* msg)
   if (initialized != 0 && finalized == 0) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   }
+#endif
   AssertFailOnRank(cond, file, line, rank, msg);
 }
 

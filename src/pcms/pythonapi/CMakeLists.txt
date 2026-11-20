@@ -15,7 +15,10 @@ pybind11_add_module(pcms
   bind_point_cloud.cpp
 )
 target_compile_features(pcms PUBLIC cxx_std_20)
-target_link_libraries(pcms PRIVATE Kokkos::kokkos pybind11::module MPI::MPI_CXX pcms::transfer)
+target_link_libraries(pcms PRIVATE Kokkos::kokkos pybind11::module pcms::transfer)
+if(PCMS_ENABLE_MPI)
+  target_link_libraries(pcms PRIVATE MPI::MPI_CXX)
+endif()
 
 # each backend's bindings are compiled only when the backend is built
 if(PCMS_ENABLE_OMEGA_H)

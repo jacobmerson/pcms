@@ -22,7 +22,6 @@ set(
         check.hpp
         mesh_geometry.hpp
         ../../../include/pcms/utility/memory_spaces.hpp
-        mpi_type.hpp
         omega_h_array_utils.hpp
         ../../../include/pcms/utility/types.hpp
         array_mask.hpp
@@ -57,7 +56,7 @@ if(PCMS_ENABLE_MPI)
     # MPI communicators; MPI is not part of the installed interface (code that
     # includes pcms/utility/mpi.hpp links MPI itself), but the in-tree
     # interface carries it so that header can be compiled on its own
-    target_sources(pcms_utility PRIVATE mpi_communicator.cpp)
+    target_sources(pcms_utility PRIVATE mpi_communicator.cpp mpi_type.hpp)
     target_link_libraries(pcms_utility PRIVATE MPI::MPI_CXX)
     target_link_libraries(pcms_utility PUBLIC $<BUILD_INTERFACE:MPI::MPI_CXX>)
     list(APPEND PCMS_UTILITY_HEADERS

@@ -19,7 +19,7 @@
 // initialized. The forms that take a communicator, PCMS_ALWAYS_ASSERT(cond,
 // comm) and PCMS_ALWAYS_ASSERT(cond, comm, msg), are for code that uses MPI:
 // they expand to MPI_Comm_rank, so the caller includes <mpi.h> (this header
-// does not).
+// does not); they are not available without PCMS_ENABLE_MPI.
 #define PCMS_ALWAYS_ASSERT_1(pcms_macro_cond)                                  \
   /* NOLINTBEGIN(cppcoreguidelines-avoid-do-while) */                          \
   do {                                                                         \

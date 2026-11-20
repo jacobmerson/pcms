@@ -1,5 +1,7 @@
 #include "pcms/configuration.hpp"
+#ifdef PCMS_ENABLE_MPI
 #include <mpi.h>
+#endif
 #include "pcms/utility/assert.hpp"
 #include <Kokkos_Core.hpp>
 #if defined(PCMS_ENABLE_CONSERVATIVE_PROJECTION)
@@ -11,7 +13,9 @@ namespace pcms
 
 namespace
 {
+#ifdef PCMS_ENABLE_MPI
 bool g_py_owns_mpi = false;
+#endif
 bool g_py_owns_kokkos = false;
 bool g_py_owns_petsc = false;
 } // namespace
@@ -21,6 +25,7 @@ bool g_py_owns_petsc = false;
 // records ownership so finalize() only tears down what this module started.
 void initialize()
 {
+#ifdef PCMS_ENABLE_MPI
   int is_initialized = 0;
   MPI_Initialized(&is_initialized);
   if (!is_initialized) {
@@ -29,6 +34,7 @@ void initialize()
     }
     g_py_owns_mpi = true;
   }
+#endif
   if (!Kokkos::is_initialized()) {
     Kokkos::initialize();
     g_py_owns_kokkos = true;
@@ -61,12 +67,14 @@ void finalize()
     Kokkos::finalize();
     g_py_owns_kokkos = false;
   }
+#ifdef PCMS_ENABLE_MPI
   int is_finalized = 0;
   MPI_Finalized(&is_finalized);
   if (g_py_owns_mpi && !is_finalized) {
     MPI_Finalize();
     g_py_owns_mpi = false;
   }
+#endif
 }
 
 } // namespace pcms

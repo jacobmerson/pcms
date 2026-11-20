@@ -12,9 +12,9 @@ if(@PCMS_ENABLE_COUPLER@)
     find_dependency(redev CONFIG)
     find_dependency(ADIOS2 CONFIG)
 endif()
-# MPI is public for the coupler and the C/Fortran APIs, private otherwise
-if(@PCMS_ENABLE_COUPLER@ OR @PCMS_ENABLE_C@ OR @PCMS_ENABLE_FORTRAN@
-   OR NOT @PCMS_BUILD_SHARED@)
+# MPI (a build with PCMS_ENABLE_MPI) is what code that includes
+# pcms/utility/mpi.hpp, the coupler and the C/Fortran APIs link
+if(@PCMS_ENABLE_MPI@)
     find_dependency(MPI)
 endif()
 if(@PCMS_ENABLE_OMEGA_H@)

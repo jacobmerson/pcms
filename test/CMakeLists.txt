@@ -428,6 +428,7 @@ if(Catch2_FOUND)
       unit_test_main.cpp
       test_bounding_box.cpp
       test_communicator.cpp
+      test_coordinate_transformation.cpp
       test_error_handling.cpp
       test_spline_interpolator.cpp
       test_derivatives.cpp)
@@ -457,7 +458,6 @@ if(Catch2_FOUND)
     list(
       APPEND
       PCMS_UNIT_TEST_SOURCES
-      test_coordinate_transformation.cpp
             test_eqdsk.cpp
       test_uniform_grid.cpp
       test_field_evaluation.cpp
@@ -515,7 +515,10 @@ if(Catch2_FOUND)
   endif()
 
   target_link_libraries(unit_tests PUBLIC Catch2::Catch2 pcms::pcms
-          pcms::transfer MPI::MPI_CXX)
+          pcms::transfer)
+  if(PCMS_ENABLE_MPI)
+    target_link_libraries(unit_tests PUBLIC MPI::MPI_CXX)
+  endif()
   if(PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION)
     # test_svd_serial uses KokkosBatched directly
     target_link_libraries(unit_tests PUBLIC Kokkos::kokkoskernels)

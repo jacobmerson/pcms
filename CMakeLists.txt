@@ -58,7 +58,9 @@ endif()
 # only Kokkos and MPI (see the presets in CMakePresets.json). Each flag names
 # the backend namespace or feature it builds (pcms::omega_h, pcms.omega_h in
 # Python, PCMS_ENABLE_OMEGA_H in pcms/configuration.hpp, ...).
-option(PCMS_ENABLE_MPI "MPI: pcms/utility/mpi.hpp and the capabilities that need it" ON)
+option(PCMS_ENABLE_MPI
+       "MPI (pcms/utility/mpi.hpp); OFF builds the core without MPI, see pcms_require below"
+       ON)
 option(PCMS_ENABLE_OMEGA_H "Omega_h backend (needs Omega_h)" OFF)
 option(PCMS_ENABLE_OMEGA_H_MESHFIELDS
        "MeshFields Lagrange spaces on Omega_h meshes (needs OMEGA_H, MeshFields)" OFF)
@@ -92,6 +94,15 @@ function(pcms_require capability prerequisite)
                         "configure with -DPCMS_ENABLE_${prerequisite}=ON.")
   endif()
 endfunction()
+# Without MPI the core (geometries, spaces, transfers, the point cloud, uniform
+# grid and spline backends) builds; what communicates between processes does
+# not.
+pcms_require(COUPLER MPI)
+pcms_require(XGC MPI)
+pcms_require(C MPI)
+pcms_require(FORTRAN MPI)
+pcms_require(CONSERVATIVE_PROJECTION MPI) # PETSc
+pcms_require(MFEM MPI)
 pcms_require(OMEGA_H_MESHFIELDS OMEGA_H)
 pcms_require(CONSERVATIVE_PROJECTION OMEGA_H_MESHFIELDS)
 pcms_require(XGC OMEGA_H)
@@ -166,8 +177,13 @@ if(PCMS_ENABLE_FORTRAN)
   enable_language(Fortran)
 endif()
 
-set(MPI_CXX_SKIP_MPICXX ON)
-find_package(MPI REQUIRED)
+if(PCMS_ENABLE_MPI)
+  set(MPI_CXX_SKIP_MPICXX ON)
+  find_package(MPI REQUIRED)
+else()
+  message(STATUS "PCMS_ENABLE_MPI is OFF: building without MPI (no coupler, "
+                 "XGC, C and Fortran APIs, MFEM or conservative projection)")
+endif()
 
 # Create the run-clang-tidy target here (after find_package(MPI)) so we can
 # forward any MPI include paths that are missing from compile_commands.json.
@@ -177,8 +193,11 @@ find_package(MPI REQUIRED)
 if(PROJECT_IS_TOP_LEVEL)
   if(PCMS_ENABLE_CLANG_TIDY)
     set(_clang_tidy_extra_args "")
-    get_target_property(_mpi_cxx_incs MPI::MPI_CXX INTERFACE_INCLUDE_DIRECTORIES)
-    if(NOT _mpi_cxx_incs)
+    if(PCMS_ENABLE_MPI)
+      get_target_property(_mpi_cxx_incs MPI::MPI_CXX
+                          INTERFACE_INCLUDE_DIRECTORIES)
+    endif()
+    if(PCMS_ENABLE_MPI AND NOT _mpi_cxx_incs)
       execute_process(
         COMMAND ${MPI_CXX_COMPILER} -show
         OUTPUT_VARIABLE _mpi_show
@@ -213,8 +232,15 @@ if(PCMS_ENABLE_OMEGA_H)
   pcms_find_package(OMEGA_H Omega_h)
   message(
     STATUS "Found Omega_h: ${Omega_h_DIR} (found version ${Omega_h_VERSION})")
-  if(NOT Omega_h_USE_MPI)
-    message(FATAL_ERROR "Omega_h must be built with MPI enabled.")
+  if(PCMS_ENABLE_MPI AND NOT Omega_h_USE_MPI)
+    message(FATAL_ERROR "With PCMS_ENABLE_MPI, Omega_h must be built with MPI "
+                        "enabled.")
+  endif()
+  if(NOT PCMS_ENABLE_MPI AND Omega_h_USE_MPI)
+    message(FATAL_ERROR "This Omega_h is built with MPI, so PCMS needs "
+                        "PCMS_ENABLE_MPI=ON with PCMS_ENABLE_OMEGA_H; for a "
+                        "build without MPI use an Omega_h built with "
+                        "Omega_h_USE_MPI=OFF or PCMS_ENABLE_OMEGA_H=OFF.")
   endif()
   if(PCMS_ENABLE_PYTHON AND Omega_h_VERSION VERSION_LESS 11.4)
     message(FATAL_ERROR "PCMS Python with PCMS_ENABLE_OMEGA_H requires "
