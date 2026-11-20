@@ -474,7 +474,8 @@ if(Catch2_FOUND)
       test_evaluation_only_space.cpp
       test_bound_points.cpp
       test_query_points.cpp
-      test_geometry.cpp)
+      test_geometry.cpp
+      test_periodic_geometry.cpp)
   endif()
 
   if(PCMS_ENABLE_OMEGA_H AND PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION)
