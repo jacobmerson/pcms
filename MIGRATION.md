@@ -203,13 +203,15 @@ build without PETSc and MeshFields.
 - `MonteCarloSampling` is removed: the control-variate projection samples
   uniformly at random.
 
-EQDSK moved to `pcms/eqdsk/eqdsk.hpp` (no longer included by
-`pcms/pcms.hpp`; it is expected to move to FusionIO 2.0) together with
-`EQDSKData` (from `pcms/utility/eqdsk.hpp`). `MakeEQDSKField(data)` is
-`CreateEQDSKFunction(data)`, which returns the psi `Function<Real>` (it owns
-its spline space: `GetSpace()`), and `MakeEQDSKField(filename)` is
-`ReadEQDSK(filename)`, which returns `EQDSKFunction {data, psi}`.
-`EQDSKField` and `EQDSKFieldWithData` are removed.
+EQDSK is no longer part of PCMS: file formats belong to Fusion-IO 2
+(`packages/fusionio`), which reads geqdsk files with `fusionio::OpenGeqdsk` (or
+`fusionio::Open(Format::GEQDSK, path, Evaluation::Native)`). The source's
+`CreateFunction(Quantity::PoloidalFlux)` is `2 pi psi`, as Fusion-IO's; the
+file's psi (what `CreateEQDSKFunction` returned) is `PoloidalFlux / (2 pi)`.
+`EQDSKData`, `CreateEQDSKFunction`, `ReadEQDSK`, `MakeEQDSKField`, `EQDSKField`
+and `EQDSKFieldWithData` are removed; I(psi) is the profile
+`GeqdskProfile::PoloidalCurrent`, a cubic spline of psi on `[psi_axis,
+psi_lcfs]`.
 
 `UniformGrid::ClosestCellID` and `IsPointInBounds` accept any point type
 indexable with `[i]` (`Kokkos::Array`, a subview, `Omega_h::Vector`).

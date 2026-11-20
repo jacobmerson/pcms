@@ -12,8 +12,8 @@
 #include <fusionio/fusionio.hpp>
 #include "fusion_io_space.hpp"
 #include "fusion_io_source.hpp"
+#include "geqdsk_reader.hpp"
 #include <pcms/transfer/interpolator.hpp>
-#include <pcms/eqdsk/eqdsk.hpp>
 #include "test_utils.hpp"
 #include <algorithm>
 #include <cmath>
@@ -63,16 +63,19 @@ TEST_CASE("Fusion-IO geqdsk poloidal flux matches the grid values")
   const auto psi = fusionio::Open(fusionio::Format::GEQDSK, GeqdskFile)
                      ->CreateFunction(fusionio::Quantity::PoloidalFlux);
 
-  // Fusion-IO's interpolant reproduces the grid values (read here by PCMS's
-  // own reader) at the grid nodes, and phi must not matter.
-  const pcms::EQDSKData eqdsk(GeqdskFile);
+  // Fusion-IO's interpolant reproduces the grid values (read here by
+  // Fusion-IO 2's own reader) at the grid nodes, and phi must not matter.
+  const auto eqdsk = fusionio::detail::ReadGeqdsk(GeqdskFile);
+  const Real dr = eqdsk.rdim / (eqdsk.nw - 1);
+  const Real dz = eqdsk.zdim / (eqdsk.nh - 1);
   std::vector<Real> points;
   std::vector<Real> expected;
-  for (int i : {eqdsk.GetNW() / 3, eqdsk.GetNW() / 2}) {
-    for (int j : {eqdsk.GetNH() / 3, eqdsk.GetNH() / 2}) {
+  for (int i : {eqdsk.nw / 3, eqdsk.nw / 2}) {
+    for (int j : {eqdsk.nh / 3, eqdsk.nh / 2}) {
       for (Real phi : {0.0, 1.3}) {
-        points.insert(points.end(), {eqdsk.GetR(i), phi, eqdsk.GetZ(j)});
-        expected.push_back(TwoPi * eqdsk.GetPsi(i, j));
+        points.insert(points.end(), {eqdsk.rleft + i * dr, phi,
+                                     eqdsk.zmid - eqdsk.zdim / 2 + j * dz});
+        expected.push_back(TwoPi * eqdsk.psirz[i + j * eqdsk.nw]);
       }
     }
   }
