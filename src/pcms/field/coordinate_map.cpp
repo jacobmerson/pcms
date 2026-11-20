@@ -166,7 +166,7 @@ std::shared_ptr<const CoordinateMap> CreateCylindricalToCartesian()
                              CylindricalToCartesianKernel{});
 }
 
-std::shared_ptr<const CoordinateMap> CreatePoloidalPlaneEmbedding(Real theta0)
+std::shared_ptr<const CoordinateMap> CreatePoloidalPlaneInsertion(Real theta0)
 {
   return CreateCoordinateMap(csys::CreateCylindricalRZ(),
                              csys::CreateCylindricalRThetaZ(),

@@ -202,7 +202,7 @@ TEST_CASE("Evaluation-only space interpolates onto a poloidal plane")
   const auto target_layout = target->GetLayout();
   const auto on_plane = source->GetGeometry()->Bind(
     target_layout->GetDOFHolderCoordinates(), pcms::OutOfBoundsPolicy{},
-    pcms::CreatePoloidalPlaneEmbedding(theta0));
+    pcms::CreatePoloidalPlaneInsertion(theta0));
   const auto interpolator =
     pcms::CreateInterpolator<Real>(source, target, on_plane);
 
