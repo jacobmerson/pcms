@@ -319,17 +319,10 @@ Function<Real> CreateSplineFunction(const FunctionSpace& space,
                                     const std::string& name,
                                     const std::vector<Real>& values)
 {
-  Kokkos::View<Real*, HostMemorySpace> host(
-    Kokkos::view_alloc(Kokkos::WithoutInitializing, "geqdsk_values"),
-    values.size());
-  std::copy(values.begin(), values.end(), host.data());
-  Kokkos::View<Real*, DeviceMemorySpace> device(
-    Kokkos::view_alloc(Kokkos::WithoutInitializing, "geqdsk_values"),
-    values.size());
-  Kokkos::deep_copy(device, host);
   auto function = space.CreateFunction<Real>(name);
-  function.SetDOFHolderDataUnchecked(
-    Rank2View<const Real, DeviceMemorySpace>(device.data(), values.size(), 1));
+  function.SetDOFHolderDataHost(ValueView<const Real, HostMemorySpace>(
+    function.GetData().GetValueBasis(),
+    Rank2View<const Real, HostMemorySpace>(values.data(), values.size(), 1)));
   return function;
 }
 
