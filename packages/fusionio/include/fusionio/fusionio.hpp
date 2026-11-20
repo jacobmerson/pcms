@@ -182,6 +182,12 @@ enum class Evaluation
   /// the magnetic field are evaluated at (R, phi, Z) points, as with
   /// FusionIO. CreateFunction throws for the quantities and options it does
   /// not evaluate natively.
+  ///
+  /// geqdsk files are also read natively (see OpenGeqdsk, geqdsk.hpp, which
+  /// returns the source with the file's profiles and curves): the flux,
+  /// normalized flux, pressure and magnetic field, from the grid by cubic
+  /// splines rather than 1.x's bicubic interpolation. This needs neither
+  /// Fusion-IO 1.x nor Omega_h.
   Native
 };
 

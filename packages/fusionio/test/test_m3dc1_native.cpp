@@ -460,11 +460,6 @@ TEST_CASE("Native M3D-C1 points outside the domain")
 
 TEST_CASE("Native M3D-C1 sources refuse what they do not evaluate")
 {
-  REQUIRE_THROWS_WITH(fusionio::Open(fusionio::Format::GEQDSK,
-                                     std::string(FUSIONIO_TEST_DATA_DIR) +
-                                       "/geqdsk/g158115.04701",
-                                     fusionio::Evaluation::Native),
-                      ContainsSubstring("only M3D-C1"));
   const auto native = fusionio::Open(fusionio::Format::M3DC1, M3DC1File,
                                      fusionio::Evaluation::Native);
   REQUIRE_THROWS_WITH(

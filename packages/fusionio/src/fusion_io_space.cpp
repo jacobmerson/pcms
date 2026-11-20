@@ -1,4 +1,5 @@
 #include "fusion_io_space.hpp"
+#include "fusionio/geqdsk.hpp"
 #include "fusion_io_source.hpp"
 #include "host_evaluation.hpp"
 #ifdef FUSIONIO_ENABLE_NATIVE
@@ -587,6 +588,10 @@ namespace fusionio
 std::shared_ptr<Source> Open(Format format, const std::string& path,
                              Evaluation evaluation)
 {
+  // read and evaluated by Fusion-IO 2 alone
+  if (format == Format::GEQDSK && evaluation == Evaluation::Native) {
+    return OpenGeqdsk(path);
+  }
   auto source = detail::OpenFusionIOSource(format, path);
   auto wrapped = std::make_shared<detail::FusionIOFileSource>(source);
   if (evaluation == Evaluation::FusionIO) {
@@ -595,7 +600,7 @@ std::shared_ptr<Source> Open(Format format, const std::string& path,
 #ifdef FUSIONIO_ENABLE_NATIVE
   if (format != Format::M3DC1) {
     throw pcms::pcms_error(
-      "fusionio::Open: only M3D-C1 sources are evaluated natively");
+      "fusionio::Open: only M3D-C1 and geqdsk sources are evaluated natively");
   }
   return detail::CreateM3DC1NativeSource(std::move(source), std::move(wrapped));
 #else

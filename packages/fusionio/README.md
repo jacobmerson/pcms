@@ -73,6 +73,28 @@ round at `samples`. The overload with a `MarkerSink` hands each round's markers
 to the caller instead (`gnet2gtc --stream` writes them to the file), so memory
 does not grow with `samples`.
 
+## geqdsk (native)
+
+`include/fusionio/geqdsk.hpp` (always built, no Fusion-IO 1.x or Omega_h):
+`OpenGeqdsk(path)`, or `Open(Format::GEQDSK, path, Evaluation::Native)`, reads
+a geqdsk file and evaluates it with PCMS: psi as a bicubic spline (not-a-knot)
+of the file's uniform (R, Z) grid, and F, p and q as cubic splines in psi on
+the file's uniform grid from the axis to the boundary. The quantities are
+1.x's: `PoloidalFlux` (2 pi psi), `PoloidalFluxNorm`, `TotalPressure` and
+`MagneticField` (B = F grad(phi) + grad(phi) x grad(psi): B_R = psi_Z / R,
+B_phi = F / R, B_Z = -psi_R / R), with the gradient of the two fluxes; the
+profiles are constant beyond their ends, as in 1.x. The magnetic field is one
+fused evaluation (the spline's gradient and F(psi)), not a composition of
+functions. `GeqdskSource` adds the file's plasma boundary and limiter as
+`Polyline`s of (R, Z) and the profiles as 1D functions of psi
+(`CreateProfile`). Differences from the 1.x geqdsk source: psi and the
+profiles are cubic splines of the file's values (1.x interpolates psi
+and the profiles by cubic Lagrange interpolation of the nearest values; against
+a sixth-order Lagrange reference the splines' median errors on the example
+file are about a sixth of 1.x's), the whole
+grid is the domain (1.x excludes its outermost two cells), `BoundingBox()` is
+the grid, the current density is not provided, and no option is accepted.
+
 ## GNET
 
 With `FUSIONIO_ENABLE_GNET`, `include/fusionio/gnet.hpp`:

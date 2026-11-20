@@ -96,7 +96,8 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-add_library(fusionio src/quantity.cpp src/utilities.cpp src/sampling.cpp)
+add_library(fusionio src/quantity.cpp src/utilities.cpp src/sampling.cpp
+                    src/geqdsk_reader.cpp src/geqdsk_source.cpp)
 add_library(fusionio::fusionio ALIAS fusionio)
 target_compile_features(fusionio PUBLIC cxx_std_20)
 target_include_directories(
@@ -106,6 +107,7 @@ target_include_directories(
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(fusionio PUBLIC pcms::pcms)
 set(FUSIONIO_HEADERS include/fusionio/fusionio.hpp
+                     include/fusionio/geqdsk.hpp
                      include/fusionio/sampling.hpp
                      include/fusionio/utilities.hpp)
 if(FUSIONIO_ENABLE_WRAPPED)

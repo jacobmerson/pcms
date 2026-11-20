@@ -7,7 +7,16 @@ set(FUSIONIO_TEST_DATA_DIR "" CACHE PATH "Fusion-IO example data directory")
 # copy of the cylrwtm case (nimrod.in and dump_gs.00000.h5).
 set(FUSIONIO_TEST_NIMROD_DIR "" CACHE PATH "NIMROD case for the NIMROD tests")
 
-set(FUSIONIO_TEST_SOURCES)
+# The analytic geqdsk tests write their own file.
+set(FUSIONIO_TEST_SOURCES test_geqdsk.cpp)
+# The geqdsk file of the example data, read natively (and compared with
+# Fusion-IO 1.x when that is built).
+if(FUSIONIO_TEST_DATA_DIR)
+  list(APPEND FUSIONIO_TEST_SOURCES test_geqdsk_file.cpp)
+  set_source_files_properties(
+    test_geqdsk_file.cpp PROPERTIES COMPILE_DEFINITIONS
+                                    "FUSIONIO_TEST_DATA_DIR=\"${FUSIONIO_TEST_DATA_DIR}\"")
+endif()
 # The tests of the wrapped sources need Fusion-IO 1.x.
 if(FUSIONIO_TEST_DATA_DIR AND FUSIONIO_ENABLE_WRAPPED)
   list(APPEND FUSIONIO_TEST_SOURCES test_fusion_io.cpp test_source.cpp
@@ -57,6 +66,7 @@ if(FUSIONIO_TEST_SOURCES)
   target_link_libraries(fusionio_tests PRIVATE fusionio pcms::transfer
                                                Catch2::Catch2 MPI::MPI_CXX)
   if(FUSIONIO_ENABLE_WRAPPED)
+    target_compile_definitions(fusionio_tests PRIVATE FUSIONIO_ENABLE_WRAPPED)
     target_link_libraries(fusionio_tests PRIVATE fusionio::fusionio_fusionio)
   endif()
   if(FUSIONIO_ENABLE_GNET)
