@@ -68,8 +68,17 @@ void CheckAdjoint(const std::shared_ptr<const pcms::FunctionSpace>& space,
   evaluator.Evaluate(field,
                      pcms::ValueView<pcms::Real, pcms::DeviceMemorySpace>(
                        basis, pcms::MakeRank2View(e_x)));
-  const auto y_device =
-    Kokkos::create_mirror_view_and_copy(pcms::DeviceMemorySpace{}, y);
+  // the device layout is the one ValueView expects (LayoutLeft on a GPU)
+  Device2D y_device("y_device", num_points, num_components);
+  {
+    auto y_mirror = Kokkos::create_mirror_view(y_device);
+    for (int i = 0; i < num_points; ++i) {
+      for (int c = 0; c < num_components; ++c) {
+        y_mirror(i, c) = y(i, c);
+      }
+    }
+    Kokkos::deep_copy(y_device, y_mirror);
+  }
   const pcms::ValueView<const pcms::Real, pcms::DeviceMemorySpace> y_view(
     basis, pcms::MakeConstRank2View(y_device));
 
