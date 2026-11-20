@@ -202,7 +202,7 @@ TEST_CASE("Evaluation-only space interpolates onto a poloidal plane")
   const auto target_layout = target->GetLayout();
   const auto on_plane = source->GetGeometry()->Bind(
     target_layout->GetDOFHolderCoordinates(), pcms::OutOfBoundsPolicy{},
-    pcms::CreatePoloidalPlaneEmbedding(theta0));
+    pcms::CreatePoloidalPlaneInsertion(theta0));
   const auto interpolator =
     pcms::CreateInterpolator<Real>(source, target, on_plane);
 
@@ -222,7 +222,7 @@ TEST_CASE("Evaluation-only space interpolates onto a poloidal plane")
     }
   }
 
-  // The embedding maps points only, so vector values cannot pass through it.
+  // The insertion maps points only, so vector values cannot pass through it.
   auto evaluator = source->CreatePointEvaluator<Real>(on_plane);
   REQUIRE_THROWS_WITH(
     evaluator->OutputBasis(ValueBasis{pcms::csys::CreateCylindricalRThetaZ(),

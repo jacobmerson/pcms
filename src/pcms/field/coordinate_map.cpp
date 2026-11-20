@@ -259,10 +259,10 @@ protected:
 
 // Places points of a poloidal (R, Z) plane at a fixed toroidal angle:
 // (R, Z) -> (R, theta0, Z).
-class PoloidalPlaneEmbedding final : public CoordinateMap
+class PoloidalPlaneInsertion final : public CoordinateMap
 {
 public:
-  explicit PoloidalPlaneEmbedding(Real theta0)
+  explicit PoloidalPlaneInsertion(Real theta0)
     : CoordinateMap(csys::CreateCylindricalRZ(),
                     csys::CreateCylindricalRThetaZ()),
       theta0_(theta0)
@@ -371,9 +371,9 @@ std::shared_ptr<const CoordinateMap> CreateCylindricalToCartesian()
   return std::make_shared<const CylindricalToCartesian>();
 }
 
-std::shared_ptr<const CoordinateMap> CreatePoloidalPlaneEmbedding(Real theta0)
+std::shared_ptr<const CoordinateMap> CreatePoloidalPlaneInsertion(Real theta0)
 {
-  return std::make_shared<const PoloidalPlaneEmbedding>(theta0);
+  return std::make_shared<const PoloidalPlaneInsertion>(theta0);
 }
 
 } // namespace pcms

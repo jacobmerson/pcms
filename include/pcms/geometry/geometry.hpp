@@ -76,6 +76,32 @@ public:
   [[nodiscard]] virtual const std::shared_ptr<const CoordinateSystem>&
   GetCoordinateSystem() const noexcept = 0;
 
+  /// @return the dimension of the parameter space the cells and DOFs live in
+  ///         (the topological dimension); the coordinate system's dimension
+  ///         unless the kind says otherwise
+  [[nodiscard]] virtual int TopologicalDimension() const noexcept
+  {
+    return GetCoordinateSystem()->Dimension();
+  }
+
+  /// @return the coordinate system of the parameter space, whose coordinates
+  ///         Bind accepts and locates directly, or null if the geometry does
+  ///         not expose it (unstructured meshes keep it internal)
+  [[nodiscard]] virtual std::shared_ptr<const CoordinateSystem>
+  GetParameterSystem() const noexcept
+  {
+    return nullptr;
+  }
+
+  /// @return the map from the parameter system to GetCoordinateSystem() (the
+  ///         geometry's embedding), or null if the geometry does not expose
+  ///         it. Bind inverts it; BoundPoints::Differential is its derivative.
+  [[nodiscard]] virtual std::shared_ptr<const CoordinateMap> GetEmbedding()
+    const noexcept
+  {
+    return nullptr;
+  }
+
   /// @return whether Bind accepts OutOfBoundsMode::NEAREST_BOUNDARY
   [[nodiscard]] virtual bool SupportsNearestBoundary() const noexcept
   {
@@ -84,7 +110,9 @@ public:
 
   /// @brief Localizes physical query points.
   /// @param coords query points, in GetCoordinateSystem() or, with `map`, in
-  ///        its source coordinate system; may be released after
+  ///        its source coordinate system; or, without a map, in
+  ///        GetParameterSystem() when the geometry has one: the points are
+  ///        then located directly, with no search; may be released after
   /// @param policy what to do with points outside the geometry
   /// @param map map from the query coordinate system to GetCoordinateSystem(),
   ///        or null; the points are located at their images, and evaluators
