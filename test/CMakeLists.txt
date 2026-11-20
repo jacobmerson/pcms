@@ -427,6 +427,7 @@ if(Catch2_FOUND)
   set(PCMS_UNIT_TEST_SOURCES
       unit_test_main.cpp
       test_bounding_box.cpp
+      test_communicator.cpp
       test_error_handling.cpp
       test_spline_interpolator.cpp
       test_derivatives.cpp)
@@ -545,6 +546,9 @@ if(Catch2_FOUND)
 
  include(Catch)
    Catch_discover_tests(unit_tests)
+   if(PCMS_ENABLE_MPI AND HOST_NPROC GREATER_EQUAL 2)
+     mpi_test(test_communicator_2p 2 $<TARGET_FILE:unit_tests> "[communicator]")
+   endif()
    add_executable(test_transient_timestepper test_transient_timestepper.cpp)
    target_link_libraries(test_transient_timestepper
            PRIVATE Catch2::Catch2WithMain pcms::transient)

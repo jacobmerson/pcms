@@ -58,6 +58,7 @@ endif()
 # only Kokkos and MPI (see the presets in CMakePresets.json). Each flag names
 # the backend namespace or feature it builds (pcms::omega_h, pcms.omega_h in
 # Python, PCMS_ENABLE_OMEGA_H in pcms/configuration.hpp, ...).
+option(PCMS_ENABLE_MPI "MPI: pcms/utility/mpi.hpp and the capabilities that need it" ON)
 option(PCMS_ENABLE_OMEGA_H "Omega_h backend (needs Omega_h)" OFF)
 option(PCMS_ENABLE_OMEGA_H_MESHFIELDS
        "MeshFields Lagrange spaces on Omega_h meshes (needs OMEGA_H, MeshFields)" OFF)

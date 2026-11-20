@@ -7,6 +7,7 @@ set(
         ../../../include/pcms/utility/coordinate_systems/cylindrical.hpp
         ../../../include/pcms/utility/assert.hpp
         ../../../include/pcms/utility/bounding_box.hpp
+        ../../../include/pcms/utility/communicator.hpp
         ../../../include/pcms/utility/detail/common.hpp
         ../../../include/pcms/utility/detail/array_traits.hpp
         ../../../include/pcms/utility/detail/arrays.hpp
@@ -34,6 +35,7 @@ set(
 set(
         PCMS_UTILITY_SOURCES
         assert.cpp
+        communicator.cpp
         coordinate_system.cpp
         print.cpp
 )
@@ -50,8 +52,17 @@ target_include_directories(
         "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/../..>"
         "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
 target_link_libraries(pcms_utility PUBLIC Kokkos::kokkos)
-# assert.cpp reports the MPI rank; MPI is not part of the public interface
-target_link_libraries(pcms_utility PRIVATE MPI::MPI_CXX)
+if(PCMS_ENABLE_MPI)
+    # assert.cpp reports the MPI rank and mpi_communicator.cpp implements the
+    # MPI communicators; MPI is not part of the installed interface (code that
+    # includes pcms/utility/mpi.hpp links MPI itself), but the in-tree
+    # interface carries it so that header can be compiled on its own
+    target_sources(pcms_utility PRIVATE mpi_communicator.cpp)
+    target_link_libraries(pcms_utility PRIVATE MPI::MPI_CXX)
+    target_link_libraries(pcms_utility PUBLIC $<BUILD_INTERFACE:MPI::MPI_CXX>)
+    list(APPEND PCMS_UTILITY_HEADERS
+         ../../../include/pcms/utility/mpi.hpp)
+endif()
 if(PCMS_ENABLE_OMEGA_H)
     target_sources(pcms_utility PRIVATE mesh_geometry.cpp)
     target_link_libraries(pcms_utility PRIVATE Omega_h::omega_h)
