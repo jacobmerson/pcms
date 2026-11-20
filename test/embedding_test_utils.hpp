@@ -44,25 +44,45 @@ inline std::shared_ptr<const Geometry> MakeUnitSquareGrid(int divisions)
   return uniform_grid::CreateGeometry(grid, csys::CreateCartesian(2));
 }
 
+/// The position Function of a map xi -> x on `space`, which has one
+/// component per coordinate of the parameter geometry: `map(xi, x)` writes
+/// the components of the image of the parameters xi (both arrays of that
+/// size).
+template <typename Map>
+std::shared_ptr<const Function<Real>> MakePositionFunction(
+  const std::shared_ptr<const FunctionSpace>& space, Map map)
+{
+  auto function = std::make_shared<Function<Real>>(
+    space->CreateFunction<Real>("position", values::Vector));
+  const auto xi = CopyCoordinatesToHost(
+    space->GetLayout()->GetDOFHolderCoordinates().GetValues());
+  const int dim = space->GetLayout()->GetNumComponents();
+  Kokkos::View<Real**, HostMemorySpace> values("position", xi.extent(0), dim);
+  for (size_t i = 0; i < xi.extent(0); ++i) {
+    std::array<Real, 3> parameters = {xi(i, 0), xi(i, 1),
+                                      dim > 2 ? xi(i, 2) : 0.0};
+    std::array<Real, 3> x{};
+    map(parameters.data(), x.data());
+    for (int j = 0; j < dim; ++j) {
+      values(i, j) = x[j];
+    }
+  }
+  function->SetDOFHolderDataHost(ValueView<const Real, HostMemorySpace>(
+    function->GetData().GetValueBasis(), MakeConstRank2View(values)));
+  return function;
+}
+
 /// The spline position Function of a 2D map xi -> position(xi) on `geometry`.
 template <typename Map>
 std::shared_ptr<const Function<Real>> MakeSplinePosition(
   const std::shared_ptr<const Geometry>& geometry, Map position)
 {
-  const auto space = CreateSplineSpace(geometry, 2);
-  auto function = std::make_shared<Function<Real>>(
-    space->CreateFunction<Real>("position", values::Vector));
-  const auto xi = CopyCoordinatesToHost(
-    space->GetLayout()->GetDOFHolderCoordinates().GetValues());
-  Kokkos::View<Real**, HostMemorySpace> values("position", xi.extent(0), 2);
-  for (size_t i = 0; i < xi.extent(0); ++i) {
-    const auto x = position(xi(i, 0), xi(i, 1));
-    values(i, 0) = x[0];
-    values(i, 1) = x[1];
-  }
-  function->SetDOFHolderDataHost(ValueView<const Real, HostMemorySpace>(
-    function->GetData().GetValueBasis(), MakeConstRank2View(values)));
-  return function;
+  return MakePositionFunction(CreateSplineSpace(geometry, 2),
+                              [&](const Real* xi, Real* x) {
+                                const auto image = position(xi[0], xi[1]);
+                                x[0] = image[0];
+                                x[1] = image[1];
+                              });
 }
 
 } // namespace pcms::test
