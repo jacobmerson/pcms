@@ -101,14 +101,17 @@ public:
   /// the same as on one rank (collective), and leaves the functional's data
   /// consistent. The weights of a quadrature are applied to `values` by the
   /// caller: b = E^T (W f).
-  /// @param values one row per query point, one column per component of the
-  ///        layout, tagged with the basis of the functional's data
+  /// @param values shaped and tagged as Evaluate's output for a field with
+  ///        the functional's basis: one row per query point, tagged with
+  ///        OutputBasis of the functional's basis (the basis of its data
+  ///        unless the bind had a coordinate map)
   /// @param functional the field to accumulate into
   /// @throws pcms_error if SupportsTranspose() is false, the operator is not
   ///         Value, `functional` is not of the layout this evaluator accepts
-  ///         or `values` claims another basis than the functional's
+  ///         or `values` claims another basis than OutputBasis of the
+  ///         functional's
   /// @throws std::invalid_argument if `values` is not shaped [NumPoints()]
-  ///         [components]
+  ///         [output components]
   void EvaluateTranspose(
     ValueView<const T, DeviceMemorySpace, LayoutPolicy> values,
     Field<T>& functional) const
@@ -122,15 +125,14 @@ public:
       throw pcms_error("PointEvaluator::EvaluateTranspose: the functional is "
                        "not a field of the layout of this evaluator");
     }
-    detail::CheckWrittenValueBasis("PointEvaluator::EvaluateTranspose",
-                                   values.GetBasis(),
-                                   functional.GetData().GetValueBasis());
+    detail::CheckWrittenValueBasis(
+      "PointEvaluator::EvaluateTranspose", values.GetBasis(),
+      OutputBasis(functional.GetData().GetValueBasis()));
     if (values.extent(0) != static_cast<size_t>(NumPoints()) ||
-        values.extent(1) !=
-          static_cast<size_t>(functional.GetLayout().GetNumComponents())) {
+        values.extent(1) != NumOutputComponents(functional)) {
       throw std::invalid_argument(
         "PointEvaluator::EvaluateTranspose: values must be shaped [query "
-        "points][components of the layout]");
+        "points][output components]");
     }
     EvaluateTransposeImpl(values.GetValues(), functional);
   }
@@ -243,18 +245,13 @@ protected:
   }
 
 private:
-  /// @brief Checks that `values` has one row per query point and one column
-  ///        per component of the basis OutputBasis gives for the field.
-  /// @throws std::invalid_argument otherwise
-  void CheckOutputShape(
-    const Field<T>& field,
-    const ValueView<T, DeviceMemorySpace, LayoutPolicy>& values) const
+  /// @return the number of output components for `field`: per block of its
+  ///         components (one per component of a scalar field, one for a
+  ///         vector or tensor), the components of the basis OutputBasis
+  ///         writes (the operator adds indices, a map can change the
+  ///         dimension)
+  [[nodiscard]] size_t NumOutputComponents(const Field<T>& field) const
   {
-    const auto num_points = static_cast<size_t>(NumPoints());
-    // per block of the field's components (one per component of a scalar
-    // field, one for a vector or tensor), the components of the basis
-    // OutputBasis writes: the operator adds indices, a map can change the
-    // dimension
     const ValueBasis stored = field.GetData().GetValueBasis();
     const ValueBasis written = OutputBasis(stored);
     auto num_components =
@@ -265,6 +262,18 @@ private:
     for (int i = 0; i < written.Rank(); ++i) {
       num_components *= static_cast<size_t>(written.system->Dimension());
     }
+    return num_components;
+  }
+
+  /// @brief Checks that `values` has one row per query point and one column
+  ///        per component of the basis OutputBasis gives for the field.
+  /// @throws std::invalid_argument otherwise
+  void CheckOutputShape(
+    const Field<T>& field,
+    const ValueView<T, DeviceMemorySpace, LayoutPolicy>& values) const
+  {
+    const auto num_points = static_cast<size_t>(NumPoints());
+    const size_t num_components = NumOutputComponents(field);
     if (values.extent(0) != num_points || values.extent(1) != num_components) {
       throw std::invalid_argument(
         "PointEvaluator::Evaluate: the output view is shaped [" +
