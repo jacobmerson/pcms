@@ -20,6 +20,7 @@ set(PCMS_COUPLER_SOURCES
         field_layout_communicator.cpp
         field_exchange_planner.cpp
         kind_uniform_grid.cpp
+        setup.cpp
 )
 if(PCMS_ENABLE_OMEGA_H)
     list(APPEND PCMS_COUPLER_SOURCES kind_omega_h.cpp)

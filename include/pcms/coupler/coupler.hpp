@@ -125,6 +125,38 @@ public:
   FunctionHandle<T> AddFunction(Function<T>&& function,
                                 bool participates = true);
 
+  /// Client: registers `function` to be described to the server by Setup().
+  /// The server rebuilds the function's geometry and space from the
+  /// description and the geometry's data, so it builds no mirror layout and
+  /// the application needs no global ids. Values are exchanged through the
+  /// returned handle once Setup() has run. Every application rank describes
+  /// the same functions in the same order.
+  /// @throws pcms_error on the server or after Setup(), or if the function
+  ///         has no name or a field or function of this application has it
+  template <typename T>
+  FunctionHandle<T> DescribeFunction(Function<T>&& function);
+
+  /// Server: the names of the functions the application must describe;
+  /// Setup() throws if one of them is not described.
+  void Expect(std::vector<std::string> names);
+
+  /// The setup phase of the functions the application describes: the clients
+  /// send their descriptions and geometry data, the server rebuilds each
+  /// geometry, space and function, and both sides build the exchange plans.
+  /// The server's functions belong to this application; get them with
+  /// GetFunction(). Collective over the application's ranks and the server's;
+  /// call it once, outside a send or receive phase.
+  /// @throws pcms_error if called twice or in a phase; on a client if a
+  ///         described function's space is of no kind that can be described;
+  ///         on the server if an expected function is not described
+  void Setup();
+
+  /// A function of this application: one it added or described or, on the
+  /// server after Setup(), one the application described.
+  /// @throws pcms_error if there is no function `name` of value type T
+  template <typename T>
+  [[nodiscard]] FunctionHandle<T> GetFunction(const std::string& name);
+
   void SendField(const std::string& name, Mode mode = Mode::Synchronous)
   {
     PCMS_FUNCTION_TIMER;
@@ -235,6 +267,17 @@ private:
   template <typename T>
   void RegisterFieldCommunicator(Field<T>& field_obj, bool participates);
 
+  void SetupClient();
+  void SetupServer();
+  // Creates the communicators of the described functions: one layout
+  // communicator per space (the layouts of the spaces, in the order of the
+  // description, with their plans) and one field communicator per function
+  // (function_spaces[i] is the space of described_functions_[i]).
+  void AddDescribedCommunicators(
+    const std::vector<std::shared_ptr<const FieldLayout>>& layouts,
+    const std::vector<std::size_t>& function_spaces,
+    std::vector<detail::ExchangePlan> plans);
+
   MPI_Comm mpi_comm_;
   redev::Redev& redev_;
   redev::Channel channel_;
@@ -250,6 +293,11 @@ private:
     field_layout_communicators_;
   std::map<std::string, std::unique_ptr<OverlapMask>> layout_overlap_masks_;
   std::map<std::string, detail::GlobalDataVariant> global_data_interfaces_;
+  // the functions DescribeFunction registered (a client's) or Setup built
+  // (the server's), in the order of the description
+  std::vector<std::string> described_functions_;
+  std::vector<std::string> expected_functions_;
+  bool set_up_ = false;
 };
 
 template <typename T>
@@ -423,6 +471,50 @@ pcms::FieldHandle<T> pcms::ApplicationComm::AddField(Field<T>&& field,
     throw;
   }
   return FieldHandle<T>{this, std::move(name)};
+}
+
+template <typename T>
+pcms::FunctionHandle<T> pcms::ApplicationComm::DescribeFunction(
+  Function<T>&& function)
+{
+  PCMS_FUNCTION_TIMER;
+  if (redev_.GetProcessType() != redev::ProcessType::Client) {
+    throw pcms_error("Application::DescribeFunction: only clients describe "
+                     "functions; the server builds them in Setup()");
+  }
+  if (set_up_) {
+    throw pcms_error("Application::DescribeFunction: called after Setup()");
+  }
+  std::string name = function.GetName();
+  if (name.empty()) {
+    throw pcms_error("Application::DescribeFunction: function has no name");
+  }
+  if (fields_.count(name) != 0) {
+    throw pcms_error("Field with this name already exists");
+  }
+  auto space = function.GetSpacePtr();
+  auto [fn_it, fn_inserted] = functions_.emplace(name, std::move(function));
+  if (!fn_inserted) {
+    throw pcms_error("Field with this name already exists");
+  }
+  described_functions_.push_back(name);
+  return FunctionHandle<T>{this, std::move(name), std::move(space)};
+}
+
+template <typename T>
+pcms::FunctionHandle<T> pcms::ApplicationComm::GetFunction(
+  const std::string& name)
+{
+  auto fn_it = functions_.find(name);
+  if (fn_it == functions_.end()) {
+    throw pcms_error("Function '" + name + "' not found");
+  }
+  auto* function = std::get_if<Function<T>>(&fn_it->second);
+  if (function == nullptr) {
+    throw pcms_error("Function '" + name +
+                     "' stored with different type than requested");
+  }
+  return FunctionHandle<T>{this, name, function->GetSpacePtr()};
 }
 
 template <typename T>
