@@ -1,12 +1,59 @@
 #ifndef PCMS_UTILITY_COORDINATE_SYSTEM_HPP
 #define PCMS_UTILITY_COORDINATE_SYSTEM_HPP
 
+#include "pcms/utility/arrays.hpp"
+#include "pcms/utility/memory_spaces.hpp"
+#include "pcms/utility/types.hpp"
+#include <Kokkos_Core.hpp>
 #include <memory>
+#include <optional>
 #include <string_view>
 
 namespace pcms
 {
 
+/// @brief A coordinate system at a set of points: the metric tensor and the
+///        volume factor there.
+///
+/// Created by CoordinateSystem::Bind. A system whose metric (volume factor)
+/// is the same at every point allocates one entry for all of them and
+/// returns a view with stride 0 along the points.
+class BoundCoordinateSystem
+{
+public:
+  using MetricView =
+    View<3, const Real, DeviceMemorySpace, Kokkos::layout_stride>;
+  using FactorView =
+    View<1, const Real, DeviceMemorySpace, Kokkos::layout_stride>;
+
+  /// @param num_points number of points
+  /// @param metric [points or 1][dimension][dimension]
+  /// @param volume_factor [points or 1]
+  /// An extent of 1 along the points means the same value at every point.
+  BoundCoordinateSystem(
+    LO num_points, Kokkos::View<const Real***, DeviceMemorySpace> metric,
+    Kokkos::View<const Real*, DeviceMemorySpace> volume_factor)
+    : num_points_(num_points),
+      metric_(std::move(metric)),
+      volume_factor_(std::move(volume_factor))
+  {
+  }
+
+  /// @return g(p, i, j) = e_i . e_j, the metric tensor in the coordinate basis
+  [[nodiscard]] MetricView Metric() const noexcept;
+
+  /// @return sqrt(det g)(p), the factor of the physical volume element
+  ///         relative to dx^1 ... dx^n
+  [[nodiscard]] FactorView VolumeFactor() const noexcept;
+
+private:
+  LO num_points_;
+  Kokkos::View<const Real***, DeviceMemorySpace> metric_;
+  Kokkos::View<const Real*, DeviceMemorySpace> volume_factor_;
+};
+
+/// @brief A coordinate system: what its coordinates are, not their values at
+///        points (see Bind).
 class CoordinateSystem
 {
 public:
@@ -14,9 +61,27 @@ public:
 
   [[nodiscard]] virtual int Dimension() const noexcept = 0;
 
-  [[nodiscard]] virtual bool HasOrthogonalBasis() const noexcept = 0;
+  /// @return whether the coordinate basis is orthogonal everywhere (the
+  ///         metric is diagonal)
+  [[nodiscard]] virtual bool IsOrthogonal() const noexcept = 0;
 
-  [[nodiscard]] virtual bool HasUnitScaleFactors() const noexcept = 0;
+  /// @return whether the metric is the identity at every point, so that no
+  ///         per-point data is needed and physical and natural components
+  ///         coincide
+  [[nodiscard]] virtual bool IsConstantMetric() const noexcept = 0;
+
+  /// @return the period of coordinate `axis` if the system is periodic along
+  ///         it (a point and its image a period away are the same point)
+  [[nodiscard]] virtual std::optional<Real> Period(int axis) const noexcept
+  {
+    (void)axis;
+    return std::nullopt;
+  }
+
+  /// @brief The metric and volume factor at points.
+  /// @param points [points][dimension] coordinates in this system
+  [[nodiscard]] virtual std::unique_ptr<BoundCoordinateSystem> Bind(
+    Rank2View<const Real, DeviceMemorySpace> points) const = 0;
 
   [[nodiscard]] virtual bool operator==(
     const CoordinateSystem& other) const noexcept = 0;

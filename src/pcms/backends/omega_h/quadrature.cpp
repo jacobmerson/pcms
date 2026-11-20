@@ -172,7 +172,7 @@ void ScaleByMeasures(const Kokkos::View<Real*, DeviceMemorySpace>& unit,
 Quadrature OmegaHGeometry::CreateQuadrature(
   const QuadratureOptions& options) const
 {
-  detail::CheckCartesianSimplexMesh(*this, "OmegaHGeometry::CreateQuadrature");
+  detail::CheckSimplexMesh(*this, "OmegaHGeometry::CreateQuadrature");
   const int dim = mesh_.dim();
   const bool random = options.samples_per_cell > 0;
   if (!random && options.order < 1) {
@@ -238,6 +238,10 @@ Quadrature OmegaHGeometry::CreateQuadrature(
     weights,
     detail::ElementMeasuresAtPoints(*this, *bound, owners,
                                     "OmegaHGeometry::CreateQuadrature"));
+  // weights carry the cell measures in the mesh coordinates: make them
+  // physical measures
+  pcms::detail::ScaleByVolumeFactor(weights, *GetCoordinateSystem(),
+                                    MakeConstRank2View(coords));
   return Quadrature{std::move(bound), weights, {}};
 }
 

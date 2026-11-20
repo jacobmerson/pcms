@@ -304,7 +304,7 @@ are removed:
 | `pcms.csys.Cartesian.create(dim)`, `pcms.csys.CylindricalRThetaZ.create()`, `pcms.csys.CylindricalRZ.create()` | `pcms.csys.create_cartesian(dim)`, `pcms.csys.create_cylindrical_r_theta_z()`, `pcms.csys.create_cylindrical_rz()` |
 | `pcms.CartesianToCylindrical()`, `pcms.CylindricalToCartesian()` | `pcms.create_cartesian_to_cylindrical()`, `pcms.create_cylindrical_to_cartesian()` |
 | `pcms.same_coordinate_system(a, b)`, `pcms.same_value_basis(a, b)` | `a == b` |
-| `pcms.has_identity_metric(s)` | `s.has_orthogonal_basis() and s.has_unit_scale_factors()` |
+| `pcms.has_identity_metric(s)` | `s.is_orthogonal() and s.is_constant_metric()` |
 | `pcms.patch_size_for_degree(d)` | removed (set `NeighbourhoodOptions.min_supports`) |
 
 Geometries are opaque `pcms.Geometry` objects (the `pcms.OmegaHGeometry`

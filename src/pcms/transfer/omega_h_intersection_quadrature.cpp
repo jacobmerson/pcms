@@ -96,6 +96,9 @@ Quadrature CreateIntersectionQuadratureImpl(
         });
     });
   Kokkos::fence();
+  pcms::detail::ScaleByVolumeFactor(weights,
+                                    *target_geometry->GetCoordinateSystem(),
+                                    MakeConstRank2View(coords));
 
   // Both bindings are by the elements the points were generated in: no
   // search on either mesh.
@@ -117,8 +120,8 @@ Quadrature CreateIntersectionQuadrature(
     throw pcms_error("CreateIntersectionQuadrature: the geometries must not "
                      "be null");
   }
-  detail::CheckCartesianSimplexMesh(*source, "CreateIntersectionQuadrature");
-  detail::CheckCartesianSimplexMesh(*target, "CreateIntersectionQuadrature");
+  detail::CheckSimplexMesh(*source, "CreateIntersectionQuadrature");
+  detail::CheckSimplexMesh(*target, "CreateIntersectionQuadrature");
   const int dim = target->GetMesh().dim();
   if (source->GetMesh().dim() != dim) {
     throw pcms_error("CreateIntersectionQuadrature: source and target mesh "

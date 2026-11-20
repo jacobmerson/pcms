@@ -574,21 +574,21 @@ TEST_CASE("ApplyTranspose of a projection is its adjoint, for both solve "
   CHECK_THROWS(control_variate->ApplyTranspose(b, out));
 }
 
-TEST_CASE("quadrature consumers refuse a non-Cartesian geometry",
-          "[quadrature][projection][l2]")
+TEST_CASE("L2 inner products of vectors refuse systems with a varying "
+          "metric",
+          "[quadrature][l2]")
 {
-  // Until coordinate systems provide a metric (S5)
+  // The weights carry the volume factor, so scalars are fine; the metric
+  // inner product of vectors is not applied yet (S5).
   Omega_h::Library lib;
-  auto mesh = pcms::test::BuildUnitSquare(lib, 0);
-  const auto cylindrical = pcms::test::MakeP1Space(
-    pcms::omega_h::CreateGeometry(mesh, pcms::csys::CreateCylindricalRZ()));
-  const auto cartesian = pcms::test::MakeP1Space(mesh);
-  CHECK_THROWS_AS(cylindrical->CreateQuadrature(), pcms::pcms_error);
-  CHECK_THROWS_AS(pcms::CreateProjection(cartesian, cylindrical),
-                  pcms::pcms_error);
-  CHECK_THROWS_AS(pcms::CreateProjection(cylindrical, cartesian),
-                  pcms::pcms_error);
-  CHECK_THROWS_AS(pcms::L2Integral(cylindrical), pcms::pcms_error);
-  CHECK_THROWS_AS(pcms::L2InnerProduct(cylindrical, cylindrical),
-                  pcms::pcms_error);
+  auto mesh = pcms::test::BuildUnitCube(lib, 1);
+  const auto cylindrical = pcms::CreateLagrangeSpace(
+    pcms::omega_h::CreateGeometry(mesh, pcms::csys::CreateCylindricalRThetaZ()),
+    1, 3, pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
+  const pcms::L2InnerProduct product(cylindrical, cylindrical);
+  auto scalar = cylindrical->CreateFunction<pcms::Real>("scalar");
+  auto vector = cylindrical->CreateFunction<pcms::Real>(
+    "vector", pcms::values::Vector, pcms::ComponentScaling::Physical);
+  CHECK_NOTHROW(product.Apply(scalar, scalar));
+  CHECK_THROWS_AS(product.Apply(vector, vector), pcms::pcms_error);
 }

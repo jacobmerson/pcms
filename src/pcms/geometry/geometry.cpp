@@ -1,6 +1,7 @@
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/field/coordinate_map.hpp"
 #include "pcms/utility/assert.hpp"
+#include "pcms/utility/detail/memory_spaces.hpp"
 #include <string>
 
 namespace pcms
@@ -113,11 +114,6 @@ SupportResults Geometry::Neighbourhood(CoordinateView<DeviceMemorySpace>, int,
                    "neighbourhood search");
 }
 
-DifferentialView Geometry::Differential(const BoundPoints&) const
-{
-  return {};
-}
-
 Quadrature Geometry::CreateQuadrature(const QuadratureOptions&) const
 {
   throw pcms_error("Geometry::CreateQuadrature: this geometry has no "
@@ -140,7 +136,7 @@ void detail::CheckNeighbourhoodArguments(
     throw pcms_error(
       caller +
       ": requires a coordinate system whose metric is the "
-      "identity (orthogonal basis and unit scale factors); got '" +
+      "identity (an orthogonal basis and a constant metric); got '" +
       std::string(geometry.GetCoordinateSystem()->Kind()) + "'");
   }
   if (options.max_supports != 0 &&
@@ -152,17 +148,16 @@ void detail::CheckNeighbourhoodArguments(
   }
 }
 
-void detail::CheckCartesianMeasure(const Geometry& geometry,
-                                   const std::string& caller)
+void detail::ScaleByVolumeFactor(
+  Kokkos::View<Real*, DeviceMemorySpace> weights,
+  const CoordinateSystem& system,
+  Rank2View<const Real, DeviceMemorySpace> points)
 {
-  // Until coordinate systems provide a metric (S5)
-  if (!pcms::detail::IsCartesian(*geometry.GetCoordinateSystem())) {
-    throw pcms_error(caller + ": the geometry's coordinate system '" +
-                     std::string(geometry.GetCoordinateSystem()->Kind()) +
-                     "' is not Cartesian; quadrature weights carry no "
-                     "coordinate-system metric yet, so the integral would be "
-                     "wrong. Map the data to a Cartesian geometry");
-  }
+  const auto bound = system.Bind(points);
+  const auto volume = bound->VolumeFactor();
+  pcms::detail::ForEach(
+    "ScaleByVolumeFactor", static_cast<LO>(weights.extent(0)),
+    KOKKOS_LAMBDA(const LO i) { weights(i) *= volume(i); });
 }
 
 void detail::CheckEntityIds(Kokkos::View<const LO*, DeviceMemorySpace> ids,

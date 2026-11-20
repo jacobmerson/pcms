@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <Omega_h_build.hpp>
 #include <Omega_h_library.hpp>
 #include <Omega_h_mesh.hpp>
@@ -252,19 +253,37 @@ TEST_CASE("CreateIntersectionQuadrature: dual tets overlap in an octahedron",
   }
 }
 
-TEST_CASE("quadratures refuse a non-Cartesian coordinate system",
+TEST_CASE("quadratures integrate in the physical measure of a cylindrical "
+          "system",
           "[quadrature]")
 {
   Omega_h::Library lib;
-  auto mesh = pcms::test::BuildUnitSquare(lib, 0);
-  auto cartesian = CartesianGeometry(mesh);
+  auto mesh = pcms::test::BuildUnitSquare(lib, 1);
+  // the (R, Z) plane over [0, 1]^2 shifted to R in [1, 2]: the volume
+  // element per radian is R dR dZ
+  auto coords = mesh.coords();
+  Omega_h::Write<pcms::Real> shifted(coords.size());
+  Omega_h::parallel_for(
+    mesh.nverts(), OMEGA_H_LAMBDA(Omega_h::LO v) {
+      shifted[2 * v] = coords[2 * v] + 1.0;
+      shifted[2 * v + 1] = coords[2 * v + 1];
+    });
+  mesh.set_coords(Omega_h::Reals(shifted));
   auto cylindrical = std::dynamic_pointer_cast<const pcms::omega_h::OmegaHGeometry>(
     pcms::omega_h::CreateGeometry(mesh, pcms::csys::CreateCylindricalRZ()));
-  CHECK_THROWS_AS(cylindrical->CreateQuadrature({}), pcms::pcms_error);
-  CHECK_THROWS_AS(pcms::omega_h::CreateIntersectionQuadrature(cylindrical,
-                                                              cartesian, {}),
-                  pcms::pcms_error);
-  CHECK_THROWS_AS(pcms::omega_h::CreateIntersectionQuadrature(cartesian,
-                                                              cylindrical, {}),
-                  pcms::pcms_error);
+  const auto quadrature = cylindrical->CreateQuadrature({.order = 2});
+  const auto weights = Kokkos::create_mirror_view_and_copy(
+    pcms::HostMemorySpace(), quadrature.weights);
+  const auto points =
+    pcms::test::CopyCoordinatesToHost(quadrature.points->LocatedPointValues());
+  pcms::Real volume = 0;
+  pcms::Real moment = 0;
+  for (std::size_t i = 0; i < weights.size(); ++i) {
+    volume += weights[i];
+    moment += weights[i] * points(i, 0);
+  }
+  // int R dR dZ = 3/2, int R^2 dR dZ = 7/3
+  CHECK_THAT(volume, Catch::Matchers::WithinAbs(1.5, pcms::test::ExactTol));
+  CHECK_THAT(moment,
+             Catch::Matchers::WithinAbs(7.0 / 3.0, pcms::test::ExactTol));
 }

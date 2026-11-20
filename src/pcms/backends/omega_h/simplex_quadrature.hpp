@@ -23,13 +23,11 @@
 namespace pcms::omega_h::detail
 {
 
-// Checks that `geometry` is on a 2D or 3D simplex mesh in the Cartesian
-// coordinate system of the mesh dimension. The quadratures take their weights
-// from the mesh coordinates without a metric, which is the physical measure
-// only in Cartesian coordinates; other systems are refused until the metric
-// enters the measures.
-inline void CheckCartesianSimplexMesh(const OmegaHGeometry& geometry,
-                                      const char* context)
+// Checks that `geometry` is on a 2D or 3D simplex mesh. The quadratures take
+// the cell measures from the mesh coordinates and scale them by the volume
+// factor of the geometry's coordinate system.
+inline void CheckSimplexMesh(const OmegaHGeometry& geometry,
+                             const char* context)
 {
   const Omega_h::Mesh& mesh = geometry.GetMesh();
   const std::string prefix = std::string(context) + ": ";
@@ -40,7 +38,6 @@ inline void CheckCartesianSimplexMesh(const OmegaHGeometry& geometry,
     throw pcms_error(prefix +
                      "the mesh must be a simplex (triangle/tetrahedron) mesh");
   }
-  pcms::detail::CheckCartesianMeasure(geometry, context);
 }
 
 // Measure of the element of each point of `bound`, a bind of the points on
@@ -50,7 +47,7 @@ inline Kokkos::View<Real*, DeviceMemorySpace> ElementMeasuresAtPoints(
   const Geometry& geometry, const BoundPoints& bound, const OwnerHints& owners,
   const char* context)
 {
-  const DifferentialView differential = geometry.Differential(bound);
+  const DifferentialView differential = bound.Differential();
   if (differential.Empty()) {
     throw pcms_error(std::string(context) +
                      ": the geometry provides no differential to take element "

@@ -40,25 +40,13 @@ struct NeighbourhoodOptions
   bool adapt_radius = true;
 };
 
-/// @brief Jacobian of the geometry map at bound points.
-///
-/// jacobian(r, i, j) = d x_j / d xi_i, determinant(r) = det. When
-/// per_element is true, r is an element id; otherwise r indexes the bound
-/// source's FoundPoints().
-struct DifferentialView
-{
-  Kokkos::View<const Real***, DeviceMemorySpace> jacobian;
-  Kokkos::View<const Real*, DeviceMemorySpace> determinant;
-  bool per_element = false;
-  [[nodiscard]] bool Empty() const noexcept { return jacobian.extent(0) == 0; }
-};
-
 /// @brief The coordinate function of a set of entities (a mesh, a grid, a
 ///        point cloud) and its inverse.
 ///
-/// A Geometry has a native coordinate system, the search that locates
-/// physical points among its entities and, when the kind has one, the
-/// Jacobian of the map from parametric to physical coordinates. Function
+/// A Geometry has a native coordinate system and the search that locates
+/// physical points among its entities; the Jacobian of the map from
+/// parametric to physical coordinates, when the kind has one, is
+/// BoundPoints::Differential. Function
 /// spaces are created on a geometry, and their layouts carry it
 /// (FieldLayout::GetGeometry); Bind produces BoundPoints every space on the
 /// geometry accepts.
@@ -183,14 +171,6 @@ public:
   [[nodiscard]] virtual SupportResults Neighbourhood(
     CoordinateView<DeviceMemorySpace> coords, int site_dim,
     const NeighbourhoodOptions& options, const OwnerHints& owners = {}) const;
-
-  /// @brief Jacobian at the bound points.
-  /// @param bound a BoundPoints of this geometry
-  /// @return an empty view unless the kind overrides it
-  /// @throws pcms_error from the kinds that override it if `bound` belongs to
-  ///         another geometry
-  [[nodiscard]] virtual DifferentialView Differential(
-    const BoundPoints& bound) const;
 
   /// @brief Quadrature over this geometry's cells.
   /// @param options the rule: deterministic of an order, or Monte Carlo

@@ -1,8 +1,8 @@
 #include "pcms/transfer/l2_inner_product.hpp"
 #include "pcms/transfer/forms.hpp"
-#include "pcms/geometry/detail/geometry.hpp"
 #include "pcms/utility/assert.hpp"
 #include <cmath>
+#include <string>
 
 namespace pcms
 {
@@ -13,9 +13,23 @@ namespace
 Quadrature MakeQuadrature(const FunctionSpace& space,
                           const std::optional<QuadratureOptions>& options)
 {
-  pcms::detail::CheckCartesianMeasure(*space.GetGeometry(), "L2 quadrature");
   return options ? space.GetGeometry()->CreateQuadrature(*options)
                  : space.CreateQuadrature();
+}
+
+// The inner product sums products of components, which is the metric inner
+// product of vectors and tensors only where the metric is the identity; the
+// pointwise metric of the other systems is not applied yet. Scalars are
+// unaffected: the weights carry the volume factor.
+void CheckInnerProductMetric(const Field<Real>& u, const char* caller)
+{
+  const ValueBasis& basis = u.GetData().GetValueBasis();
+  if (basis.Rank() > 0 && !basis.system->IsConstantMetric()) {
+    throw pcms_error(std::string(caller) +
+                     ": the inner product of vectors in '" +
+                     std::string(basis.system->Kind()) +
+                     "' needs the metric, which is not applied yet");
+  }
 }
 
 void Evaluate(const PointEvaluator<Real>& evaluator, const Field<Real>& field,
@@ -77,6 +91,7 @@ L2InnerProduct::L2InnerProduct(std::shared_ptr<const FunctionSpace> u_space,
 
 Real L2InnerProduct::Apply(const Field<Real>& u, const Field<Real>& v) const
 {
+  CheckInnerProductMetric(u, "L2InnerProduct::Apply");
   Evaluate(*u_at_points_, u, u_values_);
   Evaluate(*v_at_points_, v, v_values_);
   return WeightedSum(quadrature_.weights, u_values_, v_values_, false);
@@ -84,6 +99,7 @@ Real L2InnerProduct::Apply(const Field<Real>& u, const Field<Real>& v) const
 
 Real L2InnerProduct::Distance(const Field<Real>& u, const Field<Real>& v) const
 {
+  CheckInnerProductMetric(u, "L2InnerProduct::Distance");
   Evaluate(*u_at_points_, u, u_values_);
   Evaluate(*v_at_points_, v, v_values_);
   return std::sqrt(
@@ -122,6 +138,7 @@ Real L2Integral::Apply(const Field<Real>& u) const
 
 Real L2Integral::Norm(const Field<Real>& u) const
 {
+  CheckInnerProductMetric(u, "L2Integral::Norm");
   Evaluate(*at_points_, u, values_);
   return std::sqrt(WeightedSum(quadrature_.weights, values_, values_, false));
 }

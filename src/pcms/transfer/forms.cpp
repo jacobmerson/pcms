@@ -96,7 +96,6 @@ LinearForm::LinearForm(std::shared_ptr<const FunctionSpace> space,
     throw pcms_error("LinearForm: the quadrature must be bound on the "
                      "space's geometry and have one weight per point");
   }
-  pcms::detail::CheckCartesianMeasure(*space_->GetGeometry(), "LinearForm");
   evaluator_ = space_->CreatePointEvaluator<Real>(quadrature_.points);
   if (!evaluator_->SupportsTranspose()) {
     throw pcms_error("LinearForm: the space's evaluator does not support the "
@@ -136,7 +135,8 @@ BilinearForm::BilinearForm(std::shared_ptr<const FunctionSpace> space,
   : form_(std::move(space), std::move(quadrature)),
     samples_("bilinear_form_samples", form_.GetQuadrature().points->NumPoints(),
              form_.Space()->GetLayout()->GetNumComponents())
-{}
+{
+}
 
 void BilinearForm::Apply(const Field<Real>& u, Field<Real>& functional) const
 {

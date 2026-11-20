@@ -7,6 +7,7 @@
 #include "pcms/utility/types.hpp"
 #include "pcms/utility/uniform_grid.hpp"
 #include <stdexcept>
+#include <tuple>
 #include <string>
 #include <type_traits>
 #include <variant>
@@ -272,11 +273,11 @@ KOKKOS_INLINE_FUNCTION Real SimplexDeterminant(const Real (&j)[Dim][Dim])
 /// Per-element Jacobian rows J_i = x_{i+1} - x_0 of the affine simplex map
 /// and its determinant.
 template <int Dim>
-DifferentialView SimplexDifferential(Omega_h::Mesh& mesh)
+std::pair<OmegaHJacobian, Kokkos::View<Real*, DeviceMemorySpace>>
+SimplexDifferential(Omega_h::Mesh& mesh)
 {
   const LO nelems = mesh.nelems();
-  Kokkos::View<Real***, DeviceMemorySpace> jacobian("omega_h_jacobian", nelems,
-                                                    Dim, Dim);
+  OmegaHJacobian jacobian("omega_h_jacobian", nelems, Dim, Dim);
   Kokkos::View<Real*, DeviceMemorySpace> determinant("omega_h_jacobian_det",
                                                      nelems);
   const auto elem_verts = mesh.ask_elem_verts();
@@ -296,22 +297,34 @@ DifferentialView SimplexDifferential(Omega_h::Mesh& mesh)
       }
       determinant(e) = SimplexDeterminant<Dim>(j);
     });
-  return DifferentialView{jacobian, determinant, /*per_element=*/true};
+  return {jacobian, determinant};
 }
 
 } // namespace
 
-DifferentialView OmegaHGeometry::Differential(const BoundPoints& bound) const
+DifferentialView OmegaHGeometry::CellDifferential() const
 {
-  if (bound.GetGeometry().get() != this) {
-    throw pcms_error(
-      "Differential: the BoundPoints belongs to another geometry");
-  }
   std::call_once(differential_once_, [this] {
-    differential_ = mesh_.dim() == 2 ? SimplexDifferential<2>(mesh_)
-                                     : SimplexDifferential<3>(mesh_);
+    std::tie(jacobian_, determinant_) = mesh_.dim() == 2
+                                          ? SimplexDifferential<2>(mesh_)
+                                          : SimplexDifferential<3>(mesh_);
   });
-  return differential_;
+  const LO n = jacobian_.extent(0);
+  const LO dim = jacobian_.extent(1);
+  return DifferentialView{
+    View<3, const Real, DeviceMemorySpace>(jacobian_.data(), n, dim, dim),
+    MakeRank1View(determinant_), /*per_element=*/true};
 }
 
 } // namespace pcms::omega_h
+
+namespace pcms::detail
+{
+
+DifferentialView OmegaHMeshBinding::Differential() const
+{
+  return static_cast<const omega_h::OmegaHGeometry&>(*GetGeometry())
+    .CellDifferential();
+}
+
+} // namespace pcms::detail
