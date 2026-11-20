@@ -33,6 +33,7 @@ else is internal. Behavior and numerical results do not change.
   |---|---|---|
   | `OMEGA_H` | the Omega_h backend | Omega_h |
   | `OMEGA_H_MESHFIELDS` | MeshFields spaces on Omega_h meshes, the reference rules of their quadratures and the mesh-intersection quadrature of `CreateConservativeProjection` | flag `OMEGA_H`, MeshFields |
+  | `UNITS` | parsing and checking of field units (`Units`, the check of every transfer); without it a `Units` is its text and nothing is checked | LLNL/units |
   | `PETSC` | the assembled solve of the projections (`LinearSolveOptions::Method::Assembled`) | PETSc |
   | `POLYNOMIAL_RECONSTRUCTION` | polynomial-reconstruction (MLS) spaces on point clouds | KokkosKernels |
   | `XGC` | the XGC backend | flag `OMEGA_H` |
@@ -220,6 +221,39 @@ EQDSK moved to `pcms/eqdsk/eqdsk.hpp` (no longer included by
 its spline space: `GetSpace()`), and `MakeEQDSKField(filename)` is
 `ReadEQDSK(filename)`, which returns `EQDSKFunction {data, psi}`.
 `EQDSKField` and `EQDSKFieldWithData` are removed.
+
+Field metadata. A `Field` carries `FieldMetadata{name, units, extent}`, where
+`units` is an optional `Units` and `extent` an optional `Extent`
+(`Intensive`, `Extensive`); what is unset is unknown and never checked.
+Create fields with their metadata and, as the second argument, the basis of
+their values; the same three overloads exist on `FunctionSpace`
+(`CreateFunction`) and `FieldFactory` (`CreateField`):
+
+| 0.3 | 0.4 |
+|---|---|
+| `space->CreateFunction<T>("b", values::Vector)` | `space->CreateFunction<T>("b", {.variance = values::Vector})` |
+| `CreateFunction<T>("b", values::Vector, ComponentScaling::Physical)` | `CreateFunction<T>("b", {.scaling = ComponentScaling::Physical, .variance = values::Vector})` |
+| `CreateFunction<T>("b", values::Vector, system[, scaling])` | `CreateFunction<T>("b", {.system = system, [.scaling = scaling,] .variance = values::Vector})` |
+| `CreateFunction<T>("b", basis)` | unchanged |
+| `CreateFunction<T>("b", std::move(data))`, `CreateField<T>("b", std::move(data))` | `CreateFunction<T>({.name = "b"}, std::move(data))`, `CreateField<T>({.name = "b"}, std::move(data))` |
+| (new) | `CreateFunction<T>(FieldMetadata{.name = "n", .units = Units::Parse("m^-3"), .extent = Extent::Intensive}, basis = {})` |
+
+`CreateFunction<T>("name")` and `CreateFunction<T>()` are unchanged. The
+`ValueBasis` default leaves `system` and `scaling` unset: the system is the
+space's own and the scaling is derived as before (physical where the metric is
+constant, natural where the system is not orthogonal, an error where the
+choice must be stated), so `ValueBasis::scaling` is now a
+`std::optional<ComponentScaling>` (bases that a Function carries are always
+resolved). The name is fixed at creation; there is no `SetUnits`. A transfer
+sets the units and extent of its target that are unknown from its source
+(known ones are never overwritten) and throws when both sides have units that
+differ (with `PCMS_ENABLE_UNITS`), when `Apply` meets a field declared
+`Extensive`, or when `ApplyTranspose` meets one declared `Intensive`.
+
+`TransferOperator::Apply` and `ApplyTranspose` are no longer virtual: they
+check the metadata and call the private virtuals `ApplyImpl` and
+`ApplyTransposeImpl`. An out-of-tree operator overrides those two instead
+(`ApplyTransposeImpl` only if `SupportsTranspose()`); callers are unchanged.
 
 `UniformGrid::ClosestCellID` and `IsPointInBounds` accept any point type
 indexable with `[i]` (`Kokkos::Array`, a subview, `Omega_h::Vector`).

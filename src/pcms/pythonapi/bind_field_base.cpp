@@ -459,12 +459,11 @@ void bind_create_field_module(py::module& m)
          VarianceSignature variance,
          const std::optional<Immutable<CoordinateSystem>>& system,
          std::optional<ComponentScaling> scaling, ValueKind kind) {
-        auto basis = pcms::detail::MakeValueBasis(
-          self.ptr->GetCoordinateSystem(), variance,
-          system ? system->ptr : nullptr, scaling);
-        basis.kind = kind;
-        return self.ptr->CreateFunction<Real>(std::move(name),
-                                              std::move(basis));
+        return self.ptr->CreateFunction<Real>(
+          std::move(name), {.system = system ? system->ptr : nullptr,
+                            .scaling = scaling,
+                            .variance = variance,
+                            .kind = kind});
       },
       py::arg("name") = "", py::arg("variance") = values::Scalar,
       py::arg("system") = py::none(), py::arg("scaling") = py::none(),
