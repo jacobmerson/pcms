@@ -27,6 +27,13 @@ public:
                           bool own_mpi_comm = false,
                           const OverlapMask* overlap_mask = nullptr);
 
+  /// A communicator with a given plan (built during ApplicationComm::Setup
+  /// from the setup messages) instead of one built by exchanging global ids.
+  /// UpdateLayout() must not be called on it.
+  FieldLayoutCommunicator(const std::string& name, MPI_Comm mpi_comm,
+                          redev::Redev& redev, redev::Channel& channel,
+                          const FieldLayout& layout, ExchangePlan plan);
+
   Rank1View<const pcms::LO, pcms::HostMemorySpace> GetPermutationArray() const;
 
   const std::string& GetName() const;
