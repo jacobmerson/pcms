@@ -31,10 +31,10 @@ namespace pcms
 // It is concrete: backends differ in the components they hand to its
 // constructor, and the Create* factories (CreateLagrangeSpace, ...) assemble
 // them. A kind with behaviour that is not a component derives from it and
-// overrides the virtuals: the creation of its field data and the validation of
-// wrapped field data. A Function co-owns its space via shared_ptr (obtained
-// through enable_shared_from_this), so spaces are always shared-owned:
-// CreateFunction throws for a space that is not.
+// overrides the virtuals: the natural quadrature, the creation of its field
+// data and the validation of wrapped field data. A Function co-owns its space
+// via shared_ptr (obtained through enable_shared_from_this), so spaces are
+// always shared-owned: CreateFunction throws for a space that is not.
 class FunctionSpace
   : public PointEvaluatorFactory
   , public std::enable_shared_from_this<FunctionSpace>
@@ -85,6 +85,21 @@ public:
   GetCoordinateSystem() const noexcept
   {
     return geometry_->GetCoordinateSystem();
+  }
+
+  /// @brief A quadrature on the space: points bound on its geometry and
+  ///        weights.
+  /// @param order the degree the rule integrates exactly, interpreted by the
+  ///        kind. Without it: the products of two functions of the space
+  ///        (degree 2p for Lagrange order p; 2N + 1 points for N Fourier
+  ///        modes).
+  /// @throws pcms_error unless the kind overrides it
+  [[nodiscard]] virtual Quadrature CreateQuadrature(
+    std::optional<int> order = std::nullopt) const
+  {
+    (void)order;
+    throw pcms_error("FunctionSpace::CreateQuadrature: this space has no "
+                     "quadrature");
   }
 
   /// @return whether the space's evaluator source supports `op`; for a space
