@@ -23,6 +23,7 @@ else is internal. Behavior and numerical results do not change.
   uniform-grid backend (Lagrange and spline spaces), the point-cloud geometry
   and its support search, coordinate systems and
   maps, QueryPoints, interpolation and copy, derivative sources, the
+  Galerkin and control-variate projections with the matrix-free solve, the
   timestepper, and the Python module with `-DPCMS_ENABLE_PYTHON=ON`. Everything
   else is a flag named after what it builds (the backend namespace, the Python
   module `pcms.<name>`, the key of `pcms.features`, and the macro in
@@ -31,8 +32,8 @@ else is internal. Behavior and numerical results do not change.
   | Flag (`PCMS_ENABLE_...`) | Builds | Needs |
   |---|---|---|
   | `OMEGA_H` | the Omega_h backend | Omega_h |
-  | `OMEGA_H_MESHFIELDS` | MeshFields spaces on Omega_h meshes | flag `OMEGA_H`, MeshFields |
-  | `CONSERVATIVE_PROJECTION` | conservative and control-variate projections | flag `OMEGA_H_MESHFIELDS`, PETSc |
+  | `OMEGA_H_MESHFIELDS` | MeshFields spaces on Omega_h meshes, the reference rules of their quadratures and the mesh-intersection quadrature of `CreateConservativeProjection` | flag `OMEGA_H`, MeshFields |
+  | `PETSC` | the assembled solve of the projections (`LinearSolveOptions::Method::Assembled`) | PETSc |
   | `POLYNOMIAL_RECONSTRUCTION` | polynomial-reconstruction (MLS) spaces on point clouds | KokkosKernels |
   | `XGC` | the XGC backend | flag `OMEGA_H` |
   | `MFEM` | the MFEM backend | MFEM |
@@ -47,16 +48,18 @@ else is internal. Behavior and numerical results do not change.
   full build, pass `-DPCMS_ENABLE_OMEGA_H=ON -DPCMS_ENABLE_OMEGA_H_MESHFIELDS=ON
   -DPCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION=ON -DPCMS_ENABLE_XGC=ON -DPCMS_ENABLE_COUPLER=ON
   -DPCMS_ENABLE_C=ON -DPCMS_ENABLE_FORTRAN=ON -DPCMS_ENABLE_EXAMPLES=ON` (and
-  `-DPCMS_ENABLE_CONSERVATIVE_PROJECTION=ON` for what `PCMS_ENABLE_PETSC=ON`
-  built). `PCMS_ENABLE_PRINT` stays `ON`.
+  `-DPCMS_ENABLE_PETSC=ON` as before). `PCMS_ENABLE_PRINT` stays `ON`.
 - **Renamed options** (the old names still work in 0.4, with a deprecation
   warning): `PCMS_ENABLE_Python` → `PCMS_ENABLE_PYTHON`,
   `PCMS_ENABLE_Fortran` → `PCMS_ENABLE_FORTRAN`,
   `PCMS_ENABLE_MESHFIELDS` → `PCMS_ENABLE_OMEGA_H_MESHFIELDS`,
-  `PCMS_ENABLE_PETSC` → `PCMS_ENABLE_CONSERVATIVE_PROJECTION`,
-  `PETSC_LINK_STATIC` → `PCMS_PETSC_LINK_STATIC`. The macros
-  `PCMS_ENABLE_MESHFIELDS` and `PCMS_ENABLE_PETSC` are still defined in
-  `pcms/configuration.hpp` for 0.4.
+  `PETSC_LINK_STATIC` → `PCMS_PETSC_LINK_STATIC`, and the 0.4.0 flag
+  `PCMS_ENABLE_CONSERVATIVE_PROJECTION` → `PCMS_ENABLE_PETSC` (the
+  projections are always built now; the flag needed `OMEGA_H_MESHFIELDS`
+  and added PETSc). The macro `PCMS_ENABLE_MESHFIELDS` is still defined in
+  `pcms/configuration.hpp`, and `PCMS_ENABLE_CONSERVATIVE_PROJECTION` is
+  defined when both `PCMS_ENABLE_OMEGA_H_MESHFIELDS` and `PCMS_ENABLE_PETSC`
+  are.
 - **Removed options:** `PCMS_ENABLE_SERVER` and `PCMS_ENABLE_CLIENT` (they
   gated nothing since the coupler communication merged) and
   `PCMS_ENABLE_TRANSIENT` (the timestepper is always built). Setting one
@@ -64,8 +67,9 @@ else is internal. Behavior and numerical results do not change.
   `PCMS_ENABLE_SERVER` and `PCMS_ENABLE_CLIENT` are no longer defined
   (`PCMS_ENABLE_TRANSIENT` still is, always).
 - **Python:** the module no longer needs the coupler or Omega_h. `pcms.omega_h`
-  (with `PCMS_ENABLE_OMEGA_H`) and the polynomial-reconstruction and
-  projection factories exist only when built; `pcms.features` is a read-only dict of the
+  (with `PCMS_ENABLE_OMEGA_H`), the polynomial-reconstruction factory and the
+  projection factories (with `PCMS_ENABLE_OMEGA_H_MESHFIELDS`) exist only when
+  built; `pcms.features` is a read-only dict of the
   capability flags (`pcms.features["omega_h"]`, ...) to test for them.
 - **`CreatePolynomialReconstructionSpace`** (and `pcms.MLSOptions`,
   `pcms.RadialBasisFunction` and `pcms.create_polynomial_reconstruction_space`
@@ -165,8 +169,9 @@ system and the point search; use the factories, which return the interfaces
 (`omega_h::`, `uniform_grid::`, `point_cloud::`, `xgc::` and `mfem::` are
 `pcms::omega_h::` and so on; all other names are in `pcms::`.) Factories
 for a combination PCMS does not support (e.g. a Lagrange space on a
-point-cloud geometry) throw `pcms_error`. The projection factories throw in a
-build without PETSc and MeshFields.
+point-cloud geometry) throw `pcms_error`. `CreateConservativeProjection`
+throws in a build without `PCMS_ENABLE_OMEGA_H_MESHFIELDS`, and the assembled
+solve of a projection in one without `PCMS_ENABLE_PETSC`.
 
 - Factories return the interface: `std::shared_ptr<const Geometry>`,
   `std::shared_ptr<const CoordinateSystem>`, `std::shared_ptr<const
