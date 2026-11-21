@@ -229,6 +229,47 @@ if(PCMS_ENABLE_OMEGA_H AND TARGET pcms::coupler)
       ${PCMS_TEST_DATA_DIR}/123mesh/123_p4.osh
       ignored)
   endif()
+  # functions described by the client and rebuilt by the server in Setup
+  add_exe(test_coupler_setup)
+  target_link_libraries(test_coupler_setup pcms::transfer)
+  foreach(engine BP4 SST)
+    foreach(case "1to1;1;1;remotes" "2to1;1;2;remotes" "gids_2to1;1;2;gids"
+                 "2to2;2;2;remotes")
+      list(GET case 0 label)
+      list(GET case 1 servers)
+      list(GET case 2 clients)
+      list(GET case 3 ids)
+      math(EXPR nprocs "${servers} + ${clients}")
+      if(HOST_NPROC GREATER_EQUAL nprocs AND NOT "${label}_${engine}" STREQUAL
+                                                 "2to2_SST")
+        dual_mpi_test(
+          TESTNAME
+          test_coupler_setup_${label}_${engine}
+          TIMEOUT
+          60
+          NAME1
+          server
+          EXE1
+          test_coupler_setup
+          PROCS1
+          ${servers}
+          ARGS1
+          server
+          ${engine}
+          ${ids}
+          NAME2
+          client
+          EXE2
+          test_coupler_setup
+          PROCS2
+          ${clients}
+          ARGS2
+          client
+          ${engine}
+          ${ids})
+      endif()
+    endforeach()
+  endforeach()
   add_executable(proxy_coupling test_proxy_coupling.cpp)
   target_link_libraries(proxy_coupling PUBLIC pcms::coupler test_support)
   if(HOST_NPROC GREATER_EQUAL 4)
