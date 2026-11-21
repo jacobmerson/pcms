@@ -229,6 +229,34 @@ if(PCMS_ENABLE_OMEGA_H AND TARGET pcms::coupler)
       ${PCMS_TEST_DATA_DIR}/123mesh/123_p4.osh
       ignored)
   endif()
+  if(HOST_NPROC GREATER_EQUAL 4)
+    # RCB partition with two server ranks and two client ranks
+    dual_mpi_test(
+      TESTNAME
+      test_field_communication_rcb_4p
+      TIMEOUT
+      40
+      NAME1
+      server
+      EXE1
+      field_communication
+      PROCS1
+      2
+      ARGS1
+      4
+      ignored
+      ignored
+      NAME2
+      client
+      EXE2
+      field_communication
+      PROCS2
+      2
+      ARGS2
+      5
+      ignored
+      ignored)
+  endif()
   add_executable(proxy_coupling test_proxy_coupling.cpp)
   target_link_libraries(proxy_coupling PUBLIC pcms::coupler test_support)
   if(HOST_NPROC GREATER_EQUAL 4)

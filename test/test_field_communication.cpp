@@ -1,4 +1,7 @@
+#include <algorithm>
+#include <array>
 #include <chrono>
+#include <numeric>
 #include <cstdlib>
 #include <iostream>
 #include <Omega_h_mesh.hpp>
@@ -118,6 +121,101 @@ static void test_shared_layout(Omega_h::Library& lib,
       f2.Receive();
     });
   }
+}
+
+// Move the elements to the ranks whose RCB region holds their centroid.
+static void migrateToRcbRegions(Omega_h::Mesh& mesh, redev::RCBPtn& ptn)
+{
+  auto comm = mesh.comm();
+  const auto coords = Omega_h::HostRead(mesh.coords());
+  const auto elem_verts = Omega_h::HostRead(mesh.ask_elem_verts());
+  const int dim = mesh.dim();
+  std::vector<int> dest(static_cast<size_t>(mesh.nelems()));
+  for (size_t e = 0; e < dest.size(); ++e) {
+    std::array<Real, 3> centroid{};
+    for (int v = 0; v <= dim; ++v)
+      for (int d = 0; d < dim; ++d)
+        centroid[d] +=
+          coords[elem_verts[e * (dim + 1) + v] * dim + d] / (dim + 1);
+    dest[e] = ptn.GetRank(centroid);
+  }
+  const int nproc = comm->size();
+  const int n = static_cast<int>(dest.size());
+  std::vector<int> counts(nproc), displs(nproc, 0);
+  MPI_Allgather(&n, 1, MPI_INT, counts.data(), 1, MPI_INT, comm->get_impl());
+  std::exclusive_scan(counts.begin(), counts.end(), displs.begin(), 0);
+  std::vector<int> all_dest(displs.back() + counts.back());
+  MPI_Allgatherv(dest.data(), n, MPI_INT, all_dest.data(), counts.data(),
+                 displs.data(), MPI_INT, comm->get_impl());
+  // pull the elements that now belong to this rank
+  std::vector<Omega_h::I32> owner_ranks;
+  std::vector<Omega_h::LO> owner_idxs;
+  for (int r = 0; r < nproc; ++r)
+    for (int i = 0; i < counts[r]; ++i)
+      if (all_dest[displs[r] + i] == comm->rank()) {
+        owner_ranks.push_back(r);
+        owner_idxs.push_back(i);
+      }
+  Omega_h::HostWrite<Omega_h::I32> ranks_h(owner_ranks.size());
+  Omega_h::HostWrite<Omega_h::LO> idxs_h(owner_idxs.size());
+  std::copy(owner_ranks.begin(), owner_ranks.end(), ranks_h.data());
+  std::copy(owner_idxs.begin(), owner_idxs.end(), idxs_h.data());
+  Omega_h::Write<Omega_h::I32> ranks_d(ranks_h);
+  Omega_h::Write<Omega_h::LO> idxs_d(idxs_h);
+  Omega_h::Remotes owners(ranks_d, idxs_d);
+  mesh.migrate(owners);
+}
+
+// Couple a client and a server that both have several ranks, with an RCB
+// partition cut into one region per server rank. The client sends gid + 1 and
+// every value must arrive on the server rank whose region holds the vertex.
+static void test_rcb_routing(Omega_h::Library& lib, bool is_server)
+{
+  auto world = lib.world();
+  MPI_Comm mpi_comm = world->get_impl();
+  auto mesh = Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 4, 4, 0);
+  // Vertices on the cut belong to the second region and Omega_h gives them to
+  // the lowest rank holding them, so rank 0 owns the second region.
+  redev::LOs ptn_ranks = {1, 0};
+  redev::Reals ptn_cuts = {0, 0.5}; // heap layout: cuts[1] is the cut
+  redev::RCBPtn ptn(2, ptn_ranks, ptn_cuts);
+  if (is_server)
+    migrateToRcbRegions(mesh, ptn);
+  pcms::CouplerComm cpl("rcb_routing", mpi_comm, is_server,
+                        is_server ? redev::Partition{ptn} : redev::Partition{});
+  auto* app = cpl.AddApplication("rcb_routing");
+  auto factory = pcms::CreateLagrangeSpace(
+    pcms::CreateGeometry(mesh, pcms::detail::DeferredCartesian()), 1, 1,
+    pcms::LagrangeOptions{.layout_name = "rcb_routing"});
+  auto layout = factory->GetLayout();
+  auto gids = layout->GetGidsHost();
+  const auto owned = layout->GetOwnedHost();
+  const auto n = layout->GetNumDofHolder();
+  Omega_h::HostWrite<Real> values(n);
+  for (int i = 0; i < n; ++i)
+    values[i] = is_server ? 0 : gids[i] + 1;
+  auto field = app->AddField(factory->CreateFunction<Real>("field"));
+  field.GetField().SetDOFHolderDataUncheckedHost(
+    pcms::Rank2View<const Real, pcms::HostMemorySpace>(values.data(), n, 1));
+  if (!is_server) {
+    app->SendPhase([&]() { field.Send(); });
+    return;
+  }
+  app->ReceivePhase([&]() { field.Receive(); });
+  const auto received = field.GetField().GetDOFHolderDataHost().GetValues();
+  const auto coords = Omega_h::HostRead(mesh.coords());
+  int num_owned = 0;
+  for (int i = 0; i < n; ++i) {
+    if (!owned[i])
+      continue;
+    ++num_owned;
+    std::array<Real, 3> pt = {coords[2 * i], coords[2 * i + 1], 0};
+    PCMS_ALWAYS_ASSERT(received(i, 0) == gids[i] + 1);
+    PCMS_ALWAYS_ASSERT(ptn.GetRank(pt) == world->rank());
+  }
+  PCMS_ALWAYS_ASSERT(num_owned > 0);
+  PCMS_ALWAYS_ASSERT(world->allreduce(num_owned, OMEGA_H_SUM) ==
+                     mesh.nglobal_ents(0));
 }
 
 void client1(MPI_Comm comm, Omega_h::Mesh& mesh, std::string comm_name,
@@ -251,15 +349,19 @@ int main(int argc, char** argv)
     int rank = world->rank();
     if (argc != 4) {
       std::cerr << "Usage: " << argv[0]
-                << " <clientId=-1|0|1|2|3> /path/to/omega_h/mesh"
+                << " <clientId=-1|0|1|2|3|4|5> /path/to/omega_h/mesh"
                 << " /path/to/partitionFile.cpn\n";
       exit(EXIT_FAILURE);
     }
     int clientId = atoi(argv[1]);
-    REDEV_ALWAYS_ASSERT(clientId >= -1 && clientId <= 3);
+    REDEV_ALWAYS_ASSERT(clientId >= -1 && clientId <= 5);
     const auto meshFile = argv[2];
     const auto classPartitionFile = argv[3];
 
+    if (clientId >= 4) {
+      test_rcb_routing(lib, /*is_server=*/clientId == 4);
+      return 0;
+    }
     Omega_h::Mesh mesh = Omega_h::binary::read(meshFile, world);
     adios2::Params params{{"Streaming", "On"},
                           {"OpenTimeoutSecs", "60"},
