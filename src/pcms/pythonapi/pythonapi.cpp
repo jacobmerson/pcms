@@ -36,6 +36,10 @@ void bind_point_cloud_module(py::module& m);
 void bind_omega_h_module(py::module& m);
 #endif
 
+#ifdef PCMS_ENABLE_COUPLER
+void bind_coupler_module(py::module& m);
+#endif
+
 } // namespace pcms
 
 namespace
@@ -75,6 +79,9 @@ PYBIND11_MODULE(pcms, m)
   pcms::bind_point_cloud_module(m);
 #ifdef PCMS_ENABLE_OMEGA_H
   pcms::bind_omega_h_module(m);
+#endif
+#ifdef PCMS_ENABLE_COUPLER
+  pcms::bind_coupler_module(m);
 #endif
 
   // The capabilities this build has (read-only): the keys are the

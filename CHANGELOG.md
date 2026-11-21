@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Python bindings of the coupler, `pcms.coupler` (with `PCMS_ENABLE_COUPLER`):
+  `CouplerComm`, `ApplicationComm` (`add_function`, `add_data`, send and
+  receive phases), field and data handles, `TransportType` (BP4, SST) and
+  `RCBPartition`; communicators are mpi4py communicators.
+
 ## 0.4.0
 
 A one-time breaking reorganization so that downstream codes migrate once.

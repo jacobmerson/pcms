@@ -22,6 +22,10 @@ if(PCMS_ENABLE_OMEGA_H)
   target_sources(pcms PRIVATE bind_omega_h.cpp)
   target_link_libraries(pcms PRIVATE Omega_h::omega_h)
 endif()
+if(PCMS_ENABLE_COUPLER)
+  target_sources(pcms PRIVATE bind_coupler.cpp)
+  target_link_libraries(pcms PRIVATE pcms::coupler)
+endif()
 
 # The conservative/Monte Carlo projection bindings include transfer headers
 # that transitively pull in PETSc (petscvec.h). PETSc is linked PRIVATE into

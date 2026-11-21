@@ -581,6 +581,44 @@ if(PCMS_ENABLE_MFEM AND TARGET pcms::coupler)
   endif()
 endif()
 
+# Python coupler bindings: P0/P1 fields and a data array over BP4 and SST
+if(PCMS_ENABLE_PYTHON
+   AND PCMS_ENABLE_OMEGA_H
+   AND PCMS_ENABLE_COUPLER
+   AND HOST_NPROC GREATER_EQUAL 2)
+  find_package(Python COMPONENTS Interpreter REQUIRED)
+  set(python_coupler_env "PYTHONPATH=$<TARGET_FILE_DIR:pcms>:$ENV{PYTHONPATH}")
+  foreach(transport BP4 SST)
+    dual_mpi_test(
+      TESTNAME
+      python_coupler_exchange_${transport}
+      TIMEOUT
+      60
+      NAME1
+      client
+      EXE1
+      ${Python_EXECUTABLE}
+      PROCS1
+      1
+      ARGS1
+      ${CMAKE_CURRENT_SOURCE_DIR}/python/coupler_exchange.py
+      client
+      ${transport}
+      NAME2
+      server
+      EXE2
+      ${Python_EXECUTABLE}
+      PROCS2
+      1
+      ARGS2
+      ${CMAKE_CURRENT_SOURCE_DIR}/python/coupler_exchange.py
+      server
+      ${transport})
+    set_property(TEST python_coupler_exchange_${transport} APPEND
+                 PROPERTY ENVIRONMENT "${python_coupler_env}")
+  endforeach()
+endif()
+
 if(PCMS_ENABLE_C)
   find_package(Kokkos REQUIRED)
   if(PCMS_ENABLE_XGC AND TARGET pcms::capi::core)
