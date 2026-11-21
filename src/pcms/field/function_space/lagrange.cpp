@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "pcms/field/function_spaces.hpp"
 #include "pcms/configuration.hpp"
 #include "pcms/utility/assert.hpp"
@@ -42,6 +43,32 @@ namespace
 {
 
 #ifdef PCMS_ENABLE_OMEGA_H
+/// A Lagrange space of an Omega_h geometry, whose quadrature is the
+/// geometry's rule of degree 2p for order p.
+class OmegaHLagrangeFunctionSpace : public FunctionSpace
+{
+public:
+  OmegaHLagrangeFunctionSpace(
+    std::shared_ptr<const FieldLayout> layout,
+    std::shared_ptr<const PointEvaluatorFactory> evaluator,
+    std::shared_ptr<const Geometry> geometry, int order)
+    : FunctionSpace(std::move(layout), std::move(evaluator),
+                    std::move(geometry)),
+      order_(order)
+  {
+  }
+
+  [[nodiscard]] Quadrature CreateQuadrature(
+    std::optional<int> order) const override
+  {
+    return GetGeometry()->CreateQuadrature(
+      {.order = order.value_or(std::max(1, 2 * order_))});
+  }
+
+private:
+  int order_;
+};
+
 /// Throws unless every alternative of `data` is a `Data<T>`.
 template <template <typename> class Data>
 void CheckFieldDataType(const FieldDataVariant& data, const char* message)
@@ -58,14 +85,15 @@ void CheckFieldDataType(const FieldDataVariant& data, const char* message)
 
 #ifdef PCMS_ENABLE_OMEGA_H_MESHFIELDS
 /// The MeshFields flavour of the space: its fields are MeshFieldsFieldData.
-class MeshFieldsLagrangeFunctionSpace final : public FunctionSpace
+class MeshFieldsLagrangeFunctionSpace final : public OmegaHLagrangeFunctionSpace
 {
 public:
   MeshFieldsLagrangeFunctionSpace(
     std::shared_ptr<const omega_h_meshfields::MeshFieldsAdapterLayout> layout,
     std::shared_ptr<const PointEvaluatorFactory> evaluator,
-    std::shared_ptr<const Geometry> geometry)
-    : FunctionSpace(layout, std::move(evaluator), std::move(geometry)),
+    std::shared_ptr<const Geometry> geometry, int order)
+    : OmegaHLagrangeFunctionSpace(layout, std::move(evaluator),
+                                  std::move(geometry), order),
       layout_(std::move(layout))
   {
   }
@@ -105,14 +133,16 @@ private:
 #endif
 
 /// The native flavour of the space: its fields are OmegaHFieldData.
-class NativeOmegaHLagrangeFunctionSpace final : public FunctionSpace
+class NativeOmegaHLagrangeFunctionSpace final
+  : public OmegaHLagrangeFunctionSpace
 {
 public:
   NativeOmegaHLagrangeFunctionSpace(
     std::shared_ptr<const OmegaHLagrangeLayout> layout,
     std::shared_ptr<const PointEvaluatorFactory> evaluator,
-    std::shared_ptr<const Geometry> geometry)
-    : FunctionSpace(layout, std::move(evaluator), std::move(geometry)),
+    std::shared_ptr<const Geometry> geometry, int order)
+    : OmegaHLagrangeFunctionSpace(layout, std::move(evaluator),
+                                  std::move(geometry), order),
       layout_(std::move(layout))
   {
   }
@@ -197,7 +227,7 @@ std::shared_ptr<const FunctionSpace> CreateOmegaHLagrangeSpace(
       std::make_shared<omega_h_meshfields::MeshFieldsEvaluatorFactory<Real>>(
         geometry, mesh_layout);
     return std::make_shared<MeshFieldsLagrangeFunctionSpace>(
-      mesh_layout, eval_factory, eval_factory->GetGeometry());
+      mesh_layout, eval_factory, eval_factory->GetGeometry(), order);
 #endif
   }
   auto layout = std::make_shared<OmegaHLagrangeLayout>(
@@ -205,7 +235,7 @@ std::shared_ptr<const FunctionSpace> CreateOmegaHLagrangeSpace(
   auto eval_factory = std::make_shared<OmegaHLagrangeEvaluatorFactory<Real>>(
     std::move(geometry), layout);
   return std::make_shared<NativeOmegaHLagrangeFunctionSpace>(
-    layout, eval_factory, eval_factory->GetGeometry());
+    layout, eval_factory, eval_factory->GetGeometry(), order);
 }
 
 #endif // PCMS_ENABLE_OMEGA_H

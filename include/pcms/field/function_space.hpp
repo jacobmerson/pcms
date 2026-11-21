@@ -87,6 +87,17 @@ public:
     return geometry_->GetCoordinateSystem();
   }
 
+  /// @brief A quadrature on the space's geometry.
+  /// @param order the degree the rule integrates exactly; by default that of
+  ///        the product of two functions of the space
+  /// @throws pcms_error unless the kind overrides it
+  [[nodiscard]] virtual Quadrature CreateQuadrature(
+    std::optional<int> /*order*/ = std::nullopt) const
+  {
+    throw pcms_error("FunctionSpace::CreateQuadrature: this space has no "
+                     "quadrature");
+  }
+
   /// @return whether the space's evaluator source supports `op`; for a space
   ///         without one, whether `op` is Value
   [[nodiscard]] bool Supports(DifferentialOperator op) const noexcept override;
