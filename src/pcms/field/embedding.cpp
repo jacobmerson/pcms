@@ -8,7 +8,6 @@
 #include <array>
 #include <cmath>
 #include <limits>
-#include <numbers>
 #include <optional>
 #include <string>
 #include <utility>
@@ -421,66 +420,6 @@ void MarkFound(DeviceView<const LO*> indices, DeviceView<bool*> found)
     KOKKOS_LAMBDA(const LO k) { found(indices(k)) = true; });
 }
 
-// The tensor Gauss-Legendre rule over each cell of the grid, in the parameter
-// space: point q of cell c is at the nodes of the digits of q, and its weight
-// is the product of the nodes' weights times the cell's half-widths (the
-// rule's weights sum to 2).
-template <unsigned Dim>
-void FillCellRule(UniformGrid<Dim> grid, DeviceView<const Real*> nodes,
-                  DeviceView<const Real*> rule_weights, DeviceView<Real**> xi,
-                  DeviceView<Real*> weights)
-{
-  const int n = nodes.extent(0);
-  int per_cell = 1;
-  for (unsigned d = 0; d < Dim; ++d) {
-    per_cell *= n;
-  }
-  detail::ForEach(
-    "embedded_cell_rule", static_cast<LO>(weights.extent(0)),
-    KOKKOS_LAMBDA(const LO i) {
-      const LO cell = i / per_cell;
-      int digits = i % per_cell;
-      const auto box = grid.GetCellBBOX(cell);
-      Real weight = 1;
-      for (unsigned d = 0; d < Dim; ++d) {
-        const int k = digits % n;
-        digits /= n;
-        xi(i, d) = box.center[d] + box.half_width[d] * nodes(k);
-        weight *= box.half_width[d] * rule_weights(k);
-      }
-      weights(i) = weight;
-    });
-}
-
-// The nodes and weights of the n-point Gauss-Legendre rule on [-1, 1].
-std::pair<std::vector<Real>, std::vector<Real>> GaussLegendre(int n)
-{
-  std::vector<Real> nodes(n);
-  std::vector<Real> weights(n);
-  for (int i = 0; i < n; ++i) {
-    Real x = std::cos(std::numbers::pi * (i + 0.75) / (n + 0.5));
-    Real derivative = 1;
-    for (int iteration = 0; iteration < 100; ++iteration) {
-      Real previous = 1;
-      Real current = x;
-      for (int k = 2; k <= n; ++k) {
-        const Real next = ((2 * k - 1) * x * current - (k - 1) * previous) / k;
-        previous = current;
-        current = next;
-      }
-      derivative = n * (x * current - previous) / (x * x - 1);
-      const Real step = current / derivative;
-      x -= step;
-      if (std::abs(step) < 1e-15) {
-        break;
-      }
-    }
-    nodes[i] = x;
-    weights[i] = 2 / ((1 - x * x) * derivative * derivative);
-  }
-  return {nodes, weights};
-}
-
 // ---------------------------------------------------------------------------
 
 // What the BoundPoints of an embedded geometry hold: the parameter
@@ -631,6 +570,20 @@ public:
     return position_;
   }
 
+  /// @brief A quadrature of this geometry from a rule in the parameter
+  ///        coordinates.
+  /// @param xi the points, in the parameter chart
+  /// @param weights their weights in the parameter measure; scaled in place by
+  ///        the volume factor
+  /// @return the points bound on this geometry and the weights
+  [[nodiscard]] Quadrature MapQuadrature(DeviceView<const Real**> xi,
+                                         DeviceView<Real*> weights) const
+  {
+    auto bound = Bind(Parametric(xi));
+    pcms::detail::ScaleByVolumeFactor(weights, *bound);
+    return Quadrature{std::move(bound), weights, {}};
+  }
+
 protected:
   EmbeddedGeometryBase(std::shared_ptr<const Geometry> parameter,
                        Position position,
@@ -723,43 +676,15 @@ public:
     return located;
   }
 
-  /// The tensor Gauss-Legendre rule of the parameter cells, exact for
-  /// polynomials of degree `options.order` in the parameters, with the
-  /// weights of the physical measure: the rule's weight times the volume
-  /// factor of the geometric factors at the points.
+  /// @brief The tensor Gauss-Legendre rule of the parameter cells, with the
+  ///        weights of the physical measure.
   [[nodiscard]] Quadrature CreateQuadrature(
     const QuadratureOptions& options) const override
   {
-    if (options.samples_per_cell > 0) {
-      throw pcms_error("EmbeddedGeometry::CreateQuadrature: only the "
-                       "deterministic rule is supported");
-    }
-    if (options.order < 1) {
-      throw pcms_error("EmbeddedGeometry::CreateQuadrature: the order must be "
-                       "positive");
-    }
-    const int per_axis = (options.order + 2) / 2;
-    const auto [nodes_host, weights_host] = GaussLegendre(per_axis);
-    DeviceView<Real*> nodes("gauss_nodes", per_axis);
-    DeviceView<Real*> rule("gauss_weights", per_axis);
-    Kokkos::deep_copy(nodes,
-                      Kokkos::View<const Real*, HostMemorySpace,
-                                   Kokkos::MemoryTraits<Kokkos::Unmanaged>>(
-                        nodes_host.data(), per_axis));
-    Kokkos::deep_copy(rule,
-                      Kokkos::View<const Real*, HostMemorySpace,
-                                   Kokkos::MemoryTraits<Kokkos::Unmanaged>>(
-                        weights_host.data(), per_axis));
-    size_t num_points = grid_.GetNumCells();
-    for (unsigned d = 0; d < Dim; ++d) {
-      num_points *= per_axis;
-    }
-    DeviceView<Real**> xi("quadrature_xi", num_points, Dim);
-    DeviceView<Real*> weights("quadrature_weights", num_points);
-    FillCellRule<Dim>(grid_, nodes, rule, xi, weights);
-    auto bound = Bind(Parametric(xi));
-    pcms::detail::ScaleByVolumeFactor(weights, *bound);
-    return Quadrature{std::move(bound), weights, {}};
+    auto [xi, weights] =
+      static_cast<const uniform_grid::UniformGridGeometry<Dim>&>(*parameter_)
+        .CellRule(options);
+    return MapQuadrature(xi, weights);
   }
 
 protected:
@@ -1027,6 +952,52 @@ private:
   std::shared_ptr<const FunctionSpace> space_;
 };
 
+/// @brief Divides `weights` by the volume factor at the points of `bound`.
+void DivideByVolumeFactor(DeviceView<Real*> weights, const BoundPoints& bound)
+{
+  const auto factors = detail::GeometricFactorsAccess::Factors(bound);
+  const auto volume = factors.VolumeFactor();
+  detail::ForEach(
+    "DivideByVolumeFactor", static_cast<LO>(weights.extent(0)),
+    KOKKOS_LAMBDA(const LO i) { weights(i) /= volume(i); });
+  Kokkos::fence("DivideByVolumeFactor");
+}
+
+/// @brief A space on the parameter geometry evaluated on an embedded
+///        geometry; its quadrature is the space's, in the physical measure.
+class EmbeddedSpace final : public FunctionSpace
+{
+public:
+  EmbeddedSpace(std::shared_ptr<const EmbeddedGeometryBase> embedded,
+                std::shared_ptr<const FunctionSpace> space)
+    : FunctionSpace(space->GetLayout(),
+                    std::make_shared<EmbeddedEvaluatorFactory>(embedded, space),
+                    embedded),
+      embedded_(std::move(embedded)),
+      space_(std::move(space))
+  {
+  }
+
+  [[nodiscard]] Quadrature CreateQuadrature(
+    std::optional<int> order) const override
+  {
+    const auto parameter = space_->CreateQuadrature(order);
+    DeviceView<Real*> weights(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing, "embedded_weights"),
+      parameter.weights.extent(0));
+    Kokkos::deep_copy(weights, parameter.weights);
+    if (embedded_->GetParameterSystem()->HasMetric()) {
+      DivideByVolumeFactor(weights, *parameter.points);
+    }
+    return embedded_->MapQuadrature(parameter.points->LocatedPointValues(),
+                                    weights);
+  }
+
+private:
+  std::shared_ptr<const EmbeddedGeometryBase> embedded_;
+  std::shared_ptr<const FunctionSpace> space_;
+};
+
 } // namespace
 
 std::shared_ptr<const CoordinateMap> CreateCoordinateMap(
@@ -1096,11 +1067,7 @@ std::shared_ptr<const FunctionSpace> CreateEmbeddedSpace(
     throw pcms_error("CreateEmbeddedSpace: the geometry must be an embedded "
                      "geometry of the space's geometry");
   }
-  auto layout = space->GetLayout();
-  return std::make_shared<FunctionSpace>(
-    std::move(layout),
-    std::make_shared<EmbeddedEvaluatorFactory>(embedded, std::move(space)),
-    embedded);
+  return std::make_shared<EmbeddedSpace>(base, std::move(space));
 }
 
 } // namespace pcms

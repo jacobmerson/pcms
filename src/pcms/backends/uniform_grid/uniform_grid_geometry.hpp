@@ -140,6 +140,22 @@ public:
     return grid_;
   }
 
+  /// @brief The tensor Gauss-Legendre rule of the cells, exact for
+  ///        polynomials of degree `options.order` in each coordinate; the
+  ///        weights include the chart's volume factor if the chart has a
+  ///        metric.
+  /// @throws pcms_error for a Monte Carlo rule or an order below 1
+  [[nodiscard]] Quadrature CreateQuadrature(
+    const QuadratureOptions& options) const override;
+
+  /// @brief The rule of CreateQuadrature before binding.
+  /// @return the points [point][axis] and their weights in the coordinate
+  ///         measure
+  /// @throws pcms_error for a Monte Carlo rule or an order below 1
+  [[nodiscard]] std::pair<Kokkos::View<Real**, DeviceMemorySpace>,
+                          Kokkos::View<Real*, DeviceMemorySpace>>
+  CellRule(const QuadratureOptions& options) const;
+
 protected:
   [[nodiscard]] std::shared_ptr<BoundPoints> BindImpl(
     const BindRequest& request) const override;
