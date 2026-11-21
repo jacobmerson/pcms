@@ -96,7 +96,13 @@ public:
   [[nodiscard]] const std::shared_ptr<const Function<Real>>& GetMetric()
     const noexcept
   {
-    return metric_;
+    return options_.metric;
+  }
+
+  /// @return the options given at creation
+  [[nodiscard]] const EmbeddingOptions& GetOptions() const noexcept
+  {
+    return options_;
   }
 
 protected:
@@ -113,12 +119,12 @@ private:
 
   EmbeddedGeometry(std::shared_ptr<const Geometry> parameter,
                    std::shared_ptr<const Function<Real>> position,
-                   std::shared_ptr<const Function<Real>> metric,
+                   EmbeddingOptions options,
                    std::shared_ptr<const detail::EmbeddedSearch> search);
 
   std::shared_ptr<const Geometry> parameter_;
   std::shared_ptr<const Function<Real>> position_;
-  std::shared_ptr<const Function<Real>> metric_;
+  EmbeddingOptions options_;
   std::shared_ptr<const CoordinateSystem> system_;
   std::shared_ptr<const detail::EmbeddedSearch> search_;
 };

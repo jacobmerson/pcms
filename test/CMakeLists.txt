@@ -453,7 +453,8 @@ if(Catch2_FOUND)
   endif()
   # unit tests that use the coupler
   if(TARGET pcms::coupler)
-    list(APPEND PCMS_UNIT_TEST_SOURCES test_field_serializer.cpp)
+    list(APPEND PCMS_UNIT_TEST_SOURCES test_field_serializer.cpp
+         test_coupler_description.cpp)
     if(PCMS_ENABLE_XGC)
       list(APPEND PCMS_UNIT_TEST_SOURCES test_xgc_field_data.cpp)
     endif()

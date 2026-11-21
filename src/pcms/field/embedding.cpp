@@ -965,12 +965,11 @@ private:
 
 EmbeddedGeometry::EmbeddedGeometry(
   std::shared_ptr<const Geometry> parameter,
-  std::shared_ptr<const Function<Real>> position,
-  std::shared_ptr<const Function<Real>> metric,
+  std::shared_ptr<const Function<Real>> position, EmbeddingOptions options,
   std::shared_ptr<const detail::EmbeddedSearch> search)
   : parameter_(std::move(parameter)),
     position_(std::move(position)),
-    metric_(std::move(metric)),
+    options_(std::move(options)),
     system_(position_->GetData().GetValueBasis().system),
     search_(std::move(search))
 {
@@ -1064,7 +1063,7 @@ std::shared_ptr<const EmbeddedGeometry> CreateEmbeddedGeometry(
   }
   return std::shared_ptr<const EmbeddedGeometry>(
     new EmbeddedGeometry(std::move(parameter_geometry), checked.Get(),
-                         std::move(options.metric), std::move(search)));
+                         std::move(options), std::move(search)));
 }
 
 std::shared_ptr<const FunctionSpace> CreateEmbeddedSpace(
