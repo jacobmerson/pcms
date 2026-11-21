@@ -617,6 +617,47 @@ if(PCMS_ENABLE_PYTHON
     set_property(TEST python_coupler_exchange_${transport} APPEND
                  PROPERTY ENVIRONMENT "${python_coupler_env}")
   endforeach()
+
+  # Partitioned client -> one server. pieces: serial per-rank meshes with
+  # global IDs and a vertex owned_mask; balanced: a distributed Omega_h mesh
+  foreach(nclient 2 4)
+    if(HOST_NPROC GREATER nclient)
+      foreach(transport BP4 SST)
+        foreach(mode pieces balanced)
+          set(name python_coupler_partitioned_${mode}_${nclient}to1_${transport})
+          dual_mpi_test(
+            TESTNAME
+            ${name}
+            TIMEOUT
+            60
+            NAME1
+            client
+            EXE1
+            ${Python_EXECUTABLE}
+            PROCS1
+            ${nclient}
+            ARGS1
+            ${CMAKE_CURRENT_SOURCE_DIR}/python/coupler_partitioned.py
+            client
+            ${transport}
+            ${mode}
+            NAME2
+            server
+            EXE2
+            ${Python_EXECUTABLE}
+            PROCS2
+            1
+            ARGS2
+            ${CMAKE_CURRENT_SOURCE_DIR}/python/coupler_partitioned.py
+            server
+            ${transport}
+            ${mode})
+          set_property(TEST ${name} APPEND PROPERTY ENVIRONMENT
+                                                    "${python_coupler_env}")
+        endforeach()
+      endforeach()
+    endif()
+  endforeach()
 endif()
 
 if(PCMS_ENABLE_C)
