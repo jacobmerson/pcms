@@ -16,6 +16,7 @@
 #include "pcms/utility/arrays.hpp"
 #include "field_test_utils.hpp"
 #include <cmath>
+#include <type_traits>
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
 #include "pcms/backends/omega_h/omega_h.hpp"
 
@@ -789,4 +790,34 @@ TEST_CASE("UniformGrid Order-0 multi-component field (regression)")
   REQUIRE(results_host(2, 1) == 30.0);
   REQUIRE(results_host(3, 0) == 4.0);
   REQUIRE(results_host(3, 1) == 40.0);
+}
+
+TEST_CASE("A uniform-grid layout classifies its DOF holders",
+          "[uniform_grid_field]")
+{
+  const auto check = [](auto dim_tag, int order, int expected_dim) {
+    constexpr unsigned Dim = decltype(dim_tag)::value;
+    pcms::UniformGrid<Dim> grid;
+    for (unsigned d = 0; d < Dim; ++d) {
+      grid.bot_left[d] = 0.0;
+      grid.edge_length[d] = 1.0;
+      grid.divisions[d] = 3 + d;
+    }
+    const pcms::UniformGridFieldLayout<Dim> layout(
+      std::make_shared<pcms::UniformGridGeometry<Dim>>(
+        grid, pcms::detail::DeferredCartesian()),
+      1, order);
+    const auto dims = layout.GetDOFHolderClassificationDimensionsHost();
+    const auto ids = layout.GetDOFHolderClassificationIdsHost();
+    REQUIRE(dims.size() == static_cast<size_t>(layout.GetNumDofHolder()));
+    REQUIRE(ids.size() == dims.size());
+    for (size_t i = 0; i < dims.size(); ++i) {
+      REQUIRE(dims[i] == expected_dim);
+      REQUIRE(ids[i] == 0);
+    }
+  };
+  check(std::integral_constant<unsigned, 2>{}, 0, 2);
+  check(std::integral_constant<unsigned, 2>{}, 1, 0);
+  check(std::integral_constant<unsigned, 3>{}, 0, 3);
+  check(std::integral_constant<unsigned, 3>{}, 1, 0);
 }

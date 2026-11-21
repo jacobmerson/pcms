@@ -104,8 +104,8 @@ UniformGridFieldLayout<Dim>::UniformGridFieldLayout(
     Kokkos::View<LO*, DeviceMemorySpace>("classification_dims", n);
   classification_ids_ =
     Kokkos::View<LO*, DeviceMemorySpace>("classification_ids", n);
-  Kokkos::deep_copy(classification_dims_host_, static_cast<LO>(entity_dim));
-  Kokkos::deep_copy(classification_ids_host_, LO{0});
+  Kokkos::deep_copy(classification_dims_, static_cast<LO>(entity_dim));
+  Kokkos::deep_copy(classification_ids_, LO{0});
 
   classification_dims_host_ =
     Kokkos::View<LO*, HostMemorySpace>("classification_dims", n);
