@@ -1237,6 +1237,9 @@ the training dataset as a by-product.
 
 ### 8.9 Status (2026-10-27)
 
+Ingest-error analysis, the count fix and downstream checks from 2026-11-04
+are in 8.10.
+
 | # | State | Where |
 |---|---|---|
 | S1 | Done | `src/pcms/pythonapi/bind_coupler.cpp`; `from_mesh(layout_name=, owned_mask=)` |
@@ -1355,6 +1358,194 @@ cluster), assuming code is written and tested off-cluster:
 | Running | Launch 8 jobs, check on them over 3-4 days, rerun failures | Start the producer job and the consumer, record |
 | Interpreting | Rollout comparison; null result means rethinking the talk | Works or visibly doesn't |
 | Main unknown | Whether there is a measurable difference | SST behaviour on the cluster |
+
+### 8.10 Ingest error and downstream checks (2026-11-04, rescored 2026-11-09)
+
+**Count fix.** Up to commit 509e4184, the point-mode electron count was
+inflated. `GridRasterizer.weights` were the hat integrals of the point
+mode's target mesh, and that mesh covers the whole bounding box, step
+included. So the nodes on the step's faces were also given weight outside
+the domain, right where the dense electron layer sits. The weights now
+come from the in-domain pixel triangles in both modes. The point count
+error on `flow.exo` at 600 x 99 is **+8.1% at step 40 and +11.1% at step
+50**; the earlier video showed +20% and +27%. The conservative count is
+unchanged (exact). The recorded training run was recomputed without
+retraining, and the video was re-rendered.
+
+**Field error against the exact source.** Both ingest modes were scored
+against P0 n_e on the 55k-triangle mesh, for all 51 steps on the 600 x 99
+grid. Since 2026-11-09 the count, the 1 mm block error and the L2 error are
+integrated over the exact intersection of the source mesh with the grid,
+through the right-hand side of PCMS's conservative projection (both sets of
+integrals add up to sum(area * n_e) to 3e-15). The L1 and log errors are
+nonlinear in the error, so they still use the earlier scoring: 7-point Gauss
+points on every source triangle.
+
+| Step 40 | Point | Conservative (lumped) | Conservative (consistent) |
+|---|---|---|---|
+| Total count error | +8.12% | 2e-14% (round-off) | 4e-13% (round-off) |
+| Count error in 1 mm x 1 mm blocks, sum of \|error\| / count | 9.4% | 0.25% | 0.10% |
+| Relative L2 density error | 0.310 | 0.245 | 0.219 |
+| Relative L1 density error (7-point) | 0.20 | 0.18 | not scored |
+| Mean \|log10 n_e error\| in decades (7-point) | 0.15 | 0.20 | not scored |
+
+- The conservative count is exact on every step (below 3e-12%) for both
+  mass matrices. The -0.01% reported on 2026-11-04 was the error of the
+  7-point scoring, not of the transfer.
+- The point bias sits in the electron layer on the top of the step, and it
+  grows as that layer builds up (0-2% before step 20, 11.2% at most; mean
+  +9.2% over steps 36-50).
+- Conservative transfer is also locally conservative: 0.25% at 1 mm with
+  lumped mass, 0.10% with consistent mass.
+- In L2 and L1 the two are close. At this resolution most of the error is
+  pixel-scale structure and PIC noise that neither can represent.
+- In log space the lumped projection is *worse*: it smears density into
+  nearly empty neighbouring pixels.
+
+**Downstream: the online CNNs scored against the source.** *This table is
+from the first live run (7-point scoring), in which the two CNNs did not
+share their velocity scaling. It is superseded by the replay with identical
+models below.* The section 8.3 "×persistence" numbers compare each model with its own ingested frames, so
+they say nothing about downstream impact. Scored against the source
+instead, steps 25-50 (medians):
+
+| | Point-trained | Conservative-trained |
+|---|---|---|
+| 1-step log error, model / persistence (decades) | 0.39 / 0.39 | 0.43 / 0.40 |
+| 1-step count error | +8.3% | +3.1% |
+| 5-step count error | +19% | +8.9% |
+
+- Neither model beats persistence (copying the last frame), so there is no
+  skill for the ingest to change. `flow.exo` has 51 noisy frames.
+- The point-trained model keeps its input's +8% count bias.
+- Both sometimes overshoot by decades in linear density, because the loss
+  is on log density. The conservative-trained run did so more often (count
+  errors of 100-10,000% at 7 steps), but there was one seed per mode, so
+  chance cannot be ruled out.
+- Conclusion so far: conservative ingest removes an 8-11% count bias from
+  the training data. These models cannot show whether that bias hurts a
+  surrogate with real skill.
+
+**Partitions.** The Omega_h-balanced 8-rank partition of the EMPIRE mesh
+cuts the same regions as EMPIRE's own `PROC_ID`, only numbered
+differently. The figure for the talk is an exploded view of the real mesh
+by rank, above the consumer's single frame.
+
+**Follow-up runs (done).**
+1. Offline replay of the CNN training (frames are identical to the
+   stream), 3 seeds each for point, conservative-lumped and
+   conservative-consistent ingest. It tests seed variation and the
+   consistent mass matrix, which smears less but can make density negative.
+2. A POD plus linear step-ahead model, in linear density, fitted on steps
+   10-35 and tested on 36-50. Grids: 200 x 33, 400 x 66, 600 x 99, 800 x 132
+   and 1200 x 198 (square pixels, 0.25 mm to 1/24 mm; mesh triangles are
+   about 0.1 mm). Ingest is point, lumped and consistent, scored against the
+   source. This checks the section 6.1 expectation that the point error
+   depends on resolution while conservative ingest stays consistent. The
+   model is deterministic and runs in seconds.
+
+   **Result (rank 8; ranks 4 and 16 agree).** The ingest numbers were
+   rescored with the exact intersection on 2026-11-09; the model numbers
+   were not (7-point scoring).
+   - The point-ingest count error is erratic with resolution, not a steady
+     offset. Mean over steps 36-50, from coarse to fine: +7.7%, -2.6%,
+     +9.2%, +0.8% and +3.8% at 200 x 33, 400 x 66, 600 x 99, 800 x 132 and
+     1200 x 198. That is aliasing of the electron layer against grid lines,
+     so no fixed correction would remove it. The point 1 mm block error is
+     1.8-12%.
+   - Conservative ingest is exact (round-off) at every resolution, for both
+     mass matrices. Its block error falls with the pixel size: 2.5%, 0.81%,
+     0.40%, 0.25% and 0.12% with lumped mass, 1.3%, 0.28%, 0.14%, 0.10% and
+     0.05% with consistent mass.
+   - Downstream, the linear model has no skill: its 1-step L2 error is at
+     persistence. It adds a count error of its own, about +3.4% for both
+     conservative ingests at every resolution. The point-trained models
+     range from +2.9% to +8.9% depending on the grid. Over a 15-step
+     rollout, model drift (+12% to +20%) swamps the ingest difference.
+   - So: conservative ingest makes the model's physics error independent
+     of the pixel size and set by the model alone. With point ingest the
+     error depends on the grid in an unpredictable way. A model with real
+     skill and a count-preserving structure is still needed to show the
+     difference in long rollouts.
+
+**CNN replay, 3 seeds x {point, lumped, consistent} (rerun 2026-11-09).**
+Offline replay of the online training with identical models (commit
+9d4b4af6). Per seed, one process trains the three ingests side by side
+with the same initial weights, the same sample order and one shared
+feature normalization; only the data differ. Predictions are scored
+against the source with the exact intersection (count, blocks) and with
+7-point quadrature (log error). Medians over steps 25-50, per seed (0, 1,
+2):
+- **1-step count error.** Point +1.2%, +2.4%, +4.9%. Lumped -4.6%, -0.8%,
+  -1.3%. Consistent -1.7%, -3.6%, -4.8%. The training data themselves are at
+  +7.3% (point) and 0 (conservative) over these steps.
+- **Paired difference.** In every seed the point-trained model predicts
+  more electrons than its lumped-trained twin: by 5.5, 2.9 and 6.1 points on
+  average (medians 6.4, 1.3 and 6.3), in 18 to 24 of the 26 steps. So 3-6
+  points of the 7.3-point difference in the data reach the predictions.
+- **1-step error in 1 mm blocks.** Point 20.6-21.4%, lumped 17.7-18.1%,
+  consistent 18.0-18.7%. The gap is larger than the seed spread.
+- **No configuration beats persistence** on the log error (model /
+  persistence 1.00 to 1.26).
+- **No large overshoots**: no step with \|count error\| > 100% in any run.
+- **Changed from the 2026-11-04 replay.** There each run had its own
+  velocity scaling, and the point-trained models sat at +7.0% to +9.5%, as
+  if they reproduced the full bias of their data. With identical models
+  both sides predict fewer electrons than their data contains, and only the
+  paired difference is robust. The absolute count of these models is weakly
+  constrained: they have no skill and the loss is on log density.
+- **Consistent mass makes density slightly negative.** The transfer itself
+  conserves to round-off. The log features clip the negative values to
+  zero, which adds up to +1.9% count by step 50 in what the model sees. Use
+  lumped mass for ingest that feeds log-density features.
+
+**Controlled case (analytic, 2026-11-04).** The EMPIRE models have no skill
+(see above), so this case uses a known answer and a model that works.
+- **Setup.** Thin Gaussian filaments (a ring and four blobs, sigma 0.006)
+  move at constant velocity, 0.16 x 0.10 pixel per step. The mesh is the
+  unit square, 20k jittered triangles about 0.01 across; the P0 truth is
+  computed at 112 quadrature points per cell. The ML grid is 64 x 64 P1,
+  0.0156 pixels, so the features are below pixel size, like the EMPIRE
+  electron layer.
+- **Surrogate.** A 5 x 5 linear stencil fitted by least squares on steps
+  0-59, with a variant whose weights are constrained to add up to 1
+  (mass-conserving).
+- **Ingest.** Point frames swing from -4.7% to +6.2% in mass as the
+  features cross the grid; conservative frames are exact. The best stencil
+  fits conservative frames with a 4.4% residual and point frames with 16%:
+  aliasing makes the dynamics look irregular.
+- **A, 100-step grid rollout.** Unconstrained models drift, point -10.4%
+  and lumped-conservative -5.9%. With weights constrained to add up to 1:
+  point +1.3% (its starting frame's offset), conservative -0.01%. Both beat
+  persistence.
+- **B, surrogate in the loop** (mesh -> grid -> model -> mesh each cycle,
+  100 cycles). Point transfer alone (identity model) gains +43.5% mass. With
+  the mass-conserving surrogate, point transfer gains +24%, and the ring
+  breaks into two smeared blobs. PCMS conservative transfer with consistent
+  mass is exact, -0.00%, keeps the ring and has the lowest L2 error (0.87
+  against 0.98).
+- **Lumped mass in the loop** is also mass-exact but blurs everything after
+  100 round trips. Use consistent mass for repeated transfers.
+- **Sending back only the model's increment** (model(G) - G) instead of the
+  whole state cuts the point-transfer mass error to -0.2%, but gives worse
+  field errors. The drift is a property of full-state round trips.
+- **Limits.** One configuration: filaments below pixel size, one grid, a
+  linear model.
+- **Script.** loop_case.py (scratchpad); figure loop_case.png.
+
+**Positioning (quick literature check).** Streaming simulation data into
+training is established: Melissa (arXiv 2309.16743), SmartSim (MOM6
+online training), PIConGPU over ADIOS2 (2021, and on Frontier in 2025).
+Conservative unstructured-to-grid regridding is standard in climate
+(ESMF, xESMF). I found no measurement of how the interpolation choice
+biases ML training data, and no in situ training on XGC, M3D-C1, NIMROD or
+EMPIRE output. The contribution to claim is a data layer that knows the
+mesh and conserves physics while streaming from fusion codes, plus the
+bias measurement. Streaming on its own is not new.
+
+The analysis scripts (exact-intersection and Gauss-point scoring, partition
+and error figures, offline replay) are not in the repository, the same as the other plotting
+code.
 
 ## 9. Validation
 
