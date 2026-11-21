@@ -42,6 +42,18 @@ FieldLayoutCommunicator::FieldLayoutCommunicator(
   }
 }
 
+FieldLayoutCommunicator::FieldLayoutCommunicator(
+  const std::string& name, MPI_Comm mpi_comm, redev::Redev& redev,
+  redev::Channel& channel, const FieldLayout& layout, ExchangePlan plan)
+  : mpi_comm_(mpi_comm),
+    channel_(channel),
+    plan_(std::move(plan)),
+    layout_(layout),
+    name_(name),
+    redev_(redev)
+{
+}
+
 Rank1View<const pcms::LO, pcms::HostMemorySpace>
 FieldLayoutCommunicator::GetPermutationArray() const
 {
