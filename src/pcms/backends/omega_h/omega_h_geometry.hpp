@@ -370,6 +370,13 @@ public:
   /// element.)
   [[nodiscard]] CellJacobians CellJacobian() const;
 
+  /// @brief Quadrature over the elements: MeshFields' reference rule of
+  ///        `options.order` or uniform random samples on each element.
+  /// @throws pcms_error if the order is not positive or has no rule, or if
+  ///         the rule is deterministic and MeshFields is not enabled
+  [[nodiscard]] Quadrature CreateQuadrature(
+    const QuadratureOptions& options) const override;
+
 protected:
   [[nodiscard]] std::shared_ptr<BoundPoints> BindImpl(
     const BindRequest& request) const override;

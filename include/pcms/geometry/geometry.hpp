@@ -5,6 +5,7 @@
 #include "pcms/utility/coordinate_view.hpp"
 #include "pcms/field/out_of_bounds_policy.hpp"
 #include "pcms/geometry/bound_points.hpp"
+#include "pcms/geometry/quadrature.hpp"
 #include "pcms/geometry/supports.hpp"
 #include "pcms/utility/memory_spaces.hpp"
 #include "pcms/utility/types.hpp"
@@ -170,6 +171,15 @@ public:
   [[nodiscard]] virtual SupportResults Neighbourhood(
     CoordinateView<DeviceMemorySpace> coords, int site_dim,
     const NeighbourhoodOptions& options, const OwnerHints& owners = {}) const;
+
+  /// @brief Quadrature over this geometry's cells.
+  /// @param options the rule
+  /// @return points generated in the cells, bound without a search, and
+  ///         their weights
+  /// @throws pcms_error unless the kind overrides it or if it cannot
+  ///         generate the rule
+  [[nodiscard]] virtual Quadrature CreateQuadrature(
+    const QuadratureOptions& options) const;
 
 protected:
   Geometry() = default;

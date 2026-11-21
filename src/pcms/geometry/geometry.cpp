@@ -1,6 +1,7 @@
 #include "pcms/geometry/geometry.hpp"
 #include "pcms/field/coordinate_map.hpp"
 #include "pcms/utility/assert.hpp"
+#include "pcms/utility/detail/memory_spaces.hpp"
 #include <string>
 
 namespace pcms
@@ -113,6 +114,12 @@ SupportResults Geometry::Neighbourhood(CoordinateView<DeviceMemorySpace>, int,
                    "neighbourhood search");
 }
 
+Quadrature Geometry::CreateQuadrature(const QuadratureOptions&) const
+{
+  throw pcms_error("Geometry::CreateQuadrature: this geometry has no "
+                   "quadrature");
+}
+
 void detail::CheckNeighbourhoodArguments(
   const Geometry& geometry, const CoordinateView<DeviceMemorySpace>& coords,
   const NeighbourhoodOptions& options, const std::string& caller)
@@ -139,6 +146,18 @@ void detail::CheckNeighbourhoodArguments(
                      std::to_string(options.max_supports) +
                      "; other bounds are not honoured yet");
   }
+}
+
+void detail::ScaleByVolumeFactor(Kokkos::View<Real*, DeviceMemorySpace> weights,
+                                 const BoundPoints& bound)
+{
+  const auto factors = GeometricFactorsAccess::Factors(bound);
+  const auto volume = factors.VolumeFactor();
+  pcms::detail::ForEach(
+    "ScaleByVolumeFactor", static_cast<LO>(weights.extent(0)),
+    KOKKOS_LAMBDA(const LO i) { weights(i) *= volume(i); });
+  // the factors' storage is released on return
+  Kokkos::fence("ScaleByVolumeFactor");
 }
 
 void detail::CheckEntityIds(Kokkos::View<const LO*, DeviceMemorySpace> ids,
