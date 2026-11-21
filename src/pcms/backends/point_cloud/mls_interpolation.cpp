@@ -175,7 +175,7 @@ Kokkos::View<Real*, DeviceMemorySpace> mls_interpolation(
   Kokkos::View<const Real*, DeviceMemorySpace> source_coordinates,
   Kokkos::View<const Real*, DeviceMemorySpace> target_coordinates,
   const SupportResults& support, LO dim, LO degree, RadialBasisFunction bf,
-  double lambda, double tol, double decay_factor)
+  double lambda, double tol, double decay_factor, const AxisMetric& metric)
 {
   const auto nvertices_target =
     static_cast<LO>(target_coordinates.size()) / dim;
@@ -186,42 +186,42 @@ Kokkos::View<Real*, DeviceMemorySpace> mls_interpolation(
     case RadialBasisFunction::RBF_GAUSSIAN:
       interpolated_values = field::detail::mls_interpolation(
         source_values, source_coordinates, target_coordinates, support, dim,
-        degree, field::RBF_GAUSSIAN{decay_factor}, lambda, tol);
+        degree, field::RBF_GAUSSIAN{decay_factor}, lambda, tol, metric);
       break;
     case RadialBasisFunction::RBF_C4:
       interpolated_values = field::detail::mls_interpolation(
         source_values, source_coordinates, target_coordinates, support, dim,
-        degree, field::RBF_C4{}, lambda, tol);
+        degree, field::RBF_C4{}, lambda, tol, metric);
       break;
     case RadialBasisFunction::RBF_CONST:
       interpolated_values = field::detail::mls_interpolation(
         source_values, source_coordinates, target_coordinates, support, dim,
-        degree, field::RBF_CONST{}, lambda, tol);
+        degree, field::RBF_CONST{}, lambda, tol, metric);
       break;
     case RadialBasisFunction::NO_OP:
       interpolated_values = field::detail::mls_interpolation(
         source_values, source_coordinates, target_coordinates, support, dim,
-        degree, field::NoOp{}, lambda, tol);
+        degree, field::NoOp{}, lambda, tol, metric);
       break;
     case RadialBasisFunction::RBF_MULTIQUADRIC:
       interpolated_values = field::detail::mls_interpolation(
         source_values, source_coordinates, target_coordinates, support, dim,
-        degree, field::RBF_MULTIQUADRIC{decay_factor}, lambda, tol);
+        degree, field::RBF_MULTIQUADRIC{decay_factor}, lambda, tol, metric);
       break;
     case RadialBasisFunction::RBF_INVMULTIQUADRIC:
       interpolated_values = field::detail::mls_interpolation(
         source_values, source_coordinates, target_coordinates, support, dim,
-        degree, field::RBF_INVMULTIQUADRIC{decay_factor}, lambda, tol);
+        degree, field::RBF_INVMULTIQUADRIC{decay_factor}, lambda, tol, metric);
       break;
     case RadialBasisFunction::RBF_THINPLATESPLINE:
       interpolated_values = field::detail::mls_interpolation(
         source_values, source_coordinates, target_coordinates, support, dim,
-        degree, field::RBF_THINPLATESPLINE{decay_factor}, lambda, tol);
+        degree, field::RBF_THINPLATESPLINE{decay_factor}, lambda, tol, metric);
       break;
     case RadialBasisFunction::RBF_CUBIC:
       interpolated_values = field::detail::mls_interpolation(
         source_values, source_coordinates, target_coordinates, support, dim,
-        degree, field::RBF_CUBIC{decay_factor}, lambda, tol);
+        degree, field::RBF_CUBIC{decay_factor}, lambda, tol, metric);
       break;
   }
 

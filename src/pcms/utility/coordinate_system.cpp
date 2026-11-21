@@ -1,8 +1,12 @@
 #include "pcms/utility/coordinate_system.hpp"
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
 #include "pcms/utility/coordinate_systems/cylindrical.hpp"
+#include "pcms/utility/coordinate_systems/euclidean.hpp"
 #include "pcms/utility/assert.hpp"
+#include <algorithm>
+#include <cmath>
 #include <string>
+#include <vector>
 
 namespace pcms
 {
@@ -37,6 +41,36 @@ public:
 
 private:
   int dim_;
+};
+
+class Euclidean final : public CoordinateSystem
+{
+public:
+  explicit Euclidean(std::vector<csys::Axis> axes) : axes_(std::move(axes)) {}
+
+  [[nodiscard]] std::string_view Kind() const noexcept override
+  {
+    return "euclidean";
+  }
+  [[nodiscard]] int Dimension() const noexcept override
+  {
+    return static_cast<int>(axes_.size());
+  }
+  [[nodiscard]] bool HasOrthogonalBasis() const noexcept override
+  {
+    return true;
+  }
+  [[nodiscard]] bool HasUnitScaleFactors() const noexcept override
+  {
+    return true;
+  }
+  [[nodiscard]] bool operator==(
+    const CoordinateSystem& other) const noexcept override
+  {
+    const auto* p = dynamic_cast<const Euclidean*>(&other);
+    return p != nullptr && p->axes_ == axes_;
+  }
+  const std::vector<csys::Axis> axes_;
 };
 
 class CylindricalRThetaZ final : public CoordinateSystem
@@ -97,6 +131,31 @@ std::shared_ptr<const CoordinateSystem> CreateCartesian(int dim)
                      std::to_string(dim));
   }
   return std::make_shared<const Cartesian>(dim);
+}
+
+std::shared_ptr<const CoordinateSystem> CreateEuclidean(std::vector<Axis> axes)
+{
+  const auto valid = [](Real x) { return x > 0 && std::isfinite(x); };
+  bool ok = !axes.empty() && axes.size() <= 6;
+  for (const auto& axis : axes) {
+    ok = ok && valid(axis.scale) && (!axis.period || valid(*axis.period));
+  }
+  if (!ok) {
+    throw pcms_error("csys::CreateEuclidean: need 1..6 axes with positive, "
+                     "finite periods and scales");
+  }
+  return std::make_shared<const Euclidean>(std::move(axes));
+}
+
+std::shared_ptr<const CoordinateSystem> CreateEuclidean(int dim)
+{
+  return CreateEuclidean(std::vector<Axis>(std::max(dim, 0)));
+}
+
+std::vector<Axis> GetAxes(const CoordinateSystem& system)
+{
+  const auto* p = dynamic_cast<const Euclidean*>(&system);
+  return p == nullptr ? std::vector<Axis>{} : p->axes_;
 }
 
 std::shared_ptr<const CoordinateSystem> CreateCylindricalRThetaZ()

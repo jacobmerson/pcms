@@ -181,7 +181,9 @@ public:
       source_values, binding_->SourceCoordinates(),
       binding_->TargetCoordinates(), binding_->Supports(), dim_,
       static_cast<LO>(options_.degree), options_.basis, options_.lambda,
-      options_.tol, options_.decay_factor);
+      options_.tol, options_.decay_factor,
+      pcms::detail::MakeAxisMetric(
+        *binding_->GetGeometry()->GetCoordinateSystem()));
 
     const int n_targets = static_cast<int>(result.size());
     Kokkos::parallel_for(

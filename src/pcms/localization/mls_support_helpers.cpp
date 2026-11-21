@@ -2,6 +2,7 @@
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/check.hpp"
 #include "pcms/utility/detail/print.hpp"
+#include "pcms/utility/coordinate_systems/euclidean.hpp"
 
 #include <Kokkos_Core.hpp>
 
@@ -58,24 +59,41 @@ void adapt_radii(unsigned min_req_supports, unsigned max_allowed_supports,
   Kokkos::fence();
 }
 
+AxisMetric MakeAxisMetric(const CoordinateSystem& system)
+{
+  AxisMetric metric;
+  const auto axes = csys::GetAxes(system);
+  for (size_t d = 0; d < axes.size(); ++d) {
+    metric.period[d] = axes[d].period.value_or(0.0);
+    metric.scale[d] = axes[d].scale;
+  }
+  return metric;
+}
+
 // ---- point-cloud N² support search helpers --------------------------------
 
 namespace
 {
 
 KOKKOS_INLINE_FUNCTION
-Kokkos::Array<Real, 3> load_point(
-  const Kokkos::View<const Real*, DeviceMemorySpace>& coords, int id, int dim)
+double distance2(const Kokkos::View<const Real*, DeviceMemorySpace>& a_coords,
+                 int a,
+                 const Kokkos::View<const Real*, DeviceMemorySpace>& b_coords,
+                 int b, int dim, const AxisMetric& metric)
 {
-  Kokkos::Array<Real, 3> p{0, 0, 0};
-  for (int d = 0; d < dim; ++d)
-    p[d] = coords[id * dim + d];
-  return p;
+  double dist2 = 0;
+  for (int d = 0; d < dim; ++d) {
+    const double diff =
+      metric.Offset(a_coords[a * dim + d], b_coords[b * dim + d], d);
+    dist2 += diff * diff;
+  }
+  return dist2;
 }
 
 struct NSquareCountFunctor
 {
   const int dim;
+  const AxisMetric metric;
   const LO n_sources;
   const Kokkos::View<const Real*, DeviceMemorySpace> target_coords;
   const Kokkos::View<const Real*, DeviceMemorySpace> source_coords;
@@ -85,17 +103,11 @@ struct NSquareCountFunctor
   KOKKOS_INLINE_FUNCTION
   void operator()(const int target_id) const
   {
-    auto tgt = load_point(target_coords, target_id, dim);
     auto r2 = radii2[target_id];
     int count = 0;
     for (int s = 0; s < n_sources; ++s) {
-      auto src = load_point(source_coords, s, dim);
-      double dist2 = 0;
-      for (int d = 0; d < dim; ++d) {
-        double diff = tgt[d] - src[d];
-        dist2 += diff * diff;
-      }
-      if (dist2 <= r2)
+      if (distance2(target_coords, target_id, source_coords, s, dim, metric) <=
+          r2)
         ++count;
     }
     num_supports[target_id] = count;
@@ -119,6 +131,7 @@ struct ScanSupportPtrFunctor
 struct FillSupportIdxFunctor
 {
   const int dim;
+  const AxisMetric metric;
   const LO n_sources;
   const Kokkos::View<LO*, DeviceMemorySpace> support_ptr;
   const Kokkos::View<LO*, DeviceMemorySpace> supports_idx;
@@ -129,18 +142,12 @@ struct FillSupportIdxFunctor
   KOKKOS_INLINE_FUNCTION
   void operator()(const int target_id) const
   {
-    auto tgt = load_point(target_coords, target_id, dim);
     auto r2 = radii2[target_id];
     auto pos = support_ptr[target_id];
     const auto end = support_ptr[target_id + 1];
     for (int s = 0; s < n_sources; ++s) {
-      auto src = load_point(source_coords, s, dim);
-      double dist2 = 0;
-      for (int d = 0; d < dim; ++d) {
-        double diff = tgt[d] - src[d];
-        dist2 += diff * diff;
-      }
-      if (dist2 <= r2) {
+      if (distance2(target_coords, target_id, source_coords, s, dim, metric) <=
+          r2) {
         PCMS_CHECK_PRINTF(pos < end,
                           "Support index out of bounds: pos %d end %d "
                           "target_id %d\n",
@@ -157,7 +164,7 @@ SupportResults BuildPointCloudSupports(
   Kokkos::View<const Real*, DeviceMemorySpace> source_coords,
   Kokkos::View<const Real*, DeviceMemorySpace> target_coords, int dim,
   double radius, unsigned min_req_supports, bool adapt_radius_flag,
-  unsigned max_iterations)
+  unsigned max_iterations, const AxisMetric& metric)
 {
   PCMS_ALWAYS_ASSERT(radius >= 0.0);
   const LO n_targets = static_cast<LO>(target_coords.size()) / dim;
@@ -178,8 +185,8 @@ SupportResults BuildPointCloudSupports(
     Kokkos::parallel_for(
       "n2_count",
       Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n_targets),
-      NSquareCountFunctor{dim, n_sources, target_coords, source_coords, radii2,
-                          num_supports});
+      NSquareCountFunctor{dim, metric, n_sources, target_coords, source_coords,
+                          radii2, num_supports});
     Kokkos::fence();
 
     ++loop_count;
@@ -226,7 +233,7 @@ SupportResults BuildPointCloudSupports(
   Kokkos::parallel_for(
     "fill_support_idx",
     Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n_targets),
-    FillSupportIdxFunctor{dim, n_sources, support_ptr, supports_idx,
+    FillSupportIdxFunctor{dim, metric, n_sources, support_ptr, supports_idx,
                           target_coords, source_coords, radii2});
   Kokkos::fence();
 

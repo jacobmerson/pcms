@@ -81,6 +81,19 @@ class TestCoordinateSystem:
             assert system.kind() == kind
             assert system.dimension() == dim
 
+    def test_euclidean(self):
+        for dim in range(1, 7):
+            system = pcms.csys.create_euclidean(dim)
+            assert system.kind() == "euclidean"
+            assert system.dimension() == dim
+            assert system.has_orthogonal_basis()
+            assert system.has_unit_scale_factors()
+        assert pcms.csys.create_euclidean(3) != pcms.csys.create_cartesian(3)
+        assert pcms.csys.create_euclidean(3) == pcms.csys.create_euclidean(3)
+        for bad in (0, 7):
+            with pytest.raises(Exception):
+                pcms.csys.create_euclidean(bad)
+
     def test_properties(self):
         cyl = pcms.csys.create_cylindrical_r_theta_z()
         assert cyl.kind() == "cylindrical_rthetaz"

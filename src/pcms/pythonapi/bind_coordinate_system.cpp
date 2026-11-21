@@ -9,6 +9,7 @@
 #include "pcms/utility/coordinate_system.hpp"
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
 #include "pcms/utility/coordinate_systems/cylindrical.hpp"
+#include "pcms/utility/coordinate_systems/euclidean.hpp"
 #include "pcms/utility/coordinate_view.hpp"
 #include "pcms/pythonapi/numpy_view.hpp"
 #include "pcms/pythonapi/py_value_types.hpp"
@@ -92,6 +93,12 @@ void bind_coordinate_system_module(py::module& m)
       return Immutable<CoordinateSystem>{csys::CreateCartesian(dim)};
     },
     py::arg("dim"), "The Cartesian coordinate system of dimension 1..3");
+  csys.def(
+    "create_euclidean",
+    [](int dim) {
+      return Immutable<CoordinateSystem>{csys::CreateEuclidean(dim)};
+    },
+    py::arg("dim"), "Non-spatial coordinates of dimension 1..6; not Cartesian");
   csys.def(
     "create_cylindrical_r_theta_z",
     []() {
