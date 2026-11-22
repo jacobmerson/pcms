@@ -67,8 +67,8 @@ The reorganization does not change numerical behavior. See [MIGRATION.md](MIGRAT
   and the MLS fit take a support across a period at its image nearest the
   query point; a coordinate system without a metric measures coordinate
   differences.
-- Field metadata: a `Field` carries `FieldMetadata` (name, optional `Units`,
-  optional `Extent`: `Intensive` or `Extensive`; `GetMetadata`). Fields are
+- Field metadata: a `Field` carries `FieldMetadata` (name, optional
+  `Extent`: `Intensive` or `Extensive`; `GetMetadata`). Fields are
   created with their metadata and a `ValueBasis`:
   `CreateFunction<T>(FieldMetadata, ValueBasis = {})`,
   `CreateFunction<T>(std::string name = "", ValueBasis = {})` and
@@ -77,14 +77,15 @@ The reorganization does not change numerical behavior. See [MIGRATION.md](MIGRAT
   scaling arguments are `ValueBasis` members; an unset scaling is derived).
   `TransferOperator::Apply` and `ApplyTranspose` (copies, interpolators and
   all projections) are non-virtual: `Apply` throws if a field is declared
-  `Extensive`, `ApplyTranspose` if one is declared `Intensive`, and both throw
-  when both fields have units and they differ; they then give a target the
-  units and extent it lacked from the source. What is unknown is not checked.
-  PCMS does not convert units.
+  `Extensive`, `ApplyTranspose` if one is declared `Intensive`. Units are
+  `ValueBasis::units` (the units of the physical components; unset matches
+  any): every check of a value basis, including `Axpy`, throws when both have
+  units and they differ. A transfer does not give its target units. PCMS does
+  not convert units.
 - `PCMS_ENABLE_UNITS` (LLNL/units, found with `find_package(units CONFIG)`)
   parses and compares units: `Units::Parse` reads SI, CF/UDUNITS and IMAS
   strings (`UnitSyntax`) and the checks run. Without it a `Units` holds its
-  text, which is carried, sent and learned but never validated or compared.
+  text, which is carried and sent but never validated or compared.
   `pcms.features["units"]` reports it. The presets other than `minimal`
   enable it.
 - `PCMS_ENABLE_COUPLER` to build without redev and ADIOS2.

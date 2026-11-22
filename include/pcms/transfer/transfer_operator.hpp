@@ -14,17 +14,13 @@ class TransferOperator
 public:
   using value_type = T;
 
-  /// @brief Writes `source` transferred to `target`, then gives `target` the
-  ///        units and extent it lacks from `source`.
-  /// @throws pcms_error if a field is Extensive, or both have units and they
-  ///         differ (units are not converted)
+  /// @brief Writes `source` transferred to `target`.
+  /// @throws pcms_error if a field is Extensive, or the value bases (units
+  ///         included) differ
   void Apply(const Field<T>& source, Field<T>& target) const
   {
     detail::CheckExtent(source.GetMetadata(), target.GetMetadata(), false);
-    detail::CheckSameUnits(source.GetMetadata(), target.GetMetadata(),
-                           "transfer");
     ApplyImpl(source, target);
-    detail::LearnMetadata(source.GetMetadata(), target.metadata_);
   }
 
   /// @return whether ApplyTranspose is implemented
@@ -37,17 +33,13 @@ public:
   /// the DOF vectors, <A x, y> = <x, A^T y> (coefficient dot products). Its
   /// source is data on Apply's target layout (loads, sensitivities); its
   /// target is a functional on Apply's source layout, overwritten (unlike
-  /// PointEvaluator::EvaluateTranspose, which accumulates). Metadata is
-  /// checked and learned as for Apply.
-  /// @throws pcms_error unless SupportsTranspose(), if a field is Intensive,
-  ///         or if the units differ
+  /// PointEvaluator::EvaluateTranspose, which accumulates).
+  /// @throws pcms_error unless SupportsTranspose() or if a field is
+  ///         Intensive
   void ApplyTranspose(const Field<T>& source, Field<T>& target) const
   {
     detail::CheckExtent(source.GetMetadata(), target.GetMetadata(), true);
-    detail::CheckSameUnits(source.GetMetadata(), target.GetMetadata(),
-                           "transposed transfer");
     ApplyTransposeImpl(source, target);
-    detail::LearnMetadata(source.GetMetadata(), target.metadata_);
   }
 
   virtual ~TransferOperator() noexcept = default;

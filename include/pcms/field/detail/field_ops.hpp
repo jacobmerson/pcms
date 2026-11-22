@@ -21,6 +21,18 @@ void CheckSameLayout(const Field<T>& a, const Field<T>& b, const char* what)
 }
 
 template <typename T>
+void CheckSameValues(const Field<T>& a, const Field<T>& b, const char* what)
+{
+  CheckSameLayout(a, b, what);
+  const auto& basis_a = a.GetData().GetValueBasis();
+  const auto& basis_b = b.GetData().GetValueBasis();
+  if (!SameValueBasis(basis_a, basis_b)) {
+    throw pcms_error(std::string(what) + ": the fields' value bases differ" +
+                     UnitsMismatch(basis_a, basis_b));
+  }
+}
+
+template <typename T>
 using OwnedValues = Rank2View<const T, DeviceMemorySpace>;
 
 /// @brief op(x, y) elementwise over values of the same shape

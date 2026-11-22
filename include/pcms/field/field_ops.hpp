@@ -34,7 +34,7 @@ void Scale(T a, Field<T>& y)
 template <typename T>
 void Axpy(T a, const Field<T>& x, Field<T>& y)
 {
-  detail::CheckSameLayout(x, y, "Axpy");
+  detail::CheckSameValues(x, y, "Axpy");
   y.SetDOFHolderDataUnchecked(MakeConstRank2View(detail::MapOwned<T>(
     x.GetDOFHolderData().GetValues(), y.GetDOFHolderData().GetValues(),
     KOKKOS_LAMBDA(const T u, const T v) { return a * u + v; })));

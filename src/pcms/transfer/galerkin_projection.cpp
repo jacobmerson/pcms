@@ -95,6 +95,9 @@ void GalerkinProjection::ApplyImpl(const Field<Real>& source,
   if (&target.GetLayout() != target_space_->GetLayout().get()) {
     throw pcms_error("GalerkinProjection::Apply: target field layout mismatch");
   }
+  pcms::detail::CheckWrittenValueBasis("GalerkinProjection::Apply",
+                                       source.GetData().GetValueBasis(),
+                                       target.GetData().GetValueBasis());
   auto samples = samples_;
 
   // 1. f at the points, minus the control variate g there; the control
@@ -146,6 +149,9 @@ void GalerkinProjection::ApplyTransposeImpl(const Field<Real>& source,
     throw pcms_error("GalerkinProjection::ApplyTranspose: the source must be "
                      "a field of the target space's layout");
   }
+  pcms::detail::CheckWrittenValueBasis("GalerkinProjection::ApplyTranspose",
+                                       source.GetData().GetValueBasis(),
+                                       target.GetData().GetValueBasis());
   // z = M^-1 b, E z at the points, W, then S^T into the functional
   if (lumped_ != nullptr) {
     detail::Divide(source, *lumped_, coefficients_);

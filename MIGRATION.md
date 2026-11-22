@@ -222,9 +222,10 @@ its spline space: `GetSpace()`), and `MakeEQDSKField(filename)` is
 `ReadEQDSK(filename)`, which returns `EQDSKFunction {data, psi}`.
 `EQDSKField` and `EQDSKFieldWithData` are removed.
 
-Field metadata. A `Field` carries `FieldMetadata{name, units, extent}`, where
-`units` is an optional `Units` and `extent` an optional `Extent`
-(`Intensive`, `Extensive`); what is unset is unknown and never checked.
+Field metadata. A `Field` carries `FieldMetadata{name, extent}`, where
+`extent` is an optional `Extent` (`Intensive`, `Extensive`) and the optional
+`Units` are `ValueBasis::units`; what is unset is unknown and never checked.
+Transfers write what they are given: create the target with the source's basis.
 Create fields with their metadata and, as the second argument, the basis of
 their values; the same three overloads exist on `FunctionSpace`
 (`CreateFunction`) and `FieldFactory` (`CreateField`):
@@ -236,7 +237,7 @@ their values; the same three overloads exist on `FunctionSpace`
 | `CreateFunction<T>("b", values::Vector, system[, scaling])` | `CreateFunction<T>("b", {.system = system, [.scaling = scaling,] .variance = values::Vector})` |
 | `CreateFunction<T>("b", basis)` | unchanged |
 | `CreateFunction<T>("b", std::move(data))`, `CreateField<T>("b", std::move(data))` | `CreateFunction<T>({.name = "b"}, std::move(data))`, `CreateField<T>({.name = "b"}, std::move(data))` |
-| (new) | `CreateFunction<T>(FieldMetadata{.name = "n", .units = Units::Parse("m^-3"), .extent = Extent::Intensive}, basis = {})` |
+| (new) | `CreateFunction<T>(FieldMetadata{.name = "n", .extent = Extent::Intensive}, {.units = Units::Parse("m^-3")})` |
 
 `CreateFunction<T>("name")` and `CreateFunction<T>()` are unchanged. The
 `ValueBasis` default leaves `system` and `scaling` unset: the system is the
