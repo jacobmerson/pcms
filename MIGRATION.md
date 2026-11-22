@@ -247,11 +247,14 @@ system (cylindrical RThetaZ, a parameter system) must state it. So
 `ValueBasis::scaling` is now a `std::optional<ComponentScaling>` (bases that a
 Function carries always have it). Physical components are defined on every
 system with a metric: natural times sqrt(g_ii) per contravariant index and
-sqrt(g^ii) per covariant one. The name is fixed at creation; there is no `SetUnits`. A transfer
-sets the units and extent of its target that are unknown from its source
-(known ones are never overwritten) and throws when both sides have units that
-differ (with `PCMS_ENABLE_UNITS`), when `Apply` meets a field declared
-`Extensive`, or when `ApplyTranspose` meets one declared `Intensive`.
+sqrt(g^ii) per covariant one. Gradients are written as natural components
+(partials along the coordinates); evaluating them through a coordinate map
+whose source system is orthonormal gives physical ones. The name is fixed at
+creation; there is no `SetUnits`. A transfer sets the units and extent of its
+target that are unknown from its source (known ones are never overwritten)
+and throws when both sides have units that differ (with
+`PCMS_ENABLE_UNITS`), when `Apply` meets a field declared `Extensive`, or when
+`ApplyTranspose` meets one declared `Intensive`.
 
 `TransferOperator::Apply` and `ApplyTranspose` are no longer virtual: they
 check the metadata and call the private virtuals `ApplyImpl` and
@@ -274,7 +277,7 @@ again. `EvaluationRequest` and its `From*` factories are removed, and so is
 | `source.CreatePointEvaluator<T>(EvaluationRequest::FromCoordinates(coords, policy))` | `source.CreatePointEvaluator<T>(source.GetGeometry()->Bind(coords, policy))` |
 | `source.CreatePointEvaluator<T>(EvaluationRequest::FromFunctionSpace(space, policy))` | `source.CreatePointEvaluator<T>(source.GetGeometry()->Bind(space.GetLayout()->GetDOFHolderCoordinates(), policy))`, or `CreateInterpolator` |
 | `TransformedSource(source, map)` | `geometry->Bind(coords, policy, map)`: the points are in the map's source coordinate system, are located at their images, and the evaluators re-express the values through the map |
-| `bound_map->OutputBasis(basis)`, `bound_map->TransformValues(values)` | `bound_map->ValueTransform()`: `OutputBasis(basis)`, `Apply(in, out)` and `ApplyTranspose(in, out)` (`pcms/field/value_transform.hpp`); scalars pass, vectors and covectors are transformed by the map's Jacobian (Python keeps `output_basis` and `transform_values`) |
+| `bound_map->OutputBasis(basis)`, `bound_map->TransformValues(values)` | `bound_map->ValueTransforms(basis)`: the `ValueTransform`s to apply in order, each with `OutputBasis(basis)`, `Apply(in, out)` and `ApplyTranspose(in, out)` (`pcms/field/value_transform.hpp`); scalars pass, vectors and covectors are transformed by the map's Jacobian, physical components stay physical (Python keeps `output_basis` and `transform_values`) |
 | a `CoordinateMap` subclass whose bound map overrides `OutputBasis` and `TransformValues` | a bound map implements `Jacobian()` (pure virtual); a closed-form map is a kernel that writes the image and the Jacobian, `CreateCoordinateMap(source, target, kernel)` |
 | (none) | `source.CreatePointEvaluator<T>(bound, DifferentialOperator::Gradient)`; `Gradient(source)`, `Divergence(source)`, `Curl(source)` are sources whose evaluators write the operator applied to the field (`pcms/field/gradient_source.hpp`, public); `Supports(op)` tells which a source implements |
 | (none) | `geometry->Bind(coords, OwnerHints{...}, policy, map)`: points whose owners are known (generated in the elements of the geometry) skip the search; `geometry->Rebind(previous, coords)` recycles the storage of a BoundPoints nothing else holds |

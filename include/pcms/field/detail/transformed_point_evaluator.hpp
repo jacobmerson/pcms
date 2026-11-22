@@ -21,17 +21,15 @@
 namespace pcms::detail
 {
 
-/// A value transform, obtained when it is first needed (a bound map builds
-/// its transform on first use).
-using LazyValueTransform = std::function<const ValueTransform&()>;
+/// The value transforms, in order, that re-express values in a basis.
+using ValueTransforms =
+  std::function<std::vector<const ValueTransform*>(const ValueBasis&)>;
 
 /// Point evaluator that re-expresses the values of an inner evaluator through
-/// a chain of value transforms, applied in order: the physical components of
-/// a gradient (Scale), the components of an embedded space's parameter system
-/// (Pushforward), the values of a bind with a coordinate map (the map's
-/// Pullback). Scalars pass through without building the transforms; other
-/// values are transformed in place, through scratch storage only where a
-/// transform changes the number of components.
+/// the value transforms of their basis (those of a bind with a coordinate
+/// map). Values without transforms are written by the inner evaluator
+/// directly; others are transformed in place, through scratch storage only
+/// where a transform changes the number of components.
 /// PointEvaluatorFactory::CreatePointEvaluator creates it.
 template <typename T>
 class TransformedPointEvaluator final : public PointEvaluator<T>
@@ -40,10 +38,10 @@ public:
   /// @param bound BoundPoints of the query points
   /// @param inner evaluator created from `bound` that writes the values
   ///        before the transforms; not null
-  /// @param transforms the transforms, in the order they apply
+  /// @param transforms the transforms of the values of `inner`
   TransformedPointEvaluator(std::shared_ptr<const BoundPoints> bound,
                             std::unique_ptr<PointEvaluator<T>> inner,
-                            std::vector<LazyValueTransform> transforms)
+                            ValueTransforms transforms)
     : PointEvaluator<T>(std::move(bound), inner->Operator(),
                         inner->AcceptedLayout()),
       inner_(std::move(inner)),
@@ -58,8 +56,8 @@ public:
                     ValueView<T, DeviceMemorySpace> values) const override
   {
     PCMS_FUNCTION_TIMER;
-    const auto bases = Bases(field.GetData().GetValueBasis());
-    if (bases.size() == 1) {
+    const auto [bases, transforms] = Chain(field.GetData().GetValueBasis());
+    if (transforms.empty()) {
       inner_->Evaluate(field, values);
       return;
     }
@@ -76,7 +74,7 @@ public:
       inner_->Evaluate(field, ValueView<Real, DeviceMemorySpace>(
                                 bases.front(), storage(bases.front())));
       for (std::size_t k = 1; k < bases.size(); ++k) {
-        transforms_[k - 1]().Apply(
+        transforms[k - 1]->Apply(
           ValueView<const Real, DeviceMemorySpace>(bases[k - 1],
                                                    storage(bases[k - 1])),
           ValueView<Real, DeviceMemorySpace>(bases[k], storage(bases[k])));
@@ -108,8 +106,9 @@ public:
       FillRows(MakeRank2View(masked), filled, T{0});
       values = MakeConstRank2View(masked);
     }
-    const auto bases = Bases(functional.GetData().GetValueBasis());
-    if (bases.size() == 1) {
+    const auto [bases, transforms] =
+      Chain(functional.GetData().GetValueBasis());
+    if (transforms.empty()) {
       inner_->EvaluateTranspose(
         ValueView<const T, DeviceMemorySpace>(bases.front(), values),
         functional);
@@ -124,7 +123,7 @@ public:
       for (std::size_t k = bases.size() - 1; k > 0; --k) {
         const auto out =
           Storage(scratch, bases[k - 1], values.extent(0), blocks);
-        transforms_[k - 1]().ApplyTranspose(
+        transforms[k - 1]->ApplyTranspose(
           ValueView<const Real, DeviceMemorySpace>(bases[k], in),
           ValueView<Real, DeviceMemorySpace>(bases[k - 1], out));
         in = out;
@@ -140,7 +139,7 @@ public:
 
   [[nodiscard]] ValueBasis OutputBasis(const ValueBasis& stored) const override
   {
-    return Bases(stored).back();
+    return Chain(stored).first.back();
   }
 
 private:
@@ -165,20 +164,21 @@ private:
   }
 
   // the inner evaluator's basis for `stored`, then the output basis of each
-  // transform; only the first for scalars, which every transform passes
-  [[nodiscard]] std::vector<ValueBasis> Bases(const ValueBasis& stored) const
+  // of its transforms; and the transforms
+  [[nodiscard]] std::pair<std::vector<ValueBasis>,
+                          std::vector<const ValueTransform*>>
+  Chain(const ValueBasis& stored) const
   {
     std::vector<ValueBasis> bases{inner_->OutputBasis(stored)};
-    if (bases.front().Rank() > 0) {
-      for (const auto& transform : transforms_) {
-        bases.push_back(transform().OutputBasis(bases.back()));
-      }
+    auto transforms = transforms_(bases.front());
+    for (const auto* transform : transforms) {
+      bases.push_back(transform->OutputBasis(bases.back()));
     }
-    return bases;
+    return {std::move(bases), std::move(transforms)};
   }
 
   std::unique_ptr<PointEvaluator<T>> inner_;
-  std::vector<LazyValueTransform> transforms_;
+  ValueTransforms transforms_;
 };
 
 } // namespace pcms::detail

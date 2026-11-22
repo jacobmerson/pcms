@@ -49,18 +49,28 @@ ValueBasis NaturalCylindricalVector()
                     ComponentScaling::Natural, pcms::values::Vector};
 }
 
-// Re-expresses `values` in place through the bound map's value transform and
+// The basis the bound map's value transforms re-express `basis` in.
+ValueBasis OutputBasis(const BoundCoordinateMap& bound, ValueBasis basis)
+{
+  for (const auto* transform : bound.ValueTransforms(basis)) {
+    basis = transform->OutputBasis(basis);
+  }
+  return basis;
+}
+
+// Re-expresses `values` in place through the bound map's value transforms and
 // returns the basis they are in afterwards.
-ValueBasis TransformInPlace(const BoundCoordinateMap& bound,
-                            const ValueBasis& basis,
+ValueBasis TransformInPlace(const BoundCoordinateMap& bound, ValueBasis basis,
                             Kokkos::View<Real**, DeviceMemorySpace> values)
 {
-  const auto& transform = bound.ValueTransform();
-  const ValueBasis out = transform.OutputBasis(basis);
-  transform.Apply(
-    ValueView<Real, DeviceMemorySpace>(basis, pcms::MakeRank2View(values)),
-    ValueView<Real, DeviceMemorySpace>(out, pcms::MakeRank2View(values)));
-  return out;
+  for (const auto* transform : bound.ValueTransforms(basis)) {
+    const ValueBasis out = transform->OutputBasis(basis);
+    transform->Apply(
+      ValueView<Real, DeviceMemorySpace>(basis, pcms::MakeRank2View(values)),
+      ValueView<Real, DeviceMemorySpace>(out, pcms::MakeRank2View(values)));
+    basis = out;
+  }
+  return basis;
 }
 
 } // namespace
@@ -171,9 +181,8 @@ TEST_CASE("CartesianToCylindrical: Bind produces known values")
   }
 
   // Values run opposite to points: a cylindrical field becomes Cartesian.
-  REQUIRE(pcms::detail::SameValueBasis(
-    bound->ValueTransform().OutputBasis(CylindricalVector()),
-    CartesianVector()));
+  REQUIRE(pcms::detail::SameValueBasis(OutputBasis(*bound, CylindricalVector()),
+                                       CartesianVector()));
 }
 
 TEST_CASE("round trip via sequential Bind calls")
@@ -309,18 +318,25 @@ TEST_CASE("bound map: the two cylindrical maps invert each other")
   const auto to_cyl = pcms::CreateCylindricalToCartesian()->Bind(
     pcms::test::MakeCoords(cyl_data, pcms::csys::CreateCylindricalRThetaZ()));
 
-  const std::vector<Real> v = {0.0, 1.0, 0.0}; // theta-direction unit vector
-  auto values = pcms::test::CreateDeviceRank2View(v, 3);
-  const auto as_cart = TransformInPlace(*to_cart, CylindricalVector(), values);
-  auto a = pcms::test::CopyCoordinatesToHost(pcms::MakeConstRank2View(values));
-  REQUIRE_THAT(a(0, 0), WithinAbs(-std::sin(theta), pcms::test::ExactTol));
-  REQUIRE_THAT(a(0, 1), WithinAbs(std::cos(theta), pcms::test::ExactTol));
+  // the physical theta-direction unit vector, and covector
+  const std::vector<Real> v = {0.0, 1.0, 0.0};
+  for (const auto variance : {pcms::values::Vector, pcms::values::Covector}) {
+    const ValueBasis physical{pcms::csys::CreateCylindricalRThetaZ(),
+                              ComponentScaling::Physical, variance};
+    auto values = pcms::test::CreateDeviceRank2View(v, 3);
+    const auto as_cart = TransformInPlace(*to_cart, physical, values);
+    auto a =
+      pcms::test::CopyCoordinatesToHost(pcms::MakeConstRank2View(values));
+    REQUIRE_THAT(a(0, 0), WithinAbs(-std::sin(theta), pcms::test::ExactTol));
+    REQUIRE_THAT(a(0, 1), WithinAbs(std::cos(theta), pcms::test::ExactTol));
 
-  REQUIRE(pcms::detail::SameValueBasis(
-    TransformInPlace(*to_cyl, as_cart, values), CylindricalVector()));
-  auto b = pcms::test::CopyCoordinatesToHost(pcms::MakeConstRank2View(values));
-  for (int d = 0; d < 3; ++d) {
-    REQUIRE_THAT(b(0, d), WithinAbs(v[d], pcms::test::ExactTol));
+    REQUIRE(pcms::detail::SameValueBasis(
+      TransformInPlace(*to_cyl, as_cart, values), physical));
+    auto b =
+      pcms::test::CopyCoordinatesToHost(pcms::MakeConstRank2View(values));
+    for (int d = 0; d < 3; ++d) {
+      REQUIRE_THAT(b(0, d), WithinAbs(v[d], pcms::test::ExactTol));
+    }
   }
 }
 
@@ -344,12 +360,13 @@ TEST_CASE("bound map: the value transform validates the values it is given")
     REQUIRE_THAT(out(0, 1), WithinAbs(1.0, pcms::test::ExactTol));
     REQUIRE_THAT(out(0, 2), WithinAbs(0.0, pcms::test::ExactTol));
   }
-  SECTION("a basis of another system")
+  SECTION("a basis of another system passes through")
   {
-    REQUIRE_THROWS_WITH(bound->ValueTransform().OutputBasis(ValueBasis{
-                          pcms::csys::CreateCylindricalRZ(),
-                          ComponentScaling::Physical, pcms::values::Vector}),
-                        ContainsSubstring("takes components in"));
+    REQUIRE(bound
+              ->ValueTransforms(ValueBasis{pcms::csys::CreateCylindricalRZ(),
+                                           ComponentScaling::Physical,
+                                           pcms::values::Vector})
+              .empty());
   }
   SECTION("values already in the output basis pass through unchanged")
   {
@@ -399,9 +416,11 @@ TEST_CASE("the plane insertion passes covectors and refuses vectors")
                                     pcms::csys::CreateCylindricalRThetaZ(), 1,
                                     0.3)
       ->Bind(pcms::test::MakeCoords(data, pcms::csys::CreateCylindricalRZ()));
-  const auto& transform = bound->ValueTransform();
   const ValueBasis covector{pcms::csys::CreateCylindricalRThetaZ(),
                             ComponentScaling::Natural, pcms::values::Covector};
+  const auto transforms = bound->ValueTransforms(covector);
+  REQUIRE(transforms.size() == 1);
+  const auto& transform = *transforms.front();
   const ValueBasis out = transform.OutputBasis(covector);
   REQUIRE(SameCoordinateSystem(out.system, pcms::csys::CreateCylindricalRZ()));
   // (dR, dtheta, dZ) components of a covector, two points
@@ -568,13 +587,11 @@ TEST_CASE("ValueTransform: ApplyTranspose is the transpose of Apply",
   const auto cart3 = pcms::csys::CreateCartesian(3);
   const auto cyl = pcms::csys::CreateCylindricalRThetaZ();
   // points of the coordinate systems: (R, theta, Z) with R > 0
-  const auto points3 = RandomValues(n, 3, engine);
   const auto cyl_points =
     pcms::test::CreateDeviceRank2View({1.0, 0.1, 0.0, 2.0, 0.2, 1.0, 0.5, 3.0,
                                        -1.0, 3.0, -2.0, 0.5, 1.5, 1.0, 0.0},
                                       3);
-  // the metrics of the coordinate systems at the points
-  const auto g_cart3 = cart3->Bind(MakeConstView(points3));
+  // the metric of the cylindrical coordinate system at the points
   const auto g_cyl = cyl->Bind(MakeConstView(cyl_points));
   const auto square = RandomJacobian(n, 3, 3, engine);
   const auto wide = RandomJacobian(n, 3, 2, engine);
@@ -589,50 +606,44 @@ TEST_CASE("ValueTransform: ApplyTranspose is the transpose of Apply",
 
   SECTION("Pushforward, square")
   {
-    const auto t =
-      pcms::detail::Pushforward(j_square, cart3, cart3, g_cart3->Metric());
+    const auto t = pcms::detail::Pushforward(j_square, cart3, cart3);
     CheckTranspose(t, Basis(cart3, physical, Vector), 1, engine);
     CheckTranspose(t, Basis(cart3, physical, Covector), 1, engine);
     CheckTranspose(t, Basis(cart3, physical, Covector), 2, engine);
   }
   SECTION("Pushforward, rectangular: vectors only")
   {
-    const auto t =
-      pcms::detail::Pushforward(j_wide, cart2, cart3, g_cart3->Metric());
+    const auto t = pcms::detail::Pushforward(j_wide, cart2, cart3);
     CheckTranspose(t, Basis(cart2, physical, Vector), 1, engine);
     REQUIRE_THROWS_WITH(t.OutputBasis(Basis(cart2, physical, Covector)),
                         ContainsSubstring("not square"));
   }
   SECTION("Pullback, square, into a coordinate system with scale factors")
   {
-    const auto t =
-      pcms::detail::Pullback(j_square, cart3, g_cart3->Metric(), cyl);
+    const auto t = pcms::detail::Pullback(j_square, cart3, cyl);
     CheckTranspose(t, Basis(cart3, physical, Vector), 1, engine);
     CheckTranspose(t, Basis(cart3, physical, Covector), 1, engine);
-    REQUIRE(t.OutputBasis(Basis(cart3, physical, Vector)).scaling == physical);
+    REQUIRE(t.OutputBasis(Basis(cart3, physical, Vector)).scaling == natural);
   }
   SECTION("Pullback, from a coordinate system with scale factors")
   {
-    const auto t =
-      pcms::detail::Pullback(j_square, cyl, g_cyl->Metric(), cart3);
-    CheckTranspose(t, Basis(cyl, physical, Vector), 1, engine);
+    const auto t = pcms::detail::Pullback(j_square, cyl, cart3);
     CheckTranspose(t, Basis(cyl, natural, Vector), 1, engine);
-    CheckTranspose(t, Basis(cyl, physical, Covector), 1, engine);
     CheckTranspose(t, Basis(cyl, natural, Covector), 1, engine);
+    REQUIRE_THROWS_WITH(t.OutputBasis(Basis(cyl, physical, Vector)),
+                        ContainsSubstring("not physical ones"));
   }
   SECTION("Pullback, rectangular: covectors only")
   {
-    const auto t =
-      pcms::detail::Pullback(j_wide, cart3, g_cart3->Metric(), cart2);
+    const auto t = pcms::detail::Pullback(j_wide, cart3, cart2);
     CheckTranspose(t, Basis(cart3, physical, Covector), 1, engine);
     REQUIRE_THROWS_WITH(t.OutputBasis(Basis(cart3, physical, Vector)),
                         ContainsSubstring("not square"));
   }
-  SECTION("Scale")
+  SECTION("ToPhysical and ToNatural")
   {
-    const auto to_physical =
-      pcms::detail::Scale(cyl, g_cyl->Metric(), physical);
-    const auto to_natural = pcms::detail::Scale(cyl, g_cyl->Metric(), natural);
+    const auto to_physical = pcms::detail::ToPhysical(cyl, g_cyl->Metric());
+    const auto to_natural = pcms::detail::ToNatural(cyl, g_cyl->Metric());
     CheckTranspose(to_physical, Basis(cyl, natural, Vector), 1, engine);
     CheckTranspose(to_physical, Basis(cyl, natural, Covector), 1, engine);
     CheckTranspose(to_natural, Basis(cyl, physical, Vector), 1, engine);
