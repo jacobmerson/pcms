@@ -48,6 +48,69 @@ void CheckBindArguments(const Geometry& geometry,
   }
 }
 
+/// Moves coordinate `axis` into [lower, lower + length) and counts the lengths
+/// each point moved down.
+void ReduceAxis(Kokkos::View<Real**, DeviceMemorySpace> points,
+                Kokkos::View<Real*, DeviceMemorySpace> wraps, int axis,
+                Real lower, Real length)
+{
+  pcms::detail::ForEach(
+    "ReduceAxis", static_cast<LO>(points.extent(0)), KOKKOS_LAMBDA(const LO p) {
+      Real n = Kokkos::floor((points(p, axis) - lower) / length);
+      Real x = points(p, axis) - n * length;
+      // rounding can leave x at the upper end
+      if (x >= lower + length) {
+        x -= length;
+        n += 1;
+      }
+      points(p, axis) = x;
+      wraps(p) = n;
+    });
+}
+
+/// @return the points reduced by the identifications of their coordinate
+///         system, or an empty view if it has none
+Kokkos::View<Real**, DeviceMemorySpace> Reduce(
+  const CoordinateView<DeviceMemorySpace>& coords)
+{
+  const auto identifications = coords.GetCoordinateSystem()->Identifications();
+  if (identifications.empty()) {
+    return {};
+  }
+  const auto in = coords.GetValues();
+  const auto n = static_cast<LO>(in.extent(0));
+  const auto dim = static_cast<int>(in.extent(1));
+  Kokkos::View<Real**, DeviceMemorySpace> points(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "reduced_points"), n, dim);
+  pcms::detail::ForEach(
+    "CopyReduced", n, KOKKOS_LAMBDA(const LO p) {
+      for (int d = 0; d < dim; ++d) {
+        points(p, d) = in(p, d);
+      }
+    });
+  Kokkos::View<Real*, DeviceMemorySpace> wraps(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "identification_wraps"), n);
+  for (const auto& id : identifications) {
+    ReduceAxis(points, wraps, id.axis, id.lower, id.length);
+    if (id.map != nullptr) {
+      id.map->Apply(points, wraps);
+    }
+  }
+  return points;
+}
+
+/// @return `coords`, or its points `reduced` if not empty
+CoordinateView<DeviceMemorySpace> Located(
+  const CoordinateView<DeviceMemorySpace>& coords,
+  const Kokkos::View<Real**, DeviceMemorySpace>& reduced)
+{
+  if (reduced.data() == nullptr) {
+    return coords;
+  }
+  return CoordinateView<DeviceMemorySpace>(coords.GetCoordinateSystem(),
+                                           MakeConstRank2View(reduced));
+}
+
 } // namespace
 
 std::shared_ptr<const BoundPoints> Geometry::Bind(
@@ -73,10 +136,13 @@ std::shared_ptr<const BoundPoints> Geometry::Bind(
   if (map != nullptr) {
     std::shared_ptr<const BoundCoordinateMap> bound_map = map->Bind(coords);
     const CoordinateView<DeviceMemorySpace> mapped = bound_map->MappedPoints();
-    bound = BindImpl(
-      BindRequest{mapped, policy, hint, std::move(bound_map), coords, map});
+    const auto reduced = Reduce(mapped);
+    bound = BindImpl(BindRequest{Located(mapped, reduced), policy, hint,
+                                 std::move(bound_map), coords, map});
   } else {
-    bound = BindImpl(BindRequest{coords, policy, hint, nullptr, coords});
+    const auto reduced = Reduce(coords);
+    bound = BindImpl(
+      BindRequest{Located(coords, reduced), policy, hint, nullptr, coords});
   }
   PCMS_ALWAYS_ASSERT(bound != nullptr);
   return bound;
@@ -104,8 +170,11 @@ std::shared_ptr<const BoundPoints> Geometry::Rebind(
   CheckBindArguments(*this, coords, previous->Policy(), nullptr);
   // nothing else refers to `previous`, so writing it is not observable
   auto reused = std::const_pointer_cast<BoundPoints>(std::move(previous));
-  reused->Rebind(RebindKey{},
-                 BindRequest{coords, reused->Policy(), {}, nullptr, coords});
+  const auto reduced = Reduce(coords);
+  reused->Rebind(
+    RebindKey{},
+    BindRequest{
+      Located(coords, reduced), reused->Policy(), {}, nullptr, coords});
   return reused;
 }
 

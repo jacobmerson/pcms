@@ -19,9 +19,10 @@ bool SameDOFHolderSites(const BoundPoints& bound, const FieldLayout& layout)
   if (bound.NumPoints() != num_points) {
     return false;
   }
-  // a bind with a map located the mapped points
-  const auto va = bound.LocatedPoints().GetValues();
+  // a bind with a map located the mapped points, before their reduction
   const bool mapped = bound.GetCoordinateMap() != nullptr;
+  const auto va = mapped ? MakeConstRank2View(bound.GetBoundMap()->Mapped())
+                         : bound.LocatedPoints().GetValues();
   const auto vb = mapped ? bound.GetCoordinateMap()->Bind(sites)->Mapped()
                          : Kokkos::View<const Real**, DeviceMemorySpace>();
   const auto num_dims = static_cast<int>(va.extent(1));

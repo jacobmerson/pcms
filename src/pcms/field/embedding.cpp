@@ -715,7 +715,11 @@ private:
       bins_.width[j] =
         std::max((bin_hi[j] - bin_lo[j]) / bins_.count[j], 1e-300);
       bins_.wrap_lo[j] = image_lo[j];
-      bins_.period[j] = system->Period(j).value_or(0);
+      for (const auto& id : system->Identifications()) {
+        if (id.axis == j && id.map == nullptr) {
+          bins_.period[j] = id.length;
+        }
+      }
       if (symmetry && symmetry->axis == j) {
         bins_.period[j] = symmetry->length;
       }
@@ -825,9 +829,7 @@ private:
       found = detail::FoundMask(n, {Inner()->MissingPoints()});
     } else {
       const auto located = search_.Locate(MakeConstRank2View(points));
-      if (GetBoundMap() == nullptr) {
-        ReplaceLocatedPoints(located.reduced);
-      }
+      ReplaceLocatedPoints(located.reduced);
       SetParameters(*geometry_->GetParameterGeometry(), located.xi,
                     OutOfBoundsPolicy{OutOfBoundsMode::NEAREST_BOUNDARY});
       found = located.found;
