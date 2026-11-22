@@ -1,4 +1,5 @@
 #include "pcms/field/function_spaces.hpp"
+#include "periodic.hpp"
 
 #include "pcms/field/detail/simple_field_data.hpp"
 #include "pcms/backends/uniform_grid/uniform_grid_geometry.hpp"
@@ -49,6 +50,14 @@ std::shared_ptr<const FunctionSpace> CreateSplineSpace(
                            -> std::shared_ptr<const FunctionSpace> {
                            if constexpr (Dim == 3) {
                              return nullptr;
+                           } else if (grid->WrappedAxes() != 0) {
+                             if (Dim != 1) {
+                               throw pcms_error(
+                                 "CreateSplineSpace: a spline on identified "
+                                 "axes is 1D only");
+                             }
+                             return pcms::detail::CreatePeriodicSplineSpace(
+                               std::move(grid));
                            } else {
                              return CreateUniformGridSplineSpace(
                                std::move(grid), num_components);
