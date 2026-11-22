@@ -226,8 +226,7 @@ MeshFieldsAdapterLayout::MeshFieldsAdapterLayout(
     dof_holder_coords_("", GetNumDofHolderWithGhosts(), mesh_.dim()),
     class_ids_(GetNumEnts()),
     class_dims_(class_ids_.size()),
-    owned_("", class_dims_.size()),
-    owned_host_("", class_dims_.size())
+    owned_("", class_dims_.size())
 {
   PCMS_FUNCTION_TIMER;
   SetCoordinateSystem(geometry->GetCoordinateSystem());
@@ -264,7 +263,8 @@ MeshFieldsAdapterLayout::MeshFieldsAdapterLayout(
   }
   BuildOwnedViews();
 
-  BuildOwnedClassification();
+  owned_classification_ = pcms::detail::BuildOwnedClassification(
+    class_dims_, class_ids_, owned_indices_);
   SetGeometry(std::move(geometry));
 }
 
@@ -306,11 +306,10 @@ std::array<int, 4> MeshFieldsAdapterLayout::GetNodesPerDim() const
   return nodes_per_dim_;
 }
 
-Rank1View<const bool, HostMemorySpace> MeshFieldsAdapterLayout::GetOwnedHost()
+Rank1View<const bool, DeviceMemorySpace> MeshFieldsAdapterLayout::GetOwned()
   const
 {
-  Kokkos::deep_copy(owned_host_, owned_);
-  return pcms::detail::make_const_array_view(owned_host_);
+  return pcms::detail::make_const_array_view(owned_);
 }
 
 GlobalIDView<HostMemorySpace> MeshFieldsAdapterLayout::GetGidsHost() const
@@ -326,12 +325,6 @@ MeshFieldsAdapterLayout::GetDOFHolderCoordinates() const
   return CoordinateView<DeviceMemorySpace>{GetCoordinateSystem(), coords_view};
 }
 
-Kokkos::View<const LO*, HostMemorySpace>
-MeshFieldsAdapterLayout::GetOwnedIndicesHost() const
-{
-  return owned_indices_host_;
-}
-
 Kokkos::View<const LO*, DeviceMemorySpace>
 MeshFieldsAdapterLayout::GetOwnedIndices() const
 {
@@ -340,14 +333,11 @@ MeshFieldsAdapterLayout::GetOwnedIndices() const
 
 void MeshFieldsAdapterLayout::BuildOwnedViews()
 {
-  Kokkos::deep_copy(owned_host_, owned_);
-
   auto owned = detail::BuildOwnedLayoutData(
     owned_,
     Kokkos::View<const GO*, DeviceMemorySpace>(gids_.data(), gids_.size()),
     dof_holder_coords_, mesh_.dim());
   num_owned_ = owned.num_owned;
-  owned_indices_host_ = owned.owned_indices_host;
   owned_gids_host_ = owned.owned_gids_host;
   owned_coords_2d_ = owned.owned_coords_2d;
   owned_indices_ = owned.owned_indices;
@@ -356,18 +346,6 @@ void MeshFieldsAdapterLayout::BuildOwnedViews()
 bool MeshFieldsAdapterLayout::IsDistributed() const
 {
   return true;
-}
-
-Omega_h::Read<Omega_h::ClassId> MeshFieldsAdapterLayout::GetClassIDs() const
-{
-  PCMS_FUNCTION_TIMER;
-  return Omega_h::Read(class_ids_);
-}
-
-Omega_h::Read<Omega_h::I8> MeshFieldsAdapterLayout::GetClassDims() const
-{
-  PCMS_FUNCTION_TIMER;
-  return Omega_h::Read(class_dims_);
 }
 
 size_t MeshFieldsAdapterLayout::GetNumEnts() const
@@ -389,7 +367,7 @@ EntOffsetsArray MeshFieldsAdapterLayout::GetEntOffsets() const
 {
   return !HasGhosts() ? EntOffsetsWithGhosts()
                       : pcms::detail::OwnedEntOffsets(EntOffsetsWithGhosts(),
-                                                      owned_indices_host_);
+                                                      owned_indices_);
 }
 
 EntOffsetsArray MeshFieldsAdapterLayout::EntOffsetsWithGhosts() const
@@ -426,23 +404,16 @@ int MeshFieldsAdapterLayout::GetDOFHolderEntityDim() const
   return entity_dim;
 }
 
-Rank1View<const LO, HostMemorySpace>
-MeshFieldsAdapterLayout::GetDOFHolderClassificationDimensionsHost() const
+Rank1View<const LO, DeviceMemorySpace>
+MeshFieldsAdapterLayout::GetDOFHolderClassificationDimensions() const
 {
-  return pcms::detail::make_const_array_view(owned_classification_dims_host_);
+  return pcms::detail::make_const_array_view(owned_classification_.dims);
 }
 
-Rank1View<const LO, HostMemorySpace>
-MeshFieldsAdapterLayout::GetDOFHolderClassificationIdsHost() const
+Rank1View<const LO, DeviceMemorySpace>
+MeshFieldsAdapterLayout::GetDOFHolderClassificationIds() const
 {
-  return pcms::detail::make_const_array_view(owned_classification_ids_host_);
-}
-
-void MeshFieldsAdapterLayout::BuildOwnedClassification()
-{
-  pcms::detail::BuildOwnedClassificationHost(
-    class_dims_, class_ids_, owned_indices_, owned_classification_dims_host_,
-    owned_classification_ids_host_);
+  return pcms::detail::make_const_array_view(owned_classification_.ids);
 }
 
 } // namespace pcms::omega_h_meshfields

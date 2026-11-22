@@ -15,7 +15,7 @@ std::shared_ptr<FieldFactory> CreateFieldFactory(
     pmesh, pfes, gf, std::move(coordinate_system), std::move(layout_name));
 }
 
-Kokkos::View<bool*, HostMemorySpace> OverlapMaskFromAttribute(
+Kokkos::View<bool*, DeviceMemorySpace> OverlapMaskFromAttribute(
   ::mfem::ParMesh& pmesh, int attribute)
 {
   return MFEMLayout::OverlapMaskFromAttribute(pmesh, attribute);

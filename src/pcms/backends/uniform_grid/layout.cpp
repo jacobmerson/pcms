@@ -76,8 +76,7 @@ UniformGridFieldLayout<Dim>::UniformGridFieldLayout(
     gids_("gids", CountDofHolders()),
     gids_host_("gids_host", CountDofHolders()),
     dof_holder_coords_("dof_holder_coords", CountDofHolders(), Dim),
-    owned_("owned", CountDofHolders()),
-    owned_host_("owned_host", CountDofHolders())
+    owned_("owned", CountDofHolders())
 {
   PCMS_FUNCTION_TIMER;
   SetCoordinateSystem(geometry->GetCoordinateSystem());
@@ -91,7 +90,6 @@ UniformGridFieldLayout<Dim>::UniformGridFieldLayout(
     InitilizeGidsAndOwnedFunctor(gids_, owned_));
 
   Kokkos::deep_copy(gids_host_, gids_);
-  Kokkos::deep_copy(owned_host_, owned_);
 
   Kokkos::parallel_for(
     "InitUniformGridCoords",
@@ -106,13 +104,6 @@ UniformGridFieldLayout<Dim>::UniformGridFieldLayout(
     Kokkos::View<LO*, DeviceMemorySpace>("classification_ids", n);
   Kokkos::deep_copy(classification_dims_, static_cast<LO>(entity_dim));
   Kokkos::deep_copy(classification_ids_, LO{0});
-
-  classification_dims_host_ =
-    Kokkos::View<LO*, HostMemorySpace>("classification_dims", n);
-  classification_ids_host_ =
-    Kokkos::View<LO*, HostMemorySpace>("classification_ids", n);
-  Kokkos::deep_copy(classification_dims_host_, classification_dims_);
-  Kokkos::deep_copy(classification_ids_host_, classification_ids_);
   SetGeometry(std::move(geometry));
 }
 
@@ -135,10 +126,10 @@ GO UniformGridFieldLayout<Dim>::GetNumGlobalDofHolder() const
 }
 
 template <unsigned Dim>
-Rank1View<const bool, HostMemorySpace>
-UniformGridFieldLayout<Dim>::GetOwnedHost() const
+Rank1View<const bool, DeviceMemorySpace> UniformGridFieldLayout<Dim>::GetOwned()
+  const
 {
-  return pcms::detail::make_const_array_view(owned_host_);
+  return pcms::detail::make_const_array_view(owned_);
 }
 
 template <unsigned Dim>
@@ -196,17 +187,17 @@ int UniformGridFieldLayout<Dim>::GetDimension() const
 }
 
 template <unsigned Dim>
-Rank1View<const LO, HostMemorySpace>
-UniformGridFieldLayout<Dim>::GetDOFHolderClassificationDimensionsHost() const
+Rank1View<const LO, DeviceMemorySpace>
+UniformGridFieldLayout<Dim>::GetDOFHolderClassificationDimensions() const
 {
-  return pcms::detail::make_const_array_view(classification_dims_host_);
+  return pcms::detail::make_const_array_view(classification_dims_);
 }
 
 template <unsigned Dim>
-Rank1View<const LO, HostMemorySpace>
-UniformGridFieldLayout<Dim>::GetDOFHolderClassificationIdsHost() const
+Rank1View<const LO, DeviceMemorySpace>
+UniformGridFieldLayout<Dim>::GetDOFHolderClassificationIds() const
 {
-  return pcms::detail::make_const_array_view(classification_ids_host_);
+  return pcms::detail::make_const_array_view(classification_ids_);
 }
 
 template <unsigned Dim>

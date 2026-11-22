@@ -54,7 +54,8 @@ TEST_CASE("MFEM vertex-scalar field adapter", "[mfem]")
     REQUIRE(static_cast<int>(coords.extent(1)) == 2);
 
     // Owned mask covers the global unique vertices across ranks.
-    auto owned = layout.GetOwnedHost();
+    Kokkos::View<bool*, pcms::HostMemorySpace> owned("owned", pmesh.GetNV());
+    pcms::detail::CopyDeviceRank1ViewToHostView<bool>(owned, layout.GetOwned());
     int local_owned = 0;
     for (size_t i = 0; i < owned.size(); ++i) {
       if (owned[i])
@@ -97,7 +98,8 @@ TEST_CASE("MFEM vertex-scalar field adapter", "[mfem]")
         pcms::ValueBasis{}, pcms::MakeConstRank2View(in)));
 
     auto host2 = field.GetDOFHolderDataHost().GetValues();
-    auto owned = layout.GetOwnedHost();
+    Kokkos::View<bool*, pcms::HostMemorySpace> owned("owned", pmesh.GetNV());
+    pcms::detail::CopyDeviceRank1ViewToHostView<bool>(owned, layout.GetOwned());
     for (size_t v = 0; v < host2.extent(0); ++v) {
       if (owned[v]) {
         REQUIRE(host2(v, 0) == captured[v]);

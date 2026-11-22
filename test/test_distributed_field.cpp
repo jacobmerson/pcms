@@ -118,7 +118,8 @@ void check_distributed_evaluation(Omega_h::Mesh& mesh,
   field.SetDOFHolderDataHost(distributed_test::TagLike(
     field, pcms::Rank2View<const Real, pcms::HostMemorySpace>(values.data(),
                                                               n_owned, 1)));
-  const auto owned = layout.GetOwnedHost();
+  Kokkos::View<bool*, pcms::HostMemorySpace> owned("owned", n_local);
+  pcms::detail::CopyDeviceRank1ViewToHostView<bool>(owned, layout.GetOwned());
   const auto before = distributed_test::ValuesWithGhostsHost(field);
   for (LO i = 0; i < n_local; ++i) {
     if (!owned[static_cast<size_t>(i)]) {

@@ -59,10 +59,7 @@ XGCFieldLayout::XGCFieldLayout(
     gids_("xgc_gids", num_plane_nodes),
     class_dims_("xgc_class_dims", num_plane_nodes),
     class_ids_("xgc_class_ids", num_plane_nodes),
-    owned_host_("xgc_owned_host", num_plane_nodes),
     gids_host_("xgc_gids_host", num_plane_nodes),
-    classification_dims_host_("xgc_classification_dims_host", num_plane_nodes),
-    classification_ids_host_("xgc_classification_ids_host", num_plane_nodes),
     coords_("xgc_coords", num_plane_nodes, 2),
     num_plane_nodes_(num_plane_nodes)
 {
@@ -95,10 +92,7 @@ XGCFieldLayout::XGCFieldLayout(
                      // and synchronization, but this is simpler for now
   }
 
-  Kokkos::deep_copy(owned_host_, owned_);
   Kokkos::deep_copy(gids_host_, gids_);
-  Kokkos::deep_copy(classification_dims_host_, class_dims_);
-  Kokkos::deep_copy(classification_ids_host_, class_ids_);
   // Copy coordinates to device
   Kokkos::deep_copy(coords_, 0.0);
 }
@@ -118,9 +112,9 @@ GO XGCFieldLayout::GetNumGlobalDofHolder() const
   return num_plane_nodes_;
 }
 
-Rank1View<const bool, HostMemorySpace> XGCFieldLayout::GetOwnedHost() const
+Rank1View<const bool, DeviceMemorySpace> XGCFieldLayout::GetOwned() const
 {
-  return pcms::detail::make_const_array_view(owned_host_);
+  return pcms::detail::make_const_array_view(owned_);
 }
 
 GlobalIDView<HostMemorySpace> XGCFieldLayout::GetGidsHost() const
@@ -153,16 +147,16 @@ int XGCFieldLayout::GetDimension() const
   return 2;
 }
 
-Rank1View<const LO, HostMemorySpace>
-XGCFieldLayout::GetDOFHolderClassificationDimensionsHost() const
+Rank1View<const LO, DeviceMemorySpace>
+XGCFieldLayout::GetDOFHolderClassificationDimensions() const
 {
-  return pcms::detail::make_const_array_view(classification_dims_host_);
+  return pcms::detail::make_const_array_view(class_dims_);
 }
 
-Rank1View<const LO, HostMemorySpace>
-XGCFieldLayout::GetDOFHolderClassificationIdsHost() const
+Rank1View<const LO, DeviceMemorySpace>
+XGCFieldLayout::GetDOFHolderClassificationIds() const
 {
-  return pcms::detail::make_const_array_view(classification_ids_host_);
+  return pcms::detail::make_const_array_view(class_ids_);
 }
 
 LO XGCFieldLayout::GetFullDataSize() const noexcept

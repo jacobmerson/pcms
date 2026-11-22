@@ -40,11 +40,12 @@ MFEMLayout::MFEMLayout(
   ::mfem::Array<HYPRE_BigInt> vertex_gids;
   pmesh_.GetGlobalVertexIndices(vertex_gids);
   gids_host_ = Kokkos::View<GO*, HostMemorySpace>("mfem_gids", nv);
-  owned_host_ = Kokkos::View<bool*, HostMemorySpace>("mfem_owned", nv);
-  classification_dims_host_ =
-    Kokkos::View<LO*, HostMemorySpace>("mfem_class_dims", nv);
-  classification_ids_host_ =
-    Kokkos::View<LO*, HostMemorySpace>("mfem_class_ids", nv);
+  Kokkos::View<bool*, HostMemorySpace> owned_host("mfem_owned", nv);
+  classification_dims_ =
+    Kokkos::View<LO*, DeviceMemorySpace>("mfem_class_dims", nv);
+  classification_ids_ =
+    Kokkos::View<LO*, DeviceMemorySpace>("mfem_class_ids", nv);
+  pcms::detail::iota_view<LO>(classification_ids_);
 
   ::mfem::Array<int> vdofs;
   for (int v = 0; v < nv; ++v) {
@@ -53,10 +54,9 @@ MFEMLayout::MFEMLayout(
     const int dof = vdofs[0];
 
     gids_host_(v) = static_cast<GO>(vertex_gids[v]);
-    owned_host_(v) = (pfes_.GetLocalTDofNumber(dof) >= 0);
-    classification_dims_host_(v) = 0;
-    classification_ids_host_(v) = v;
+    owned_host(v) = (pfes_.GetLocalTDofNumber(dof) >= 0);
   }
+  owned_ = Kokkos::create_mirror_view_and_copy(DeviceMemorySpace(), owned_host);
 }
 
 void MFEMLayout::AssertVertexScalarSpace() const
@@ -80,9 +80,9 @@ GO MFEMLayout::GetNumGlobalDofHolder() const
   return static_cast<GO>(pfes_.GlobalTrueVSize());
 }
 
-Rank1View<const bool, HostMemorySpace> MFEMLayout::GetOwnedHost() const
+Rank1View<const bool, DeviceMemorySpace> MFEMLayout::GetOwned() const
 {
-  return pcms::detail::make_const_array_view(owned_host_);
+  return pcms::detail::make_const_array_view(owned_);
 }
 
 GlobalIDView<HostMemorySpace> MFEMLayout::GetGidsHost() const
@@ -117,19 +117,19 @@ int MFEMLayout::GetDimension() const
   return dim_;
 }
 
-Rank1View<const LO, HostMemorySpace>
-MFEMLayout::GetDOFHolderClassificationDimensionsHost() const
+Rank1View<const LO, DeviceMemorySpace>
+MFEMLayout::GetDOFHolderClassificationDimensions() const
 {
-  return pcms::detail::make_const_array_view(classification_dims_host_);
+  return pcms::detail::make_const_array_view(classification_dims_);
 }
 
-Rank1View<const LO, HostMemorySpace>
-MFEMLayout::GetDOFHolderClassificationIdsHost() const
+Rank1View<const LO, DeviceMemorySpace>
+MFEMLayout::GetDOFHolderClassificationIds() const
 {
-  return pcms::detail::make_const_array_view(classification_ids_host_);
+  return pcms::detail::make_const_array_view(classification_ids_);
 }
 
-Kokkos::View<bool*, HostMemorySpace> MFEMLayout::OverlapMaskFromAttribute(
+Kokkos::View<bool*, DeviceMemorySpace> MFEMLayout::OverlapMaskFromAttribute(
   ::mfem::ParMesh& pmesh, int attribute)
 {
   PCMS_FUNCTION_TIMER;
@@ -149,7 +149,7 @@ Kokkos::View<bool*, HostMemorySpace> MFEMLayout::OverlapMaskFromAttribute(
     }
   }
 
-  return overlap;
+  return Kokkos::create_mirror_view_and_copy(DeviceMemorySpace(), overlap);
 }
 
 } // namespace pcms::mfem

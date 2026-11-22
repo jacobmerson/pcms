@@ -3,55 +3,59 @@
 
 #include "pcms/field/field_layout.hpp"
 #include "pcms/utility/arrays.hpp"
+#include "pcms/utility/detail/arrays.hpp"
 #include "pcms/utility/assert.hpp"
 #include <functional>
 
 namespace pcms
 {
 
+/// @brief Whether each owned DOF holder, in owned order, is in the overlap
 struct OverlapMask
 {
-  // Masks are indexed by owned DOF holder, in owned order, matching the
-  // owned-indexed exchange plan.
-
-  // Default constructor: all DOF holders are in overlap
+  /// @brief All DOF holders in the overlap
   OverlapMask(size_t size) : is_overlap_("overlap_info", size)
   {
     Kokkos::deep_copy(is_overlap_, true);
   }
 
-  // Construct from a function that determines overlap from a DOF holder's
-  // classification (dimension, id). Holders without classification are passed
-  // as (-1, -1).
+  /// @brief Overlap from a DOF holder's classification (dimension, id)
+  /// @param in_overlap nonzero for a classification in the overlap; holders
+  ///        without classification are passed as (-1, -1)
   explicit OverlapMask(std::function<int8_t(int, int)> in_overlap)
     : in_overlap_func_(std::move(in_overlap))
   {
   }
 
-  // Construct from a precomputed per-DOF-holder host mask (e.g. an MFEM
-  // subdomain selected by element attribute), one entry per owned DOF holder.
-  OverlapMask(size_t size, Kokkos::View<bool*, HostMemorySpace> is_overlap_host)
+  /// @brief A precomputed mask, one entry per owned DOF holder
+  OverlapMask(size_t size,
+              Kokkos::View<const bool*, DeviceMemorySpace> is_overlap)
     : is_overlap_("overlap_info", size)
   {
-    PCMS_ALWAYS_ASSERT(is_overlap_host.extent(0) == size);
-    Kokkos::deep_copy(is_overlap_, is_overlap_host);
+    PCMS_ALWAYS_ASSERT(is_overlap.extent(0) == size);
+    Kokkos::deep_copy(is_overlap_, is_overlap);
   }
 
-  // Get the mask, one entry per owned DOF holder, evaluating the function
-  // against the layout's classification if one was given.
+  /// @brief The mask on the host, one entry per owned DOF holder of `layout`
   Kokkos::View<const bool*, HostMemorySpace> GetMask(
     const FieldLayout& layout) const
   {
     if (!in_overlap_func_) {
       PCMS_ALWAYS_ASSERT(is_overlap_.extent(0) ==
                          static_cast<size_t>(layout.GetNumDofHolder()));
-      return is_overlap_;
+      return Kokkos::create_mirror_view_and_copy(HostMemorySpace(),
+                                                 is_overlap_);
     }
-    auto class_dims = layout.GetDOFHolderClassificationDimensionsHost();
-    auto class_ids = layout.GetDOFHolderClassificationIdsHost();
-    Kokkos::View<bool*, HostMemorySpace> is_overlap("overlap_info",
-                                                    class_dims.size());
-    for (size_t i = 0; i < is_overlap.extent(0); ++i) {
+    const auto class_dims_device =
+      layout.GetDOFHolderClassificationDimensions();
+    const auto class_ids_device = layout.GetDOFHolderClassificationIds();
+    const size_t n = class_dims_device.size();
+    Kokkos::View<LO*, HostMemorySpace> class_dims("class_dims", n);
+    Kokkos::View<LO*, HostMemorySpace> class_ids("class_ids", n);
+    detail::CopyDeviceRank1ViewToHostView<LO>(class_dims, class_dims_device);
+    detail::CopyDeviceRank1ViewToHostView<LO>(class_ids, class_ids_device);
+    Kokkos::View<bool*, HostMemorySpace> is_overlap("overlap_info", n);
+    for (size_t i = 0; i < n; ++i) {
       is_overlap[i] =
         static_cast<bool>(in_overlap_func_(class_dims[i], class_ids[i]));
     }
@@ -59,7 +63,7 @@ struct OverlapMask
   }
 
 private:
-  Kokkos::View<bool*, HostMemorySpace> is_overlap_;
+  Kokkos::View<bool*, DeviceMemorySpace> is_overlap_;
   std::function<int8_t(int, int)> in_overlap_func_;
 };
 

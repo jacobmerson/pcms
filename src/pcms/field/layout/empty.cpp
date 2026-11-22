@@ -33,10 +33,7 @@ EmptyFieldLayout::EmptyFieldLayout(
     gids_("null_gids", 0),
     class_dims_("null_class_dims", 0),
     class_ids_("null_class_ids", 0),
-    owned_host_("null_owned_host", 0),
     gids_host_("null_gids_host", 0),
-    classification_dims_host_("null_classification_dims_host", 0),
-    classification_ids_host_("null_classification_ids_host", 0),
     coords_("null_coords", 0, RequireDimension(system)),
     num_components_(num_components)
 {
@@ -61,9 +58,9 @@ GO EmptyFieldLayout::GetNumGlobalDofHolder() const
   return 0;
 }
 
-Rank1View<const bool, HostMemorySpace> EmptyFieldLayout::GetOwnedHost() const
+Rank1View<const bool, DeviceMemorySpace> EmptyFieldLayout::GetOwned() const
 {
-  return pcms::detail::make_const_array_view(owned_host_);
+  return pcms::detail::make_const_array_view(owned_);
 }
 
 GlobalIDView<HostMemorySpace> EmptyFieldLayout::GetGidsHost() const
@@ -93,16 +90,16 @@ int EmptyFieldLayout::GetDimension() const
   return GetCoordinateSystem()->Dimension();
 }
 
-Rank1View<const LO, HostMemorySpace>
-EmptyFieldLayout::GetDOFHolderClassificationDimensionsHost() const
+Rank1View<const LO, DeviceMemorySpace>
+EmptyFieldLayout::GetDOFHolderClassificationDimensions() const
 {
-  return pcms::detail::make_const_array_view(classification_dims_host_);
+  return pcms::detail::make_const_array_view(class_dims_);
 }
 
-Rank1View<const LO, HostMemorySpace>
-EmptyFieldLayout::GetDOFHolderClassificationIdsHost() const
+Rank1View<const LO, DeviceMemorySpace>
+EmptyFieldLayout::GetDOFHolderClassificationIds() const
 {
-  return pcms::detail::make_const_array_view(classification_ids_host_);
+  return pcms::detail::make_const_array_view(class_ids_);
 }
 
 } // namespace pcms::field

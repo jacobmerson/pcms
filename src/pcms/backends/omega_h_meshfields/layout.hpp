@@ -34,11 +34,10 @@ public:
   LO GetNumDofHolderWithGhosts() const;
   GO GetNumGlobalDofHolder() const override;
 
-  Rank1View<const bool, HostMemorySpace> GetOwnedHost() const override;
+  Rank1View<const bool, DeviceMemorySpace> GetOwned() const override;
   GlobalIDView<HostMemorySpace> GetGidsHost() const override;
   CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const override;
   EntOffsetsArray GetEntOffsets() const override;
-  Kokkos::View<const LO*, HostMemorySpace> GetOwnedIndicesHost() const override;
   Kokkos::View<const LO*, DeviceMemorySpace> GetOwnedIndices() const override;
 
   // returns true if the field layout is distributed: on several ranks it may
@@ -48,9 +47,9 @@ public:
   int GetDimension() const override;
   int GetDOFHolderEntityDim() const override;
 
-  Rank1View<const LO, HostMemorySpace>
-  GetDOFHolderClassificationDimensionsHost() const override;
-  Rank1View<const LO, HostMemorySpace> GetDOFHolderClassificationIdsHost()
+  Rank1View<const LO, DeviceMemorySpace> GetDOFHolderClassificationDimensions()
+    const override;
+  Rank1View<const LO, DeviceMemorySpace> GetDOFHolderClassificationIds()
     const override;
 
   std::array<int, 4> GetNodesPerDim() const;
@@ -58,9 +57,6 @@ public:
   Omega_h::Mesh& GetMesh() const;
 
 private:
-  Omega_h::Read<Omega_h::ClassId> GetClassIDs() const;
-  Omega_h::Read<Omega_h::I8> GetClassDims() const;
-
   Omega_h::Mesh& mesh_;
   Omega_h::Write<Omega_h::GO> gids_;
   int num_components_;
@@ -68,24 +64,17 @@ private:
   Kokkos::View<Real**> dof_holder_coords_;
   Omega_h::Write<Omega_h::ClassId> class_ids_;
   Omega_h::Write<Omega_h::I8> class_dims_;
-  Omega_h::HostWrite<Omega_h::ClassId> class_ids_host_;
-  Omega_h::HostWrite<Omega_h::I8> class_dims_host_;
   Kokkos::View<bool*> owned_;
-  Kokkos::View<bool*, HostMemorySpace> owned_host_;
   LO num_owned_ = 0;
   Kokkos::View<GO*, HostMemorySpace> owned_gids_host_;
   Kokkos::View<Real**, DeviceMemorySpace> owned_coords_2d_;
-  Kokkos::View<LO*, HostMemorySpace> owned_indices_host_;
   Kokkos::View<LO*, DeviceMemorySpace> owned_indices_;
 
-  Kokkos::View<LO*, HostMemorySpace> owned_classification_dims_host_;
-  Kokkos::View<LO*, HostMemorySpace> owned_classification_ids_host_;
+  pcms::detail::OwnedClassification owned_classification_;
 
   // Entity offsets over the DOF holders with ghosts.
   EntOffsetsArray EntOffsetsWithGhosts() const;
   void BuildOwnedViews();
-  // Requires the owned views and the classification arrays with ghosts.
-  void BuildOwnedClassification();
 };
 
 } // namespace pcms::omega_h_meshfields

@@ -2,6 +2,7 @@
 #include "pcms/coupler/partition.hpp"
 #include "pcms/field/gid_permutation.hpp"
 #include "pcms/utility/assert.hpp"
+#include "pcms/utility/detail/arrays.hpp"
 #include "pcms/utility/detail/inclusive_scan.hpp"
 #include "pcms/utility/detail/profile.hpp"
 #include <algorithm>
@@ -181,10 +182,19 @@ static ReversePartitionMap2 BuildReversePartitionMap(
   const OverlapMask& overlap_mask)
 {
   PCMS_FUNCTION_TIMER;
-  auto owned = layout.GetOwnedHost();
-  auto owned_indices = layout.GetOwnedIndicesHost();
-  auto class_dims = layout.GetDOFHolderClassificationDimensionsHost();
-  auto class_ids = layout.GetDOFHolderClassificationIdsHost();
+  const auto owned_device = layout.GetOwned();
+  Kokkos::View<bool*, HostMemorySpace> owned("owned", owned_device.size());
+  CopyDeviceRank1ViewToHostView<bool>(owned, owned_device);
+  const auto owned_indices = Kokkos::create_mirror_view_and_copy(
+    HostMemorySpace(), layout.GetOwnedIndices());
+  const auto class_dims_device = layout.GetDOFHolderClassificationDimensions();
+  const auto class_ids_device = layout.GetDOFHolderClassificationIds();
+  Kokkos::View<LO*, HostMemorySpace> class_dims("class_dims",
+                                                class_dims_device.size());
+  Kokkos::View<LO*, HostMemorySpace> class_ids("class_ids",
+                                               class_ids_device.size());
+  CopyDeviceRank1ViewToHostView<LO>(class_dims, class_dims_device);
+  CopyDeviceRank1ViewToHostView<LO>(class_ids, class_ids_device);
   auto coords = layout.GetDOFHolderCoordinates().GetValues();
   auto ent_offsets = layout.GetEntOffsets();
   int mesh_dim = static_cast<int>(coords.extent(1));

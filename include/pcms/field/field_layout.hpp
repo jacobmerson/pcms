@@ -74,21 +74,19 @@ public:
   // hold ghost DOF holders in addition to the owned ones (see HasGhosts)
   [[nodiscard]] virtual bool IsDistributed() const = 0;
 
-  // Per DOF holder, ghosts included: whether this rank owns it.
-  virtual Rank1View<const bool, HostMemorySpace> GetOwnedHost() const = 0;
+  /// @brief Whether this rank owns each DOF holder, ghosts included
+  [[nodiscard]] virtual Rank1View<const bool, DeviceMemorySpace> GetOwned()
+    const = 0;
 
-  // Maps owned index (0..GetNumDofHolder()-1) to its index among the DOF
-  // holders with ghosts. An empty view means the identity map (no ghosts). A
-  // distributed layout on a rank that owns nothing also returns an empty view,
-  // so callers that need to know whether the layout has no ghosts must ask
-  // `!HasGhosts()`, not test for empty.
-  virtual Kokkos::View<const LO*, HostMemorySpace> GetOwnedIndicesHost() const
-  {
-    return {};
-  }
-
-  // Device analogue of GetOwnedIndicesHost().
-  virtual Kokkos::View<const LO*, DeviceMemorySpace> GetOwnedIndices() const
+  /// @brief The index among the DOF holders with ghosts of each owned DOF
+  ///        holder
+  ///
+  /// An empty view means the identity map (no ghosts). A distributed layout on
+  /// a rank that owns nothing also returns an empty view, so callers that need
+  /// to know whether the layout has no ghosts must ask `!HasGhosts()`, not
+  /// test for empty.
+  [[nodiscard]] virtual Kokkos::View<const LO*, DeviceMemorySpace>
+  GetOwnedIndices() const
   {
     return {};
   }
@@ -128,11 +126,13 @@ public:
   // layouts).
   virtual int GetDOFHolderEntityDim() const { return -1; }
 
-  virtual Rank1View<const LO, HostMemorySpace>
-  GetDOFHolderClassificationDimensionsHost() const = 0;
+  /// @brief The geometric classification dimension of each owned DOF holder
+  [[nodiscard]] virtual Rank1View<const LO, DeviceMemorySpace>
+  GetDOFHolderClassificationDimensions() const = 0;
 
-  virtual Rank1View<const LO, HostMemorySpace>
-  GetDOFHolderClassificationIdsHost() const = 0;
+  /// @brief The geometric classification id of each owned DOF holder
+  [[nodiscard]] virtual Rank1View<const LO, DeviceMemorySpace>
+  GetDOFHolderClassificationIds() const = 0;
 
   virtual ~FieldLayout() noexcept = default;
 

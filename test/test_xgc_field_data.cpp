@@ -40,10 +40,17 @@ TEST_CASE("XGC FieldLayout owns and classifies every entry")
   auto rc = create_dummy_rc(data_size);
   pcms::XGCFieldLayout layout(rc, data_size);
 
-  auto owned = layout.GetOwnedHost();
+  Kokkos::View<bool*, pcms::HostMemorySpace> owned("owned", data_size);
+  Kokkos::View<pcms::LO*, pcms::HostMemorySpace> class_dims("class_dims",
+                                                            data_size);
+  Kokkos::View<pcms::LO*, pcms::HostMemorySpace> class_ids("class_ids",
+                                                           data_size);
+  pcms::detail::CopyDeviceRank1ViewToHostView<bool>(owned, layout.GetOwned());
+  pcms::detail::CopyDeviceRank1ViewToHostView<pcms::LO>(
+    class_dims, layout.GetDOFHolderClassificationDimensions());
+  pcms::detail::CopyDeviceRank1ViewToHostView<pcms::LO>(
+    class_ids, layout.GetDOFHolderClassificationIds());
   auto gids = layout.GetGidsHost();
-  auto class_dims = layout.GetDOFHolderClassificationDimensionsHost();
-  auto class_ids = layout.GetDOFHolderClassificationIdsHost();
   const pcms::OverlapMask overlap_mask(in_overlap);
   auto overlap = overlap_mask.GetMask(layout);
 

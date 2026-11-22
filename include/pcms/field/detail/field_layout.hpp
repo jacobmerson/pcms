@@ -2,6 +2,7 @@
 #define PCMS_FIELD_DETAIL_FIELD_LAYOUT_HPP
 
 #include "pcms/field/field_layout.hpp"
+#include "pcms/utility/detail/memory_spaces.hpp"
 
 namespace pcms::detail
 {
@@ -24,12 +25,15 @@ inline int GetMeshEntityDim(LO local_index, const EntOffsetsArray& ent_offsets)
 // offsets of the DOF holders with ghosts and the owned indices.
 inline EntOffsetsArray OwnedEntOffsets(
   const EntOffsetsArray& local_offsets,
-  Kokkos::View<const LO*, HostMemorySpace> owned_indices)
+  Kokkos::View<const LO*, DeviceMemorySpace> owned_indices)
 {
+  const auto owned_indices_host =
+    Kokkos::create_mirror_view_and_copy(HostMemorySpace(), owned_indices);
   EntOffsetsArray offsets{};
   offsets.fill(0);
-  for (size_t o = 0; o < owned_indices.size(); ++o) {
-    const int d = detail::GetMeshEntityDim(owned_indices(o), local_offsets);
+  for (size_t o = 0; o < owned_indices_host.size(); ++o) {
+    const int d =
+      detail::GetMeshEntityDim(owned_indices_host(o), local_offsets);
     for (size_t e = static_cast<size_t>(d) + 1; e < ent_offsets_len; ++e) {
       offsets[e] += 1;
     }
@@ -37,34 +41,33 @@ inline EntOffsetsArray OwnedEntOffsets(
   return offsets;
 }
 
-// The geometric classification (dimension and id) of the owned DOF holders,
-// as host arrays in owned order. Converted and gathered on the device from the
-// per-holder (ghosts included) device arrays; only the owned entries are
-// copied to the host.
-template <typename DimsView, typename IdsView>
-void BuildOwnedClassificationHost(
-  const DimsView& class_dims, const IdsView& class_ids,
-  Kokkos::View<const LO*, DeviceMemorySpace> owned_indices,
-  Kokkos::View<LO*, HostMemorySpace>& owned_dims_host,
-  Kokkos::View<LO*, HostMemorySpace>& owned_ids_host)
+/// @brief The geometric classification of the owned DOF holders
+struct OwnedClassification
 {
-  using exec = DeviceMemorySpace::execution_space;
+  Kokkos::View<LO*, DeviceMemorySpace> dims;
+  Kokkos::View<LO*, DeviceMemorySpace> ids;
+};
+
+/// @brief The classification of the owned DOF holders, in owned order, from
+///        the per-holder arrays with ghosts
+template <typename DimsView, typename IdsView>
+OwnedClassification BuildOwnedClassification(
+  const DimsView& class_dims, const IdsView& class_ids,
+  Kokkos::View<const LO*, DeviceMemorySpace> owned_indices)
+{
   const auto num_owned = owned_indices.extent(0);
-  Kokkos::View<LO*, DeviceMemorySpace> owned_dims("owned_class_dims",
-                                                  num_owned);
-  Kokkos::View<LO*, DeviceMemorySpace> owned_ids("owned_class_ids", num_owned);
-  Kokkos::parallel_for(
-    "pcms::GatherOwnedClassification", Kokkos::RangePolicy<exec>(0, num_owned),
-    KOKKOS_LAMBDA(LO o) {
+  OwnedClassification out{
+    Kokkos::View<LO*, DeviceMemorySpace>("owned_class_dims", num_owned),
+    Kokkos::View<LO*, DeviceMemorySpace>("owned_class_ids", num_owned)};
+  const auto dims = out.dims;
+  const auto ids = out.ids;
+  ForEach(
+    "pcms::GatherOwnedClassification", num_owned, KOKKOS_LAMBDA(size_t o) {
       const LO i = owned_indices(o);
-      owned_dims(o) =
-        static_cast<LO>(static_cast<unsigned char>(class_dims[i]));
-      owned_ids(o) = static_cast<LO>(class_ids[i]);
+      dims(o) = static_cast<LO>(static_cast<unsigned char>(class_dims[i]));
+      ids(o) = static_cast<LO>(class_ids[i]);
     });
-  owned_dims_host =
-    Kokkos::create_mirror_view_and_copy(HostMemorySpace(), owned_dims);
-  owned_ids_host =
-    Kokkos::create_mirror_view_and_copy(HostMemorySpace(), owned_ids);
+  return out;
 }
 
 // Compact "owned" (rank-exclusive) views derived from a layout's arrays with
@@ -72,15 +75,14 @@ void BuildOwnedClassificationHost(
 struct OwnedLayoutData
 {
   LO num_owned = 0;
-  Kokkos::View<LO*, HostMemorySpace> owned_indices_host;
   Kokkos::View<GO*, HostMemorySpace> owned_gids_host;
   Kokkos::View<Real**, DeviceMemorySpace> owned_coords_2d;
   Kokkos::View<LO*, DeviceMemorySpace> owned_indices;
 };
 
 // Built on the device from the device-resident ownership mask, GIDs and
-// coordinates; only the owned indices and owned GIDs are copied to the host,
-// for their host-side users.
+// coordinates; only the owned GIDs are copied to the host, for their host-side
+// users.
 template <typename CoordsView>
 OwnedLayoutData BuildOwnedLayoutData(
   Kokkos::View<const bool*, DeviceMemorySpace> owned,
@@ -126,8 +128,6 @@ OwnedLayoutData BuildOwnedLayoutData(
       }
     });
 
-  out.owned_indices_host =
-    Kokkos::create_mirror_view_and_copy(HostMemorySpace(), out.owned_indices);
   out.owned_gids_host =
     Kokkos::create_mirror_view_and_copy(HostMemorySpace(), owned_gids);
   return out;

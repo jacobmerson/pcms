@@ -132,8 +132,9 @@ int RunServer(MPI_Comm comm)
 
   app->ReceivePhase([&]() { handle.Receive(); });
 
-  auto overlap =
-    pcms::MFEMLayout::OverlapMaskFromAttribute(pmesh, TargetAttribute);
+  auto overlap = Kokkos::create_mirror_view_and_copy(
+    pcms::HostMemorySpace(),
+    pcms::MFEMLayout::OverlapMaskFromAttribute(pmesh, TargetAttribute));
   auto gids = layout->GetGidsHost();
   auto received = handle.GetField().GetDOFHolderDataHost().GetValues();
 

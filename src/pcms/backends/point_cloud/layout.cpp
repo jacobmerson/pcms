@@ -31,7 +31,6 @@ PointCloudLayout::PointCloudLayout(
     coords_(coords),
     owned_("", coords.extent(0)),
     gids_("", coords.extent(0)),
-    owned_host_("", coords.extent(0)),
     gids_host_("", coords.extent(0))
 {
   SetCoordinateSystem(pcms::detail::ResolveCoordinateSystem(
@@ -49,15 +48,8 @@ PointCloudLayout::PointCloudLayout(
     Kokkos::View<LO*, DeviceMemorySpace>("classification_ids", n);
   InitializePointCloudClassification(classification_dims_, classification_ids_,
                                      n, Vertex);
-  classification_dims_host_ =
-    Kokkos::View<LO*, HostMemorySpace>("classification_dims", n);
-  classification_ids_host_ =
-    Kokkos::View<LO*, HostMemorySpace>("classification_ids", n);
 
-  Kokkos::deep_copy(owned_host_, owned_);
   Kokkos::deep_copy(gids_host_, gids_);
-  Kokkos::deep_copy(classification_dims_host_, classification_dims_);
-  Kokkos::deep_copy(classification_ids_host_, classification_ids_);
 }
 
 int PointCloudLayout::GetNumComponents() const
@@ -75,9 +67,9 @@ GO PointCloudLayout::GetNumGlobalDofHolder() const
   return coords_.extent(0);
 }
 
-Rank1View<const bool, HostMemorySpace> PointCloudLayout::GetOwnedHost() const
+Rank1View<const bool, DeviceMemorySpace> PointCloudLayout::GetOwned() const
 {
-  return pcms::detail::make_const_array_view(owned_host_);
+  return pcms::detail::make_const_array_view(owned_);
 }
 
 GlobalIDView<HostMemorySpace> PointCloudLayout::GetGidsHost() const
@@ -131,16 +123,16 @@ int PointCloudLayout::GetDimension() const
   return dim_;
 }
 
-Rank1View<const LO, HostMemorySpace>
-PointCloudLayout::GetDOFHolderClassificationDimensionsHost() const
+Rank1View<const LO, DeviceMemorySpace>
+PointCloudLayout::GetDOFHolderClassificationDimensions() const
 {
-  return pcms::detail::make_const_array_view(classification_dims_host_);
+  return pcms::detail::make_const_array_view(classification_dims_);
 }
 
-Rank1View<const LO, HostMemorySpace>
-PointCloudLayout::GetDOFHolderClassificationIdsHost() const
+Rank1View<const LO, DeviceMemorySpace>
+PointCloudLayout::GetDOFHolderClassificationIds() const
 {
-  return pcms::detail::make_const_array_view(classification_ids_host_);
+  return pcms::detail::make_const_array_view(classification_ids_);
 }
 
 } // namespace pcms::detail

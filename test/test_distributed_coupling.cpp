@@ -105,7 +105,8 @@ void check_serializer_round_trip(const DistributedCouplingContext& ctx)
   const LO n_owned = ctx.NumOwned();
   const LO n_local = ctx.NumLocal();
   const LO n_comp = ctx.NumComponents();
-  const auto owned_indices = layout.GetOwnedIndicesHost();
+  const auto owned_indices = Kokkos::create_mirror_view_and_copy(
+    pcms::HostMemorySpace(), layout.GetOwnedIndices());
   require(n_owned > 0, "rank owns at least one DOF holder");
   require(n_owned >= 2, "rank owns at least two DOF holders");
   require(n_local > n_owned, "ghosted mesh has local > owned");
@@ -166,7 +167,9 @@ void check_serializer_round_trip(const DistributedCouplingContext& ctx)
   require(target_data[static_cast<size_t>(n_owned - 1)] == Real(0),
           "non-participating owned holder is zero");
 
-  auto owned_mask = layout.GetOwnedHost();
+  Kokkos::View<bool*, pcms::HostMemorySpace> owned_mask("owned", n_local);
+  pcms::detail::CopyDeviceRank1ViewToHostView<bool>(owned_mask,
+                                                    layout.GetOwned());
   const auto target_local = distributed_test::ValuesWithGhostsHost(target);
   require(target_local.extent(0) == static_cast<size_t>(n_local),
           "target local size");
@@ -191,7 +194,9 @@ void check_distributed_exchange(const DistributedCouplingContext& ctx)
   const LO n_owned = ctx.NumOwned();
   const LO n_local = ctx.NumLocal();
   const LO n_comp = ctx.NumComponents();
-  const auto owned_mask = layout.GetOwnedHost();
+  Kokkos::View<bool*, pcms::HostMemorySpace> owned_mask("owned", n_local);
+  pcms::detail::CopyDeviceRank1ViewToHostView<bool>(owned_mask,
+                                                    layout.GetOwned());
   auto owned_gids = layout.GetGidsHost();
   // Global IDs of the local (owned and ghost) vertices, from the mesh tag the
   // layout was built from.

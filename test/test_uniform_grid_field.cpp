@@ -807,10 +807,15 @@ TEST_CASE("A uniform-grid layout classifies its DOF holders",
       std::make_shared<pcms::UniformGridGeometry<Dim>>(
         grid, pcms::detail::DeferredCartesian()),
       1, order);
-    const auto dims = layout.GetDOFHolderClassificationDimensionsHost();
-    const auto ids = layout.GetDOFHolderClassificationIdsHost();
-    REQUIRE(dims.size() == static_cast<size_t>(layout.GetNumDofHolder()));
-    REQUIRE(ids.size() == dims.size());
+    const auto n = static_cast<size_t>(layout.GetNumDofHolder());
+    REQUIRE(layout.GetDOFHolderClassificationDimensions().size() == n);
+    REQUIRE(layout.GetDOFHolderClassificationIds().size() == n);
+    Kokkos::View<pcms::LO*, pcms::HostMemorySpace> dims("dims", n);
+    Kokkos::View<pcms::LO*, pcms::HostMemorySpace> ids("ids", n);
+    pcms::detail::CopyDeviceRank1ViewToHostView<pcms::LO>(
+      dims, layout.GetDOFHolderClassificationDimensions());
+    pcms::detail::CopyDeviceRank1ViewToHostView<pcms::LO>(
+      ids, layout.GetDOFHolderClassificationIds());
     for (size_t i = 0; i < dims.size(); ++i) {
       REQUIRE(dims[i] == expected_dim);
       REQUIRE(ids[i] == 0);

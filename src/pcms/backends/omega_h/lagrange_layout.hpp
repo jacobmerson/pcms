@@ -36,12 +36,11 @@ public:
   LO GetNumDofHolderWithGhosts() const;
   GO GetNumGlobalDofHolder() const override;
 
-  Rank1View<const bool, HostMemorySpace> GetOwnedHost() const override;
+  Rank1View<const bool, DeviceMemorySpace> GetOwned() const override;
   GlobalIDView<HostMemorySpace> GetGidsHost() const override;
   GlobalIDView<DeviceMemorySpace> GetGids() const;
   CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const override;
   EntOffsetsArray GetEntOffsets() const override;
-  Kokkos::View<const LO*, HostMemorySpace> GetOwnedIndicesHost() const override;
   Kokkos::View<const LO*, DeviceMemorySpace> GetOwnedIndices() const override;
 
   [[nodiscard]] bool IsDistributed() const override;
@@ -49,9 +48,9 @@ public:
   int GetDimension() const override;
   int GetDOFHolderEntityDim() const override;
 
-  Rank1View<const LO, HostMemorySpace>
-  GetDOFHolderClassificationDimensionsHost() const override;
-  Rank1View<const LO, HostMemorySpace> GetDOFHolderClassificationIdsHost()
+  Rank1View<const LO, DeviceMemorySpace> GetDOFHolderClassificationDimensions()
+    const override;
+  Rank1View<const LO, DeviceMemorySpace> GetDOFHolderClassificationIds()
     const override;
 
   int GetOrder() const;
@@ -66,23 +65,18 @@ private:
   Kokkos::View<Real**, DeviceMemorySpace> coords_2d_;
   Omega_h::Read<Real> coords_; // device coordinates
   Kokkos::View<bool*, DeviceMemorySpace> owned_;
-  Kokkos::View<bool*, HostMemorySpace> owned_host_;
   Omega_h::Read<Omega_h::ClassId> class_ids_;
   Omega_h::Read<Omega_h::I8> class_dims_;
   LO num_owned_ = 0;
   Kokkos::View<GO*, HostMemorySpace> owned_gids_host_;
   Kokkos::View<Real**, DeviceMemorySpace> owned_coords_2d_;
-  Kokkos::View<LO*, HostMemorySpace> owned_indices_host_;
   Kokkos::View<LO*, DeviceMemorySpace> owned_indices_;
 
-  Kokkos::View<LO*, HostMemorySpace> owned_classification_dims_host_;
-  Kokkos::View<LO*, HostMemorySpace> owned_classification_ids_host_;
+  pcms::detail::OwnedClassification owned_classification_;
 
   // Entity offsets over the DOF holders with ghosts.
   EntOffsetsArray EntOffsetsWithGhosts() const;
   void BuildOwnedViews();
-  // Requires the owned views and the classification arrays.
-  void BuildOwnedClassification();
 };
 
 } // namespace pcms::omega_h

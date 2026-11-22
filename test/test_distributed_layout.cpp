@@ -83,8 +83,9 @@ void CheckLayout(Omega_h::Mesh& mesh, const pcms::FunctionSpace& space,
   require(ghost_sum > 0, label + ": ghosted mesh produced no ghost holders");
 
   // owned indices: one entry per owned holder, increasing, owned only.
-  const auto owned = layout.GetOwnedHost();
-  const auto owned_indices = layout.GetOwnedIndicesHost();
+  Kokkos::View<bool*, pcms::HostMemorySpace> owned("owned", n_local);
+  pcms::detail::CopyDeviceRank1ViewToHostView<bool>(owned, layout.GetOwned());
+  const auto owned_indices = ToHost(layout.GetOwnedIndices());
   require(static_cast<LO>(owned_indices.size()) == n_owned,
           label + ": owned->local map has the wrong size");
   LO n_owned_flags = 0;
@@ -98,13 +99,6 @@ void CheckLayout(Omega_h::Mesh& mesh, const pcms::FunctionSpace& space,
             label + ": owned->local maps to a non-owned holder");
     require(o == 0 || owned_indices(o - 1) < l,
             label + ": owned->local map is not increasing");
-  }
-  const auto owned_to_local_device = ToHost(layout.GetOwnedIndices());
-  require(static_cast<LO>(owned_to_local_device.size()) == n_owned,
-          label + ": device owned->local map has the wrong size");
-  for (LO o = 0; o < n_owned; ++o) {
-    require(owned_to_local_device(o) == owned_indices(o),
-            label + ": device and host owned->local maps differ");
   }
 
   // Owned GIDs, coordinates and classification are the mesh's per-vertex
@@ -208,12 +202,19 @@ void CheckLayout(Omega_h::Mesh& mesh, const pcms::FunctionSpace& space,
     Omega_h::HostRead<Omega_h::I8>(mesh.get_array<Omega_h::I8>(0, "class_dim"));
   const auto class_ids = Omega_h::HostRead<Omega_h::ClassId>(
     mesh.get_array<Omega_h::ClassId>(0, "class_id"));
-  const auto owned_class_dims =
-    layout.GetDOFHolderClassificationDimensionsHost();
-  const auto owned_class_ids = layout.GetDOFHolderClassificationIdsHost();
-  require(static_cast<LO>(owned_class_dims.size()) == n_owned &&
-            static_cast<LO>(owned_class_ids.size()) == n_owned,
-          label + ": owned classification has the wrong size");
+  require(
+    static_cast<LO>(layout.GetDOFHolderClassificationDimensions().size()) ==
+        n_owned &&
+      static_cast<LO>(layout.GetDOFHolderClassificationIds().size()) == n_owned,
+    label + ": owned classification has the wrong size");
+  Kokkos::View<LO*, pcms::HostMemorySpace> owned_class_dims("class_dims",
+                                                            n_owned);
+  Kokkos::View<LO*, pcms::HostMemorySpace> owned_class_ids("class_ids",
+                                                           n_owned);
+  pcms::detail::CopyDeviceRank1ViewToHostView<LO>(
+    owned_class_dims, layout.GetDOFHolderClassificationDimensions());
+  pcms::detail::CopyDeviceRank1ViewToHostView<LO>(
+    owned_class_ids, layout.GetDOFHolderClassificationIds());
   for (LO o = 0; o < n_owned; ++o) {
     require(owned_class_dims[o] == class_dims[owned_indices(o)] &&
               owned_class_ids[o] == class_ids[owned_indices(o)],

@@ -10,6 +10,7 @@
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/coordinate_system.hpp"
+#include "pcms/utility/detail/memory_spaces.hpp"
 #include "pcms/utility/memory_spaces.hpp"
 #include "pcms/utility/types.hpp"
 #include "pcms/utility/uniform_grid.hpp"
@@ -133,25 +134,18 @@ UniformGrid<dim> CreateUniformGridFromMesh(Omega_h::Mesh& mesh,
   return CreateUniformGridFromMesh<dim>(mesh, divisions);
 }
 
-/// Host mask for OverlapMask(size, mask): true where mask[i] != 0, for the
-/// first `size` entries of mask (all of them if size is not given). Like the
-/// OverlapMask constructors it replaces, mask may be longer than size.
-inline Kokkos::View<bool*, HostMemorySpace> OverlapMaskFromArray(
-  Omega_h::HostRead<Omega_h::I8> mask, std::optional<size_t> size = {})
+/// @brief A mask for OverlapMask(size, mask): true where mask[i] != 0
+/// @param size the number of leading entries of mask to use, all if not given
+inline Kokkos::View<bool*, DeviceMemorySpace> OverlapMaskFromArray(
+  Omega_h::Read<Omega_h::I8> mask, std::optional<size_t> size = {})
 {
   const size_t n = size.value_or(mask.size());
   PCMS_ALWAYS_ASSERT(n <= static_cast<size_t>(mask.size()));
-  Kokkos::View<bool*, HostMemorySpace> out("overlap_info", n);
-  for (size_t i = 0; i < n; ++i) {
-    out(i) = static_cast<bool>(mask[i]);
-  }
+  Kokkos::View<bool*, DeviceMemorySpace> out("overlap_info", n);
+  pcms::detail::ForEach(
+    "pcms::OverlapMaskFromArray", n,
+    KOKKOS_LAMBDA(size_t i) { out(i) = mask[i] != 0; });
   return out;
-}
-
-inline Kokkos::View<bool*, HostMemorySpace> OverlapMaskFromArray(
-  Omega_h::Read<Omega_h::I8> mask, std::optional<size_t> size = {})
-{
-  return OverlapMaskFromArray(Omega_h::HostRead<Omega_h::I8>(mask), size);
 }
 
 } // namespace pcms::omega_h

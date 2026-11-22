@@ -27,7 +27,7 @@ public:
   LO GetNumDofHolder() const override;
   GO GetNumGlobalDofHolder() const override;
 
-  Rank1View<const bool, HostMemorySpace> GetOwnedHost() const override;
+  Rank1View<const bool, DeviceMemorySpace> GetOwned() const override;
   GlobalIDView<HostMemorySpace> GetGidsHost() const override;
   CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const override;
 
@@ -37,10 +37,10 @@ public:
 
   int GetDimension() const override;
 
-  Rank1View<const LO, HostMemorySpace>
-  GetDOFHolderClassificationDimensionsHost() const override;
+  Rank1View<const LO, DeviceMemorySpace> GetDOFHolderClassificationDimensions()
+    const override;
 
-  Rank1View<const LO, HostMemorySpace> GetDOFHolderClassificationIdsHost()
+  Rank1View<const LO, DeviceMemorySpace> GetDOFHolderClassificationIds()
     const override;
 
   const UniformGrid<Dim>& GetGrid() const;
@@ -58,11 +58,8 @@ private:
   Kokkos::View<bool*, DeviceMemorySpace> owned_;
   Kokkos::View<Real**, DeviceMemorySpace> dof_holder_coords_;
   Kokkos::View<GO*, HostMemorySpace> gids_host_;
-  Kokkos::View<bool*, HostMemorySpace> owned_host_;
   Kokkos::View<LO*, DeviceMemorySpace> classification_dims_;
   Kokkos::View<LO*, DeviceMemorySpace> classification_ids_;
-  Kokkos::View<LO*, HostMemorySpace> classification_dims_host_;
-  Kokkos::View<LO*, HostMemorySpace> classification_ids_host_;
 };
 
 using UniformGridFieldLayout2D = UniformGridFieldLayout<2>;

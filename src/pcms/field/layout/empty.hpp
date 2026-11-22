@@ -20,15 +20,15 @@ public:
   int GetNumComponents() const override;
   LO GetNumDofHolder() const override;
   GO GetNumGlobalDofHolder() const override;
-  Rank1View<const bool, HostMemorySpace> GetOwnedHost() const override;
+  Rank1View<const bool, DeviceMemorySpace> GetOwned() const override;
   GlobalIDView<HostMemorySpace> GetGidsHost() const override;
   bool IsDistributed() const override;
   EntOffsetsArray GetEntOffsets() const override;
   CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const override;
   int GetDimension() const override;
-  Rank1View<const LO, HostMemorySpace>
-  GetDOFHolderClassificationDimensionsHost() const override;
-  Rank1View<const LO, HostMemorySpace> GetDOFHolderClassificationIdsHost()
+  Rank1View<const LO, DeviceMemorySpace> GetDOFHolderClassificationDimensions()
+    const override;
+  Rank1View<const LO, DeviceMemorySpace> GetDOFHolderClassificationIds()
     const override;
 
 private:
@@ -36,10 +36,7 @@ private:
   Kokkos::View<GO*, DeviceMemorySpace> gids_;
   Kokkos::View<LO*, DeviceMemorySpace> class_dims_;
   Kokkos::View<LO*, DeviceMemorySpace> class_ids_;
-  Kokkos::View<bool*, HostMemorySpace> owned_host_;
   Kokkos::View<GO*, HostMemorySpace> gids_host_;
-  Kokkos::View<LO*, HostMemorySpace> classification_dims_host_;
-  Kokkos::View<LO*, HostMemorySpace> classification_ids_host_;
   Kokkos::View<Real**, DeviceMemorySpace> coords_;
   int num_components_;
 };

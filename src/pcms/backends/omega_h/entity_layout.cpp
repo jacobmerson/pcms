@@ -89,19 +89,18 @@ OmegaHEntityLayout::OmegaHEntityLayout(std::shared_ptr<const Geometry> geometry,
       ConvertCoordsTo2D(coords_, mesh_.nents(entity_dim), mesh_.dim())),
     class_ids_(mesh_.get_array<Omega_h::ClassId>(entity_dim, "class_id")),
     class_dims_(mesh_.get_array<Omega_h::I8>(entity_dim, "class_dim")),
-    owned_(BuildOwned(mesh_, entity_dim)),
-    owned_host_("owned_host", owned_.size())
+    owned_(BuildOwned(mesh_, entity_dim))
 {
   SetCoordinateSystem(geometry->GetCoordinateSystem());
   SetGeometry(std::move(geometry));
   PCMS_ALWAYS_ASSERT(entity_dim_ >= 0 && entity_dim_ <= dimension_);
 
-  Kokkos::deep_copy(owned_host_, owned_);
   BuildOwnedViews();
 
   class_dims_ = Omega_h::Read<Omega_h::I8>(class_dims_);
   class_ids_ = Omega_h::Read<Omega_h::ClassId>(class_ids_);
-  BuildOwnedClassification();
+  owned_classification_ = pcms::detail::BuildOwnedClassification(
+    class_dims_, class_ids_, owned_indices_);
 }
 
 int OmegaHEntityLayout::GetNumComponents() const
@@ -129,9 +128,9 @@ GO OmegaHEntityLayout::GetNumGlobalDofHolder() const
   return num_global_dof_holder_;
 }
 
-Rank1View<const bool, HostMemorySpace> OmegaHEntityLayout::GetOwnedHost() const
+Rank1View<const bool, DeviceMemorySpace> OmegaHEntityLayout::GetOwned() const
 {
-  return pcms::detail::make_const_array_view(owned_host_);
+  return pcms::detail::make_const_array_view(owned_);
 }
 
 GlobalIDView<HostMemorySpace> OmegaHEntityLayout::GetGidsHost() const
@@ -151,12 +150,6 @@ CoordinateView<DeviceMemorySpace> OmegaHEntityLayout::GetDOFHolderCoordinates()
                                                          coords_view};
 }
 
-Kokkos::View<const LO*, HostMemorySpace>
-OmegaHEntityLayout::GetOwnedIndicesHost() const
-{
-  return owned_indices_host_;
-}
-
 Kokkos::View<const LO*, DeviceMemorySpace> OmegaHEntityLayout::GetOwnedIndices()
   const
 {
@@ -170,7 +163,6 @@ void OmegaHEntityLayout::BuildOwnedViews()
     Kokkos::View<const GO*, DeviceMemorySpace>(gids_.data(), gids_.size()),
     coords_2d_, dimension_);
   num_owned_ = owned.num_owned;
-  owned_indices_host_ = owned.owned_indices_host;
   owned_gids_host_ = owned.owned_gids_host;
   owned_coords_2d_ = owned.owned_coords_2d;
   owned_indices_ = owned.owned_indices;
@@ -185,7 +177,7 @@ EntOffsetsArray OmegaHEntityLayout::GetEntOffsets() const
 {
   return !HasGhosts() ? EntOffsetsWithGhosts()
                       : pcms::detail::OwnedEntOffsets(EntOffsetsWithGhosts(),
-                                                      owned_indices_host_);
+                                                      owned_indices_);
 }
 
 EntOffsetsArray OmegaHEntityLayout::EntOffsetsWithGhosts() const
@@ -208,23 +200,16 @@ int OmegaHEntityLayout::GetDOFHolderEntityDim() const
   return entity_dim_;
 }
 
-Rank1View<const LO, HostMemorySpace>
-OmegaHEntityLayout::GetDOFHolderClassificationDimensionsHost() const
+Rank1View<const LO, DeviceMemorySpace>
+OmegaHEntityLayout::GetDOFHolderClassificationDimensions() const
 {
-  return pcms::detail::make_const_array_view(owned_classification_dims_host_);
+  return pcms::detail::make_const_array_view(owned_classification_.dims);
 }
 
-Rank1View<const LO, HostMemorySpace>
-OmegaHEntityLayout::GetDOFHolderClassificationIdsHost() const
+Rank1View<const LO, DeviceMemorySpace>
+OmegaHEntityLayout::GetDOFHolderClassificationIds() const
 {
-  return pcms::detail::make_const_array_view(owned_classification_ids_host_);
-}
-
-void OmegaHEntityLayout::BuildOwnedClassification()
-{
-  pcms::detail::BuildOwnedClassificationHost(
-    class_dims_, class_ids_, owned_indices_, owned_classification_dims_host_,
-    owned_classification_ids_host_);
+  return pcms::detail::make_const_array_view(owned_classification_.ids);
 }
 
 } // namespace pcms::omega_h

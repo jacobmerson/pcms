@@ -26,9 +26,9 @@ std::shared_ptr<FieldFactory> CreateFieldFactory(
   std::shared_ptr<const CoordinateSystem> coordinate_system,
   std::string layout_name = "");
 
-/// Per-vertex overlap mask (true where a vertex belongs to an element with
-/// the given attribute), for ApplicationComm::SetLayoutOverlapMask.
-Kokkos::View<bool*, HostMemorySpace> OverlapMaskFromAttribute(
+/// @brief A per-vertex mask for OverlapMask: true where a vertex belongs to an
+///        element with the given attribute
+Kokkos::View<bool*, DeviceMemorySpace> OverlapMaskFromAttribute(
   ::mfem::ParMesh& pmesh, int attribute);
 
 } // namespace pcms::mfem
