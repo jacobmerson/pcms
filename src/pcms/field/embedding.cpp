@@ -414,15 +414,6 @@ void AcceptRound(UniformGrid<Dim> grid, Real slack,
     });
 }
 
-// Marks the listed points found, the others missing.
-void MarkFound(DeviceView<const LO*> indices, DeviceView<bool*> found)
-{
-  Kokkos::deep_copy(found, false);
-  detail::ForEach(
-    "embedded_mark_found", static_cast<LO>(indices.extent(0)),
-    KOKKOS_LAMBDA(const LO k) { found(indices(k)) = true; });
-}
-
 // ---------------------------------------------------------------------------
 
 // What the BoundPoints of an embedded geometry hold: the parameter
@@ -838,12 +829,12 @@ private:
       GetBoundMap() == nullptr &&
       pcms::detail::SameCoordinateSystem(GetCoordinateSystem(),
                                          geometry_->GetParameterSystem());
-    DeviceView<bool*> found("embedded_found", n);
+    DeviceView<bool*> found;
     if (parametric) {
       DeviceView<Real**> xi("embedded_xi", n, Dim);
       Kokkos::deep_copy(xi, points);
       SetParameters(*geometry_->GetParameterGeometry(), xi, Policy());
-      MarkFound(Inner()->FoundPoints(), found);
+      found = detail::FoundMask(n, {Inner()->MissingPoints()});
     } else {
       const auto located = search_.Locate(MakeConstRank2View(points));
       if (GetBoundMap() == nullptr) {
