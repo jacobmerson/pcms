@@ -249,8 +249,11 @@ Function carries always have it). Physical components are defined on every
 system with a metric: natural times sqrt(g_ii) per contravariant index and
 sqrt(g^ii) per covariant one. Gradients are written as natural components
 (partials along the coordinates); evaluating them through a coordinate map
-whose source system is orthonormal gives physical ones. The name is fixed at
-creation; there is no `SetUnits`. A transfer sets the units and extent of its
+whose source system is orthonormal gives physical ones. An interpolation or a
+copy into a Function declared with the other scaling converts at the target,
+by the metric of its system at the target's DOF holders (a system without a
+metric throws), and its transpose applies the same conversion to the loads
+first. The name is fixed at creation; there is no `SetUnits`. A transfer sets the units and extent of its
 target that are unknown from its source (known ones are never overwritten)
 and throws when both sides have units that differ (with
 `PCMS_ENABLE_UNITS`), when `Apply` meets a field declared `Extensive`, or when
