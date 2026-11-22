@@ -74,7 +74,8 @@ The reorganization does not change numerical behavior. See [MIGRATION.md](MIGRAT
   `CreateFunction<T>(std::string name = "", ValueBasis = {})` and
   `CreateFunction<T>(FieldMetadata, std::unique_ptr<FieldData<T>>)`, and the
   same three `CreateField` on `FieldFactory` (the variance, system and
-  scaling arguments are `ValueBasis` members; an unset scaling is derived).
+  scaling arguments are `ValueBasis` members; an unset scaling is Physical
+  on an orthonormal system and must be stated on any other).
   `TransferOperator::Apply` and `ApplyTranspose` (copies, interpolators and
   all projections) are non-virtual: `Apply` throws if a field is declared
   `Extensive`, `ApplyTranspose` if one is declared `Intensive`. Units are

@@ -241,11 +241,13 @@ their values; the same three overloads exist on `FunctionSpace`
 
 `CreateFunction<T>("name")` and `CreateFunction<T>()` are unchanged. The
 `ValueBasis` default leaves `system` and `scaling` unset: the system is the
-space's own and the scaling is derived as before (physical where the metric is
-constant, natural where the system is not orthogonal, an error where the
-choice must be stated), so `ValueBasis::scaling` is now a
-`std::optional<ComponentScaling>` (bases that a Function carries are always
-resolved). The name is fixed at creation; there is no `SetUnits`. A transfer
+space's own, and the scaling is `Physical` for scalars and where the metric is
+the identity (Cartesian, cylindrical RZ); a vector or tensor on any other
+system (cylindrical RThetaZ, a parameter system) must state it. So
+`ValueBasis::scaling` is now a `std::optional<ComponentScaling>` (bases that a
+Function carries always have it). Physical components are defined on every
+system with a metric: natural times sqrt(g_ii) per contravariant index and
+sqrt(g^ii) per covariant one. The name is fixed at creation; there is no `SetUnits`. A transfer
 sets the units and extent of its target that are unknown from its source
 (known ones are never overwritten) and throws when both sides have units that
 differ (with `PCMS_ENABLE_UNITS`), when `Apply` meets a field declared
