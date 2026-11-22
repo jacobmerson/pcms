@@ -532,18 +532,6 @@ public:
 namespace
 {
 
-// A quadrature of an embedded geometry from a rule in the parameter
-// coordinates: `xi` bound on the geometry, `weights` (in the parameter
-// measure) scaled in place by the volume factor.
-Quadrature MapQuadrature(const EmbeddedGeometry& geometry,
-                         const CoordinateView<DeviceMemorySpace>& xi,
-                         DeviceView<Real*> weights)
-{
-  auto bound = geometry.Bind(xi);
-  pcms::detail::ScaleByVolumeFactor(weights, *bound);
-  return Quadrature{std::move(bound), weights, {}};
-}
-
 // The search over the cells of a uniform grid of the parameters: their images
 // are binned, and the points are located by Newton in the cells of their bin.
 template <unsigned Dim>
@@ -636,7 +624,7 @@ public:
       static_cast<const uniform_grid::UniformGridGeometry<Dim>&>(
         *geometry.GetParameterGeometry())
         .CellRule(gauss->order);
-    return MapQuadrature(
+    return detail::BindQuadrature(
       geometry,
       CoordinateView<DeviceMemorySpace>(geometry.GetParameterSystem(),
                                         MakeConstRank2View(xi)),
@@ -908,16 +896,6 @@ private:
   std::shared_ptr<const FunctionSpace> space_;
 };
 
-/// @brief Divides `weights` by the volume factor at the points of `bound`.
-void DivideByVolumeFactor(DeviceView<Real*> weights, const BoundPoints& bound)
-{
-  const auto volume = bound.VolumeFactor();
-  detail::ForEach(
-    "DivideByVolumeFactor", static_cast<LO>(weights.extent(0)),
-    KOKKOS_LAMBDA(const LO i) { weights(i) /= volume(i); });
-  Kokkos::fence("DivideByVolumeFactor");
-}
-
 /// @brief A space on the parameter geometry evaluated on an embedded
 ///        geometry; its quadrature is the space's, in the physical measure.
 class EmbeddedSpace final : public FunctionSpace
@@ -941,10 +919,10 @@ public:
       parameter.weights.extent(0));
     Kokkos::deep_copy(weights, parameter.weights);
     if (embedded_->GetParameterSystem()->HasMetric()) {
-      DivideByVolumeFactor(weights, *parameter.points);
+      detail::ScaleByVolumeFactor(weights, *parameter.points, true);
     }
-    return MapQuadrature(*embedded_, parameter.points->LocatedPoints(),
-                         weights);
+    return detail::BindQuadrature(*embedded_, parameter.points->LocatedPoints(),
+                                  weights);
   }
 
 private:
