@@ -8,11 +8,13 @@
 /// transferred with PCMS. They share the source's geometry, so points bound
 /// once (pcms::QueryPoints on GetGeometry()) serve every quantity. Points are
 /// (R, phi, Z) cylindrical coordinates
-/// (pcms CylindricalRThetaZ: right-handed, phi is theta), values are in SI
-/// units, and vector values are physical cylindrical components. Meshes are
-/// serial for now: every rank opens the whole source.
+/// (pcms CylindricalRThetaZ: right-handed, phi is theta), and vector values
+/// are physical cylindrical components. Values carry units metadata: readers
+/// return the source's native units, with no conversion. Meshes are serial
+/// for now: every rank opens the whole source.
 
 #include <pcms/field/field.hpp>
+#include <pcms/field/field_metadata.hpp>
 #include <pcms/geometry/geometry.hpp>
 #include <array>
 #include <memory>
@@ -83,6 +85,10 @@ enum class Quantity
 
 /// Fusion-IO's name for a quantity, e.g. "magnetic field".
 std::string_view Name(Quantity quantity);
+
+/// @brief The metadata of a quantity's functions: its Name, its units where
+///        known (a source may override them) and Intensive.
+[[nodiscard]] pcms::FieldMetadata Metadata(Quantity quantity);
 
 /// Which part of a field to evaluate.
 enum class Part

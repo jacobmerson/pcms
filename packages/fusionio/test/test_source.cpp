@@ -45,6 +45,18 @@ TEST_CASE("fusionio quantity names are Fusion-IO's")
   REQUIRE(fusionio::Name(Quantity::BootstrapCurrent) == "JpdotB");
 }
 
+TEST_CASE("fusionio quantities are intensive, with units where known")
+{
+  const auto b = fusionio::Metadata(Quantity::MagneticField);
+  REQUIRE(b.name == "magnetic field");
+  REQUIRE(b.units.has_value());
+  REQUIRE(b.units->ToString() == pcms::Units::Parse("T").ToString());
+  REQUIRE(b.extent == pcms::Extent::Intensive);
+  const auto psi = fusionio::Metadata(Quantity::PoloidalFlux);
+  REQUIRE_FALSE(psi.units.has_value());
+  REQUIRE(psi.extent == pcms::Extent::Intensive);
+}
+
 TEST_CASE("fusionio::Open describes an M3D-C1 source")
 {
   const auto source = fusionio::Open(fusionio::Format::M3DC1, M3DC1File);
@@ -72,6 +84,9 @@ TEST_CASE("fusionio::Open functions share the source's geometry")
   const auto psi = source->CreateFunction(Quantity::PoloidalFlux, options);
   const auto p = source->CreateFunction(Quantity::TotalPressure, options);
   REQUIRE(b.GetName() == "magnetic field");
+  REQUIRE(b.GetMetadata().units->ToString() ==
+          pcms::Units::Parse("T").ToString());
+  REQUIRE(b.GetMetadata().extent == pcms::Extent::Intensive);
   REQUIRE(b.GetLayout().GetNumComponents() == 3);
   REQUIRE(b.GetSpace().GetGeometry() == source->GetGeometry());
   REQUIRE(psi.GetSpace().GetGeometry() == source->GetGeometry());

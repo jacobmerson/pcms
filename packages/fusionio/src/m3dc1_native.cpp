@@ -740,7 +740,7 @@ public:
     scalar.factor = entry.factor;
     scalar.phase = options.phase.value_or(0.);
     return scalars_->CreateFunction<Real>(
-      FieldMetadata{.name = std::string(Name(quantity))},
+      Metadata(quantity),
       std::make_unique<NativeFieldData>(std::move(scalar), ValueBasis{}));
   }
 
@@ -767,7 +767,7 @@ private:
     b.phase = options.phase.value_or(0.);
     b.toroidal = s.itor == 1;
     return vectors_->CreateFunction<Real>(
-      FieldMetadata{.name = std::string(Name(Quantity::MagneticField))},
+      Metadata(Quantity::MagneticField),
       std::make_unique<NativeFieldData>(std::move(b), QuantityBasis(true)));
   }
 

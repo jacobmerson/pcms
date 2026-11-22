@@ -515,8 +515,13 @@ public:
     if (space == nullptr) {
       space = CreateNimrodSpace(geometry_, components);
     }
+    auto metadata = fusionio::Metadata(quantity);
+    if (quantity == Quantity::Temperature) {
+      // the units of NIMROD's temperature are not known
+      metadata.units.reset();
+    }
     return space->CreateFunction<Real>(
-      FieldMetadata{.name = std::string(fusionio::Name(quantity))},
+      std::move(metadata),
       std::make_unique<NimrodFieldData>(
         NimrodQuantity{source_, name,
                        NimevalPart(options.part.value_or(Part::Total))},

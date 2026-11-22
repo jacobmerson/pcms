@@ -259,7 +259,8 @@ GnetDistribution OpenGnet(const std::string& path, const GnetOptions& options)
     pcms::MLSOptions{.degree = options.degree,
                      .lambda = options.lambda,
                      .basis = pcms::RadialBasisFunction::NO_OP});
-  auto density = space->CreateFunction<Real>();
+  auto density = space->CreateFunction<Real>(
+    pcms::FieldMetadata{.name = "density", .extent = pcms::Extent::Intensive});
   const std::vector<double> values = data.NumberDensity();
   density.SetDOFHolderDataHost(pcms::ValueView<const Real, HostMemorySpace>(
     pcms::ValueBasis{}, pcms::Rank2View<const Real, HostMemorySpace>(

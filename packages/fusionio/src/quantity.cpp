@@ -1,41 +1,82 @@
 #include "fusionio/fusionio.hpp"
 #include <pcms/utility/assert.hpp>
+#include <algorithm>
+#include <iterator>
+#include <string>
 
 namespace fusionio
 {
 
-// Fusion-IO 1.x's names of its field types (fio_get_field_name).
+namespace
+{
+
+struct QuantityEntry
+{
+  Quantity quantity;
+  // Fusion-IO 1.x's name of the field type (fio_get_field_name)
+  std::string_view name;
+  // the units 1.x returns the values in, empty where not certain
+  std::string_view units;
+};
+
+// TODO: constraints per quantity and space guarantees (design-invariants.md
+// §5 Fusion-IO)
+constexpr QuantityEntry Quantities[] = {
+  {Quantity::Alpha, "alpha", ""},
+  {Quantity::ScalarPotential, "scalar potential", "V"},
+  {Quantity::TotalPressure, "total pressure", "Pa"},
+  {Quantity::PoloidalFlux, "poloidal flux", ""},
+  {Quantity::PoloidalFluxNorm, "normalized poloidal flux", ""},
+  {Quantity::TotalRadiation, "total radiation", ""},
+  {Quantity::Resistivity, "resistivity", ""},
+  {Quantity::Viscosity, "viscosity", ""},
+  {Quantity::ThermalDiffusivity, "thermal diffusivity", ""},
+  {Quantity::BootstrapCurrent, "JpdotB", ""},
+  {Quantity::BootstrapCurrentDnDpsi, "JpdotB_dndpsi", ""},
+  {Quantity::BootstrapCurrentDteDpsi, "JpdotB_dtedpsi", ""},
+  {Quantity::BootstrapCurrentDtiDpsi, "JpdotB_dtidpsi", ""},
+  {Quantity::BootstrapCurrentL31, "JpdotB_L31", ""},
+  {Quantity::BootstrapCurrentL32, "JpdotB_L32", ""},
+  {Quantity::BootstrapCurrentL34, "JpdotB_L34", ""},
+  {Quantity::BootstrapCurrentAlpha, "JpdotB_alpha", ""},
+  {Quantity::Pressure, "pressure", "Pa"},
+  {Quantity::Density, "density", "m^-3"},
+  {Quantity::Temperature, "temperature", "eV"},
+  {Quantity::ElectricField, "electric field", "V/m"},
+  {Quantity::VectorPotential, "vector potential", "T*m"},
+  {Quantity::MagneticField, "magnetic field", "T"},
+  {Quantity::CurrentDensity, "current density", "A/m^2"},
+  {Quantity::FluidVelocity, "fluid velocity", "m/s"},
+  {Quantity::Velocity, "velocity", "m/s"},
+};
+
+const QuantityEntry& Entry(Quantity quantity)
+{
+  const auto* found =
+    std::find_if(std::begin(Quantities), std::end(Quantities),
+                 [quantity](const auto& e) { return e.quantity == quantity; });
+  if (found == std::end(Quantities)) {
+    throw pcms::pcms_error("fusionio: unknown quantity");
+  }
+  return *found;
+}
+
+} // namespace
+
 std::string_view Name(Quantity quantity)
 {
-  switch (quantity) {
-    case Quantity::Alpha: return "alpha";
-    case Quantity::ScalarPotential: return "scalar potential";
-    case Quantity::TotalPressure: return "total pressure";
-    case Quantity::PoloidalFlux: return "poloidal flux";
-    case Quantity::PoloidalFluxNorm: return "normalized poloidal flux";
-    case Quantity::TotalRadiation: return "total radiation";
-    case Quantity::Resistivity: return "resistivity";
-    case Quantity::Viscosity: return "viscosity";
-    case Quantity::ThermalDiffusivity: return "thermal diffusivity";
-    case Quantity::BootstrapCurrent: return "JpdotB";
-    case Quantity::BootstrapCurrentDnDpsi: return "JpdotB_dndpsi";
-    case Quantity::BootstrapCurrentDteDpsi: return "JpdotB_dtedpsi";
-    case Quantity::BootstrapCurrentDtiDpsi: return "JpdotB_dtidpsi";
-    case Quantity::BootstrapCurrentL31: return "JpdotB_L31";
-    case Quantity::BootstrapCurrentL32: return "JpdotB_L32";
-    case Quantity::BootstrapCurrentL34: return "JpdotB_L34";
-    case Quantity::BootstrapCurrentAlpha: return "JpdotB_alpha";
-    case Quantity::Pressure: return "pressure";
-    case Quantity::Density: return "density";
-    case Quantity::Temperature: return "temperature";
-    case Quantity::ElectricField: return "electric field";
-    case Quantity::VectorPotential: return "vector potential";
-    case Quantity::MagneticField: return "magnetic field";
-    case Quantity::CurrentDensity: return "current density";
-    case Quantity::FluidVelocity: return "fluid velocity";
-    case Quantity::Velocity: return "velocity";
+  return Entry(quantity).name;
+}
+
+pcms::FieldMetadata Metadata(Quantity quantity)
+{
+  const QuantityEntry& entry = Entry(quantity);
+  pcms::FieldMetadata metadata{.name = std::string(entry.name),
+                               .extent = pcms::Extent::Intensive};
+  if (!entry.units.empty()) {
+    metadata.units = pcms::Units::Parse(entry.units);
   }
-  throw pcms::pcms_error("fusionio: unknown quantity");
+  return metadata;
 }
 
 } // namespace fusionio

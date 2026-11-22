@@ -318,6 +318,8 @@ TEST_CASE("fusionio::OpenNimrod gives Fusion-IO's quantities")
       fusionio::Quantity::MagneticField, {.part = fusionio::Part::Equilibrium});
     const auto v = source->CreateFunction(fusionio::Quantity::FluidVelocity);
     REQUIRE(b.GetName() == "magnetic field");
+    REQUIRE(b.GetMetadata().units.has_value());
+    REQUIRE(b.GetMetadata().extent == pcms::Extent::Intensive);
     REQUIRE(b.GetSpace().GetGeometry() == source->GetGeometry());
     REQUIRE(&b.GetSpace() == &v.GetSpace());
     REQUIRE(b.GetSpace().Supports(pcms::DifferentialOperator::Gradient));

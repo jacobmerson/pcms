@@ -547,7 +547,7 @@ public:
     return Space(num_components,
                  ProvidesDerivatives(source_->GetFormat(), quantity))
       ->CreateFunction<Real>(
-        pcms::FieldMetadata{.name = std::string(Name(quantity))},
+        Metadata(quantity),
         std::make_unique<FusionIOFieldData>(
           FusionIOQuantity{source_, source_->GetField(quantity, fio_options)},
           QuantityBasis(num_components == 3)));
