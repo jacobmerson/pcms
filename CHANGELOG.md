@@ -61,6 +61,12 @@ The reorganization does not change numerical behavior. See [MIGRATION.md](MIGRAT
 
 ### Added
 
+- Point clouds and `CreatePolynomialReconstructionSpace` in up to 6
+  dimensions (phase space), on `csys::CreateParameterSystem(name, dimension,
+  periods)` (Python: `pcms.csys.create_parameter_system`). The support search
+  and the MLS fit take a support across a period at its image nearest the
+  query point; a coordinate system without a metric measures coordinate
+  differences.
 - Field metadata: a `Field` carries `FieldMetadata` (name, optional `Units`,
   optional `Extent`: `Intensive` or `Extensive`; `GetMetadata`). Fields are
   created with their metadata and a `ValueBasis`:
