@@ -544,7 +544,7 @@ public:
       grid_(parameter.GetGrid()),
       options_(options.search)
   {
-    BuildSearch(options.symmetry);
+    BuildSearch();
   }
 
   [[nodiscard]] std::shared_ptr<BoundPoints> Bind(
@@ -561,7 +561,7 @@ public:
     DeviceView<Real**> xi;      // [point][parameter dimension]
     DeviceView<bool*> found;    // [point]
     DeviceView<Real**> reduced; // [point][coordinate system dimension]: the
-                                // points reduced by the periods and symmetry
+                                // points reduced by the identifications
   };
 
   /// @brief The parameter coordinates of points of the target system: the
@@ -634,7 +634,7 @@ public:
 private:
   // Bins the images of the cells: their bounding boxes, from a lattice of
   // sample points of each cell, padded.
-  void BuildSearch(const std::optional<TranslationSymmetry>& symmetry)
+  void BuildSearch()
   {
     const auto& system = position_.System();
     const int dt = system->Dimension();
@@ -719,9 +719,6 @@ private:
         if (id.axis == j && id.map == nullptr) {
           bins_.period[j] = id.length;
         }
-      }
-      if (symmetry && symmetry->axis == j) {
-        bins_.period[j] = symmetry->length;
       }
       two_windows_ = two_windows_ ||
                      (bins_.period[j] > 0 && image_hi[j] - image_lo[j] >
@@ -990,13 +987,6 @@ std::shared_ptr<const EmbeddedGeometry> CreateEmbeddedGeometry(
       checked.Get()->GetSpace().GetGeometry() != parameter_geometry) {
     throw pcms_error("CreateEmbeddedGeometry: the position must be a Function "
                      "on the parameter geometry");
-  }
-  const auto& symmetry = options.symmetry;
-  if (symmetry && (symmetry->length <= 0 || symmetry->axis < 0 ||
-                   symmetry->axis >= checked.System()->Dimension())) {
-    throw pcms_error("CreateEmbeddedGeometry: the symmetry must translate an "
-                     "axis of the position's coordinate system by a positive "
-                     "length");
   }
   if (const auto& metric = options.metric) {
     const ValueBasis& basis = metric->GetData().GetValueBasis();
