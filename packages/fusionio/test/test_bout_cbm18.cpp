@@ -105,10 +105,14 @@ TEST_CASE("BOUT++ CBM18: the grid file read and built", "[bout][cbm18]")
       pcms::CreateLagrangeSpace(spaces.geometry->GetParameterGeometry(), 1, 1));
     CHECK_THAT(pcms::L2Integral(induced).Apply(Ones(*induced)),
                WithinRel(sum, 2e-2));
-    // the multilinear g^ij of the sheared metric loses 16% of the volume
-    const Real volume =
-      pcms::L2Integral(spaces.space).Apply(Ones(*spaces.space));
-    CHECK_THAT(volume, WithinRel(0.844 * sum, 1e-2));
+    // the given volume factor J, with the given or the induced metric
+    for (const auto metric :
+         {fusionio::BoutMetric::Given, fusionio::BoutMetric::Induced}) {
+      CAPTURE(metric == fusionio::BoutMetric::Given);
+      const auto space = fusionio::Build(grid, metric).space;
+      CHECK_THAT(pcms::L2Integral(space).Apply(Ones(*space)),
+                 WithinRel(sum, 1e-3));
+    }
   }
 
   SECTION("the source has the geometry of Build and the file's profiles")

@@ -75,11 +75,22 @@ struct BoutSpaces
   std::shared_ptr<const pcms::FunctionSpace> space;
 };
 
+/// @brief The metric of a block's geometry; both give BOUT++'s volume factor
+///        J, multilinear in the index coordinates.
+enum class BoutMetric
+{
+  /// the grid's g^ij, multilinear in the index coordinates
+  Given,
+  /// the metric induced by the position
+  Induced
+};
+
 /// @brief Builds the geometry and space of a block.
 /// @throws pcms_error if the grid has open field lines, is not one serial
 ///         block (offsets 0), has fewer than 2 interior points in x or y,
 ///         arrays of the wrong extents, or nz dz is not 2 pi / zperiod
-[[nodiscard]] BoutSpaces Build(const BoutGrid& grid);
+[[nodiscard]] BoutSpaces Build(const BoutGrid& grid,
+                               BoutMetric metric = BoutMetric::Given);
 
 /// @brief The offset in BOUT++'s field array of the block ([nx][ny][nz])
 ///        of each DOF holder of `space`: the y = ny plane reads the first

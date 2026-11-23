@@ -1,7 +1,8 @@
 // bout-grid: a BOUT++ grid file as PCMS objects.
 //
 // Reads the grid, builds its geometry and prints its volume (by quadrature
-// with the grid's metric and as BOUT++'s sum of J dx dy dz), the integral of
+// with the grid's and with the induced metric, and as BOUT++'s sum of
+// J dx dy dz), the integral of
 // the pressure and the position and pressure at an index point.
 
 #include <fusionio/bout.hpp>
@@ -64,13 +65,18 @@ int Run(const std::string& path, int nz, int zperiod)
   const auto source = fusionio::OpenBout(path, nz, zperiod);
   const auto pressure =
     source->CreateFunction(fusionio::Quantity::TotalPressure);
-  auto one = pressure.GetSpace().CreateFunction<Real>("one");
-  Kokkos::View<Real**, pcms::HostMemorySpace> ones(
-    "one", one.GetLayout().GetNumDofHolder(), 1);
-  Kokkos::deep_copy(ones, 1.0);
-  one.SetDOFHolderDataHost(pcms::ValueView<const Real, pcms::HostMemorySpace>(
-    one.GetData().GetValueBasis(), pcms::MakeConstRank2View(ones)));
   const pcms::L2Integral integral(pressure.GetSpace().shared_from_this());
+  const auto volume =
+    [](const std::shared_ptr<const pcms::FunctionSpace>& space) {
+      auto one = space->CreateFunction<Real>("one");
+      Kokkos::View<Real**, pcms::HostMemorySpace> ones(
+        "one", one.GetLayout().GetNumDofHolder(), 1);
+      Kokkos::deep_copy(ones, 1.0);
+      one.SetDOFHolderDataHost(
+        pcms::ValueView<const Real, pcms::HostMemorySpace>(
+          one.GetData().GetValueBasis(), pcms::MakeConstRank2View(ones)));
+      return pcms::L2Integral(space).Apply(one);
+    };
 
   const auto& embedded =
     dynamic_cast<const pcms::EmbeddedGeometry&>(*source->GetGeometry());
@@ -79,8 +85,12 @@ int Run(const std::string& path, int nz, int zperiod)
   std::cout << "grid " << grid.nx << " x " << grid.ny << " x " << nz
             << ", x guard cells " << grid.mxg << ", toroidal period "
             << source->ToroidalPeriod() << " rad\n"
-            << "volume (m^3): quadrature " << integral.Apply(one)
-            << ", sum of J dx dy dz " << sum << "\n"
+            << "volume (m^3): quadrature "
+            << volume(pressure.GetSpace().shared_from_this())
+            << " (given metric), "
+            << volume(
+                 fusionio::Build(grid, fusionio::BoutMetric::Induced).space)
+            << " (induced metric), sum of J dx dy dz " << sum << "\n"
             << "integral of the pressure (J): " << integral.Apply(pressure)
             << "\n"
             << "at (x, y, z) = (" << point[0] << ", " << point[1] << ", "

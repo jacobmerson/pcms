@@ -137,6 +137,8 @@ of the candidates; periodic theta and zeta by default.
   components, multilinear; the space is multilinear on the embedded geometry.
   The y = ny and z = nz planes are DOF holders: the twist-shifted y = 0 plane
   and the z = 0 plane.
+  `Build(grid, BoutMetric::Induced)` uses the metric the position induces
+  in place of `g^ij`; both give the volume factor J = 1 / sqrt(det g^ij).
 - `InteriorOffsets(space, grid)` maps the DOF holders to BOUT++'s `[nx][ny][nz]`
   field array (the y = ny plane reads the first upper y guard plane, which
   BOUT++'s communication fills with the twist-shifted values); `CopyIn` and
@@ -155,7 +157,7 @@ as a `Source` with the equilibrium profiles of the file, constant in z:
 | `Temperature` (main ions, electrons) | `Ti0`, `Te0` | eV |
 
 `bout-grid <grid.nc> <nz> <zperiod>` (built with the component) prints the
-volume of a grid by quadrature and as BOUT++'s sum of J dx dy dz, the integral
+volume of a grid by quadrature (with either metric) and as BOUT++'s sum of J dx dy dz, the integral
 of the pressure and the position and pressure at a point. The tests read the
 CBM18 grid of BOUT++'s elm-pb example from the PCMS test data
 (`FUSIONIO_TEST_BOUT_GRID`, `bout/cbm18/cbm18_grid.nc`; LGPL-3.0).

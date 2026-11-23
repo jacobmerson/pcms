@@ -109,6 +109,17 @@ Real ShiftSlope(const BoutGrid& grid, int i)
   return (grid.shift_angle(hi) - grid.shift_angle(lo)) / ((hi - lo) * grid.dz);
 }
 
+/// g^xx, g^yy, g^zz, g^xy, g^xz, g^yz in index units at a point of the block.
+void IndexMetric(const BoutGrid& grid, const BlockPoint& p, Real* g)
+{
+  const Real h[3] = {grid.dx(p.ix, p.jy), grid.dy(p.ix, p.jy), grid.dz};
+  constexpr int First[6] = {0, 1, 2, 0, 0, 1};
+  constexpr int Second[6] = {0, 1, 2, 1, 2, 2};
+  for (int c = 0; c < 6; ++c) {
+    g[c] = grid.g_contra[c](p.ix, p.jy) / (h[First[c]] * h[Second[c]]);
+  }
+}
+
 template <typename Fill>
 std::shared_ptr<const pcms::Function<Real>> NodeFunction(
   const std::shared_ptr<const pcms::FunctionSpace>& space, const BoutGrid& grid,
@@ -129,7 +140,7 @@ std::shared_ptr<const pcms::Function<Real>> NodeFunction(
 
 } // namespace
 
-BoutSpaces Build(const BoutGrid& grid)
+BoutSpaces Build(const BoutGrid& grid, BoutMetric metric)
 {
   Check(grid);
   const int nxi = InteriorNx(grid);
@@ -184,29 +195,37 @@ BoutSpaces Build(const BoutGrid& grid)
                  });
   // g^ij in index components; on the y = ny plane in the z of the plane
   // before the seam, z - S(x)
-  const auto metric = NodeFunction(
-    pcms::CreateLagrangeSpace(geometry, 1, 9), grid, "g^ij",
-    {.variance = pcms::values::Tensor}, [&](const BlockPoint& p, Real* out) {
-      const Real h[3] = {grid.dx(p.ix, p.jy), grid.dy(p.ix, p.jy), grid.dz};
-      // g^xx, g^yy, g^zz, g^xy, g^xz, g^yz
-      Real g[6];
-      for (int c = 0; c < 6; ++c) {
-        constexpr int First[6] = {0, 1, 2, 0, 0, 1};
-        constexpr int Second[6] = {0, 1, 2, 1, 2, 2};
-        g[c] = grid.g_contra[c](p.ix, p.jy) / (h[First[c]] * h[Second[c]]);
-      }
-      if (p.seam) {
-        const Real s = ShiftSlope(grid, p.ix);
-        g[2] += s * (s * g[0] - 2 * g[4]);
-        g[4] -= s * g[0];
-        g[5] -= s * g[3];
-      }
-      const Real full[9] = {g[0], g[3], g[4], g[3], g[1],
-                            g[5], g[4], g[5], g[2]};
-      std::copy(std::begin(full), std::end(full), out);
-    });
+  pcms::EmbeddingOptions options;
+  if (metric == BoutMetric::Given) {
+    options.metric = NodeFunction(
+      pcms::CreateLagrangeSpace(geometry, 1, 9), grid, "g^ij",
+      {.variance = pcms::values::Tensor}, [&](const BlockPoint& p, Real* out) {
+        Real g[6];
+        IndexMetric(grid, p, g);
+        if (p.seam) {
+          const Real s = ShiftSlope(grid, p.ix);
+          g[2] += s * (s * g[0] - 2 * g[4]);
+          g[4] -= s * g[0];
+          g[5] -= s * g[3];
+        }
+        const Real full[9] = {g[0], g[3], g[4], g[3], g[1],
+                              g[5], g[4], g[5], g[2]};
+        std::copy(std::begin(full), std::end(full), out);
+      });
+  }
+  // J = 1 / sqrt(det g^ij); the seam's shear has determinant 1
+  const auto volume = [&](const BlockPoint& p, Real* out) {
+    Real g[6];
+    IndexMetric(grid, p, g);
+    const Real det = g[0] * (g[1] * g[2] - g[5] * g[5]) -
+                     g[3] * (g[3] * g[2] - g[5] * g[4]) +
+                     g[4] * (g[3] * g[5] - g[1] * g[4]);
+    out[0] = 1 / std::sqrt(det);
+  };
+  options.volume = NodeFunction(pcms::CreateLagrangeSpace(geometry, 1, 1), grid,
+                                "J", {}, volume);
   auto embedded =
-    pcms::CreateEmbeddedGeometry(geometry, position, {.metric = metric});
+    pcms::CreateEmbeddedGeometry(geometry, position, std::move(options));
   auto space = pcms::CreateEmbeddedSpace(
     embedded, pcms::CreateLagrangeSpace(geometry, 1, 1));
   return {std::move(embedded), std::move(space)};
