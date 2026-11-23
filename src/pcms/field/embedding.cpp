@@ -449,10 +449,12 @@ public:
 protected:
   EmbeddedBound(std::shared_ptr<const Geometry> geometry,
                 const BindRequest& request, Position position,
-                std::shared_ptr<const Function<Real>> metric)
+                std::shared_ptr<const Function<Real>> metric,
+                std::shared_ptr<const Function<Real>> volume)
     : BoundPoints(std::move(geometry), request),
       position_(std::move(position)),
-      metric_(std::move(metric))
+      metric_(std::move(metric)),
+      volume_(std::move(volume))
   {
   }
 
@@ -470,8 +472,8 @@ protected:
   }
 
   // J from the Gradient of the position at the parameter coordinates of the
-  // points, and the given metric there or the metric J^T G J the position
-  // induces
+  // points, the given metric there or the metric J^T G J the position
+  // induces, and the given volume factor or that of the metric
   [[nodiscard]] detail::GeometricFactors ComputeFactors() const override
   {
     auto e = position_.Evaluate(MakeConstRank2View(xi_));
@@ -496,6 +498,12 @@ protected:
         *system_, metric, volume);
     }
     mapped_ = e.mapped;
+    if (volume_ != nullptr) {
+      volume_->GetSpace().CreatePointEvaluator<Real>(inner_)->Evaluate(
+        *volume_, ValueView<Real, DeviceMemorySpace>(
+                    volume_->GetData().GetValueBasis(),
+                    Rank2View<Real, DeviceMemorySpace>(volume.data(), n, 1)));
+    }
     return detail::GeometricFactors(
       static_cast<LO>(n), e.jacobian,
       std::make_shared<const BoundCoordinateSystem>(static_cast<LO>(n), metric,
@@ -505,6 +513,7 @@ protected:
 private:
   Position position_;
   std::shared_ptr<const Function<Real>> metric_;
+  std::shared_ptr<const Function<Real>> volume_;
   std::shared_ptr<const BoundPoints> inner_;
   DeviceView<Real**> xi_;
   mutable DeviceView<Real**> mapped_;
@@ -795,7 +804,7 @@ public:
   EmbeddedBinding(std::shared_ptr<const EmbeddedGeometry> geometry,
                   const GridSearch<Dim>& search, const BindRequest& request)
     : EmbeddedBound(geometry, request, search.PositionOf(),
-                    geometry->GetMetric()),
+                    geometry->GetMetric(), geometry->GetVolume()),
       geometry_(std::move(geometry)),
       search_(search)
   {
@@ -935,10 +944,12 @@ EmbeddedGeometry::EmbeddedGeometry(
   std::shared_ptr<const Geometry> parameter,
   std::shared_ptr<const Function<Real>> position,
   std::shared_ptr<const Function<Real>> metric,
+  std::shared_ptr<const Function<Real>> volume,
   std::shared_ptr<const detail::EmbeddedSearch> search)
   : parameter_(std::move(parameter)),
     position_(std::move(position)),
     metric_(std::move(metric)),
+    volume_(std::move(volume)),
     system_(position_->GetData().GetValueBasis().system),
     search_(std::move(search))
 {
@@ -1001,6 +1012,14 @@ std::shared_ptr<const EmbeddedGeometry> CreateEmbeddedGeometry(
                        "contravariant (g^ij)");
     }
   }
+  if (const auto& volume = options.volume) {
+    const ValueBasis& basis = volume->GetData().GetValueBasis();
+    if (volume->GetSpace().GetGeometry() != parameter_geometry ||
+        basis.kind != ValueKind::Tensor || basis.Rank() != 0) {
+      throw pcms_error("CreateEmbeddedGeometry: the volume factor must be a "
+                       "scalar Function on the parameter geometry");
+    }
+  }
   if (detail::SameCoordinateSystem(checked.ParameterSystem(),
                                    checked.System())) {
     throw pcms_error(
@@ -1023,9 +1042,9 @@ std::shared_ptr<const EmbeddedGeometry> CreateEmbeddedGeometry(
     throw pcms_error("CreateEmbeddedGeometry: only 2D and 3D uniform-grid "
                      "parameter geometries are supported");
   }
-  return std::shared_ptr<const EmbeddedGeometry>(
-    new EmbeddedGeometry(std::move(parameter_geometry), checked.Get(),
-                         std::move(options.metric), std::move(search)));
+  return std::shared_ptr<const EmbeddedGeometry>(new EmbeddedGeometry(
+    std::move(parameter_geometry), checked.Get(), std::move(options.metric),
+    std::move(options.volume), std::move(search)));
 }
 
 std::shared_ptr<const FunctionSpace> CreateEmbeddedSpace(
