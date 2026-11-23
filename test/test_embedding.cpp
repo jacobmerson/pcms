@@ -792,3 +792,50 @@ TEST_CASE("Physical components on a sheared parameter system scale by the "
     CHECK_THAT(host(0, 1), WithinAbs(1.0, 1e-12));
   }
 }
+
+TEST_CASE("Coordinates on an identified axis interpolate through the nearest "
+          "image",
+          "[embedding]")
+{
+  // u = (x, y + x / 2) on a grid periodic in y, with u2 stored modulo 1
+  const std::vector<pcms::Identification> periodic = {{1, 0.0, 1.0}};
+  const auto grid = pcms::test::MakeUnitSquareGrid(
+    8, pcms::csys::CreateParameterSystem("xi", 2, periodic));
+  const auto position = pcms::test::MakePositionFunction(
+    pcms::CreateLagrangeSpace(grid, 1, 2),
+    [](const Real* xi, Real* u) {
+      u[0] = xi[0];
+      u[1] = std::fmod(xi[1] + 0.5 * xi[0], 1.0);
+    },
+    pcms::csys::CreateParameterSystem("u", 2, periodic));
+  // across the last cell in y, and inside cells where u2 wraps
+  const std::vector<Real> points = {0.3, 0.95, 0.6, 0.5, 0.95, 0.99};
+  const auto xi = pcms::test::CreateDeviceCoordinateView(
+    points, grid->GetCoordinateSystem(), 2);
+  const auto bound =
+    pcms::CreateCoordinateMap(position)->Bind(xi.coordinate_view);
+  const auto mapped = pcms::test::CopyCoordinatesToHost(bound->Mapped());
+  const auto j = bound->Jacobian();
+  Kokkos::View<Real**, DeviceMemorySpace> jacobian("j", 3, 4);
+  Kokkos::parallel_for(
+    "copy", Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, 3),
+    KOKKOS_LAMBDA(const pcms::LO p) {
+      for (int k = 0; k < 4; ++k) {
+        jacobian(p, k) = j(p, k / 2, k % 2);
+      }
+    });
+  const auto host =
+    Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(), jacobian);
+  for (int p = 0; p < 3; ++p) {
+    CAPTURE(p);
+    const Real x = points[std::size_t{2} * p];
+    const Real y = points[std::size_t{2} * p + 1];
+    CHECK_THAT(mapped(p, 0), WithinAbs(x, 1e-12));
+    CHECK_THAT(std::remainder(mapped(p, 1) - y - 0.5 * x, 1.0),
+               WithinAbs(0.0, 1e-12));
+    const std::array<Real, 4> expected = {1.0, 0.0, 0.5, 1.0};
+    for (int k = 0; k < 4; ++k) {
+      CHECK_THAT(host(p, k), WithinAbs(expected[k], 1e-12));
+    }
+  }
+}

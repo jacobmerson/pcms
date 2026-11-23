@@ -44,10 +44,30 @@ inline Kokkos::View<LO*, DeviceMemorySpace> StrideOffsets(LO num_rows,
   return offsets;
 }
 
+/// @brief The lengths of the translation identifications of the coordinate
+///        axes of Coordinates values, per component (0: none).
+using Periods = Kokkos::Array<Real, 3>;
+
+/// @return the Periods of values in `basis`: none unless they are coordinates
+inline Periods CoordinatePeriods(const ValueBasis& basis)
+{
+  Periods periods = {};
+  if (basis.kind == ValueKind::Coordinates) {
+    for (const auto& id : basis.system->Identifications()) {
+      if (id.map == nullptr && id.axis < static_cast<int>(periods.size())) {
+        periods[id.axis] = id.length;
+      }
+    }
+  }
+  return periods;
+}
+
 /// @brief out(p, c * num_out + r) = row (p, r) times component c of the DOFs.
 /// @param dofs dofs(holder, c)
+/// @param periods per component: its DOFs are taken at the image nearest the
+///        row's first one
 template <typename Dofs, typename Out>
-void Apply(const PointRows& rows, Dofs dofs, Out out)
+void Apply(const PointRows& rows, Dofs dofs, Out out, Periods periods = {})
 {
   const auto offsets = rows.offsets;
   const auto holders = rows.holders;
@@ -60,9 +80,17 @@ void Apply(const PointRows& rows, Dofs dofs, Out out)
       for (int r = 0; r < num_out; ++r) {
         const LO row = p * num_out + r;
         for (int c = 0; c < num_components; ++c) {
+          const Real period =
+            c < static_cast<int>(periods.size()) ? periods[c] : 0;
           Real sum = 0;
           for (LO j = offsets(row); j < offsets(row + 1); ++j) {
-            sum += values(j) * dofs(holders(j), c);
+            Real dof = dofs(holders(j), c);
+            if (period > 0) {
+              dof +=
+                Kokkos::round((dofs(holders(offsets(row)), c) - dof) / period) *
+                period;
+            }
+            sum += values(j) * dof;
           }
           out(p, c * num_out + r) = sum;
         }
@@ -141,7 +169,8 @@ public:
   void EvaluateImpl(const Field<Real>& field,
                     ValueView<Real, DeviceMemorySpace> values) const override
   {
-    Apply(rows_, field.GetDOFHolderData().GetValues(), values.GetValues());
+    Apply(rows_, field.GetDOFHolderData().GetValues(), values.GetValues(),
+          CoordinatePeriods(field.GetData().GetValueBasis()));
   }
 
   void EvaluateTransposeImpl(Rank2View<const Real, DeviceMemorySpace> values,

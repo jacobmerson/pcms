@@ -45,6 +45,9 @@ struct LagrangeOptions
 /// `geometry`: an Omega_h geometry (backend OmegaH: orders 0 and 1; MeshFields:
 /// orders 1 and 2) or a uniform-grid geometry (orders 0 and 1, backend
 /// ignored; an axis identified over the grid's extent has no last node).
+/// On a uniform grid, Coordinates values (and their Gradient) interpolate
+/// through the image of each node nearest the cell's first node along the
+/// axes of their system with a translation identification.
 /// Spaces on one geometry accept each other's BoundPoints.
 /// @throws pcms_error for another geometry kind, a null geometry, or an order
 ///         the backend does not support
