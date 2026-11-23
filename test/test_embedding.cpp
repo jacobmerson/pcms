@@ -9,6 +9,7 @@
 
 using Catch::Matchers::ContainsSubstring;
 using Catch::Matchers::WithinAbs;
+using Catch::Matchers::WithinRel;
 using pcms::DeviceMemorySpace;
 using pcms::Real;
 using pcms::test::Annulus;
@@ -837,5 +838,246 @@ TEST_CASE("Coordinates on an identified axis interpolate through the nearest "
     for (int k = 0; k < 4; ++k) {
       CHECK_THAT(host(p, k), WithinAbs(expected[k], 1e-12));
     }
+  }
+}
+
+namespace
+{
+
+constexpr Real Pi = std::numbers::pi;
+constexpr Real R0 = 3.0;
+
+KOKKOS_INLINE_FUNCTION Real SafetyFactor(Real r)
+{
+  return 1 + r;
+}
+
+// Xi = (r, theta, z) -> U = (r, theta, z + q(r) theta)
+struct Shear
+{
+  KOKKOS_FUNCTION void operator()(const Kokkos::Array<Real, 3>& x,
+                                  Kokkos::Array<Real, 3>& u,
+                                  Kokkos::Array<Real, 9>& j) const
+  {
+    u = {x[0], x[1], x[2] + SafetyFactor(x[0]) * x[1]};
+    j = {1, 0, 0, 0, 1, 0, x[1], SafetyFactor(x[0]), 1};
+  }
+};
+
+// T = (a, b, c) -> Xi = (0.6 + 0.2 a, 1 + 2 b, 2 pi c)
+struct Box
+{
+  KOKKOS_FUNCTION void operator()(const Kokkos::Array<Real, 3>& t,
+                                  Kokkos::Array<Real, 3>& x,
+                                  Kokkos::Array<Real, 9>& j) const
+  {
+    x = {0.6 + 0.2 * t[0], 1 + 2 * t[1], 2 * Pi * t[2]};
+    j = {0.2, 0, 0, 0, 2, 0, 0, 0, 2 * Pi};
+  }
+};
+
+std::shared_ptr<const pcms::Geometry> MakeGrid(
+  std::shared_ptr<const pcms::CoordinateSystem> system,
+  Kokkos::Array<Real, 3> lo, Kokkos::Array<Real, 3> length,
+  Kokkos::Array<pcms::LO, 3> divisions)
+{
+  pcms::UniformGrid<3> grid;
+  grid.bot_left = lo;
+  grid.edge_length = length;
+  grid.divisions = divisions;
+  return pcms::uniform_grid::CreateGeometry(grid, std::move(system));
+}
+
+// A torus of radii 0.5 < r < 1 around R0: U = (r, theta, phi) -> (R, phi, Z)
+// = (R0 + r cos theta, phi, r sin theta), a P1 position periodic in theta and
+// phi, and the field-aligned chart Xi, periodic in z, linked into U.
+struct Torus
+{
+  std::shared_ptr<const pcms::Geometry> u_grid = MakeGrid(
+    pcms::csys::CreateParameterSystem("U", 3, {{1, 0, 2 * Pi}, {2, 0, 2 * Pi}}),
+    {0.5, 0, 0}, {0.5, 2 * Pi, 2 * Pi}, {4, 64, 4});
+  std::shared_ptr<const pcms::Function<Real>> position =
+    pcms::test::MakePositionFunction(
+      pcms::CreateLagrangeSpace(u_grid, 1, 3),
+      [](const Real* u, Real* x) {
+        x[0] = R0 + u[0] * std::cos(u[1]);
+        x[1] = u[2];
+        x[2] = u[0] * std::sin(u[1]);
+      },
+      pcms::csys::CreateCylindricalRThetaZ());
+  std::shared_ptr<const pcms::EmbeddedGeometry> u =
+    pcms::CreateEmbeddedGeometry(u_grid, position);
+  std::shared_ptr<const pcms::Geometry> xi_grid =
+    MakeGrid(pcms::csys::CreateParameterSystem("Xi", 3, {{2, 0, 2 * Pi}}),
+             {0.5, 0, 0}, {0.5, 2 * Pi, 2 * Pi}, {4, 64, 8});
+  std::shared_ptr<const pcms::CoordinateMap> shear = pcms::CreateCoordinateMap(
+    xi_grid->GetCoordinateSystem(), u->GetParameterSystem(), Shear{});
+  std::shared_ptr<const pcms::EmbeddedGeometry> xi =
+    pcms::CreateEmbeddedGeometry(xi_grid, shear, u);
+
+  // the integral of 1 on `g`
+  static Real Volume(const std::shared_ptr<const pcms::EmbeddedGeometry>& g)
+  {
+    const auto space = pcms::CreateEmbeddedSpace(
+      g, pcms::CreateLagrangeSpace(g->GetParameterGeometry(), 0, 1));
+    auto one = space->CreateFunction<Real>("one");
+    pcms::test::SetFieldComponents(
+      one, [](Real, Real, Real, Real* out) { out[0] = 1; });
+    return pcms::L2Integral(space).Apply(one);
+  }
+
+  // the parameter coordinates of `g` at the images of the U points `u_points`
+  // under the position: the identity on a P1 field of the parameters
+  std::vector<Real> RoundTrip(
+    const std::shared_ptr<const pcms::EmbeddedGeometry>& g,
+    const std::vector<Real>& u_points) const
+  {
+    const auto u_view = pcms::test::CreateDeviceCoordinateView(
+      u_points, u->GetParameterSystem(), 3);
+    const auto x =
+      pcms::CreateCoordinateMap(position)->Bind(u_view.coordinate_view);
+    const auto bound = g->Bind(x->MappedPoints());
+    const auto space = pcms::CreateEmbeddedSpace(
+      g, pcms::CreateLagrangeSpace(g->GetParameterGeometry(), 1, 3));
+    auto f = space->CreateFunction<Real>("parameters",
+                                         {.kind = pcms::ValueKind::Array});
+    pcms::test::SetFieldComponents(f, [](Real a, Real b, Real c, Real* out) {
+      out[0] = a;
+      out[1] = b;
+      out[2] = c;
+    });
+    const auto host =
+      pcms::test::EvaluateToHost(*space->CreatePointEvaluator<Real>(bound), f,
+                                 f.GetData().GetValueBasis(), 3);
+    return std::vector<Real>(host.data(), host.data() + host.size());
+  }
+};
+
+// Random Xi points off the last cell in z, and their U images.
+std::pair<std::vector<Real>, std::vector<Real>> XiPoints(int n)
+{
+  std::mt19937 rng(7);
+  std::uniform_real_distribution<Real> uniform(0.0, 1.0);
+  std::vector<Real> xi, u;
+  for (int i = 0; i < n; ++i) {
+    const Real r = 0.55 + 0.4 * uniform(rng);
+    const Real theta = 0.1 + (2 * Pi - 0.2) * uniform(rng);
+    const Real z = 0.05 + 1.6 * Pi * uniform(rng);
+    xi.insert(xi.end(), {r, theta, z});
+    u.insert(u.end(), {r, theta, z + SafetyFactor(r) * theta});
+  }
+  return {xi, u};
+}
+
+} // namespace
+
+TEST_CASE("A chained embedded geometry composes the factors of its links",
+          "[embedding][embedded_geometry][chain]")
+{
+  const Torus t;
+  CHECK(t.xi->GetCoordinateSystem() == t.u->GetCoordinateSystem());
+  CHECK(t.xi->GetParent() == t.u);
+  CHECK(t.xi->GetPosition() == nullptr);
+  // the volume 2 pi^2 R0 (r1^2 - r0^2) to the error of the P1 position
+  CHECK_THAT(Torus::Volume(t.xi), WithinRel(1.5 * R0 * Pi * Pi, 3e-3));
+  // at theta at the middle of U's cells, where the P1 Jacobian is closest
+  const std::vector<Real> params = {0.6, 21.5 * Pi / 32, 1.0,
+                                    0.9, 50.5 * Pi / 32, 4.0};
+  const auto bound = t.xi->Bind(pcms::test::CreateDeviceCoordinateView(
+                                  params, t.xi->GetParameterSystem(), 3)
+                                  .coordinate_view);
+  const auto j = bound->Jacobian();
+  const auto g = bound->Metric();
+  const auto v = bound->VolumeFactor();
+  Kokkos::View<Real**, DeviceMemorySpace> device("factors", 2, 19);
+  Kokkos::parallel_for(
+    "copy", Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, 2),
+    KOKKOS_LAMBDA(const pcms::LO p) {
+      for (int k = 0; k < 9; ++k) {
+        device(p, k) = j(p, k / 3, k % 3);
+        device(p, 9 + k) = g(p, k / 3, k % 3);
+      }
+      device(p, 18) = v(p);
+    });
+  const auto host =
+    Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(), device);
+  for (int p = 0; p < 2; ++p) {
+    CAPTURE(p);
+    const Real r = params[3 * p];
+    const Real theta = params[3 * p + 1];
+    const Real q = SafetyFactor(r);
+    const Real big_r = R0 + r * std::cos(theta);
+    // J pushes Xi components forward to cylindrical (R, phi, Z) ones
+    const Real jx[3][3] = {{std::cos(theta), -r * std::sin(theta), 0},
+                           {theta, q, 1},
+                           {std::sin(theta), r * std::cos(theta), 0}};
+    const Real metric[3] = {1, big_r * big_r, 1};
+    for (int a = 0; a < 3; ++a) {
+      for (int b = 0; b < 3; ++b) {
+        Real gab = 0;
+        for (int k = 0; k < 3; ++k) {
+          gab += jx[k][a] * metric[k] * jx[k][b];
+        }
+        CHECK_THAT(host(p, 3 * a + b), WithinAbs(jx[a][b], 2e-3));
+        CHECK_THAT(host(p, 9 + 3 * a + b), WithinAbs(gab, 5e-3 * (1 + gab)));
+      }
+    }
+    CHECK_THAT(host(p, 18), WithinRel(big_r * r, 3e-3));
+  }
+}
+
+TEST_CASE("A chained embedded geometry binds physical points through its "
+          "parent",
+          "[embedding][embedded_geometry][chain]")
+{
+  const Torus t;
+  const auto [xi, u] = XiPoints(20);
+  const auto found = t.RoundTrip(t.xi, u);
+  for (std::size_t i = 0; i < xi.size(); ++i) {
+    CAPTURE(i);
+    CHECK_THAT(found[i], WithinAbs(xi[i], 1e-8));
+  }
+}
+
+TEST_CASE("A chained embedded geometry uses a given volume factor",
+          "[embedding][embedded_geometry][chain]")
+{
+  const Torus t;
+  auto volume = std::make_shared<pcms::Function<Real>>(
+    pcms::CreateLagrangeSpace(t.xi_grid, 0, 1)->CreateFunction<Real>("volume"));
+  pcms::test::SetFieldComponents(
+    *volume, [](Real, Real, Real, Real* out) { out[0] = 2; });
+  const auto xi =
+    pcms::CreateEmbeddedGeometry(t.xi_grid, t.shear, t.u, {.volume = volume});
+  // 2 times the parameter volume 0.5 (2 pi)^2
+  CHECK_THAT(Torus::Volume(xi), WithinRel(4 * Pi * Pi, 1e-12));
+}
+
+TEST_CASE("Three chained embedded geometries compose",
+          "[embedding][embedded_geometry][chain]")
+{
+  const Torus t;
+  const auto box = pcms::csys::CreateParameterSystem("T", 3);
+  const auto tube = pcms::CreateEmbeddedGeometry(
+    MakeGrid(box, {0, 0, 0}, {1, 1, 1}, {2, 16, 2}),
+    pcms::CreateCoordinateMap(box, t.xi->GetParameterSystem(), Box{}), t.xi);
+  CHECK(tube->GetCoordinateSystem() == t.u->GetCoordinateSystem());
+  // 2 pi (R0 (r1^2 - r0^2) / 2 (theta1 - theta0) + (r1^3 - r0^3) / 3
+  // (sin theta1 - sin theta0)) over 0.6 < r < 0.8, 1 < theta < 3
+  const Real volume =
+    2 * Pi *
+    (R0 * 0.28 + (0.512 - 0.216) / 3 * (std::sin(3.0) - std::sin(1.0)));
+  CHECK_THAT(Torus::Volume(tube), WithinRel(volume, 3e-3));
+  const std::vector<Real> params = {0.3, 0.6, 0.4, 0.8, 0.1, 0.7};
+  std::vector<Real> u;
+  for (std::size_t i = 0; i < params.size(); i += 3) {
+    const Real r = 0.6 + 0.2 * params[i];
+    const Real theta = 1 + 2 * params[i + 1];
+    u.insert(u.end(),
+             {r, theta, 2 * Pi * params[i + 2] + SafetyFactor(r) * theta});
+  }
+  const auto found = t.RoundTrip(tube, u);
+  for (std::size_t i = 0; i < params.size(); ++i) {
+    CHECK_THAT(found[i], WithinAbs(params[i], 1e-8));
   }
 }

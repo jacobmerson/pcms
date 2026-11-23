@@ -43,15 +43,14 @@ void ReshapeJacobian(DeviceView<const Real**> gradient,
 
 // The volume factor of the metric g induced in the parameter system: the
 // physical volume element per unit of parameter volume, sqrt(det g) times the
-// factor of the coordinate system's volume element relative to its metric.
+// factor of the target's volume element relative to its metric.
 void InducedVolume(DeviceView<const Real***> metric,
-                   const BoundCoordinateSystem& target,
+                   BoundCoordinateSystem::MetricView g_target,
+                   BoundCoordinateSystem::FactorView volume_target,
                    DeviceView<Real*> volume)
 {
   const int dp = metric.extent(1);
-  const auto g_target = target.Metric();
   const int dt = g_target.extent(1);
-  const auto volume_target = target.VolumeFactor();
   detail::ForEach(
     "embedding_induced_volume", static_cast<LO>(metric.extent(0)),
     KOKKOS_LAMBDA(const LO p) {
@@ -104,6 +103,42 @@ void GivenMetric(DeviceView<const Real**> values, bool contravariant,
       }
       volume(p) = Kokkos::sqrt(detail::Determinant(g, dp));
     });
+}
+
+// J(p, j, i) = d x_j / d xi_i: the link's Jacobian, times the parent's on the
+// left if `parent` is not empty.
+DeviceView<Real***> ComposeJacobian(
+  View<3, const Real, DeviceMemorySpace> link,
+  detail::GeometricFactors::JacobianView parent)
+{
+  const bool chained = parent.extent(0) > 0;
+  const int dl = link.extent(1);
+  const int dp = link.extent(2);
+  const int dt = chained ? parent.extent(1) : dl;
+  DeviceView<Real***> jacobian("embedded_jacobian", link.extent(0), dt, dp);
+  detail::ForEach(
+    "embedded_compose_jacobian", static_cast<LO>(link.extent(0)),
+    KOKKOS_LAMBDA(const LO p) {
+      for (int j = 0; j < dt; ++j) {
+        for (int i = 0; i < dp; ++i) {
+          Real sum = chained ? 0 : link(p, j, i);
+          for (int k = 0; chained && k < dl; ++k) {
+            sum += parent(p, j, k) * link(p, k, i);
+          }
+          jacobian(p, j, i) = sum;
+        }
+      }
+    });
+  return jacobian;
+}
+
+// Marks the points `missing` as not found.
+void MarkMissing(DeviceView<bool*> found,
+                 Kokkos::View<const LO*, DeviceMemorySpace> missing)
+{
+  detail::ForEach(
+    "embedded_mark_missing", static_cast<LO>(missing.extent(0)),
+    KOKKOS_LAMBDA(const LO i) { found(missing(i)) = false; });
 }
 
 struct Evaluation
@@ -211,6 +246,14 @@ private:
   Position position_;
 };
 
+// The image and Jacobian of a link at points of its source system.
+std::unique_ptr<BoundCoordinateMap> Evaluate(
+  const CoordinateMap& link, Rank2View<const Real, DeviceMemorySpace> xi)
+{
+  return link.Bind(
+    CoordinateView<DeviceMemorySpace>(link.GetSourceCoordinateSystem(), xi));
+}
+
 // ---------------------------------------------------------------------------
 // The embedded geometry
 // ---------------------------------------------------------------------------
@@ -235,15 +278,16 @@ struct BinGrid
   int count[3] = {};
   Real wrap_lo[3] = {};
   Real period[3] = {}; // 0: not periodic
+  int windows[3] = {}; // the periods the image spans
 };
 
-// Wraps the points into their periods (and shifts them by `shift` periods:
-// where the image of the geometry is wider than a period, a point can be the
-// image of a cell in either of two windows) and finds the candidate cells of
-// each: the range [start, start + count) of the bins' cell list.
-void FindCandidates(Rank2View<const Real, DeviceMemorySpace> points, int shift,
-                    DeviceView<const bool*> found, BinGrid bins,
-                    DeviceView<const LO*> bin_offsets,
+// Wraps the points into their periods (and shifts them by `shift` periods
+// per axis: where the image of the geometry is wider than a period, a point
+// can be the image of a cell in any of its windows) and finds the candidate
+// cells of each: the range [start, start + count) of the bins' cell list.
+void FindCandidates(Rank2View<const Real, DeviceMemorySpace> points,
+                    Kokkos::Array<int, 3> shift, DeviceView<const bool*> found,
+                    BinGrid bins, DeviceView<const LO*> bin_offsets,
                     DeviceView<Real**> wrapped, DeviceView<LO*> start,
                     DeviceView<LO*> count)
 {
@@ -263,7 +307,7 @@ void FindCandidates(Rank2View<const Real, DeviceMemorySpace> points, int shift,
         if (bins.period[d] > 0) {
           const Real t = q - bins.wrap_lo[d];
           q = bins.wrap_lo[d] + t -
-              bins.period[d] * (Kokkos::floor(t / bins.period[d]) - shift);
+              bins.period[d] * (Kokkos::floor(t / bins.period[d]) - shift[d]);
         }
         wrapped(p, d) = q;
         const Real t = (q - bins.lo[d]) / bins.width[d];
@@ -423,13 +467,22 @@ public:
     return inner_;
   }
 
+  /// @return the parameter coordinates of the points
+  [[nodiscard]] DeviceView<const Real**> Parameters() const noexcept
+  {
+    return xi_;
+  }
+
 protected:
   EmbeddedBound(std::shared_ptr<const Geometry> geometry,
-                const BindRequest& request, Position position,
+                const BindRequest& request,
+                std::shared_ptr<const CoordinateMap> link,
+                std::shared_ptr<const Geometry> parent,
                 std::shared_ptr<const Function<Real>> metric,
                 std::shared_ptr<const Function<Real>> volume)
     : BoundPoints(std::move(geometry), request),
-      position_(std::move(position)),
+      link_(std::move(link)),
+      parent_(std::move(parent)),
       metric_(std::move(metric)),
       volume_(std::move(volume))
   {
@@ -446,15 +499,30 @@ protected:
       policy);
   }
 
-  // J from the Gradient of the position at the parameter coordinates of the
-  // points, the given metric there or the metric J^T G J the position
-  // induces, and the given volume factor or that of the metric
+  // J of the link at the parameter coordinates of the points (times the
+  // parent's), the given metric there or the pullback J^T G J of the target's
+  // metric G (the parent's, bound at the mapped points, or the closed-form
+  // system's), and the given volume factor or that of the metric
   [[nodiscard]] detail::GeometricFactors ComputeFactors() const override
   {
-    auto e = position_.Evaluate(MakeConstRank2View(xi_));
+    const auto e = Evaluate(*link_, MakeConstRank2View(xi_));
     const auto n = xi_.extent(0);
-    const int dp = position_.ParameterSystem()->Dimension();
-    const int dt = position_.System()->Dimension();
+    const int dp = link_->GetSourceCoordinateSystem()->Dimension();
+    std::shared_ptr<const BoundPoints> parent;
+    std::unique_ptr<BoundCoordinateSystem> system;
+    BoundCoordinateSystem::MetricView g_target;
+    BoundCoordinateSystem::FactorView volume_target;
+    if (parent_ != nullptr) {
+      parent = parent_->Bind(e->MappedPoints(),
+                             OutOfBoundsPolicy{OutOfBoundsMode::FILL});
+      g_target = parent->Metric();
+      volume_target = parent->VolumeFactor();
+    } else {
+      system = link_->GetTargetCoordinateSystem()->Bind(
+        MakeConstRank2View(e->Mapped()));
+      g_target = system->Metric();
+      volume_target = system->VolumeFactor();
+    }
     DeviceView<Real***> metric;
     DeviceView<Real*> volume("parameter_volume_factor", n);
     if (metric_ != nullptr) {
@@ -468,13 +536,8 @@ protected:
       GivenMetric(values, basis.variance[0] == Variance::Contravariant, metric,
                   volume);
     } else {
-      const auto target =
-        position_.System()->Bind(MakeConstRank2View(e.mapped));
-      metric = detail::PullbackMetric(
-        View<3, const Real, DeviceMemorySpace>(e.jacobian.data(), n, dt, dp),
-        target->Metric());
-      InducedVolume(metric, *target, volume);
-      Kokkos::fence("embedding_induced_volume");
+      metric = detail::PullbackMetric(e->Jacobian(), g_target);
+      InducedVolume(metric, g_target, volume_target, volume);
     }
     if (volume_ != nullptr) {
       volume_->GetSpace().CreatePointEvaluator<Real>(inner_)->Evaluate(
@@ -482,14 +545,20 @@ protected:
                     volume_->GetData().GetValueBasis(),
                     Rank2View<Real, DeviceMemorySpace>(volume.data(), n, 1)));
     }
+    const auto jacobian = ComposeJacobian(
+      e->Jacobian(), parent != nullptr
+                       ? parent->Jacobian()
+                       : detail::GeometricFactors::JacobianView{});
+    Kokkos::fence("embedding_factors");
     return detail::GeometricFactors(
-      static_cast<LO>(n), e.jacobian,
+      static_cast<LO>(n), jacobian,
       std::make_shared<const BoundCoordinateSystem>(static_cast<LO>(n), metric,
                                                     volume));
   }
 
 private:
-  Position position_;
+  std::shared_ptr<const CoordinateMap> link_;
+  std::shared_ptr<const Geometry> parent_;
   std::shared_ptr<const Function<Real>> metric_;
   std::shared_ptr<const Function<Real>> volume_;
   std::shared_ptr<const BoundPoints> inner_;
@@ -513,14 +582,16 @@ namespace
 {
 
 // The search over the cells of a uniform grid of the parameters: their images
-// are binned, and the points are located by Newton in the cells of their bin.
+// under the link are binned, and the points are located by Newton in the
+// cells of their bin.
 template <unsigned Dim>
 class GridSearch final : public detail::EmbeddedSearch
 {
 public:
   GridSearch(const uniform_grid::UniformGridGeometry<Dim>& parameter,
-             Position position, const EmbeddingOptions& options)
-    : position_(std::move(position)),
+             std::shared_ptr<const CoordinateMap> link,
+             const EmbeddingOptions& options)
+    : link_(std::move(link)),
       grid_(parameter.GetGrid()),
       options_(options.search)
   {
@@ -531,9 +602,10 @@ public:
     std::shared_ptr<const EmbeddedGeometry> geometry,
     const BindRequest& request) const override;
 
-  [[nodiscard]] const Position& PositionOf() const noexcept
+  [[nodiscard]] const std::shared_ptr<const CoordinateMap>& Link()
+    const noexcept
   {
-    return position_;
+    return link_;
   }
 
   struct Located
@@ -561,23 +633,28 @@ public:
     Located located{DeviceView<Real**>("embedded_xi", n, Dim),
                     DeviceView<bool*>("embedded_found", n), wrapped};
     const auto target = MakeConstRank2View(wrapped);
-    // the points not found in the first window of a periodic axis are tried
-    // in the next one
-    for (int shift = 0; shift <= (two_windows_ ? 1 : 0); ++shift) {
+    // the points not found in the first window of the periodic axes are
+    // tried in the others
+    int combinations = 1;
+    for (int d = 0; d < dt; ++d) {
+      combinations *= bins_.windows[d];
+    }
+    for (int combination = 0; combination < combinations; ++combination) {
+      Kokkos::Array<int, 3> shift = {};
+      for (int d = 0, rest = combination; d < dt; ++d) {
+        shift[d] = rest % bins_.windows[d];
+        rest /= bins_.windows[d];
+      }
       FindCandidates(points, shift, located.found, bins_, bin_offsets_, wrapped,
                      start, count);
       for (int round = 0; round < max_candidates_; ++round) {
         StartRound<Dim>(round, grid_, bin_cells_, start, count, located.found,
                         active, converged, cell, located.xi);
         for (int iteration = 0; iteration <= MaxNewtonIterations; ++iteration) {
-          const auto e = position_.Evaluate(MakeConstRank2View(located.xi));
-          const LO stepped =
-            NewtonStep<Dim>(grid_, residual_tolerance_,
-                            iteration < MaxNewtonIterations, target, e.mapped,
-                            View<3, const Real, DeviceMemorySpace>(
-                              e.jacobian.data(), e.jacobian.extent(0),
-                              e.jacobian.extent(1), e.jacobian.extent(2)),
-                            active, converged, cell, located.xi);
+          const auto e = Evaluate(*link_, MakeConstRank2View(located.xi));
+          const LO stepped = NewtonStep<Dim>(
+            grid_, residual_tolerance_, iteration < MaxNewtonIterations, target,
+            e->Mapped(), e->Jacobian(), active, converged, cell, located.xi);
           if (stepped == 0) {
             break;
           }
@@ -594,7 +671,7 @@ private:
   // sample points of each cell, padded.
   void BuildSearch()
   {
-    const auto& system = position_.System();
+    const auto& system = link_->GetTargetCoordinateSystem();
     const int dt = system->Dimension();
     const LO num_cells = grid_.GetNumCells();
     size_t per_cell = 1;
@@ -620,7 +697,8 @@ private:
                               Dim);
     Kokkos::deep_copy(device, samples);
     const auto images = Kokkos::create_mirror_view_and_copy(
-      HostMemorySpace(), position_.Evaluate(MakeConstRank2View(device)).mapped);
+      HostMemorySpace(),
+      Evaluate(*link_, MakeConstRank2View(device))->Mapped());
 
     // the image of each cell and of the geometry
     std::vector<std::array<Real, 3>> lo(num_cells), hi(num_cells);
@@ -678,9 +756,12 @@ private:
           bins_.period[j] = id.length;
         }
       }
-      two_windows_ = two_windows_ ||
-                     (bins_.period[j] > 0 && image_hi[j] - image_lo[j] >
-                                               bins_.period[j] * (1 + 1e-12));
+      bins_.windows[j] =
+        bins_.period[j] > 0
+          ? std::max(1,
+                     static_cast<int>(std::ceil(
+                       (image_hi[j] - image_lo[j]) / bins_.period[j] - 1e-12)))
+          : 1;
       num_bins *= bins_.count[j];
     }
 
@@ -734,7 +815,7 @@ private:
     Kokkos::deep_copy(bin_cells_, cells);
   }
 
-  Position position_;
+  std::shared_ptr<const CoordinateMap> link_;
   UniformGrid<Dim> grid_;
   SearchOptions options_;
   BinGrid bins_;
@@ -742,8 +823,6 @@ private:
   DeviceView<LO*> bin_cells_;
   LO max_candidates_ = 0;
   Real residual_tolerance_ = 0;
-  // the image is wider than a period of a periodic axis
-  bool two_windows_ = false;
 };
 
 template <unsigned Dim>
@@ -752,7 +831,7 @@ class EmbeddedBinding final : public EmbeddedBound
 public:
   EmbeddedBinding(std::shared_ptr<const EmbeddedGeometry> geometry,
                   const GridSearch<Dim>& search, const BindRequest& request)
-    : EmbeddedBound(geometry, request, search.PositionOf(),
+    : EmbeddedBound(geometry, request, search.Link(), geometry->GetParent(),
                     geometry->GetMetric(), geometry->GetVolume()),
       geometry_(std::move(geometry)),
       search_(search)
@@ -765,17 +844,27 @@ protected:
 
 private:
   // Points in the parameter system are bound on the parameter geometry as
-  // they are; points of the target system are searched for first. The
-  // parameter geometry gets all the points (a missing one at its last
-  // iterate, clamped): the evaluators fill the rows of the missing points.
+  // they are; points of the coordinate system are searched for first (in the
+  // parent's parameter coordinates, if there is a parent). The parameter
+  // geometry gets all the points (a missing one at its last iterate,
+  // clamped): the evaluators fill the rows of the missing points.
   void Locate()
   {
-    const auto points = LocatedPointValues();
+    auto points = LocatedPointValues();
     const auto n = NumPoints();
     const bool parametric =
       GetBoundMap() == nullptr &&
       pcms::detail::SameCoordinateSystem(GetCoordinateSystem(),
                                          geometry_->GetParameterSystem());
+    const auto& parent = geometry_->GetParent();
+    std::shared_ptr<const BoundPoints> parent_bound;
+    if (!parametric && parent != nullptr) {
+      parent_bound = parent->Bind(
+        CoordinateView<DeviceMemorySpace>(parent->GetCoordinateSystem(),
+                                          MakeConstRank2View(points)),
+        OutOfBoundsPolicy{OutOfBoundsMode::FILL});
+      points = dynamic_cast<const EmbeddedBound&>(*parent_bound).Parameters();
+    }
     DeviceView<bool*> found;
     if (parametric) {
       DeviceView<Real**> xi("embedded_xi", n, Dim);
@@ -784,7 +873,11 @@ private:
       found = detail::FoundMask(n, {Inner()->MissingPoints()});
     } else {
       const auto located = search_.Locate(MakeConstRank2View(points));
-      ReplaceLocatedPoints(located.reduced);
+      if (parent_bound == nullptr) {
+        ReplaceLocatedPoints(located.reduced);
+      } else {
+        MarkMissing(located.found, parent_bound->MissingPoints());
+      }
       SetParameters(*geometry_->GetParameterGeometry(), located.xi,
                     OutOfBoundsPolicy{OutOfBoundsMode::NEAREST_BOUNDARY});
       found = located.found;
@@ -861,15 +954,18 @@ private:
 
 EmbeddedGeometry::EmbeddedGeometry(
   std::shared_ptr<const Geometry> parameter,
+  std::shared_ptr<const Geometry> parent,
+  std::shared_ptr<const CoordinateSystem> system,
   std::shared_ptr<const Function<Real>> position,
   std::shared_ptr<const Function<Real>> metric,
   std::shared_ptr<const Function<Real>> volume,
   std::shared_ptr<const detail::EmbeddedSearch> search)
   : parameter_(std::move(parameter)),
+    parent_(std::move(parent)),
     position_(std::move(position)),
     metric_(std::move(metric)),
     volume_(std::move(volume)),
-    system_(position_->GetData().GetValueBasis().system),
+    system_(std::move(system)),
     search_(std::move(search))
 {
 }
@@ -912,12 +1008,46 @@ std::shared_ptr<const EmbeddedGeometry> CreateEmbeddedGeometry(
     throw pcms_error("CreateEmbeddedGeometry: the position must be a Function "
                      "on the parameter geometry");
   }
+  return EmbeddedGeometry::Create(std::move(parameter_geometry),
+                                  std::make_shared<const PositionMap>(checked),
+                                  nullptr, checked.Get(), std::move(options));
+}
+
+std::shared_ptr<const EmbeddedGeometry> CreateEmbeddedGeometry(
+  std::shared_ptr<const Geometry> parameter_geometry,
+  std::shared_ptr<const CoordinateMap> link,
+  std::shared_ptr<const Geometry> parent, EmbeddingOptions options)
+{
+  if (parameter_geometry == nullptr || link == nullptr || parent == nullptr ||
+      !detail::SameCoordinateSystem(
+        link->GetSourceCoordinateSystem(),
+        parameter_geometry->GetCoordinateSystem()) ||
+      parent->GetParameterSystem() == nullptr ||
+      !detail::SameCoordinateSystem(link->GetTargetCoordinateSystem(),
+                                    parent->GetParameterSystem()) ||
+      link->GetTargetCoordinateSystem()->Dimension() > 3) {
+    throw pcms_error("CreateEmbeddedGeometry: the link must map the parameter "
+                     "geometry's coordinate system to the parameter system of "
+                     "the parent, an embedded geometry, in at most 3 "
+                     "dimensions");
+  }
+  return EmbeddedGeometry::Create(std::move(parameter_geometry),
+                                  std::move(link), std::move(parent), nullptr,
+                                  std::move(options));
+}
+
+std::shared_ptr<const EmbeddedGeometry> EmbeddedGeometry::Create(
+  std::shared_ptr<const Geometry> parameter_geometry,
+  std::shared_ptr<const CoordinateMap> link,
+  std::shared_ptr<const Geometry> parent,
+  std::shared_ptr<const Function<Real>> position, EmbeddingOptions options)
+{
+  const auto& parameter_system = parameter_geometry->GetCoordinateSystem();
   if (const auto& metric = options.metric) {
     const ValueBasis& basis = metric->GetData().GetValueBasis();
     if (metric->GetSpace().GetGeometry() != parameter_geometry ||
         basis.Rank() != 2 ||
-        !detail::SameCoordinateSystem(basis.system,
-                                      checked.ParameterSystem()) ||
+        !detail::SameCoordinateSystem(basis.system, parameter_system) ||
         basis.variance[0] != basis.variance[1]) {
       throw pcms_error("CreateEmbeddedGeometry: the metric must be a Function "
                        "on the parameter geometry of rank 2 in the parameter "
@@ -933,14 +1063,13 @@ std::shared_ptr<const EmbeddedGeometry> CreateEmbeddedGeometry(
                        "scalar Function on the parameter geometry");
     }
   }
-  if (detail::SameCoordinateSystem(checked.ParameterSystem(),
-                                   checked.System())) {
+  if (detail::SameCoordinateSystem(parameter_system,
+                                   link->GetTargetCoordinateSystem())) {
     throw pcms_error(
       "CreateEmbeddedGeometry: the parameter geometry's coordinate system "
       "must differ from the coordinate system of the position (give the "
       "parameter geometry a parameter system)");
   }
-  const auto& parameter_system = parameter_geometry->GetCoordinateSystem();
   if (parameter_system->HasMetric() &&
       !detail::IsCartesian(*parameter_system)) {
     throw pcms_error(
@@ -955,16 +1084,19 @@ std::shared_ptr<const EmbeddedGeometry> CreateEmbeddedGeometry(
       if constexpr (Dim == 1) {
         return nullptr;
       } else {
-        return std::make_shared<GridSearch<Dim>>(*grid, checked, options);
+        return std::make_shared<GridSearch<Dim>>(*grid, link, options);
       }
     });
   if (search == nullptr) {
     throw pcms_error("CreateEmbeddedGeometry: only 2D and 3D uniform-grid "
                      "parameter geometries are supported");
   }
+  auto system = parent != nullptr ? parent->GetCoordinateSystem()
+                                  : link->GetTargetCoordinateSystem();
   return std::shared_ptr<const EmbeddedGeometry>(new EmbeddedGeometry(
-    std::move(parameter_geometry), checked.Get(), std::move(options.metric),
-    std::move(options.volume), std::move(search)));
+    std::move(parameter_geometry), std::move(parent), std::move(system),
+    std::move(position), std::move(options.metric), std::move(options.volume),
+    std::move(search)));
 }
 
 std::shared_ptr<const FunctionSpace> CreateEmbeddedSpace(
