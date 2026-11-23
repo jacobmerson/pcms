@@ -31,6 +31,9 @@ if(FUSIONIO_ENABLE_NIMROD AND FUSIONIO_TEST_NIMROD_DIR)
                "FUSIONIO_TEST_NIMROD_DIR=\"${FUSIONIO_TEST_NIMROD_DIR}\"")
 endif()
 
+# The BOUT++ builder needs no data.
+list(APPEND FUSIONIO_TEST_SOURCES test_bout.cpp)
+
 if(FUSIONIO_PCMS_HAS_POLYNOMIAL_RECONSTRUCTION)
   # SampleMarkers of an analytic function reconstructed on a point cloud
   list(APPEND FUSIONIO_TEST_SOURCES test_sampling.cpp)
@@ -125,3 +128,4 @@ if(TARGET fio_trace AND FUSIONIO_TEST_DATA_DIR)
             -p 2 -t 2 -s 20 -pout 0 -qout 0
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endif()
+

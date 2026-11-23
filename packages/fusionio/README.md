@@ -118,3 +118,25 @@ branch): the candidates are a function of (seed, candidate index), not of a
 Kokkos random pool, so the markers differ from the original's for the same
 seed but do not depend on the number of threads; the markers are in the order
 of the candidates; periodic theta and zeta by default.
+
+## BOUT++
+
+`include/fusionio/bout.hpp` (always built; no netCDF):
+
+- `BoutGrid` is one block of a BOUT++ grid as BOUT++ holds it: sizes with
+  guard cells, `Rxy`, `Zxy`, `zShift`, `dx`, `dy` and `g^ij` as `[nx][ny]`
+  host views, `ShiftAngle` `[nx]`, `dz`, `zperiod` and the separatrix
+  indices. Only grids of closed field lines and one serial block (offsets 0)
+  are supported so far.
+- `Build(grid)` returns the geometry and the space of its fields: a uniform
+  grid in the global index coordinates (x, y, z) of the parameter system
+  `"bout_index"`, y identified with the twist-shift of z by `ShiftAngle / dz`
+  and z periodic; the position (R, phi, Z) = (`Rxy`, z dz + `zShift`, `Zxy`)
+  in `CylindricalRThetaZ(2 pi / zperiod)` and the metric `g^ij` in index
+  components, multilinear; the space is multilinear on the embedded geometry.
+  The y = ny and z = nz planes are DOF holders: the twist-shifted y = 0 plane
+  and the z = 0 plane.
+- `InteriorOffsets(space, grid)` maps the DOF holders to BOUT++'s `[nx][ny][nz]`
+  field array (the y = ny plane reads the first upper y guard plane, which
+  BOUT++'s communication fills with the twist-shifted values); `CopyIn` and
+  `CopyOut` copy a field through it.
