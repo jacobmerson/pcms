@@ -11,6 +11,7 @@
 #include "pcms/field/function_spaces.hpp"
 #include "pcms/field/out_of_bounds_policy.hpp"
 #include "pcms/transfer/l2_inner_product.hpp"
+#include "pcms/transfer/omega_h_intersection_quadrature.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/types.hpp"
 
@@ -231,8 +232,8 @@ void check_distributed_evaluation(Omega_h::Mesh& mesh,
     std::printf("distributed field test passed\n");
 }
 
-// Ensure that the reductions of fields on an element-partitioned n x n unit
-// square sum over the ranks
+// Ensure that the reductions of fields on a distributed n x n unit square sum
+// over the ranks, each element once
 void check_reductions(const std::shared_ptr<const pcms::FunctionSpace>& space,
                       int n)
 {
@@ -271,6 +272,14 @@ void check_reductions(const std::shared_ptr<const pcms::FunctionSpace>& space,
   require(std::fabs(integral.Norm(u) - std::sqrt(20.0 / 3.0)) < 1.0e-12,
           "L2Integral::Norm is not the sum over the ranks");
   require(integral.Distance(u, u) == 0.0, "L2Integral::Distance(u, u) != 0");
+#ifdef PCMS_ENABLE_OMEGA_H_MESHFIELDS
+  const auto geometry = space->GetGeometry();
+  const pcms::L2Integral intersection(
+    space, nullptr,
+    pcms::omega_h::CreateIntersectionQuadrature(geometry, geometry, 2));
+  require(std::fabs(intersection.Apply(u) - 2.5) < 1.0e-12,
+          "the intersection rule is not the sum over the ranks");
+#endif
 }
 } // namespace
 
@@ -294,6 +303,7 @@ int main(int argc, char** argv)
         pcms::LagrangeOptions{.backend = pcms::LagrangeBackend::OmegaH});
 
       check_distributed_evaluation(mesh, *space);
+      check_reductions(space, n);
 
       auto partitioned = Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1.0, 1.0,
                                             0.0, n, n, 0, false);
