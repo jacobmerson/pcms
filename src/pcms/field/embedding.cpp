@@ -592,10 +592,13 @@ public:
              std::shared_ptr<const CoordinateMap> link,
              const EmbeddingOptions& options)
     : link_(std::move(link)),
+      inverse_(options.inverse),
       grid_(parameter.GetGrid()),
       options_(options.search)
   {
-    BuildSearch();
+    if (inverse_ == nullptr) {
+      BuildSearch();
+    }
   }
 
   [[nodiscard]] std::shared_ptr<BoundPoints> Bind(
@@ -606,6 +609,12 @@ public:
     const noexcept
   {
     return link_;
+  }
+
+  [[nodiscard]] const std::shared_ptr<const CoordinateMap>& Inverse()
+    const noexcept
+  {
+    return inverse_;
   }
 
   struct Located
@@ -816,6 +825,7 @@ private:
   }
 
   std::shared_ptr<const CoordinateMap> link_;
+  std::shared_ptr<const CoordinateMap> inverse_;
   UniformGrid<Dim> grid_;
   SearchOptions options_;
   BinGrid bins_;
@@ -844,8 +854,9 @@ protected:
 
 private:
   // Points in the parameter system are bound on the parameter geometry as
-  // they are; points of the coordinate system are searched for first (in the
-  // parent's parameter coordinates, if there is a parent). The parameter
+  // they are; points of the coordinate system are mapped by the inverse or
+  // searched for first (in the parent's parameter coordinates, if there is a
+  // parent). The parameter
   // geometry gets all the points (a missing one at its last iterate,
   // clamped): the evaluators fill the rows of the missing points.
   void Locate()
@@ -865,12 +876,22 @@ private:
         OutOfBoundsPolicy{OutOfBoundsMode::FILL});
       points = dynamic_cast<const EmbeddedBound&>(*parent_bound).Parameters();
     }
+    const auto& inverse = search_.Inverse();
+    std::unique_ptr<BoundCoordinateMap> inverted;
+    if (!parametric && inverse != nullptr) {
+      inverted = Evaluate(*inverse, MakeConstRank2View(points));
+      points = inverted->Mapped();
+    }
     DeviceView<bool*> found;
-    if (parametric) {
+    if (parametric || inverse != nullptr) {
       DeviceView<Real**> xi("embedded_xi", n, Dim);
       Kokkos::deep_copy(xi, points);
       SetParameters(*geometry_->GetParameterGeometry(), xi, Policy());
-      found = detail::FoundMask(n, {Inner()->MissingPoints()});
+      found =
+        detail::FoundMask(n, {Inner()->MissingPoints(),
+                              parent_bound == nullptr
+                                ? Kokkos::View<const LO*, DeviceMemorySpace>{}
+                                : parent_bound->MissingPoints()});
     } else {
       const auto located = search_.Locate(MakeConstRank2View(points));
       if (parent_bound == nullptr) {
@@ -1069,6 +1090,15 @@ std::shared_ptr<const EmbeddedGeometry> EmbeddedGeometry::Create(
       "CreateEmbeddedGeometry: the parameter geometry's coordinate system "
       "must differ from the coordinate system of the position (give the "
       "parameter geometry a parameter system)");
+  }
+  if (options.inverse != nullptr &&
+      (!detail::SameCoordinateSystem(
+         options.inverse->GetSourceCoordinateSystem(),
+         link->GetTargetCoordinateSystem()) ||
+       !detail::SameCoordinateSystem(
+         options.inverse->GetTargetCoordinateSystem(), parameter_system))) {
+    throw pcms_error("CreateEmbeddedGeometry: the inverse must map the "
+                     "position's coordinate system to the parameter system");
   }
   if (parameter_system->HasMetric() &&
       !detail::IsCartesian(*parameter_system)) {
