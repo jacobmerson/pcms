@@ -32,12 +32,11 @@ void CheckEntityIds(Kokkos::View<const LO*, DeviceMemorySpace> ids,
                     const std::string& entity);
 
 /// @brief Multiplies quadrature weights by the volume factor at their bound
-///        points, making parameter-coordinate measures physical, or divides
-///        them by it.
+///        points, making parameter-coordinate measures physical.
 /// @param weights one weight per point of `bound`; scaled in place
 /// @param bound the bound points of the weights
 void ScaleByVolumeFactor(Kokkos::View<Real*, DeviceMemorySpace> weights,
-                         const BoundPoints& bound, bool divide = false);
+                         const BoundPoints& bound);
 
 /// @brief The quadrature of points whose weights are in the parameter measure.
 /// @param weights one weight per point; scaled in place by the volume factor

@@ -4,6 +4,7 @@
 #include "pcms/geometry/detail/geometry.hpp"
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/dense_linear_algebra.hpp"
+#include "pcms/utility/detail/coordinate_system.hpp"
 #include "pcms/utility/detail/memory_spaces.hpp"
 #include <algorithm>
 #include <array>
@@ -499,9 +500,6 @@ public:
   [[nodiscard]] virtual std::shared_ptr<BoundPoints> Bind(
     std::shared_ptr<const EmbeddedGeometry> geometry,
     const BindRequest& request) const = 0;
-
-  [[nodiscard]] virtual Quadrature CreateQuadrature(
-    const EmbeddedGeometry& geometry, const QuadratureRule& rule) const = 0;
 };
 
 namespace
@@ -582,28 +580,6 @@ public:
       }
     }
     return located;
-  }
-
-  /// @brief The tensor Gauss-Legendre rule of the parameter cells, with the
-  ///        weights of the physical measure.
-  [[nodiscard]] Quadrature CreateQuadrature(
-    const EmbeddedGeometry& geometry,
-    const detail::QuadratureRule& rule) const override
-  {
-    const auto* gauss = std::get_if<detail::GaussRule>(&rule);
-    if (gauss == nullptr) {
-      throw pcms_error("CreateQuadrature: an embedded geometry has only the "
-                       "Gauss rule");
-    }
-    auto [xi, weights] =
-      static_cast<const uniform_grid::UniformGridGeometry<Dim>&>(
-        *geometry.GetParameterGeometry())
-        .CellRule(gauss->order);
-    return detail::BindQuadrature(
-      geometry,
-      CoordinateView<DeviceMemorySpace>(geometry.GetParameterSystem(),
-                                        MakeConstRank2View(xi)),
-      weights);
   }
 
 private:
@@ -891,16 +867,7 @@ public:
 
   [[nodiscard]] Quadrature CreateQuadrature() const override
   {
-    const auto parameter = space_->CreateQuadrature();
-    DeviceView<Real*> weights(
-      Kokkos::view_alloc(Kokkos::WithoutInitializing, "embedded_weights"),
-      parameter.weights.extent(0));
-    Kokkos::deep_copy(weights, parameter.weights);
-    if (embedded_->GetParameterSystem()->HasMetric()) {
-      detail::ScaleByVolumeFactor(weights, *parameter.points, true);
-    }
-    return detail::BindQuadrature(*embedded_, parameter.points->LocatedPoints(),
-                                  weights);
+    return MapQuadrature(embedded_, space_->CreateQuadrature());
   }
 
 private:
@@ -944,12 +911,6 @@ std::shared_ptr<BoundPoints> EmbeddedGeometry::BindImpl(
     request);
 }
 
-Quadrature EmbeddedGeometry::CreateQuadrature(
-  const detail::QuadratureRule& rule) const
-{
-  return search_->CreateQuadrature(*this, rule);
-}
-
 std::shared_ptr<const CoordinateMap> CreateCoordinateMap(
   std::shared_ptr<const Function<Real>> position)
 {
@@ -986,6 +947,13 @@ std::shared_ptr<const EmbeddedGeometry> CreateEmbeddedGeometry(
       "CreateEmbeddedGeometry: the parameter geometry's coordinate system "
       "must differ from the coordinate system of the position (give the "
       "parameter geometry a parameter system)");
+  }
+  const auto& parameter_system = parameter_geometry->GetCoordinateSystem();
+  if (parameter_system->HasMetric() &&
+      !detail::IsCartesian(*parameter_system)) {
+    throw pcms_error(
+      "CreateEmbeddedGeometry: the parameter geometry's coordinate system "
+      "must have no metric or the identity one (Cartesian)");
   }
   auto search = uniform_grid::VisitUniformGrid(
     parameter_geometry,
