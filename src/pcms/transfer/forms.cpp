@@ -36,11 +36,18 @@ std::shared_ptr<const BoundPoints> BindQuadrature(
   const Geometry& geometry, const Quadrature& quadrature,
   std::shared_ptr<const CoordinateMap> map)
 {
-  if (map == nullptr && quadrature.points->GetGeometry().get() == &geometry) {
-    return quadrature.points;
+  if (map == nullptr) {
+    if (quadrature.points->GetGeometry().get() == &geometry) {
+      return quadrature.points;
+    }
+    for (const auto& bound : quadrature.also) {
+      if (bound->GetGeometry().get() == &geometry) {
+        return bound;
+      }
+    }
   }
-  return geometry.Bind(quadrature.points->LocatedPoints(), quadrature.other,
-                       OutOfBoundsPolicy{}, std::move(map));
+  return geometry.Bind(quadrature.points->LocatedPoints(), OutOfBoundsPolicy{},
+                       std::move(map));
 }
 
 LinearForm::LinearForm(std::shared_ptr<const FunctionSpace> space,

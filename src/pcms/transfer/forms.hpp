@@ -29,10 +29,10 @@ inline Function<Real> ScratchFunction(const FunctionSpace& space)
 // they know nothing of the kind of the space. Their interfaces are meant to
 // be published later.
 
-/// The quadrature's points bound on `geometry`: its own binding when the
-/// geometry is the one it was generated on, else a bind at the points (with the
-/// cells of a second geometry the quadrature names as hints, and the
-/// coordinate map from the quadrature's system to the geometry's, if any).
+/// The quadrature's points bound on `geometry`: without a map, its own binding
+/// or one it carries (Quadrature::also) on that geometry; else a bind at the
+/// points (with the coordinate map from the quadrature's system to the
+/// geometry's, if any).
 [[nodiscard]] std::shared_ptr<const BoundPoints> BindQuadrature(
   const Geometry& geometry, const Quadrature& quadrature,
   std::shared_ptr<const CoordinateMap> map = nullptr);

@@ -90,7 +90,9 @@ Quadrature CreateIntersectionQuadratureImpl(
     CoordinateView<DeviceMemorySpace>(target->GetCoordinateSystem(),
                                       MakeConstRank2View(coords)),
     weights, OwnerHints{target, Dim, target_elements});
-  quadrature.other = OwnerHints{std::move(source), Dim, source_elements};
+  quadrature.also.push_back(
+    source->Bind(quadrature.points->LocatedPoints(),
+                 OwnerHints{source, Dim, source_elements}));
   return quadrature;
 }
 
