@@ -154,5 +154,8 @@ as a `Source` with the equilibrium profiles of the file, constant in z:
 | `Density` (main ions) | `Ni0` | the file's (1e20 m^-3 in BOUT++'s tokamak grids), not set |
 | `Temperature` (main ions, electrons) | `Ti0`, `Te0` | eV |
 
-The tests read the CBM18 grid of BOUT++'s elm-pb example from the PCMS test
-data (`FUSIONIO_TEST_BOUT_GRID`, `bout/cbm18/cbm18_grid.nc`; LGPL-3.0).
+`bout-grid <grid.nc> <nz> <zperiod>` (built with the component) prints the
+volume of a grid by quadrature and as BOUT++'s sum of J dx dy dz, the integral
+of the pressure and the position and pressure at a point. The tests read the
+CBM18 grid of BOUT++'s elm-pb example from the PCMS test data
+(`FUSIONIO_TEST_BOUT_GRID`, `bout/cbm18/cbm18_grid.nc`; LGPL-3.0).

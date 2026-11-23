@@ -175,7 +175,8 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/fusionio2-config.cmake
               ${CMAKE_CURRENT_BINARY_DIR}/fusionio2-config-version.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fusionio2)
 
-option(FUSIONIO_BUILD_TOOLS "Build the Fusion-IO tools (fio_trace, gnet2gtc)" ON)
+option(FUSIONIO_BUILD_TOOLS
+       "Build the Fusion-IO tools (fio_trace, gnet2gtc, bout-grid)" ON)
 if(FUSIONIO_BUILD_TOOLS AND FUSIONIO_ENABLE_WRAPPED)
   find_package(MPI REQUIRED COMPONENTS CXX)
   add_executable(fio_trace tools/trace/main.cpp)
@@ -187,6 +188,13 @@ if(FUSIONIO_BUILD_TOOLS AND FUSIONIO_ENABLE_GNET)
   add_executable(gnet2gtc tools/gnet/gnet2gtc.cpp)
   target_link_libraries(gnet2gtc PRIVATE fusionio)
   install(TARGETS gnet2gtc)
+endif()
+
+if(FUSIONIO_BUILD_TOOLS AND FUSIONIO_ENABLE_BOUT)
+  find_package(MPI REQUIRED COMPONENTS CXX)
+  add_executable(bout-grid tools/bout/bout_grid.cpp)
+  target_link_libraries(bout-grid PRIVATE fusionio MPI::MPI_CXX)
+  install(TARGETS bout-grid)
 endif()
 
 include(CTest)

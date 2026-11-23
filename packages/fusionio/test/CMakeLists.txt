@@ -138,3 +138,9 @@ if(TARGET fio_trace AND FUSIONIO_TEST_DATA_DIR)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 endif()
 
+if(TARGET bout-grid AND FUSIONIO_TEST_BOUT_GRID)
+  add_test(NAME bout_grid_cbm18 COMMAND bout-grid ${FUSIONIO_TEST_BOUT_GRID} 16
+                                        15)
+  set_tests_properties(bout_grid_cbm18 PROPERTIES PASS_REGULAR_EXPRESSION
+                                                  "pressure \\(Pa\\) = ")
+endif()
