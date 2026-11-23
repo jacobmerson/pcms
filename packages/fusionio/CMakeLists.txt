@@ -20,6 +20,8 @@ endif()
 #   NIMROD   NIMROD dumps through nimeval. Needs NIMROD's nimeval library.
 #   GNET     GNET distributions. Needs a PCMS with
 #            PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION and HDF5.
+#   BOUT     BOUT++ grid files. Needs netCDF (netcdf-c); the BOUT++ builder
+#            (fusionio/bout.hpp) is always built.
 include(CheckCXXSourceCompiles)
 # Whether the PCMS found was built with the configuration macro `name`.
 function(fusionio_pcms_has name result)
@@ -47,6 +49,21 @@ if(FUSIONIO_ENABLE_GNET)
   set(HDF5_USE_STATIC_LIBRARIES OFF)
   find_package(HDF5 REQUIRED COMPONENTS C)
   message(STATUS "Found HDF5: ${HDF5_VERSION}")
+endif()
+
+option(FUSIONIO_ENABLE_BOUT "Read BOUT++ grid files" OFF)
+if(FUSIONIO_ENABLE_BOUT)
+  find_path(NETCDF_INCLUDE_DIR netcdf.h HINTS ${NETCDF_DIR} ENV NETCDF_DIR
+            PATH_SUFFIXES include)
+  find_library(NETCDF_LIBRARY netcdf HINTS ${NETCDF_DIR} ENV NETCDF_DIR
+               PATH_SUFFIXES lib lib64)
+  if(NOT NETCDF_INCLUDE_DIR OR NOT NETCDF_LIBRARY)
+    message(FATAL_ERROR "FUSIONIO_ENABLE_BOUT needs netCDF (netcdf-c; set "
+                        "NETCDF_DIR)")
+  endif()
+  message(STATUS "Found netCDF: ${NETCDF_LIBRARY}")
+  add_library(fusionio_netcdf INTERFACE IMPORTED)
+  target_include_directories(fusionio_netcdf INTERFACE ${NETCDF_INCLUDE_DIR})
 endif()
 
 option(FUSIONIO_ENABLE_WRAPPED "Read and evaluate files with Fusion-IO 1.x" ON)
@@ -125,6 +142,14 @@ if(FUSIONIO_ENABLE_NIMROD)
   target_link_libraries(fusionio PRIVATE ${NIMROD_NIMEVAL_LIBRARY})
 else()
   target_sources(fusionio PRIVATE src/nimrod_unavailable.cpp)
+endif()
+if(FUSIONIO_ENABLE_BOUT)
+  target_sources(fusionio PRIVATE src/bout_reader.cpp)
+  # its headers after PCMS's: a netCDF prefix may hold another PCMS's
+  target_link_libraries(fusionio PRIVATE $<BUILD_INTERFACE:fusionio_netcdf>
+                                         ${NETCDF_LIBRARY})
+else()
+  target_sources(fusionio PRIVATE src/bout_unavailable.cpp)
 endif()
 if(FUSIONIO_ENABLE_GNET)
   target_sources(fusionio PRIVATE src/gnet_reader.cpp src/gnet_space.cpp

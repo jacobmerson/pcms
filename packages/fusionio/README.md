@@ -17,6 +17,7 @@ the names in the last column and fails for one that was not built.
 | `FUSIONIO_ENABLE_NATIVE` | on with `WRAPPED` and Omega_h in PCMS | `WRAPPED` (1.x reads the M3D-C1 files), PCMS with `PCMS_ENABLE_OMEGA_H` | `Native` |
 | `FUSIONIO_ENABLE_NIMROD` | off | NIMROD's `nimeval` library (`NIMROD_DIR`) | `Nimrod` |
 | `FUSIONIO_ENABLE_GNET` | off | PCMS with `PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION`, HDF5 | `Gnet` |
+| `FUSIONIO_ENABLE_BOUT` | off | netCDF (netcdf-c, `NETCDF_DIR`) | `Bout` |
 
 Without `WRAPPED`, `Open` throws and `fio_trace` is not built; nothing else
 needs Fusion-IO 1.x.
@@ -140,3 +141,18 @@ of the candidates; periodic theta and zeta by default.
   field array (the y = ny plane reads the first upper y guard plane, which
   BOUT++'s communication fills with the twist-shifted values); `CopyIn` and
   `CopyOut` copy a field through it.
+
+With `FUSIONIO_ENABLE_BOUT`, `ReadBoutGrid(path, nz, zperiod)` reads a grid
+file (nz and zperiod are BOUT.inp's `MZ` and `zperiod`; `MXG` from the file,
+default 2) and computes `g^ij` of BOUT++'s field-aligned tokamak coordinates
+from `Rxy`, `Bpxy`, `Btxy`, `Bxy`, `hthe` and `sinty`. `OpenBout` returns it
+as a `Source` with the equilibrium profiles of the file, constant in z:
+
+| Quantity | Variable | Units |
+| --- | --- | --- |
+| `TotalPressure` | `pressure` | Pa |
+| `Density` (main ions) | `Ni0` | the file's (1e20 m^-3 in BOUT++'s tokamak grids), not set |
+| `Temperature` (main ions, electrons) | `Ti0`, `Te0` | eV |
+
+The tests read the CBM18 grid of BOUT++'s elm-pb example from the PCMS test
+data (`FUSIONIO_TEST_BOUT_GRID`, `bout/cbm18/cbm18_grid.nc`; LGPL-3.0).

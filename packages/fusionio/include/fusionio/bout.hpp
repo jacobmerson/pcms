@@ -2,7 +2,8 @@
 #define FUSIONIO_BOUT_HPP
 
 /// BOUT++ grids: the geometry and fields of one block of a BOUT++ grid as
-/// PCMS objects, built from the arrays BOUT++ holds.
+/// PCMS objects, built from the arrays BOUT++ holds (Build) or read from a
+/// grid file (the FUSIONIO_ENABLE_BOUT component).
 
 #include "fusionio/fusionio.hpp"
 #include <pcms/field/embedding.hpp>
@@ -12,8 +13,10 @@
 #include <pcms/utility/memory_spaces.hpp>
 #include <array>
 #include <limits>
+#include <map>
 #include <memory>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace fusionio
@@ -96,6 +99,38 @@ void CopyIn(std::span<const Real> values, std::span<const pcms::LO> offsets,
 /// @param offsets InteriorOffsets of the function's space
 void CopyOut(const pcms::Function<Real>& function,
              std::span<const pcms::LO> offsets, std::span<Real> values);
+
+/// @brief A BOUT++ grid file in memory: its (x, y) arrays and the BoutGrid of
+///        the whole grid over them (one block, no y guard cells).
+struct BoutGridFile
+{
+  BoutGridFile() = default;
+  BoutGridFile(BoutGridFile&&) = default;
+  BoutGridFile& operator=(BoutGridFile&&) = default;
+  BoutGridFile(const BoutGridFile&) = delete;
+  BoutGridFile& operator=(const BoutGridFile&) = delete;
+  ~BoutGridFile() = default;
+
+  BoutGrid grid;
+  /// the file's [nx][ny] and [nx] arrays and the metric g^ij of
+  /// BOUT++'s tokamak coordinates ("g11", ...), by name; `grid` views them
+  std::map<std::string, std::vector<Real>> arrays;
+};
+
+/// @brief Reads a BOUT++ grid file (netCDF) for nz points in z over
+///        2 pi / zperiod, with the file's MXG x guard cells (default 2).
+/// @throws pcms_error if the file cannot be read or lacks a variable the grid
+///         needs, or Fusion-IO was built without FUSIONIO_ENABLE_BOUT
+[[nodiscard]] BoutGridFile ReadBoutGrid(const std::string& path, int nz,
+                                        int zperiod);
+
+/// @brief Opens a BOUT++ grid file as a source: its geometry is Build's and
+///        its quantities are the equilibrium profiles of the file
+///        (TotalPressure, Density and Temperature of the main ions, Temperature
+///        of the electrons), constant in z.
+/// @throws pcms_error as ReadBoutGrid and Build
+[[nodiscard]] std::shared_ptr<Source> OpenBout(const std::string& path, int nz,
+                                               int zperiod);
 
 } // namespace fusionio
 

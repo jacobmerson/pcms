@@ -31,8 +31,17 @@ if(FUSIONIO_ENABLE_NIMROD AND FUSIONIO_TEST_NIMROD_DIR)
                "FUSIONIO_TEST_NIMROD_DIR=\"${FUSIONIO_TEST_NIMROD_DIR}\"")
 endif()
 
-# The BOUT++ builder needs no data.
+# The BOUT++ builder needs no data; the reader's tests read the CBM18 grid of
+# the PCMS test data (bout/cbm18/cbm18_grid.nc).
+set(FUSIONIO_TEST_BOUT_GRID "" CACHE FILEPATH "CBM18 grid for the BOUT++ tests")
 list(APPEND FUSIONIO_TEST_SOURCES test_bout.cpp)
+if(FUSIONIO_ENABLE_BOUT AND FUSIONIO_TEST_BOUT_GRID)
+  list(APPEND FUSIONIO_TEST_SOURCES test_bout_cbm18.cpp)
+  set_source_files_properties(
+    test_bout_cbm18.cpp
+    PROPERTIES COMPILE_DEFINITIONS
+               "FUSIONIO_TEST_BOUT_GRID=\"${FUSIONIO_TEST_BOUT_GRID}\"")
+endif()
 
 if(FUSIONIO_PCMS_HAS_POLYNOMIAL_RECONSTRUCTION)
   # SampleMarkers of an analytic function reconstructed on a point cloud
