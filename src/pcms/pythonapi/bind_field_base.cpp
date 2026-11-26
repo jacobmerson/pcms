@@ -463,12 +463,11 @@ void bind_create_field_module(py::module& m)
         if (!variance && !system && !scaling && !kind) {
           return self.ptr->CreateFunction<Real>(std::move(name));
         }
-        auto basis = pcms::detail::MakeValueBasis(
-          self.ptr->GetCoordinateSystem(), variance.value_or(values::Scalar),
-          system ? system->ptr : nullptr, scaling);
-        basis.kind = kind.value_or(ValueKind::Tensor);
-        return self.ptr->CreateFunction<Real>(std::move(name),
-                                              std::move(basis));
+        return self.ptr->CreateFunction<Real>(
+          std::move(name), {.system = system ? system->ptr : nullptr,
+                            .scaling = scaling,
+                            .variance = variance.value_or(values::Scalar),
+                            .kind = kind.value_or(ValueKind::Tensor)});
       },
       py::arg("name") = "", py::arg("variance") = py::none(),
       py::arg("system") = py::none(), py::arg("scaling") = py::none(),
