@@ -88,6 +88,24 @@ struct LagrangeOptions
   int stride = 1, int num_components = 1);
 /// @}
 
+/// The product of two scalar spaces: the basis phi_i(a) psi_k(b), DOF (i, k)
+/// with global id gid_a * (global DOFs of b) + gid_b.
+/// Evaluation (Value, and Gradient when both factors have it) and
+/// EvaluateTranspose are the Kronecker products of the factors' evaluations;
+/// at scattered points, at most one factor may be evaluation-only (such as a
+/// spline space). The natural quadrature is the tensor product of the
+/// factors'. Serial: the factors' layouts are on one rank.
+/// @param geometry the product geometry to create the space on, or null for
+///        CreateProductGeometry(a's geometry, b's geometry); to use one
+///        made with its own coordinate system, or to share one between spaces
+/// @throws pcms_error if a factor is null or not scalar, `geometry` is not the
+///         product geometry of the factors' geometries, or a factor's layout
+///         is distributed
+[[nodiscard]] std::shared_ptr<const FunctionSpace> CreateProductSpace(
+  std::shared_ptr<const FunctionSpace> a,
+  std::shared_ptr<const FunctionSpace> b,
+  std::shared_ptr<const Geometry> geometry = nullptr);
+
 #ifdef PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION
 /// An MLS reconstruction space on a point-cloud geometry (its sites are the
 /// DOF holders); `options` are the reconstruction parameters, the support
