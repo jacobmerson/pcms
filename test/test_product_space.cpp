@@ -1007,3 +1007,33 @@ TEST_CASE("Product space: twist-shift periodic axis wraps the plane's y into "
   // the twist-shift of a second factor would shift the wrong product axes
   CHECK_THROWS(pcms::CreateProductGeometry(zs->GetGeometry(), geometry));
 }
+
+TEST_CASE("Product space: unwrapped Coordinates on a periodic axis evaluate "
+          "through the factors; wrapped ones are refused",
+          "[product][coordinates]")
+{
+  // u = (1 + 3 x)(2 + y) of period 1, unwrapped: nodes more than 1 / 2 apart
+  const auto xs = pcms::CreateLagrangeSpace(Line(4, 0.0, 1.0), 1, 1);
+  const auto ys = pcms::CreateLagrangeSpace(Line(3, 0.0, 1.0), 1, 1);
+  const auto space = pcms::CreateProductSpace(xs, ys);
+  auto basis = pcms::ValueBasis::Coordinates(
+    pcms::csys::CreateParameterSystem("u", 1, {{0, 0.0, 1.0}}));
+  const auto dofs =
+    Outer(NodalValues(*xs->GetLayout(), [](Real x, Real) { return 1 + 3 * x; }),
+          NodalValues(*ys->GetLayout(), [](Real y, Real) { return 2 + y; }));
+  auto u = space->CreateFunction<Real>("u", basis);
+  SetDofs(u, dofs);
+  const auto points = Points(11, 2, 0.05, 0.95);
+  const auto value = EvaluateAt(*space, u, points);
+  for (std::size_t p = 0; p < points.size(); ++p) {
+    CAPTURE(p);
+    CHECK(
+      value[p][0] ==
+      Catch::Approx((1 + 3 * points[p][0]) * (2 + points[p][1])).margin(1e-12));
+  }
+  basis.wrapped = true;
+  auto wrapped = space->CreateFunction<Real>("u", basis);
+  SetDofs(wrapped, dofs);
+  CHECK_THROWS_WITH(EvaluateAt(*space, wrapped, points),
+                    Catch::Matchers::ContainsSubstring("wrapped Coordinates"));
+}
