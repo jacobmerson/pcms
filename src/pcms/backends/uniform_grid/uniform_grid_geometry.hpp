@@ -20,8 +20,8 @@ namespace pcms::detail
 {
 
 /// Fills, per query point, whether it is found (inside the grid, or any point
-/// when `nearest`), its cell and its position in the cell from the search
-/// results. (A free function: CUDA does not allow device lambdas in
+/// but a NaN one when `nearest`), its cell and its position in the cell from
+/// the search results. (A free function: CUDA does not allow device lambdas in
 /// constructors or non-public member functions.)
 template <unsigned Dim>
 void FillUniformGridBinding(
@@ -35,18 +35,20 @@ void FillUniformGridBinding(
     "UniformGridBinding", static_cast<LO>(results.extent(0)),
     KOKKOS_LAMBDA(const LO i) {
       const Result result = results(i);
-      found(i) = nearest || !result.IsOutside();
+      bool is_found = !result.IsOutside() || nearest;
       cell_indices(i) = result.CellId();
       for (unsigned d = 0; d < Dim; ++d) {
         parametric(i, d) = result.parametric[d];
+        is_found = is_found && !Kokkos::isnan(result.parametric[d]);
       }
+      found(i) = is_found;
     });
 }
 
 /// Uniform-grid BoundPoints: the cell of each query point and its position in
 /// the cell. Points outside the grid are not found, except with
 /// OutOfBoundsMode::NEAREST_BOUNDARY, where they use the closest cell and
-/// their position relative to it.
+/// their position relative to it. A NaN point is never found.
 template <unsigned Dim>
 class UniformGridBinding final : public BoundPoints
 {
@@ -118,11 +120,7 @@ public:
   /// Own it by std::shared_ptr, as CreateGeometry does: Bind uses
   /// shared_from_this().
   UniformGridGeometry(UniformGrid<Dim> grid,
-                      std::shared_ptr<const CoordinateSystem> system)
-    : grid_(grid),
-      system_(pcms::detail::ResolveCoordinateSystem(std::move(system), Dim))
-  {
-  }
+                      std::shared_ptr<const CoordinateSystem> system);
 
   [[nodiscard]] const std::shared_ptr<const CoordinateSystem>&
   GetCoordinateSystem() const noexcept override
@@ -140,11 +138,15 @@ public:
     return grid_;
   }
 
+  /// @return bit d set if axis d is a plain periodic axis over the
+  ///         grid's extent: its last node is its first
+  [[nodiscard]] unsigned WrappedAxes() const noexcept { return wrapped_; }
+
   /// @brief The tensor Gauss-Legendre rule of the cells, exact for
   ///        polynomials of degree `order` in each coordinate, before binding.
   /// @return the points [point][axis] and their weights in the coordinate
   ///         measure
-  /// @throws pcms_error for an order below 1
+  /// @throws pcms_error for a negative order
   [[nodiscard]] std::pair<Kokkos::View<Real**, DeviceMemorySpace>,
                           Kokkos::View<Real*, DeviceMemorySpace>>
   CellRule(int order) const;
@@ -153,14 +155,16 @@ protected:
   [[nodiscard]] std::shared_ptr<BoundPoints> BindImpl(
     const BindRequest& request) const override;
 
-  /// @brief The Gauss rule (CellRule), with the coordinate system's volume
-  ///        factor in the weights if the coordinate system has a metric.
+  /// @brief The Gauss rule (CellRule), or in 1D the trapezoid rule of the
+  ///        extent, with the coordinate system's volume factor in the weights
+  ///        if the coordinate system has a metric.
   [[nodiscard]] Quadrature CreateQuadrature(
     const pcms::detail::QuadratureRule& rule) const override;
 
 private:
   UniformGrid<Dim> grid_;
   std::shared_ptr<const CoordinateSystem> system_;
+  unsigned wrapped_ = 0;
 };
 
 // instantiated in geometry.cpp

@@ -10,7 +10,7 @@ enum class OutOfBoundsMode
 {
   ERROR,           // Throw error when points are out of bounds
   FILL,            // Fill out-of-bounds points with a fill value
-  NEAREST_BOUNDARY // Map to nearest boundary cell (extrapolate)
+  NEAREST_BOUNDARY // Extend the polynomial of the nearest boundary cell
 };
 
 // OutOfBoundsPolicy wraps OutOfBoundsMode with an optional fill value into a

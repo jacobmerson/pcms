@@ -19,6 +19,7 @@ namespace detail
 
 /// @brief The rows of the order 0 or 1 Lagrange fields of a uniform grid at
 ///        points.
+/// @param wrapped bit d set if the last node of axis d is its first
 /// @param cells the cell of each point
 /// @param t the position of each point in its cell
 /// @param missing points whose rows are zero
@@ -26,7 +27,7 @@ namespace detail
 ///         corner without its highest set bit
 template <unsigned Dim>
 pcms::detail::PointRows BuildGridRows(
-  UniformGrid<Dim> grid, int order, bool gradient,
+  UniformGrid<Dim> grid, unsigned wrapped, int order, bool gradient,
   Kokkos::View<const LO*, DeviceMemorySpace> cells,
   Kokkos::View<const Real**, DeviceMemorySpace> t,
   Kokkos::View<const LO*, DeviceMemorySpace> missing)
@@ -60,7 +61,7 @@ pcms::detail::PointRows BuildGridRows(
       Real h[Dim];
       LO next = 1;
       for (unsigned d = 0; d < Dim; ++d) {
-        nodes[d] = grid.divisions[d] + 1;
+        nodes[d] = grid.divisions[d] + (((wrapped >> d) & 1U) ? 0 : 1);
         vertex_stride[d] = next;
         next *= nodes[d];
         h[d] = grid.edge_length[d] / grid.divisions[d];
@@ -116,16 +117,14 @@ std::shared_ptr<const PointEvaluatorFactory> CreateLagrangeEvaluatorFactory(
   std::shared_ptr<const UniformGridFieldLayout<Dim>> layout)
 {
   using Bound = pcms::detail::UniformGridBinding<Dim>;
+  const unsigned wrapped = geometry->WrappedAxes();
   return std::make_shared<pcms::detail::RowsEvaluatorFactory<Bound>>(
     std::move(geometry), layout, std::set{DifferentialOperator::Gradient},
-    [grid = layout->GetGrid(),
+    [grid = layout->GetGrid(), wrapped,
      order = layout->GetOrder()](const Bound& bound, DifferentialOperator op) {
       return detail::BuildGridRows<Dim>(
-        grid, order, op == DifferentialOperator::Gradient, bound.CellIndices(),
-        bound.Parametric(),
-        bound.Policy().mode == OutOfBoundsMode::FILL
-          ? bound.MissingPoints()
-          : Kokkos::View<const LO*, DeviceMemorySpace>{});
+        grid, wrapped, order, op == DifferentialOperator::Gradient,
+        bound.CellIndices(), bound.Parametric(), bound.MissingPoints());
     },
     true);
 }

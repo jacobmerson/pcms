@@ -14,6 +14,7 @@ set(PCMS_FIELD_HEADERS
         point_rows.hpp
         ../../../include/pcms/field/field_layout.hpp
         layout/empty.hpp
+        layout/serial.hpp
         ../../../include/pcms/field/out_of_bounds_policy.hpp
         ../../../include/pcms/field/field_data.hpp
         ../../../include/pcms/field/detail/field_data.hpp
@@ -54,6 +55,7 @@ set(PCMS_FIELD_SOURCES
         layout/empty.cpp
         function_space/lagrange.cpp
         function_space/spline.cpp
+        function_space/periodic.cpp
 )
 list(APPEND PCMS_FIELD_HEADERS
 )
