@@ -1,8 +1,8 @@
 set(PCMS_FIELD_HEADERS
         ../../../include/pcms/field/field.hpp
         ../../../include/pcms/field/field_metadata.hpp
-        ../../../include/pcms/field/detail/field_metadata.hpp
         ../../../include/pcms/field/units.hpp
+        ../../../include/pcms/field/detail/field_metadata.hpp
         ../../../include/pcms/field/detail/units.hpp
         ../../../include/pcms/field/coordinate_map.hpp
         ../../../include/pcms/field/embedding.hpp
@@ -54,6 +54,8 @@ set(PCMS_FIELD_SOURCES
         function_space/lagrange.cpp
         function_space/spline.cpp
         function_space/periodic.cpp
+        function_space/product_geometry.cpp
+        function_space/product_space.cpp
 )
 list(APPEND PCMS_FIELD_HEADERS
 )
