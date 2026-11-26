@@ -10,6 +10,7 @@
 #include "pcms/geometry/bound_points.hpp"
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/memory_spaces.hpp"
+#include "pcms/utility/detail/arrays.hpp"
 #include "pcms/utility/detail/profile.hpp"
 #include <functional>
 #include <memory>
@@ -80,6 +81,16 @@ public:
                              Field<T>& functional, T beta) const override
   {
     PCMS_FUNCTION_TIMER;
+    // the inner evaluator may count the points this evaluator fills as found
+    Kokkos::View<T**, DeviceMemorySpace> masked;
+    if (const auto filled = this->FilledPoints(); filled.extent(0) > 0) {
+      masked = Kokkos::View<T**, DeviceMemorySpace>(
+        Kokkos::view_alloc(Kokkos::WithoutInitializing, "transpose_masked"),
+        values.extent(0), values.extent(1));
+      CopyDeviceRank2ViewToDeviceView(masked, values);
+      FillRows(MakeRank2View(masked), filled, T{0});
+      values = MakeConstRank2View(masked);
+    }
     const auto& chain = Chain(functional.GetData().GetValueBasis());
     if constexpr (std::is_same_v<T, Real>) {
       EvaluateTranspose(*inner_,
