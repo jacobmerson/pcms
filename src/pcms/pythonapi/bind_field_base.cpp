@@ -236,10 +236,10 @@ void bind_create_field_module(py::module& m)
       [](const Immutable<Geometry>& g, const Immutable<FunctionSpace>& space,
          OutOfBoundsPolicy policy,
          const std::optional<Immutable<CoordinateMap>>& map) {
-        auto layout = space.ptr->GetLayout();
-        return Immutable<BoundPoints>{g.ptr->Bind(
-          layout->GetDOFHolderCoordinates(), DOFHolderOwners(*layout), policy,
-          map ? map->ptr : nullptr)};
+        return Immutable<BoundPoints>{
+          g.ptr->Bind(space.ptr->GetDOFHolderCoordinates(),
+                      DOFHolderOwners(*space.ptr->GetLayout()), policy,
+                      map ? map->ptr : nullptr)};
       },
       py::arg("space"), py::arg("policy") = OutOfBoundsPolicy{},
       py::arg("map") = py::none(),
