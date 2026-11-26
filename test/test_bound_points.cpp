@@ -565,3 +565,18 @@ TEST_CASE("An Omega_h rebind of as many points allocates nothing")
   REQUIRE(bound.get() == binding);
   REQUIRE(binding->Results<2>().data() == records);
 }
+
+TEST_CASE("Omega_h and MLS spaces report the polynomial degree they reproduce")
+{
+  auto lib = Omega_h::Library{};
+  auto mesh = pcms::test::BuildSquareMesh(lib, 4);
+  CHECK(pcms::test::MakeP1Space(mesh)->ReproducedPolynomialDegree() == 1);
+#ifdef PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION
+  auto vertices = std::make_shared<pcms::OmegaHEntityLayout>(
+    pcms::test::MakeOmegaHGeometry(mesh), pcms::Vertex, 1);
+  CHECK(pcms::CreatePolynomialReconstructionSpace(
+          pcms::point_cloud::CreateGeometry(vertices),
+          pcms::MLSOptions{.degree = 2})
+          ->ReproducedPolynomialDegree() == 2);
+#endif
+}

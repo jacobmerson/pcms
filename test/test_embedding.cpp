@@ -552,11 +552,7 @@ TEST_CASE("A source on another geometry projects onto an embedded space",
   const auto plane = PlaneSpace(f);
   const auto source = LinearInRZ(*plane);
   auto target = f.space->CreateFunction<Real>("f");
-  pcms::ProjectionOptions options;
-  options.quadrature = pcms::MapQuadrature(
-    f.embedded,
-    pcms::CreateGaussQuadrature(f.embedded->GetParameterGeometry(), 2));
-  pcms::CreateProjection(plane, f.space, options)->Apply(source, target);
+  pcms::CreateProjection(plane, f.space)->Apply(source, target);
   CheckLinearInRZ(f, target, 5e-3);
 }
 
@@ -604,12 +600,8 @@ TEST_CASE("A control-variate projection onto an embedded space",
   const auto plane = PlaneSpace(f);
   const auto source = LinearInRZ(*plane);
   auto target = f.space->CreateFunction<Real>("f");
-  pcms::ProjectionOptions options;
-  options.quadrature = pcms::MapQuadrature(
-    f.embedded,
-    pcms::CreateGaussQuadrature(f.embedded->GetParameterGeometry(), 2));
-  options.control_variate = true;
-  pcms::CreateProjection(plane, f.space, options)->Apply(source, target);
+  pcms::CreateProjection(plane, f.space, {.control_variate = true})
+    ->Apply(source, target);
   CheckLinearInRZ(f, target, 5e-3);
 }
 
@@ -764,6 +756,9 @@ TEST_CASE("Embedded geometries refuse what they cannot do",
                     ContainsSubstring("embedded geometry of the space"));
   const auto bound = pcms::test::Bind(*f.embedded, {Annulus::Rc + 0.75, 0.3});
   CHECK_FALSE(f.space->Supports(pcms::DifferentialOperator::Gradient));
+  CHECK(f.space->ReproducedPolynomialDegree() == 1);
+  // the mapped parameter rule keeps its degree
+  CHECK(f.space->GetQuadrature().degree == 2);
   // Rebind locates new points
   const auto again = f.embedded->Rebind(
     bound, pcms::test::CreateDeviceCoordinateView(

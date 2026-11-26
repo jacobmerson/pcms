@@ -590,4 +590,22 @@ TEST_CASE("BOUT++-like embedded grid with a given metric: quadrature and "
     CHECK(pcms::L2Integral(fine.fields).Apply(target) ==
           Catch::Approx(expected).epsilon(1e-12));
   }
+
+  // Ensure that the default quadrature is the mapped Gauss rule of degree 2
+  pcms::ProjectionOptions options;
+  options.solve.relative_tolerance = 1e-14;
+  auto by_default = fine.fields->CreateFunction<Real>("P");
+  pcms::CreateProjection(coarse.fields, fine.fields, options)
+    ->Apply(source, by_default);
+  options.quadrature = rule;
+  auto explicitly = fine.fields->CreateFunction<Real>("P");
+  pcms::CreateProjection(coarse.fields, fine.fields, options)
+    ->Apply(source, explicitly);
+  const auto a = by_default.GetDOFHolderDataHost().GetValues();
+  const auto b = explicitly.GetDOFHolderDataHost().GetValues();
+  for (std::size_t i = 0; i < a.extent(0); ++i) {
+    CHECK(a(i, 0) == Catch::Approx(b(i, 0)).epsilon(1e-12).margin(1e-14));
+  }
+  CHECK(pcms::L2Integral(fine.fields).Apply(by_default) ==
+        Catch::Approx(expected).epsilon(1e-12));
 }
