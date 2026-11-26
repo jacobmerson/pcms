@@ -16,7 +16,7 @@ void bind_omega_h_field(py::module& m)
     .value("FILL", OutOfBoundsMode::FILL,
            "Fill with a specified value when points are out of bounds")
     .value("NEAREST_BOUNDARY", OutOfBoundsMode::NEAREST_BOUNDARY,
-           "Clamp to nearest boundary cell (extrapolate)")
+           "Extend the polynomial of the nearest boundary cell")
     .export_values();
 
   // Bind OutOfBoundsPolicy struct
