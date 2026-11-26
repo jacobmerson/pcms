@@ -31,6 +31,18 @@ if(FUSIONIO_ENABLE_NIMROD AND FUSIONIO_TEST_NIMROD_DIR)
                "FUSIONIO_TEST_NIMROD_DIR=\"${FUSIONIO_TEST_NIMROD_DIR}\"")
 endif()
 
+# The BOUT++ builder needs no data; the reader's tests read the CBM18 grid of
+# the PCMS test data (bout/cbm18/cbm18_grid.nc).
+set(FUSIONIO_TEST_BOUT_GRID "" CACHE FILEPATH "CBM18 grid for the BOUT++ tests")
+list(APPEND FUSIONIO_TEST_SOURCES test_bout.cpp)
+if(FUSIONIO_ENABLE_BOUT AND FUSIONIO_TEST_BOUT_GRID)
+  list(APPEND FUSIONIO_TEST_SOURCES test_bout_cbm18.cpp)
+  set_source_files_properties(
+    test_bout_cbm18.cpp
+    PROPERTIES COMPILE_DEFINITIONS
+               "FUSIONIO_TEST_BOUT_GRID=\"${FUSIONIO_TEST_BOUT_GRID}\"")
+endif()
+
 if(FUSIONIO_PCMS_HAS_POLYNOMIAL_RECONSTRUCTION)
   # SampleMarkers of an analytic function reconstructed on a point cloud
   list(APPEND FUSIONIO_TEST_SOURCES test_sampling.cpp)
@@ -124,4 +136,11 @@ if(TARGET fio_trace AND FUSIONIO_TEST_DATA_DIR)
     COMMAND fio_trace -m3dc1 ${FUSIONIO_TEST_DATA_DIR}/m3dc1/C1.h5 -dR 0.05
             -p 2 -t 2 -s 20 -pout 0 -qout 0
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+endif()
+
+if(TARGET bout-grid AND FUSIONIO_TEST_BOUT_GRID)
+  add_test(NAME bout_grid_cbm18 COMMAND bout-grid ${FUSIONIO_TEST_BOUT_GRID} 16
+                                        15)
+  set_tests_properties(bout_grid_cbm18 PROPERTIES PASS_REGULAR_EXPRESSION
+                                                  "pressure \\(Pa\\) = ")
 endif()
