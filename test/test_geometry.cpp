@@ -24,6 +24,7 @@
 #include <pcms/utility/omega_h_array_utils.hpp>
 #include "field_test_utils.hpp"
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <random>
 #include <string>
@@ -1108,5 +1109,99 @@ TEST_CASE("MeshFields evaluates P2 fields through the geometry's bind")
     *p2->CreatePointEvaluator<Real>(bound), f2, pts,
     OMEGA_H_LAMBDA(Real x, Real y) { return Quadratic(x, y); },
     pcms::test::ExactTol);
+}
+#endif
+
+TEST_CASE("A NaN query point is never found on an Omega_h mesh")
+{
+  const Real nan = std::numeric_limits<Real>::quiet_NaN();
+  auto lib = Omega_h::Library{};
+  auto mesh = pcms::test::BuildSquareMesh(lib, 4);
+  auto geometry = MakeGeometry(mesh);
+  // in, NaN x, NaN y, in
+  const std::vector<Real> pts = {0.3, 0.3, nan, 0.5, 0.5, nan, 0.7, 0.6};
+  auto coords = pcms::test::CreateDeviceCoordinateView(
+    pts, geometry->GetCoordinateSystem());
+  const pcms::OutOfBoundsPolicy fill{pcms::OutOfBoundsMode::FILL, -7.0};
+  std::vector<std::shared_ptr<const FunctionSpace>> spaces{
+    MakeSpace(geometry, 1, 1)};
+#ifdef PCMS_ENABLE_OMEGA_H_MESHFIELDS
+  spaces.push_back(CreateLagrangeSpace(
+    geometry, 1, 1, LagrangeOptions{.backend = LagrangeBackend::MeshFields}));
+#endif
+  // searched, and started from a claimed element
+  Kokkos::View<LO*, DeviceMemorySpace> owners("owners", 4);
+  const std::vector<std::shared_ptr<const pcms::BoundPoints>> binds{
+    geometry->Bind(coords.coordinate_view, fill),
+    geometry->Bind(coords.coordinate_view,
+                   pcms::OwnerHints{geometry, 2, owners}, fill)};
+  for (const auto& bound : binds) {
+    REQUIRE(bound->MissingPoints().extent(0) == 2);
+    for (const auto& space : spaces) {
+      auto f = space->CreateFunction<Real>("f");
+      pcms::test::SetField(
+        f,
+        OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); });
+      const auto values =
+        pcms::test::EvaluateToHost(*space->CreatePointEvaluator<Real>(bound), f,
+                                   f.GetData().GetValueBasis());
+      CHECK_THAT(values(0, 0), WithinAbs(pcms::test::linear_f(0.3, 0.3),
+                                         pcms::test::EvalTol));
+      CHECK(values(1, 0) == -7.0);
+      CHECK(values(2, 0) == -7.0);
+      CHECK_THAT(values(3, 0), WithinAbs(pcms::test::linear_f(0.7, 0.6),
+                                         pcms::test::EvalTol));
+    }
+  }
+  CHECK_THROWS_AS(geometry->Bind(coords.coordinate_view), pcms::pcms_error);
+  CHECK_THROWS_AS(geometry->Bind(coords.coordinate_view,
+                                 pcms::OwnerHints{geometry, 2, owners}),
+                  pcms::pcms_error);
+}
+
+#ifdef PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION
+TEST_CASE("A NaN query point gets no MLS supports")
+{
+  const Real nan = std::numeric_limits<Real>::quiet_NaN();
+  auto lib = Omega_h::Library{};
+  auto mesh = pcms::test::BuildSquareMesh(lib, 4);
+  const auto system = pcms::csys::CreateCartesian(2);
+  const auto vertices = std::make_shared<pcms::OmegaHEntityLayout>(
+    pcms::test::MakeOmegaHGeometry(mesh), pcms::Vertex, 1);
+  const auto cloud = std::make_shared<pcms::PointCloudLayout>(
+    2, pcms::ConvertCoordsTo2D(mesh.coords(), mesh.nverts(), 2), system);
+  const pcms::NeighbourhoodOptions options{.radius = 0.3, .min_supports = 3};
+  const std::vector<Real> pts = {0.3, 0.3, nan, 0.5, 0.5, nan, 0.7, 0.6};
+  auto coords = pcms::test::CreateDeviceCoordinateView(pts, system);
+  // the adjacency search of the mesh, and the distance search of a bare cloud
+  for (const auto& sites : std::vector<std::shared_ptr<const pcms::Geometry>>{
+         pcms::point_cloud::CreateGeometry(vertices, options),
+         pcms::point_cloud::CreateGeometry(cloud, options)}) {
+    auto space = pcms::CreatePolynomialReconstructionSpace(
+      sites, pcms::MLSOptions{.degree = 1});
+    auto f = space->CreateFunction<Real>();
+    pcms::test::SetField(
+      f, OMEGA_H_LAMBDA(Real x, Real y) { return pcms::test::linear_f(x, y); });
+    const auto bound = space->GetGeometry()->Bind(
+      coords.coordinate_view,
+      pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::FILL, -7.0});
+    REQUIRE(bound->MissingPoints().extent(0) == 2);
+    const auto values =
+      pcms::test::EvaluateToHost(*space->CreatePointEvaluator<Real>(bound), f,
+                                 f.GetData().GetValueBasis());
+    // the other points evaluate as without the NaN points
+    auto finite = pcms::test::CreateDeviceCoordinateView(
+      {pts[0], pts[1], pts[6], pts[7]}, system);
+    const auto expected = pcms::test::EvaluateToHost(
+      *space->CreatePointEvaluator<Real>(
+        space->GetGeometry()->Bind(finite.coordinate_view)),
+      f, f.GetData().GetValueBasis());
+    CHECK(values(0, 0) == expected(0, 0));
+    CHECK(values(1, 0) == -7.0);
+    CHECK(values(2, 0) == -7.0);
+    CHECK(values(3, 0) == expected(1, 0));
+    CHECK_THROWS_AS(space->GetGeometry()->Bind(coords.coordinate_view),
+                    pcms::pcms_error);
+  }
 }
 #endif

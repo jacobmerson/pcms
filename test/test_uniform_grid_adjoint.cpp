@@ -307,7 +307,7 @@ TEST_CASE("Uniform-grid quadrature is exact for polynomials of its degree in "
                              MonomialIntegral(3, 0.5, 2.5))
                  .epsilon(1e-12));
   CHECK_THROWS(pcms::CreateMonteCarloQuadrature(rz, 2));
-  CHECK_THROWS(pcms::CreateGaussQuadrature(rz, 0));
+  CHECK_THROWS(pcms::CreateGaussQuadrature(rz, -1));
   CHECK(pcms::CreateLagrangeSpace(Grid2(), 0, 1)
           ->GetQuadrature()
           .points->NumPoints() == 20);

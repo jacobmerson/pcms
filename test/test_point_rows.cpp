@@ -1,6 +1,4 @@
-#include <catch2/catch_approx.hpp>
-#include <catch2/catch_test_macros.hpp>
-#include <Kokkos_Core.hpp>
+#include "periodic_test_utils.hpp"
 #include "pcms/field/point_rows.hpp"
 #include "field_test_utils.hpp"
 #include <pcms/utility/coordinate_systems/cartesian.hpp>
@@ -94,4 +92,28 @@ TEST_CASE("PointRows: the outputs of a point are component-major",
   CHECK(host_out(0, 1) == 2);
   CHECK(host_out(0, 2) == 3);
   CHECK(host_out(0, 3) == 4);
+}
+
+TEST_CASE("PointRows: the rows of a periodic space have the local holders",
+          "[point_rows][periodic]")
+{
+  const auto space =
+    pcms::CreatePeriodicHermiteSpace(pcms::test::PeriodicGrid(5, 2.0));
+  const auto points = pcms::test::DevicePoints({{0.1}, {0.7}, {1.9}});
+  const auto bound =
+    space->GetGeometry()->Bind(pcms::CoordinateView<pcms::DeviceMemorySpace>(
+      space->GetGeometry()->GetCoordinateSystem(),
+      pcms::MakeConstRank2View(points)));
+  const auto evaluator = space->CreatePointEvaluator<Real>(bound);
+  const auto* source = pcms::detail::AsRowsSource(*evaluator);
+  REQUIRE(source != nullptr);
+  const auto holders = Kokkos::create_mirror_view_and_copy(
+    pcms::HostMemorySpace{}, source->Rows().holders);
+  const LO num_holders = space->GetLayout()->GetNumDofHolder();
+  CHECK(source->HolderGids().size() == static_cast<std::size_t>(num_holders));
+  REQUIRE(holders.extent(0) > 0);
+  for (std::size_t k = 0; k < holders.extent(0); ++k) {
+    CHECK(holders(k) >= 0);
+    CHECK(holders(k) < num_holders);
+  }
 }
