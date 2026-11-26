@@ -52,7 +52,10 @@ struct ProjectionOptions
   /// (e.g. CreateGaussQuadrature of the sum of the degrees of the source and
   /// the target space, CreateMonteCarloQuadrature, or the intersection of two
   /// meshes, which carries the points bound on the source's geometry); unset,
-  /// the Gauss rule of degree 2
+  /// the Gauss rule of degree max(2, source + target
+  /// ReproducedPolynomialDegree()), or 2 if either is -1, of the parameter
+  /// geometry mapped onto an embedded geometry (MapQuadrature); the target
+  /// space's GetQuadrature() if its degree is at least that
   std::optional<Quadrature> quadrature;
   /// project only the residual of the source from its interpolation onto the
   /// target space (a control variate), which is what the Monte Carlo

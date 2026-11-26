@@ -825,6 +825,15 @@ public:
                        [](const auto& leaf) { return leaf->HasNodalDOFs(); });
   }
 
+  [[nodiscard]] int ReproducedPolynomialDegree() const noexcept override
+  {
+    int degree = leaves_.front()->ReproducedPolynomialDegree();
+    for (const auto& leaf : leaves_) {
+      degree = std::min(degree, leaf->ReproducedPolynomialDegree());
+    }
+    return degree;
+  }
+
 protected:
   std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
     std::shared_ptr<const ProductBinding> bound,

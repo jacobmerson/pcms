@@ -1032,6 +1032,10 @@ public:
   {
     return space_->HasNodalDOFs();
   }
+  [[nodiscard]] int ReproducedPolynomialDegree() const noexcept override
+  {
+    return space_->ReproducedPolynomialDegree();
+  }
 
 protected:
   PointEvaluatorVariant CreatePointEvaluatorImpl(

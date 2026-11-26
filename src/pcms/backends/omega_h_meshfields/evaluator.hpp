@@ -192,6 +192,12 @@ public:
 
   [[nodiscard]] bool HasNodalDOFs() const noexcept override { return true; }
 
+  [[nodiscard]] int ReproducedPolynomialDegree() const noexcept override
+  {
+    // P2 has nodes on the edges
+    return layout_->GetNodesPerDim()[1] > 0 ? 2 : 1;
+  }
+
 protected:
   std::unique_ptr<PointEvaluator<T>> CreateEvaluator(
     std::shared_ptr<const pcms::detail::OmegaHMeshBinding> bound,

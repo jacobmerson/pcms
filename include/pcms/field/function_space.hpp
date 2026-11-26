@@ -113,6 +113,14 @@ public:
     return evaluator_ != nullptr && evaluator_->HasNodalDOFs();
   }
 
+  /// @return the evaluator source's ReproducedPolynomialDegree(), or -1 for a
+  ///         space without one
+  [[nodiscard]] int ReproducedPolynomialDegree() const noexcept override
+  {
+    return evaluator_ != nullptr ? evaluator_->ReproducedPolynomialDegree()
+                                 : -1;
+  }
+
   ~FunctionSpace() noexcept override = default;
 
   /// @brief Creates a Function.

@@ -26,4 +26,6 @@ CreateTwistShiftTransform(int shift_axis,
 
 } // namespace pcms
 
+#include "pcms/field/detail/periodic_axis.hpp"
+
 #endif // PCMS_FIELD_PERIODIC_AXIS_HPP

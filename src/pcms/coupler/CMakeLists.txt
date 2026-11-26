@@ -8,6 +8,7 @@ set(PCMS_COUPLER_HEADERS
         ../../../include/pcms/coupler/detail/field_layout_communicator.hpp
         ../../../include/pcms/coupler/detail/field_exchange_planner.hpp
         partition.hpp
+        description.hpp
         ../../../include/pcms/coupler/overlap_mask.hpp
         ../../../include/pcms/coupler/detail/global_communicator.hpp
 )
@@ -15,9 +16,15 @@ set(PCMS_COUPLER_HEADERS
 
 set(PCMS_COUPLER_SOURCES
         coupler.cpp
+        description.cpp
         field_layout_communicator.cpp
         field_exchange_planner.cpp
+        kind_uniform_grid.cpp
+        setup.cpp
 )
+if(PCMS_ENABLE_OMEGA_H)
+    list(APPEND PCMS_COUPLER_SOURCES kind_omega_h.cpp)
+endif()
 
 add_library(pcms_coupler ${PCMS_COUPLER_SOURCES})
 set_target_properties(pcms_coupler PROPERTIES

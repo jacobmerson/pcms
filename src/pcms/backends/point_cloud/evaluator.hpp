@@ -31,7 +31,7 @@ inline std::shared_ptr<const PointEvaluatorFactory> CreateMLSEvaluatorFactory(
           static_cast<LO>(options.degree), options.basis, options.lambda,
           options.tol, options.decay_factor, bound.Axes())};
     },
-    true);
+    true, static_cast<int>(options.degree));
 }
 
 } // namespace pcms::point_cloud

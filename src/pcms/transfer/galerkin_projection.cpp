@@ -1,7 +1,9 @@
 #include "pcms/transfer/galerkin_projection.hpp"
 #include "pcms/field/detail/field_ops.hpp"
+#include "pcms/field/embedding.hpp"
 #include "pcms/field/field_ops.hpp"
 #include "pcms/transfer/interpolator.hpp"
+#include <algorithm>
 
 namespace pcms::transfer
 {
@@ -18,13 +20,29 @@ const Geometry& SourceGeometry(const PointEvaluatorFactory& source)
   return *geometry;
 }
 
-Quadrature MakeQuadrature(const FunctionSpace& target_space,
+Quadrature MakeQuadrature(const PointEvaluatorFactory& source,
+                          const FunctionSpace& target_space,
                           const ProjectionOptions& options)
 {
   if (options.quadrature) {
     return *options.quadrature;
   }
-  return CreateGaussQuadrature(target_space.GetGeometry(), 2);
+  // the product of a source and a target function, and at least 2 for the
+  // volume factor of a curvilinear system
+  const int a = source.ReproducedPolynomialDegree();
+  const int b = target_space.ReproducedPolynomialDegree();
+  const int degree = a >= 0 && b >= 0 ? std::max(2, a + b) : 2;
+  const Quadrature& natural = target_space.GetQuadrature();
+  if (natural.degree >= degree) {
+    return natural;
+  }
+  const auto& geometry = target_space.GetGeometry();
+  if (const auto* embedded =
+        dynamic_cast<const EmbeddedGeometry*>(geometry.get())) {
+    return MapQuadrature(geometry, CreateGaussQuadrature(
+                                     embedded->GetParameterGeometry(), degree));
+  }
+  return CreateGaussQuadrature(geometry, degree);
 }
 
 } // namespace
@@ -33,10 +51,10 @@ GalerkinProjection::GalerkinProjection(
   std::shared_ptr<const PointEvaluatorFactory> source,
   std::shared_ptr<const FunctionSpace> target_space, ProjectionOptions options)
   : target_space_(std::move(target_space)),
-    right_hand_side_(
-      target_space_, source,
-      detail::FormOptions{.quadrature = MakeQuadrature(*target_space_, options),
-                          .to_trial = options.to_source}),
+    right_hand_side_(target_space_, source,
+                     detail::FormOptions{.quadrature = MakeQuadrature(
+                                           *source, *target_space_, options),
+                                         .to_trial = options.to_source}),
     mass_(target_space_),
     functional_(detail::ScratchFunction(*target_space_)),
     coefficients_(detail::ScratchFunction(*target_space_)),
