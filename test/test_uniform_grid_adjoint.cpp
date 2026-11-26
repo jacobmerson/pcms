@@ -3,6 +3,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <pcms/backends/uniform_grid/geometry.hpp>
+#include <pcms/geometry/product_geometry.hpp>
 #include <pcms/transfer/l2_inner_product.hpp>
 #include <pcms/transfer/projection.hpp>
 #include <pcms/utility/coordinate_systems/cartesian.hpp>
@@ -153,6 +154,24 @@ std::vector<Real> Apply(const pcms::FunctionSpace& space,
   return HostValues(out);
 }
 
+/// @return u = (x + 2 y) (1 + 0.5 cos z - 0.3 sin 2 z) on `space`, the
+///         product of `plane` and the Fourier modes {0, 1, 2}
+pcms::Function<Real> ProductFunction(const pcms::FunctionSpace& plane,
+                                     const pcms::FunctionSpace& space)
+{
+  std::vector<Real> c;
+  const auto xy = pcms::test::CopyCoordinatesToHost(
+    plane.GetLayout()->GetDOFHolderCoordinates().GetValues());
+  for (std::size_t i = 0; i < xy.extent(0); ++i) {
+    for (const Real f : {1.0, 0.5, 0.0, 0.0, -0.3}) {
+      c.push_back((xy(i, 0) + 2 * xy(i, 1)) * f);
+    }
+  }
+  auto u = space.CreateFunction<Real>("u", pcms::test::ComponentsBasis(space));
+  SetDofs(u, c);
+  return u;
+}
+
 } // namespace
 
 TEST_CASE("Uniform-grid Lagrange spaces: <E x, y> = <x, E^T y> and the "
@@ -238,6 +257,43 @@ TEST_CASE("Uniform-grid Lagrange spaces: the matrix of the gradient is that "
   }
 }
 
+TEST_CASE("Product of a uniform grid and a periodic axis: transpose and "
+          "gradient, with the loads of wrapped points on the identified DOFs",
+          "[uniform_grid][product][adjoint]")
+{
+  const auto plane = pcms::CreateLagrangeSpace(Grid2(), 1, 1);
+  const auto zs =
+    pcms::CreateFourierSpace(pcms::test::PeriodicGrid(5), {0, 1, 2});
+  const auto space = pcms::CreateProductSpace(plane, zs);
+  auto points = Points(31, {-1.0, 0.5, -10.0}, {3.0, 2.0, 20.0});
+  pcms::test::CheckAdjointAndMatrix(space, points);
+
+  const auto y = Pseudo(points.size(), 6);
+  const auto at =
+    Transpose(*space, BindPoints(*space->GetGeometry(), points), y);
+  for (auto& p : points) {
+    p[2] += 3 * TwoPi;
+  }
+  const auto wrapped =
+    Transpose(*space, BindPoints(*space->GetGeometry(), points), y);
+  for (std::size_t i = 0; i < at.size(); ++i) {
+    CHECK(wrapped[i] == Catch::Approx(at[i]).margin(1e-12));
+  }
+
+  const auto u = ProductFunction(*plane, *space);
+  const auto pts = Points(7, {-1.0, 0.5, -3.0}, {3.0, 2.0, 6.0});
+  const auto gradient = pcms::test::EvaluateAt(
+    *space, u, pts, pcms::DifferentialOperator::Gradient);
+  for (std::size_t p = 0; p < pts.size(); ++p) {
+    const Real x = pts[p][0], yy = pts[p][1], z = pts[p][2];
+    const Real f = 1 + 0.5 * std::cos(z) - 0.3 * std::sin(2 * z);
+    const Real df = -0.5 * std::sin(z) - 0.6 * std::cos(2 * z);
+    CHECK(gradient[p][0] == Catch::Approx(f).margin(1e-12));
+    CHECK(gradient[p][1] == Catch::Approx(2 * f).margin(1e-12));
+    CHECK(gradient[p][2] == Catch::Approx((x + 2 * yy) * df).margin(1e-12));
+  }
+}
+
 namespace
 {
 
@@ -309,6 +365,21 @@ TEST_CASE("Uniform-grid quadrature is exact for polynomials of its degree in "
   CHECK(pcms::CreateLagrangeSpace(Grid2(), 1, 1)
           ->GetQuadrature()
           .points->NumPoints() == 80);
+}
+
+TEST_CASE("Product of a uniform grid and a periodic axis: the tensor "
+          "quadrature",
+          "[uniform_grid][product][quadrature]")
+{
+  const auto plane = pcms::CreateLagrangeSpace(Grid2(), 1, 1);
+  const auto space = pcms::CreateProductSpace(
+    plane, pcms::CreateFourierSpace(pcms::test::PeriodicGrid(5), {0, 1, 2}));
+  const auto u = ProductFunction(*plane, *space);
+  const Real expected = (MonomialIntegral(1, -1.0, 2.0) * 2.0 +
+                         2 * 3.0 * MonomialIntegral(1, 0.5, 2.5)) *
+                        TwoPi;
+  CHECK(pcms::L2Integral(space).Apply(u) ==
+        Catch::Approx(expected).epsilon(1e-12));
 }
 
 TEST_CASE("Conservative projection into a uniform grid keeps the integral",
