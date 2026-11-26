@@ -265,6 +265,9 @@ void DescribeValueBasis(const ValueBasis& basis, const std::string& prefix,
   if (basis.units) {
     description[prefix + ".units"] = basis.units->ToString();
   }
+  if (basis.wrapped) {
+    description[prefix + ".wrapped"] = "true";
+  }
 }
 
 ValueBasis ValueBasisFromDescription(const Description& description,
@@ -304,6 +307,7 @@ ValueBasis ValueBasisFromDescription(const Description& description,
       it != description.end()) {
     basis.units = Units::Parse(it->second);
   }
+  basis.wrapped = description.find(prefix + ".wrapped") != description.end();
   return basis;
 }
 
