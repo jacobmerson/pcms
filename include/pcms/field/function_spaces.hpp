@@ -44,8 +44,8 @@ struct LagrangeOptions
 /// `geometry`: an Omega_h geometry (backend OmegaH: orders 0 and 1; MeshFields:
 /// orders 1 and 2) or a uniform-grid geometry (orders 0 and 1, backend
 /// ignored).
-/// On a uniform grid and with backend OmegaH, Coordinates values (and their
-/// Gradient) along the axes of their system with a plain periodic axis
+/// On a uniform grid and with backend OmegaH, wrapped Coordinates values (and
+/// their Gradient) along the axes of their system with a plain periodic axis
 /// interpolate through the image of each node nearest a neighbour in its
 /// cell, back to the cell's first node; for them, EvaluateTranspose throws and
 /// GetMatrix is the derivative of the evaluation.

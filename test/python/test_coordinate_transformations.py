@@ -168,6 +168,9 @@ class TestValueBasis:
         assert basis.system == pcms.csys.create_cylindrical_r_theta_z()
         assert basis.scaling == pcms.ComponentScaling.Physical
         assert basis.variance == pcms.values.Vector
+        assert not basis.wrapped
+        basis.wrapped = True
+        assert basis.wrapped
 
 
 class TestValueView:

@@ -142,6 +142,10 @@ void bind_value_view_module(py::module& m)
     .def_readwrite("scaling", &ValueBasis::scaling)
     .def_readwrite("variance", &ValueBasis::variance)
     .def_readwrite("kind", &ValueBasis::kind)
+    .def_readwrite("wrapped", &ValueBasis::wrapped,
+                   "Coordinates only: stored reduced to one period along the "
+                   "plain periodic axes of the system; they interpolate "
+                   "through the nearest image")
     .def("rank", &ValueBasis::Rank)
     .def(
       "__eq__",

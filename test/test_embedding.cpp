@@ -148,7 +148,7 @@ TEST_CASE("Coordinates on an identified axis interpolate through the nearest "
       u[0] = xi[0];
       u[1] = std::fmod(xi[1] + 0.5 * xi[0], 1.0);
     },
-    pcms::csys::CreateParameterSystem("u", 2, periodic));
+    pcms::csys::CreateParameterSystem("u", 2, periodic), true);
   // across the last cell in y, and inside cells where u2 wraps
   const std::vector<Real> points = {0.3, 0.95, 0.6, 0.5, 0.95, 0.99};
   const auto xi = pcms::test::CreateDeviceCoordinateView(
@@ -265,7 +265,7 @@ TEST_CASE("Coordinates across a sheared seam interpolate through the image "
       u[1] = xi[1];
       u[2] = P * xi[2] + 0.3 * xi[0] + 0.4 * P * N * xi[1];
     },
-    pcms::csys::CreateParameterSystem("u", 3, {{2, 0.0, P}}));
+    pcms::csys::CreateParameterSystem("u", 3, {{2, 0.0, P}}), true);
   auto points = RandomPoints(20, {0.0, 0.0, 0.0});
   const auto seam = RandomPoints(20, {0.0, 0.0, (N - 1.0) / N});
   points.insert(points.end(), seam.begin(), seam.end());
@@ -298,7 +298,7 @@ TEST_CASE("Longitudes across the seam of a periodic grid interpolate the "
       u[0] = longitude(N * xi[0], N * xi[1]);
       u[1] = 90 * xi[1];
     },
-    pcms::csys::CreateParameterSystem("lonlat", 2, {{0, 0.0, 360.0}}));
+    pcms::csys::CreateParameterSystem("lonlat", 2, {{0, 0.0, 360.0}}), true);
   const auto points = RandomPoints(20, {(N - 1.0) / N, 0.0});
   const auto mapped = MapPoints(position, grid, points, 2);
   for (std::size_t p = 0; p < points.size() / 2; ++p) {
@@ -331,7 +331,7 @@ TEST_CASE("Coordinates at a node wrapped along two axes interpolate through "
       u[0] = 2 * xi[0] + 2 * xi[1];
       u[1] = xi[0] - xi[1];
     },
-    pcms::csys::CreateParameterSystem("u", 2, periodic));
+    pcms::csys::CreateParameterSystem("u", 2, periodic), true);
   const auto points = RandomPoints(20, {(N - 1.0) / N, (N - 1.0) / N});
   const auto mapped = MapPoints(position, grid, points, 2);
   for (std::size_t p = 0; p < points.size() / 2; ++p) {
@@ -364,7 +364,7 @@ TEST_CASE("Coordinates that jump across the seam inside an open grid "
       u[0] = xi[0];
       u[1] = std::fmod(theta(xi[0], xi[1]), TwoPi);
     },
-    pcms::csys::CreateParameterSystem("u", 2, {{1, 0.0, TwoPi}}));
+    pcms::csys::CreateParameterSystem("u", 2, {{1, 0.0, TwoPi}}), true);
   const auto points = RandomPoints(40, {0.0, 0.0});
   const auto mapped = MapPoints(position, grid, points, 2);
   for (std::size_t p = 0; p < points.size() / 2; ++p) {
@@ -377,5 +377,57 @@ TEST_CASE("Coordinates that jump across the seam inside an open grid "
     for (int k = 0; k < 4; ++k) {
       CHECK_THAT(mapped.jacobian(p, k), WithinAbs(expected[k], 1e-9));
     }
+  }
+}
+
+TEST_CASE("Unwrapped Coordinates on a periodic axis interpolate as stored and "
+          "have a transpose",
+          "[embedding]")
+{
+  // u2 = 3 xi1 + 0.2 xi0 of period 1, unwrapped: nodes 3 / 4 apart along xi1
+  const auto grid = pcms::test::MakeUnitSquareGrid(4);
+  const auto position = pcms::test::MakePositionFunction(
+    pcms::CreateLagrangeSpace(grid, 1, 2),
+    [](const Real* xi, Real* u) {
+      u[0] = xi[0];
+      u[1] = 3 * xi[1] + 0.2 * xi[0];
+    },
+    pcms::csys::CreateParameterSystem("u", 2, {{1, 0.0, 1.0}}));
+  const auto points = RandomPoints(20, {0.0, 0.0});
+  const auto mapped = MapPoints(position, grid, points, 2);
+  for (std::size_t p = 0; p < points.size() / 2; ++p) {
+    CAPTURE(p);
+    const Real x = points[2 * p];
+    const Real y = points[2 * p + 1];
+    CHECK_THAT(mapped.x(p, 1), WithinAbs(3 * y + 0.2 * x, 1e-12));
+    const std::array<Real, 4> expected = {1.0, 0.0, 0.2, 3.0};
+    for (int k = 0; k < 4; ++k) {
+      CHECK_THAT(mapped.jacobian(p, k), WithinAbs(expected[k], 1e-12));
+    }
+  }
+  // the transpose of unit loads sums to the number of points (P1 is a
+  // partition of unity)
+  const auto& space = position->GetSpace();
+  const auto xi = pcms::test::CreateDeviceCoordinateView(
+    points, grid->GetCoordinateSystem(), 2);
+  const auto evaluator =
+    space.CreatePointEvaluator<Real>(grid->Bind(xi.coordinate_view));
+  REQUIRE(evaluator->SupportsTranspose());
+  const auto& basis = position->GetData().GetValueBasis();
+  auto functional = space.CreateFunction<Real>("functional", basis);
+  const auto n = static_cast<int>(points.size() / 2);
+  const Kokkos::View<Real**, DeviceMemorySpace> loads("loads", n, 2);
+  Kokkos::deep_copy(loads, 1.0);
+  evaluator->EvaluateTranspose(
+    pcms::ValueView<const Real, DeviceMemorySpace>(
+      evaluator->OutputBasis(basis), pcms::MakeConstRank2View(loads)),
+    functional);
+  const auto totals = functional.GetDOFHolderDataHost().GetValues();
+  for (int c = 0; c < 2; ++c) {
+    Real total = 0;
+    for (std::size_t h = 0; h < totals.extent(0); ++h) {
+      total += totals(h, c);
+    }
+    CHECK_THAT(total, WithinAbs(n, 1e-12));
   }
 }

@@ -350,8 +350,9 @@ TEST_CASE("OmegaHLagrangeField order-1: periodic coordinate values "
   auto mesh = MakeBox2D(lib.world());
   auto geometry = pcms::CreateGeometry(mesh, pcms::detail::DeferredCartesian());
   auto space = pcms::CreateLagrangeSpace(geometry, 1, 2);
-  const auto basis = pcms::ValueBasis::Coordinates(
+  auto basis = pcms::ValueBasis::Coordinates(
     pcms::csys::CreateParameterSystem("u", 2, {{1, 0.0, TwoPi}}));
+  basis.wrapped = true;
   auto field = space->CreateFunction<Real>("theta", basis);
   const auto xy = pcms::test::CopyCoordinatesToHost(
     space->GetLayout()->GetDOFHolderCoordinates().GetValues());

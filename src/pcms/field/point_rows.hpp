@@ -32,9 +32,9 @@ struct PointRows
   Kokkos::View<const Real*, DeviceMemorySpace> values;
   int num_out = 1;
   /// per entry, entries back to the one it is unwrapped against (0: its row's
-  /// first); empty: every entry against its row's first. Neighbours along a
-  /// chain must be less than half a period apart, else the difference reads
-  /// as a wrap.
+  /// first); empty: every entry against its row's first. For wrapped
+  /// Coordinates, neighbours along a chain must be less than half a period
+  /// apart, else the difference reads as a wrap.
   Kokkos::View<const std::uint8_t*, DeviceMemorySpace> parents;
 };
 
@@ -52,14 +52,15 @@ inline Kokkos::View<LO*, DeviceMemorySpace> StrideOffsets(LO num_rows,
 }
 
 /// @brief The lengths of the plain periodic axes of the coordinate
-///        axes of Coordinates values, per component (0: none).
+///        axes of wrapped Coordinates values, per component (0: none).
 using Periods = Kokkos::Array<Real, 3>;
 
-/// @return the Periods of values in `basis`: none unless they are coordinates
+/// @return the Periods of values in `basis`: none unless they are wrapped
+///         coordinates
 inline Periods CoordinatePeriods(const ValueBasis& basis)
 {
   Periods periods = {};
-  if (basis.kind == ValueKind::Coordinates) {
+  if (basis.kind == ValueKind::Coordinates && basis.wrapped) {
     for (const auto& id : basis.system->PeriodicAxes()) {
       if (id.transform == nullptr &&
           id.axis < static_cast<int>(periods.size())) {
@@ -94,9 +95,9 @@ inline void CheckLinear(const ValueBasis& basis)
 {
   const auto periods = CoordinatePeriods(basis);
   if (periods[0] > 0 || periods[1] > 0 || periods[2] > 0) {
-    throw pcms_error("PointEvaluator::EvaluateTranspose: Coordinates on a "
-                     "periodic axis evaluate through their nearest image, "
-                     "which is not linear");
+    throw pcms_error("PointEvaluator::EvaluateTranspose: wrapped Coordinates "
+                     "on a periodic axis evaluate through their nearest "
+                     "image, which is not linear");
   }
 }
 

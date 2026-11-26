@@ -107,8 +107,8 @@ public:
   /// @brief The evaluation as a sparse matrix E: component c of the values is
   ///        E times component c of the DOFs. For the Gradient operator, row
   ///        p * d + j holds partial j of point p (d the output columns). For
-  ///        Coordinates values on a periodic axis, the derivative of the
-  ///        evaluation.
+  ///        wrapped Coordinates values on a periodic axis, the derivative of
+  ///        the evaluation.
   /// @throws pcms_error if the matrix is not supported
   [[nodiscard]] PointMatrix<T> GetMatrix() const
   {
