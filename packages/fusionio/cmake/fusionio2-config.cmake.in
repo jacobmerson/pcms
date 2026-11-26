@@ -1,11 +1,12 @@
 @PACKAGE_INIT@
 
-# Components: Wrapped, Native, Nimrod and Gnet, as built (the options
+# Components: Wrapped, Native, Nimrod, Gnet and Bout, as built (the options
 # FUSIONIO_ENABLE_WRAPPED, ...). Requiring one that was not built fails.
 set(fusionio2_Wrapped_FOUND @FUSIONIO_ENABLE_WRAPPED@)
 set(fusionio2_Native_FOUND @FUSIONIO_ENABLE_NATIVE@)
 set(fusionio2_Nimrod_FOUND @FUSIONIO_ENABLE_NIMROD@)
 set(fusionio2_Gnet_FOUND @FUSIONIO_ENABLE_GNET@)
+set(fusionio2_Bout_FOUND @FUSIONIO_ENABLE_BOUT@)
 
 include(CMakeFindDependencyMacro)
 find_dependency(pcms CONFIG)

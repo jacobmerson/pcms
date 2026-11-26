@@ -17,6 +17,7 @@ the names in the last column and fails for one that was not built.
 | `FUSIONIO_ENABLE_NATIVE` | on with `WRAPPED` and Omega_h in PCMS | `WRAPPED` (1.x reads the M3D-C1 files), PCMS with `PCMS_ENABLE_OMEGA_H` | `Native` |
 | `FUSIONIO_ENABLE_NIMROD` | off | NIMROD's `nimeval` library (`NIMROD_DIR`) | `Nimrod` |
 | `FUSIONIO_ENABLE_GNET` | off | PCMS with `PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION`, HDF5 | `Gnet` |
+| `FUSIONIO_ENABLE_BOUT` | off | netCDF (netcdf-c, `NETCDF_DIR`) | `Bout` |
 
 Without `WRAPPED`, `Open` throws and `fio_trace` is not built; nothing else
 needs Fusion-IO 1.x.
@@ -118,3 +119,45 @@ branch): the candidates are a function of (seed, candidate index), not of a
 Kokkos random pool, so the markers differ from the original's for the same
 seed but do not depend on the number of threads; the markers are in the order
 of the candidates; periodic theta and zeta by default.
+
+## BOUT++
+
+`include/fusionio/bout.hpp` (always built; no netCDF):
+
+- `BoutGrid` is one block of a BOUT++ grid as BOUT++ holds it: sizes with
+  guard cells, `Rxy`, `Zxy`, `zShift`, `dx`, `dy` and `g^ij` as `[nx][ny]`
+  host views, `ShiftAngle` `[nx]`, `dz`, `zperiod` and the separatrix
+  indices. Only grids of closed field lines and one serial block (offsets 0)
+  are supported so far.
+- `Build(grid)` returns the geometry and the space of its fields: a uniform
+  grid in the global index coordinates (x, y, z) of the parameter system
+  `"bout_index"`, y identified with the twist-shift of z by `ShiftAngle / dz`
+  and z periodic; the position (R, phi, Z) = (`Rxy`, z dz + `zShift`, `Zxy`)
+  in `CylindricalRThetaZ(2 pi / zperiod)` and the metric `g^ij` in index
+  components, multilinear; the space is multilinear on the embedded geometry.
+  The y = ny and z = nz planes are DOF holders: the twist-shifted y = 0 plane
+  and the z = 0 plane.
+  `Build(grid, BoutMetric::Induced)` uses the metric the position induces
+  in place of `g^ij`; both give the volume factor J = 1 / sqrt(det g^ij).
+- `InteriorOffsets(space, grid)` maps the DOF holders to BOUT++'s `[nx][ny][nz]`
+  field array (the y = ny plane reads the first upper y guard plane, which
+  BOUT++'s communication fills with the twist-shifted values); `CopyIn` and
+  `CopyOut` copy a field through it.
+
+With `FUSIONIO_ENABLE_BOUT`, `ReadBoutGrid(path, nz, zperiod)` reads a grid
+file (nz and zperiod are BOUT.inp's `MZ` and `zperiod`; `MXG` from the file,
+default 2) and computes `g^ij` of BOUT++'s field-aligned tokamak coordinates
+from `Rxy`, `Bpxy`, `Btxy`, `Bxy`, `hthe` and `sinty`. `OpenBout` returns it
+as a `Source` with the equilibrium profiles of the file, constant in z:
+
+| Quantity | Variable | Units |
+| --- | --- | --- |
+| `TotalPressure` | `pressure` | Pa |
+| `Density` (main ions) | `Ni0` | the file's (1e20 m^-3 in BOUT++'s tokamak grids), not set |
+| `Temperature` (main ions, electrons) | `Ti0`, `Te0` | eV |
+
+`bout-grid <grid.nc> <nz> <zperiod>` (built with the component) prints the
+volume of a grid by quadrature (with either metric) and as BOUT++'s sum of J dx dy dz, the integral
+of the pressure and the position and pressure at a point. The tests read the
+CBM18 grid of BOUT++'s elm-pb example from the PCMS test data
+(`FUSIONIO_TEST_BOUT_GRID`, `bout/cbm18/cbm18_grid.nc`; LGPL-3.0).
