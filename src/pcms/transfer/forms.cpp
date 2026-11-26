@@ -173,7 +173,8 @@ const pcms::detail::TransformChain& BilinearForm::G(
                        std::string(basis.system->Kind()) +
                        "' is not known at the points");
     }
-    g->lower = pcms::detail::LowerIndex(basis.system, metric, basis.scaling);
+    g->lower = pcms::detail::LowerIndex(
+      basis.system, metric, basis.scaling.value_or(ComponentScaling::Natural));
     transforms.push_back(&*g->lower);
   }
   g->chain.Reset(basis, std::move(transforms));

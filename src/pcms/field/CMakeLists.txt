@@ -2,6 +2,8 @@ set(PCMS_FIELD_HEADERS
         ../../../include/pcms/field/field.hpp
         ../../../include/pcms/field/field_metadata.hpp
         ../../../include/pcms/field/detail/field_metadata.hpp
+        ../../../include/pcms/field/units.hpp
+        ../../../include/pcms/field/detail/units.hpp
         ../../../include/pcms/field/coordinate_map.hpp
         ../../../include/pcms/field/embedding.hpp
         ../../../include/pcms/field/value_transform.hpp

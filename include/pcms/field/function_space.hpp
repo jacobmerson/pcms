@@ -101,29 +101,21 @@ public:
 
   ~FunctionSpace() noexcept override = default;
 
-  /// @throws pcms_error if the space is not owned by a std::shared_ptr
+  /// @brief Creates a Function.
+  /// @param metadata its name, units and duality
+  /// @param basis its values' basis
+  /// @throws pcms_error if the space is not owned by a std::shared_ptr, or
+  ///         the basis does not fit the space's number of components
   template <typename T>
-  [[nodiscard]] Function<T> CreateFunction(
-    std::string name, VarianceSignature variance,
-    std::optional<ComponentScaling> scaling = std::nullopt) const;
-
-  /// @throws pcms_error if the space is not owned by a std::shared_ptr
-  template <typename T>
-  [[nodiscard]] Function<T> CreateFunction(
-    std::string name, VarianceSignature variance,
-    std::shared_ptr<const CoordinateSystem> system,
-    std::optional<ComponentScaling> scaling = std::nullopt) const;
+  [[nodiscard]] Function<T> CreateFunction(FieldMetadata metadata,
+                                           ValueBasis basis) const;
 
   /// @brief Creates a Function of scalar values, or of independent
   ///        components (ValueKind::Array) for a space of several components.
-  /// @param metadata its name and duality
-  /// @throws pcms_error if the space is not owned by a std::shared_ptr
   template <typename T>
   [[nodiscard]] Function<T> CreateFunction(FieldMetadata metadata) const;
-  /// @brief Creates a Function whose values are in `basis`; an unset system
-  ///        is the space's.
-  /// @throws pcms_error if the space is not owned by a std::shared_ptr, or
-  ///         the basis does not fit the space's number of components
+
+  /// @brief Creates a Function named `name`; see the overloads with metadata.
   template <typename T>
   [[nodiscard]] Function<T> CreateFunction(std::string name,
                                            ValueBasis basis) const;
@@ -138,7 +130,7 @@ public:
   /// @throws pcms_error if the space is not owned by a std::shared_ptr
   template <typename T>
   [[nodiscard]] Function<T> CreateFunction(
-    std::string name, std::unique_ptr<FieldData<T>> data) const;
+    FieldMetadata metadata, std::unique_ptr<FieldData<T>> data) const;
 
 protected:
   /// @brief The space's natural quadrature (GetQuadrature).
@@ -196,30 +188,11 @@ private:
 };
 
 template <typename T>
-Function<T> FunctionSpace::CreateFunction(
-  std::string name, VarianceSignature variance,
-  std::optional<ComponentScaling> scaling) const
+Function<T> FunctionSpace::CreateFunction(std::string name,
+                                          ValueBasis basis) const
 {
-  return CreateFunction<T>(std::move(name), variance, nullptr, scaling);
-}
-
-template <typename T>
-Function<T> FunctionSpace::CreateFunction(
-  std::string name, VarianceSignature variance,
-  std::shared_ptr<const CoordinateSystem> system,
-  std::optional<ComponentScaling> scaling) const
-{
-  static_assert(detail::is_supported_field_type_v<T>,
-                "T is not a supported field type");
-  auto owner = Owner();
-  ValueBasis basis = detail::MakeValueBasis(GetCoordinateSystem(), variance,
-                                            std::move(system), scaling);
-  detail::ValidateValueSemantics(basis, GetLayout()->GetNumComponents());
-  Field<T> field = std::get<Field<T>>(
-    CreateFieldImpl(detail::TypeEnumFromType<T>(), std::move(basis)));
-  return WrapFunction<T>(FieldMetadata{.name = std::move(name)},
-                         std::move(field.layout_), std::move(field.data_),
-                         std::move(owner));
+  return CreateFunction<T>(FieldMetadata{.name = std::move(name)},
+                           std::move(basis));
 }
 
 template <typename T>
@@ -231,10 +204,19 @@ Function<T> FunctionSpace::CreateFunction(std::string name) const
 template <typename T>
 Function<T> FunctionSpace::CreateFunction(FieldMetadata metadata) const
 {
+  return CreateFunction<T>(
+    std::move(metadata),
+    detail::DefaultValueBasis(GetLayout()->GetNumComponents()));
+}
+
+template <typename T>
+Function<T> FunctionSpace::CreateFunction(FieldMetadata metadata,
+                                          ValueBasis basis) const
+{
   static_assert(detail::is_supported_field_type_v<T>,
                 "T is not a supported field type");
   auto owner = Owner();
-  ValueBasis basis = detail::DefaultValueBasis(GetLayout()->GetNumComponents());
+  basis = detail::ResolveValueBasis(GetCoordinateSystem(), std::move(basis));
   detail::ValidateValueSemantics(basis, GetLayout()->GetNumComponents());
   Field<T> field = std::get<Field<T>>(
     CreateFieldImpl(detail::TypeEnumFromType<T>(), std::move(basis)));
@@ -243,26 +225,8 @@ Function<T> FunctionSpace::CreateFunction(FieldMetadata metadata) const
 }
 
 template <typename T>
-Function<T> FunctionSpace::CreateFunction(std::string name,
-                                          ValueBasis basis) const
-{
-  static_assert(detail::is_supported_field_type_v<T>,
-                "T is not a supported field type");
-  auto owner = Owner();
-  if (basis.Rank() > 0 && basis.system == nullptr) {
-    basis.system = GetCoordinateSystem();
-  }
-  detail::ValidateValueSemantics(basis, GetLayout()->GetNumComponents());
-  Field<T> field = std::get<Field<T>>(
-    CreateFieldImpl(detail::TypeEnumFromType<T>(), std::move(basis)));
-  return WrapFunction<T>(FieldMetadata{.name = std::move(name)},
-                         std::move(field.layout_), std::move(field.data_),
-                         std::move(owner));
-}
-
-template <typename T>
 Function<T> FunctionSpace::CreateFunction(
-  std::string name, std::unique_ptr<FieldData<T>> data) const
+  FieldMetadata metadata, std::unique_ptr<FieldData<T>> data) const
 {
   static_assert(detail::is_supported_field_type_v<T>,
                 "T is not a supported field type");
@@ -274,9 +238,8 @@ Function<T> FunctionSpace::CreateFunction(
                                  GetLayout()->GetNumComponents());
   Field<T> field =
     std::get<Field<T>>(CreateFieldImpl(FieldDataVariant{std::move(data)}));
-  return WrapFunction<T>(FieldMetadata{.name = std::move(name)},
-                         std::move(field.layout_), std::move(field.data_),
-                         std::move(owner));
+  return WrapFunction<T>(std::move(metadata), std::move(field.layout_),
+                         std::move(field.data_), std::move(owner));
 }
 
 } // namespace pcms

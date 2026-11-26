@@ -75,8 +75,7 @@ Function<Real>& GalerkinProjection::InBasis(Function<Real>& scratch,
                                             const ValueBasis& basis) const
 {
   if (scratch.GetData().GetValueBasis() != basis) {
-    scratch = target_space_->CreateFunction<Real>("", basis.variance,
-                                                  basis.system, basis.scaling);
+    scratch = target_space_->CreateFunction<Real>("", basis);
   }
   return scratch;
 }
@@ -93,8 +92,10 @@ void GalerkinProjection::ApplyImpl(const Field<Real>& source,
   if (&target.GetLayout() != target_space_->GetLayout().get()) {
     throw pcms_error("GalerkinProjection::Apply: target field layout mismatch");
   }
-  const ValueBasis basis =
-    right_hand_side_.TrialBasis(source.GetData().GetValueBasis());
+  const ValueBasis& basis = target.GetData().GetValueBasis();
+  pcms::detail::CheckWrittenValueBasis(
+    "GalerkinProjection::Apply",
+    right_hand_side_.TrialBasis(source.GetData().GetValueBasis()), basis);
   auto& functional = InBasis(functional_, basis);
   right_hand_side_.Apply(source, functional);
   if (control_variate_) {

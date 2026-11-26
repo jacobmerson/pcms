@@ -3,6 +3,7 @@
 
 #include "pcms/field/field.hpp"
 #include "pcms/utility/assert.hpp"
+#include <Kokkos_Core.hpp>
 #include <cmath>
 #include <cstdint>
 #include <span>
@@ -27,18 +28,21 @@ void CheckSameLayout(const Field<T>& a, const Field<T>& b, const char* what)
   }
 }
 
-/// @throws pcms_error unless `a` and `b` have the same layout, value basis and
-///         kind of field data, and a linear value kind (not coordinates)
+/// @throws pcms_error unless `a` and `b` have the same layout, value basis
+///         (units included) and kind of field data, and a linear value kind
+///         (not coordinates)
 template <typename T>
 void CheckOperands(const Field<T>& a, const Field<T>& b, const char* what)
 {
   CheckSameLayout(a, b, what);
-  if (!SameValueBasis(a.GetData().GetValueBasis(),
-                      b.GetData().GetValueBasis())) {
-    throw pcms_error(std::string(what) + ": the fields' value bases differ");
+  const auto& basis_a = a.GetData().GetValueBasis();
+  const auto& basis_b = b.GetData().GetValueBasis();
+  if (!SameValueBasis(basis_a, basis_b)) {
+    throw pcms_error(std::string(what) + ": the fields' value bases differ" +
+                     UnitsMismatch(basis_a, basis_b));
   }
-  if (a.GetData().GetValueBasis().kind == ValueKind::Coordinates ||
-      b.GetData().GetValueBasis().kind == ValueKind::Coordinates) {
+  if (basis_a.kind == ValueKind::Coordinates ||
+      basis_b.kind == ValueKind::Coordinates) {
     throw pcms_error(std::string(what) +
                      ": coordinates are not a linear value kind");
   }
@@ -129,17 +133,17 @@ template <typename T>
   return DotProd(functional, static_cast<const Field<T>&>(u));
 }
 
-/// @brief op(x, y) elementwise over values of the same shape
+/// @brief op(x, y) elementwise over values of the same shape, into a new array
 template <typename T, typename Op>
-Kokkos::View<T**, DeviceMemorySpace> MapOwned(
+Kokkos::View<T**, DeviceMemorySpace> Elementwise(
   Rank2View<const T, DeviceMemorySpace> x,
   Rank2View<const T, DeviceMemorySpace> y, Op op)
 {
   Kokkos::View<T**, DeviceMemorySpace> out(
-    Kokkos::view_alloc(Kokkos::WithoutInitializing, "pcms::MapOwned"),
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "pcms::Elementwise"),
     x.extent(0), x.extent(1));
   Kokkos::parallel_for(
-    "pcms::MapOwned",
+    "pcms::Elementwise",
     Kokkos::MDRangePolicy<DeviceMemorySpace::execution_space, Kokkos::Rank<2>>(
       {0, 0},
       {static_cast<int64_t>(x.extent(0)), static_cast<int64_t>(x.extent(1))}),
