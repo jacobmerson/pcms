@@ -15,6 +15,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace pcms
 {
@@ -43,7 +44,7 @@ struct LagrangeOptions
 /// A Lagrange space of order `order` with `num_components` components on
 /// `geometry`: an Omega_h geometry (backend OmegaH: orders 0 and 1; MeshFields:
 /// orders 1 and 2) or a uniform-grid geometry (orders 0 and 1, backend
-/// ignored).
+/// ignored; an axis identified over the grid's extent has no last node).
 /// On a uniform grid and with backend OmegaH, wrapped Coordinates values (and
 /// their Gradient) along the axes of their system with a plain periodic axis
 /// interpolate through the image of each node nearest a neighbour in its
@@ -59,11 +60,34 @@ struct LagrangeOptions
   LagrangeOptions options = {});
 
 /// @brief A cubic (1D) or bicubic (2D) spline space on a uniform-grid
-///        geometry; each component is splined on its own.
+///        geometry; each component is splined on its own, periodic along the
+///        axes the grid is identified over. Evaluation only: no
+///        EvaluateTranspose or GetMatrix.
 /// @throws pcms_error if `geometry` is null or not a 1D or 2D uniform-grid
-///         geometry
+///         geometry, has a periodic axis with a transform (twist-shift), or
+///         has fewer than 3 cells on an identified axis
 [[nodiscard]] std::shared_ptr<const FunctionSpace> CreateSplineSpace(
   std::shared_ptr<const Geometry> geometry, int num_components = 1);
+
+/// @name 1D spaces on a uniform grid identified over its extent
+/// Real, with Value and Gradient evaluation, EvaluateTranspose and
+/// GetMatrix. Hermite holder 2 i is the value and 2 i + 1 the derivative of
+/// node i; Fourier holders have no positions.
+/// @throws pcms_error if `geometry` is not such a grid
+/// @{
+
+/// Cubic Hermite: the value and derivative of each node.
+[[nodiscard]] std::shared_ptr<const FunctionSpace> CreatePeriodicHermiteSpace(
+  std::shared_ptr<const Geometry> geometry, int num_components = 1);
+
+/// Real Fourier series: for each m of `modes` the DOFs cos(m stride theta)
+/// and, for m > 0, sin(m stride theta), in the order of the list, theta =
+/// 2 pi (x - lower) / length; `stride` is nfp for fields periodic in a field
+/// period.
+[[nodiscard]] std::shared_ptr<const FunctionSpace> CreateFourierSpace(
+  std::shared_ptr<const Geometry> geometry, std::vector<int> modes,
+  int stride = 1, int num_components = 1);
+/// @}
 
 #ifdef PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION
 /// An MLS reconstruction space on a point-cloud geometry (its sites are the

@@ -4,6 +4,7 @@
 #include "mdspan/mdspan.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/assert.hpp"
+#include "pcms/utility/detail/periodic.hpp"
 #include "pcms/utility/memory_spaces.hpp"
 #include "pcms/utility/types.hpp"
 #include <Kokkos_Core.hpp>
@@ -128,11 +129,9 @@ KOKKOS_INLINE_FUNCTION T wrap_periodic(T xget, Rank1View<T, MemorySpace> x,
 {
   if (!periodic || (xget >= x[0] && xget <= x[nx - 1]))
     return xget;
-  const T period = x[nx - 1] - x[0];
-  T offset = Kokkos::fmod(xget - x[0], period);
-  if (offset < 0)
-    offset += period;
-  return x[0] + offset;
+  Real wraps = 0;
+  return static_cast<T>(
+    pcms::detail::WrapToPeriod(xget, x[0], x[nx - 1] - x[0], wraps));
 }
 
 /** \brief Detect if the boundary conditions are homogeneous
@@ -743,6 +742,24 @@ KOKKOS_INLINE_FUNCTION LO lookup_in_grid(T zxget, Rank1View<T, MemorySpace> x,
   return i;
 }
 
+/// @brief The cell of `xget` and, in `zxget`, the coordinate of its offset in
+///        the cell: with `extrapolate`, a point outside the grid gets the end
+///        cell and keeps its coordinate; otherwise as clamp_to_grid_range.
+template <typename T, typename MemorySpace>
+KOKKOS_INLINE_FUNCTION LO locate_in_grid(T xget, T& zxget,
+                                         Rank1View<T, MemorySpace> x, LO nx,
+                                         LO& ier, T lookup_tol,
+                                         bool extrapolate)
+{
+  zxget = xget;
+  if (extrapolate) {
+    return lookup_in_grid<T, MemorySpace>(Kokkos::clamp(xget, x[0], x[nx - 1]),
+                                          x, nx);
+  }
+  clamp_to_grid_range(xget, zxget, x, nx, ier, lookup_tol);
+  return ier != 0 ? 0 : lookup_in_grid<T, MemorySpace>(zxget, x, nx);
+}
+
 /** \brief Lookup the grid point and compute the displacement
  *
  * \param xget input point where the spline is evaluated
@@ -757,16 +774,14 @@ template <typename T, typename MemorySpace>
 KOKKOS_INLINE_FUNCTION void cubic_lookup_explicit(T xget,
                                                   Rank1View<T, MemorySpace> x,
                                                   LO nx, LO& i, T& dx, LO& ier,
-                                                  T lookup_tol)
+                                                  T lookup_tol,
+                                                  bool extrapolate = false)
 {
   T zxget = xget;
 
-  // Range check
-  clamp_to_grid_range(xget, zxget, x, nx, ier, lookup_tol);
+  i = locate_in_grid(xget, zxget, x, nx, ier, lookup_tol, extrapolate);
   if (ier != 0)
     return;
-
-  i = lookup_in_grid<T, MemorySpace>(zxget, x, nx);
 
   dx = zxget - x[i];
 }
@@ -790,11 +805,11 @@ template <typename T, typename MemorySpace, typename Out>
 KOKKOS_INLINE_FUNCTION void cubic_eval_explicit(
   T xget, Kokkos::View<LO*, MemorySpace> iselect, const Out& fval,
   Rank1View<T, MemorySpace> x, LO nx, Rank2View<T, MemorySpace> fspl, LO& ier,
-  T lookup_tol)
+  T lookup_tol, bool extrapolate = false)
 {
   LO ia = 0;
   T dxa = 0.0;
-  cubic_lookup_explicit(xget, x, nx, ia, dxa, ier, lookup_tol);
+  cubic_lookup_explicit(xget, x, nx, ia, dxa, ier, lookup_tol, extrapolate);
   if (ier != 0) {
     printf("error in evaluation, ier = %d\n", ier);
     return;
@@ -911,15 +926,14 @@ template <typename T, typename MemorySpace>
 KOKKOS_INLINE_FUNCTION void cubic_lookup_compact(T xget,
                                                  Rank1View<T, MemorySpace> x,
                                                  LO nx, LO& i, T& xparam, T& hx,
-                                                 T& hxi, LO& ier, T lookup_tol)
+                                                 T& hxi, LO& ier, T lookup_tol,
+                                                 bool extrapolate = false)
 {
   T zxget = xget;
 
-  clamp_to_grid_range(xget, zxget, x, nx, ier, lookup_tol);
+  i = locate_in_grid(xget, zxget, x, nx, ier, lookup_tol, extrapolate);
   if (ier != 0)
     return;
-
-  i = lookup_in_grid<T, MemorySpace>(zxget, x, nx);
 
   hx = x[i + 1] - x[i];
   hxi = 1.0 / hx;
@@ -941,7 +955,7 @@ template <typename T, typename MemorySpace, typename Out>
 KOKKOS_INLINE_FUNCTION void cubic_eval_compact(
   T xget, Kokkos::View<LO*, MemorySpace> ict, const Out& fval,
   Rank1View<T, MemorySpace> x, LO nx, Rank2View<T, MemorySpace> fspl, LO& ier,
-  T lookup_tol)
+  T lookup_tol, bool extrapolate = false)
 {
 
   // Initialize output zone info
@@ -951,7 +965,8 @@ KOKKOS_INLINE_FUNCTION void cubic_eval_compact(
   T hxi = 0.0;
 
   // Find the interval containing xget
-  cubic_lookup_compact(xget, x, nx, i, xparam, hx, hxi, ier, lookup_tol);
+  cubic_lookup_compact(xget, x, nx, i, xparam, hx, hxi, ier, lookup_tol,
+                       extrapolate);
   if (ier != 0) {
     printf("error in evaluation, ier = %d\n", ier);
     return;
@@ -980,19 +995,16 @@ template <typename T, typename MemorySpace>
 KOKKOS_INLINE_FUNCTION void bicubic_lookup_explicit(
   T xget, T yget, Rank1View<T, MemorySpace> x, LO nx,
   Rank1View<T, MemorySpace> y, LO ny, LO& i, LO& j, T& dx, T& dy, LO& ier,
-  T lookup_tol)
+  T lookup_tol, bool extrapolate = false)
 {
   T zxget = xget;
   T zyget = yget;
 
-  clamp_to_grid_range(xget, zxget, x, nx, ier, lookup_tol);
-  clamp_to_grid_range(yget, zyget, y, ny, ier, lookup_tol);
+  i = locate_in_grid(xget, zxget, x, nx, ier, lookup_tol, extrapolate);
+  j = locate_in_grid(yget, zyget, y, ny, ier, lookup_tol, extrapolate);
 
   if (ier != 0)
     return;
-
-  i = lookup_in_grid<T, MemorySpace>(zxget, x, nx);
-  j = lookup_in_grid<T, MemorySpace>(zyget, y, ny);
 
   dx = zxget - x[i];
   dy = zyget - y[j];
@@ -1215,7 +1227,8 @@ template <typename T, typename MemorySpace, typename Out>
 KOKKOS_INLINE_FUNCTION void bicubic_eval_explicit(
   T xget, T yget, Kokkos::View<LO*, MemorySpace> iselect, const Out& fval,
   Rank1View<T, MemorySpace> x, LO nx, Rank1View<T, MemorySpace> y, LO ny,
-  pcms::detail::Rank4View<T, MemorySpace> fspl, LO& ier, T lookup_tol)
+  pcms::detail::Rank4View<T, MemorySpace> fspl, LO& ier, T lookup_tol,
+  bool extrapolate = false)
 {
   LO i = 0;
   LO j = 0;
@@ -1224,7 +1237,7 @@ KOKKOS_INLINE_FUNCTION void bicubic_eval_explicit(
 
   // Range finding
   bicubic_lookup_explicit(xget, yget, x, nx, y, ny, i, j, dx, dy, ier,
-                          lookup_tol);
+                          lookup_tol, extrapolate);
   if (ier != 0)
     return;
 
@@ -1529,18 +1542,15 @@ template <typename T, typename MemorySpace>
 KOKKOS_INLINE_FUNCTION void bicubic_lookup_compact(
   T xget, T yget, Rank1View<T, MemorySpace> x, LO nx,
   Rank1View<T, MemorySpace> y, LO ny, LO& i, LO& j, T& xparam, T& yparam, T& hx,
-  T& hxi, T& hy, T& hyi, LO& ier, T lookup_tol)
+  T& hxi, T& hy, T& hyi, LO& ier, T lookup_tol, bool extrapolate = false)
 {
   T zxget = xget;
   T zyget = yget;
 
-  clamp_to_grid_range(xget, zxget, x, nx, ier, lookup_tol);
-  clamp_to_grid_range(yget, zyget, y, ny, ier, lookup_tol);
+  i = locate_in_grid(xget, zxget, x, nx, ier, lookup_tol, extrapolate);
+  j = locate_in_grid(yget, zyget, y, ny, ier, lookup_tol, extrapolate);
   if (ier != 0)
     return;
-
-  i = lookup_in_grid<T, MemorySpace>(zxget, x, nx);
-  j = lookup_in_grid<T, MemorySpace>(zyget, y, ny);
 
   hx = x[i + 1] - x[i];
   hy = y[j + 1] - y[j];
@@ -1874,7 +1884,8 @@ template <typename T, typename MemorySpace, typename Out>
 KOKKOS_INLINE_FUNCTION void bicubic_eval_compact(
   T xget, T yget, Kokkos::View<LO*, MemorySpace> ict, const Out& fval,
   Rank1View<T, MemorySpace> x, LO nx, Rank1View<T, MemorySpace> y, LO ny,
-  pcms::detail::Rank3View<T, MemorySpace> f, LO& ier, T lookup_tol)
+  pcms::detail::Rank3View<T, MemorySpace> f, LO& ier, T lookup_tol,
+  bool extrapolate = false)
 {
   // Local variables
   LO i = 0, j = 0;
@@ -1884,7 +1895,7 @@ KOKKOS_INLINE_FUNCTION void bicubic_eval_compact(
 
   // Call herm2xy to locate cell and compute params
   bicubic_lookup_compact(xget, yget, x, nx, y, ny, i, j, xparam, yparam, hx,
-                         hxi, hy, hyi, ier, lookup_tol);
+                         hxi, hy, hyi, ier, lookup_tol, extrapolate);
 
   if (ier != 0)
     return;
@@ -2161,7 +2172,8 @@ public:
                         Rank2View<T, MemorySpace> fval) = 0;
   virtual void evaluate(Kokkos::View<LO*, MemorySpace> selector,
                         Rank1View<T, MemorySpace> xvec,
-                        Rank2View<T, MemorySpace> fval, T lookup_tol) = 0;
+                        Rank2View<T, MemorySpace> fval, T lookup_tol,
+                        bool extrapolate) = 0;
 };
 
 /** \brief ExplicitCubicSplineInterpolator class
@@ -2235,6 +2247,7 @@ public:
    * \param xvec input points where the spline is evaluated
    * \param fval output values of the spline at given points
    * \param lookup_tol tolerance for the lookup
+   * \param extrapolate points outside the grid extend the end cell's cubic
    *
    * \details The size of fval should match the size of xvec and the size of
    * selector. The selector array can be used to specify which derivatives to
@@ -2243,7 +2256,7 @@ public:
    */
   void evaluate(Kokkos::View<LO*, MemorySpace> selector,
                 Rank1View<T, MemorySpace> xvec, Rank2View<T, MemorySpace> fval,
-                T lookup_tol = 4.0e-7) override;
+                T lookup_tol = 4.0e-7, bool extrapolate = false) override;
 
 private:
   Rank1View<T, MemorySpace> x_;
@@ -2312,13 +2325,14 @@ public:
    * \param xvec input points where the spline is evaluated
    * \param fval output values of the spline at given points
    * \param lookup_tol tolerance for the lookup
+   * \param extrapolate points outside the grid extend the end cell's cubic
    *
    * \details The selector follows the same rules as in
    * ExplicitCubicSplineInterpolator.
    */
   void evaluate(Kokkos::View<LO*, MemorySpace> selector,
                 Rank1View<T, MemorySpace> xvec, Rank2View<T, MemorySpace> fval,
-                T lookup_tol = 4.0e-7) override;
+                T lookup_tol = 4.0e-7, bool extrapolate = false) override;
 
 private:
   Rank1View<T, MemorySpace> x_;
@@ -2337,7 +2351,8 @@ public:
   virtual void evaluate(Kokkos::View<LO*, MemorySpace> selector,
                         Rank1View<T, MemorySpace> xvec,
                         Rank1View<T, MemorySpace> yvec,
-                        Rank2View<T, MemorySpace> fval, T lookup_tol) = 0;
+                        Rank2View<T, MemorySpace> fval, T lookup_tol,
+                        bool extrapolate) = 0;
 };
 
 /** \brief BiCubicSplineInterpolator class
@@ -2412,6 +2427,7 @@ public:
    * \param yvec input points in y direction where the spline is evaluated
    * \param fval output values of the spline at given points
    * \param lookup_tol tolerance for the lookup
+   * \param extrapolate points outside the grid extend the end cell's cubic
    *
    * \details The selector follows the the following rules:
    *   iselect(1)=1 -- evaluate f
@@ -2423,7 +2439,8 @@ public:
    */
   void evaluate(Kokkos::View<LO*, MemorySpace> iselect,
                 Rank1View<T, MemorySpace> xvec, Rank1View<T, MemorySpace> yvec,
-                Rank2View<T, MemorySpace> fval, T lookup_tol = 4.0e-7) override;
+                Rank2View<T, MemorySpace> fval, T lookup_tol = 4.0e-7,
+                bool extrapolate = false) override;
 
 private:
   Rank1View<T, MemorySpace> x_;
@@ -2514,13 +2531,15 @@ public:
    * \param yvec input points in y direction where the spline is evaluated
    * \param fval output values of the spline at given points
    * \param lookup_tol tolerance for locating the interval in the grid
+   * \param extrapolate points outside the grid extend the end cell's cubic
    *
    * \details The selector follows the same rules as in
    * ExplicitBiCubicSplineInterpolator.
    */
   void evaluate(Kokkos::View<LO*, MemorySpace> iselect,
                 Rank1View<T, MemorySpace> xvec, Rank1View<T, MemorySpace> yvec,
-                Rank2View<T, MemorySpace> fval, T lookup_tol = 4.0e-7) override;
+                Rank2View<T, MemorySpace> fval, T lookup_tol = 4.0e-7,
+                bool extrapolate = false) override;
 
 private:
   Rank1View<T, MemorySpace> x_;
@@ -2748,7 +2767,7 @@ CompactCubicSplineInterpolator<T, MemorySpace>::CompactCubicSplineInterpolator(
 template <typename T, typename MemorySpace>
 void ExplicitCubicSplineInterpolator<T, MemorySpace>::evaluate(
   const Kokkos::View<LO*, MemorySpace> selector, Rank1View<T, MemorySpace> xvec,
-  Rank2View<T, MemorySpace> fval, T lookup_tol)
+  Rank2View<T, MemorySpace> fval, T lookup_tol, bool extrapolate)
 {
   auto fspl = get_coefficients_view();
   Kokkos::parallel_for(
@@ -2759,7 +2778,7 @@ void ExplicitCubicSplineInterpolator<T, MemorySpace>::evaluate(
       const T xq =
         detail::wrap_periodic(xvec(i), x_, x_.extent(0), periodic_x_);
       detail::cubic_eval_explicit(xq, selector, fval_view, x_, x_.extent(0),
-                                  fspl, ier, lookup_tol);
+                                  fspl, ier, lookup_tol, extrapolate);
     });
 }
 
@@ -2778,7 +2797,7 @@ void ExplicitCubicSplineInterpolator<T, MemorySpace>::evaluate(
 template <typename T, typename MemorySpace>
 void CompactCubicSplineInterpolator<T, MemorySpace>::evaluate(
   Kokkos::View<LO*, MemorySpace> selector, Rank1View<T, MemorySpace> xvec,
-  Rank2View<T, MemorySpace> fval, T lookup_tol)
+  Rank2View<T, MemorySpace> fval, T lookup_tol, bool extrapolate)
 {
   auto fspl = get_coefficients_view();
   Kokkos::parallel_for(
@@ -2789,7 +2808,7 @@ void CompactCubicSplineInterpolator<T, MemorySpace>::evaluate(
       const T xq =
         detail::wrap_periodic(xvec(i), x_, x_.extent(0), periodic_x_);
       detail::cubic_eval_compact(xq, selector, fval_view, x_, x_.extent(0),
-                                 fspl, ier, lookup_tol);
+                                 fspl, ier, lookup_tol, extrapolate);
     });
 }
 
@@ -2811,7 +2830,8 @@ void CompactCubicSplineInterpolator<T, MemorySpace>::evaluate(
 template <typename T, typename MemorySpace>
 void ExplicitBiCubicSplineInterpolator<T, MemorySpace>::evaluate(
   Kokkos::View<LO*, MemorySpace> iselect, Rank1View<T, MemorySpace> xvec,
-  Rank1View<T, MemorySpace> yvec, Rank2View<T, MemorySpace> fval, T lookup_tol)
+  Rank1View<T, MemorySpace> yvec, Rank2View<T, MemorySpace> fval, T lookup_tol,
+  bool extrapolate)
 {
   PCMS_ALWAYS_ASSERT(xvec.extent(0) == yvec.extent(0) &&
                      xvec.extent(0) == fval.extent(0));
@@ -2828,7 +2848,7 @@ void ExplicitBiCubicSplineInterpolator<T, MemorySpace>::evaluate(
         detail::wrap_periodic(yvec(i), y_, y_.extent(0), periodic_y_);
       detail::bicubic_eval_explicit(xq, yq, iselect, fval_view, x_,
                                     x_.extent(0), y_, y_.extent(0), fspl, ier,
-                                    lookup_tol);
+                                    lookup_tol, extrapolate);
     });
 }
 
@@ -2848,7 +2868,8 @@ void ExplicitBiCubicSplineInterpolator<T, MemorySpace>::evaluate(
 template <typename T, typename MemorySpace>
 void CompactBiCubicSplineInterpolator<T, MemorySpace>::evaluate(
   Kokkos::View<LO*, MemorySpace> iselect, Rank1View<T, MemorySpace> xvec,
-  Rank1View<T, MemorySpace> yvec, Rank2View<T, MemorySpace> fval, T lookup_tol)
+  Rank1View<T, MemorySpace> yvec, Rank2View<T, MemorySpace> fval, T lookup_tol,
+  bool extrapolate)
 {
 
   PCMS_ALWAYS_ASSERT(xvec.extent(0) == yvec.extent(0) &&
@@ -2864,7 +2885,8 @@ void CompactBiCubicSplineInterpolator<T, MemorySpace>::evaluate(
       const T yq =
         detail::wrap_periodic(yvec(i), y_, y_.extent(0), periodic_y_);
       detail::bicubic_eval_compact(xq, yq, iselect, fval_view, x_, x_.extent(0),
-                                   y_, y_.extent(0), fspl, ier, lookup_tol);
+                                   y_, y_.extent(0), fspl, ier, lookup_tol,
+                                   extrapolate);
     });
 }
 

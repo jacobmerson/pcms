@@ -49,11 +49,11 @@ inline void GatherPoints(Rank2View<const Real, DeviceMemorySpace> points,
 
 } // namespace detail
 
-/// @brief Evaluates the not-a-knot cubic (1D) or bicubic (2D) spline of a
-///        field's grid values, or its gradient for
-///        DifferentialOperator::Gradient. Each component is splined on its
-///        own; component c of the gradient is at columns Dim c to Dim c + Dim
-///        - 1.
+/// @brief Evaluates the cubic (1D) or bicubic (2D) spline of a field's grid
+///        values, periodic on the wrapped axes and not-a-knot on the others,
+///        or its gradient for DifferentialOperator::Gradient. Each component
+///        is splined on its own; component c of the gradient is at columns
+///        Dim c to Dim c + Dim - 1.
 /// @tparam Dim grid dimension, 1 or 2
 template <unsigned Dim,
           typename LayoutPolicy =
@@ -63,19 +63,23 @@ class UniformGridSplinePointEvaluator
 {
   using Vec = Kokkos::View<Real*, DeviceMemorySpace>;
   static constexpr int NumDerivatives = (Dim + 1) * (Dim + 2) / 2;
+  static constexpr Real LookupTol = 4.0e-7;
 
 public:
   /// @param layout order-1 uniform-grid layout
   /// @param binding cells of the query points
   /// @param op Value or Gradient
+  /// @param wrapped bit d set if the last node of axis d is its first
   UniformGridSplinePointEvaluator(
     std::shared_ptr<const UniformGridFieldLayout<Dim>> layout,
     std::shared_ptr<const pcms::detail::UniformGridBinding<Dim>> binding,
-    DifferentialOperator op = DifferentialOperator::Value)
+    DifferentialOperator op = DifferentialOperator::Value, unsigned wrapped = 0)
     : PointEvaluator<Real, LayoutPolicy>(binding, op, layout),
       layout_(layout),
       grid_(layout->GetGrid()),
+      wrapped_(wrapped),
       found_(binding->FoundPoints()),
+      extrapolate_(binding->Policy().mode == OutOfBoundsMode::NEAREST_BOUNDARY),
       spline_output_("uniform_grid_spline_output", found_.extent(0),
                      op == DifferentialOperator::Value ? 1 : Dim),
       select_("uniform_grid_spline_select", NumDerivatives)
@@ -117,11 +121,18 @@ public:
     if (num_in_bounds == 0) {
       return;
     }
-    // x-fastest dof order becomes the interpolators' order
+    // x-fastest dof order becomes the interpolators' order; a wrapped axis
+    // repeats its first node as its last
     const LO nx = grid_.divisions[0] + 1;
     const LO ny = Dim == 2 ? grid_.divisions[1] + 1 : 1;
+    const LO mx = nx - (wrapped_ & 1U);
+    const LO my = ny - ((wrapped_ >> 1) & 1U);
     PCMS_ALWAYS_ASSERT(static_cast<LO>(dof_data.size()) ==
-                       nx * ny * num_components);
+                       mx * my * num_components);
+    const auto bc = [this](unsigned d) {
+      return (wrapped_ >> d) & 1U ? BoundaryCondition::PERIODIC
+                                  : BoundaryCondition::NOT_A_KNOT;
+    };
     Vec spline_values("uniform_grid_spline_values",
                       static_cast<size_t>(nx * ny));
 
@@ -138,23 +149,21 @@ public:
         "copy_spline_values_device",
         Kokkos::MDRangePolicy<Kokkos::Rank<2>>({0, 0}, {ny, nx}),
         KOKKOS_LAMBDA(const LO iy, const LO ix) {
-          spline_values(ix * ny + iy) = dof_data(iy * nx + ix, component);
+          spline_values(ix * ny + iy) =
+            dof_data((iy % my) * mx + ix % mx, component);
         });
       if constexpr (Dim == 1) {
         ExplicitCubicSplineInterpolator<Real, DeviceMemorySpace> interpolator(
-          view(x_coords_[0]), view(spline_values),
-          BoundaryCondition::NOT_A_KNOT, 0, BoundaryCondition::NOT_A_KNOT, 0);
-        interpolator.evaluate(select_, view(eval_x_[0]), output);
+          view(x_coords_[0]), view(spline_values), bc(0), 0, bc(0), 0);
+        interpolator.evaluate(select_, view(eval_x_[0]), output, LookupTol,
+                              extrapolate_);
       } else {
         const Rank1View<Real, DeviceMemorySpace> empty_bc(nullptr, 0);
         CompactBiCubicSplineInterpolator<Real, DeviceMemorySpace> interpolator(
-          view(x_coords_[0]), view(x_coords_[1]), view(spline_values),
-          BoundaryCondition::NOT_A_KNOT, empty_bc,
-          BoundaryCondition::NOT_A_KNOT, empty_bc,
-          BoundaryCondition::NOT_A_KNOT, empty_bc,
-          BoundaryCondition::NOT_A_KNOT, empty_bc);
+          view(x_coords_[0]), view(x_coords_[1]), view(spline_values), bc(0),
+          empty_bc, bc(0), empty_bc, bc(1), empty_bc, bc(1), empty_bc);
         interpolator.evaluate(select_, view(eval_x_[0]), view(eval_x_[1]),
-                              output);
+                              output, LookupTol, extrapolate_);
       }
       Kokkos::parallel_for(
         "copy_in_bounds_values",
@@ -171,7 +180,9 @@ public:
 private:
   std::shared_ptr<const UniformGridFieldLayout<Dim>> layout_;
   UniformGrid<Dim> grid_;
+  unsigned wrapped_;
   Kokkos::View<const LO*, DeviceMemorySpace> found_;
+  bool extrapolate_;
   std::array<Vec, Dim> x_coords_;
   // per bound point: found points' coordinates and spline output
   std::array<Vec, Dim> eval_x_;
@@ -180,7 +191,8 @@ private:
 };
 
 /// @brief Point evaluation of the cubic (1D) or bicubic (2D) spline of fields
-///        on a uniform grid, and of its gradient.
+///        on a uniform grid, periodic on its wrapped axes, and of its
+///        gradient.
 /// @tparam Dim grid dimension, 1 or 2
 template <unsigned Dim>
 class UniformGridSplineEvaluatorFactory
@@ -197,8 +209,9 @@ public:
     std::shared_ptr<const UniformGridGeometry<Dim>> geometry,
     std::shared_ptr<const UniformGridFieldLayout<Dim>> layout)
     : pcms::detail::TypedPointEvaluatorFactory<Real, Bound>(
-        std::move(geometry), {DifferentialOperator::Gradient}),
-      layout_(std::move(layout))
+        geometry, {DifferentialOperator::Gradient}),
+      layout_(std::move(layout)),
+      wrapped_(geometry->WrappedAxes())
   {
     if (layout_->GetOrder() != 1) {
       throw pcms_error(
@@ -214,11 +227,12 @@ protected:
     std::shared_ptr<const Bound> bound, DifferentialOperator op) const override
   {
     return std::make_unique<UniformGridSplinePointEvaluator<Dim>>(
-      layout_, std::move(bound), op);
+      layout_, std::move(bound), op, wrapped_);
   }
 
 private:
   std::shared_ptr<const UniformGridFieldLayout<Dim>> layout_;
+  unsigned wrapped_;
 };
 
 } // namespace pcms::uniform_grid

@@ -4,6 +4,8 @@
 #include "pcms/utility/assert.hpp"
 #include "pcms/utility/detail/memory_spaces.hpp"
 #include "pcms/utility/detail/periodic.hpp"
+#include <cmath>
+#include <numbers>
 #include <string>
 #include <vector>
 
@@ -213,6 +215,16 @@ Quadrature CreateGaussQuadrature(
     throw pcms_error("CreateGaussQuadrature: the order must not be negative");
   }
   return detail::CreateQuadrature(*geometry, detail::GaussRule{order});
+}
+
+Quadrature CreateTrapezoidQuadrature(
+  const std::shared_ptr<const Geometry>& geometry, int num_points)
+{
+  if (num_points < 1) {
+    throw pcms_error("CreateTrapezoidQuadrature: needs a positive number of "
+                     "points");
+  }
+  return detail::CreateQuadrature(*geometry, detail::TrapezoidRule{num_points});
 }
 
 Quadrature CreateMonteCarloQuadrature(

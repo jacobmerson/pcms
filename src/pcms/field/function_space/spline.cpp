@@ -5,6 +5,7 @@
 #include "pcms/backends/uniform_grid/spline_evaluator.hpp"
 #include "pcms/backends/uniform_grid/layout.hpp"
 #include "pcms/utility/detail/common.hpp"
+#include <string>
 
 namespace pcms
 {
@@ -42,18 +43,33 @@ std::shared_ptr<const FunctionSpace> CreateSplineSpace(
   if (geometry == nullptr) {
     throw pcms_error("CreateSplineSpace: the geometry must not be null");
   }
-  if (auto space =
-        VisitUniformGrid(geometry,
-                         [num_components]<unsigned Dim>(
-                           std::shared_ptr<const UniformGridGeometry<Dim>> grid)
-                           -> std::shared_ptr<const FunctionSpace> {
-                           if constexpr (Dim == 3) {
-                             return nullptr;
-                           } else {
-                             return CreateUniformGridSplineSpace(
-                               std::move(grid), num_components);
-                           }
-                         })) {
+  for (const auto& axis : geometry->GetCoordinateSystem()->PeriodicAxes()) {
+    if (axis.transform != nullptr) {
+      throw pcms_error("CreateSplineSpace: periodic axis " +
+                       std::to_string(axis.axis) +
+                       " has a transform; only translation periodic axes are "
+                       "supported");
+    }
+  }
+  if (auto space = VisitUniformGrid(
+        geometry,
+        [num_components]<unsigned Dim>(
+          std::shared_ptr<const UniformGridGeometry<Dim>> grid)
+          -> std::shared_ptr<const FunctionSpace> {
+          if constexpr (Dim == 3) {
+            return nullptr;
+          } else {
+            for (unsigned d = 0; d < Dim; ++d) {
+              if ((grid->WrappedAxes() >> d) & 1U &&
+                  grid->GetGrid().divisions[d] < 3) {
+                throw pcms_error("CreateSplineSpace: needs at least 3 cells "
+                                 "on an identified axis");
+              }
+            }
+            return CreateUniformGridSplineSpace(std::move(grid),
+                                                num_components);
+          }
+        })) {
     return space;
   }
   throw pcms_error(
