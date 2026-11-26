@@ -3,6 +3,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <pcms/utility/coordinate_systems/cylindrical.hpp>
 #include "embedding_test_utils.hpp"
+#include <numbers>
 #include <random>
 
 using Catch::Matchers::ContainsSubstring;
@@ -132,6 +133,652 @@ TEST_CASE("The coordinate map of a position refuses what it cannot do",
     space->CreateFunction<Real>(
       "x", pcms::ValueBasis::Coordinates(pcms::csys::CreateCartesian(3))),
     ContainsSubstring("require 3 components"));
+}
+
+namespace
+{
+
+// An embedded annulus sector, and a P1 space on its parameter grid put on it.
+struct EmbeddedFixture
+{
+  std::shared_ptr<const pcms::Geometry> grid =
+    pcms::test::MakeUnitSquareGrid(32);
+  std::shared_ptr<const pcms::Function<Real>> position =
+    pcms::test::MakeSplinePosition(grid, Annulus::Position);
+  std::shared_ptr<const pcms::EmbeddedGeometry> embedded =
+    pcms::CreateEmbeddedGeometry(grid, position);
+  std::shared_ptr<const pcms::FunctionSpace> space =
+    pcms::CreateEmbeddedSpace(embedded, pcms::CreateLagrangeSpace(grid, 1, 1));
+};
+
+// f = xi1 + 2 xi2 at the points of `bound`
+std::vector<Real> EvaluateLinearInParameters(
+  const EmbeddedFixture& f,
+  const std::shared_ptr<const pcms::BoundPoints>& bound)
+{
+  auto field = f.space->CreateFunction<Real>("f");
+  pcms::test::SetField(
+    field, KOKKOS_LAMBDA(Real xi1, Real xi2) { return xi1 + 2 * xi2; });
+  const auto evaluator = f.space->CreatePointEvaluator<Real>(bound);
+  Kokkos::View<Real**, DeviceMemorySpace> out("out", bound->NumPoints(), 1);
+  evaluator->Evaluate(field, pcms::test::TagLike(field, out));
+  const auto host =
+    Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(), out);
+  return std::vector<Real>(host.data(), host.data() + host.extent(0));
+}
+
+// The geometric factors at the points of `bound`, on the host: J, g
+// ([point][4] each) and the volume factor.
+struct HostFactors
+{
+  Kokkos::View<Real**, pcms::DeviceMemorySpace>::host_mirror_type jacobian;
+  Kokkos::View<Real**, pcms::DeviceMemorySpace>::host_mirror_type metric;
+  Kokkos::View<Real*, pcms::DeviceMemorySpace>::host_mirror_type volume;
+};
+
+HostFactors FactorsOnHost(const pcms::BoundPoints& bound)
+{
+  const auto n = bound.NumPoints();
+  Kokkos::View<Real**, DeviceMemorySpace> jacobian("j", n, 4);
+  Kokkos::View<Real**, DeviceMemorySpace> metric("g", n, 4);
+  Kokkos::View<Real*, DeviceMemorySpace> volume("v", n);
+  const auto j = bound.Jacobian();
+  const auto g = bound.Metric();
+  const auto v = bound.VolumeFactor();
+  Kokkos::parallel_for(
+    "copy", Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, n),
+    KOKKOS_LAMBDA(const pcms::LO p) {
+      for (int a = 0; a < 2; ++a) {
+        for (int b = 0; b < 2; ++b) {
+          jacobian(p, 2 * a + b) = j(p, a, b);
+          metric(p, 2 * a + b) = g(p, a, b);
+        }
+      }
+      volume(p) = v(p);
+    });
+  return {
+    Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(), jacobian),
+    Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(), metric),
+    Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(), volume)};
+}
+
+} // namespace
+
+TEST_CASE("An embedded geometry locates physical points by inverting the "
+          "position",
+          "[embedding][embedded_geometry]")
+{
+  const EmbeddedFixture f;
+  CHECK(f.embedded->GetCoordinateSystem()->Kind() == "cylindrical_rz");
+  CHECK(f.embedded->TopologicalDimension() == 2);
+  CHECK(*f.embedded->GetParameterSystem() == *f.grid->GetCoordinateSystem());
+  CHECK(f.embedded->GetPosition() == f.position);
+  CHECK(f.embedded->GetMetric() == nullptr);
+
+  std::vector<Real> physical;
+  std::vector<Real> expected;
+  for (int i = 0; i < 4; ++i) {
+    const auto x = Annulus::Position(Params[std::size_t{2} * i],
+                                     Params[std::size_t{2} * i + 1]);
+    physical.insert(physical.end(), x.begin(), x.end());
+    expected.push_back(Params[std::size_t{2} * i] +
+                       2 * Params[std::size_t{2} * i + 1]);
+  }
+  const auto bound = pcms::test::Bind(*f.embedded, physical);
+  CHECK(bound->NumPoints() == 4);
+  // the parameters are recovered to the error of the position's spline
+  const auto values = EvaluateLinearInParameters(f, bound);
+  for (int i = 0; i < 4; ++i) {
+    CAPTURE(i);
+    CHECK_THAT(values[i], WithinAbs(expected[i], 1e-5));
+  }
+}
+
+TEST_CASE("The geometric factors of an embedded geometry are the position's "
+          "Jacobian and the induced metric",
+          "[embedding][embedded_geometry]")
+{
+  const EmbeddedFixture f;
+  const auto bound =
+    f.embedded->Bind(pcms::test::CreateDeviceCoordinateView(
+                       Params, f.embedded->GetParameterSystem(), 2)
+                       .coordinate_view);
+  const auto factors = FactorsOnHost(*bound);
+  for (int p = 0; p < 4; ++p) {
+    const Real xi1 = Params[std::size_t{2} * p];
+    const Real xi2 = Params[std::size_t{2} * p + 1];
+    const Real rho = Annulus::Rho(xi1);
+    const auto x = Annulus::Position(xi1, xi2);
+    const auto j = AnnulusJacobian(xi1, xi2);
+    CAPTURE(p);
+    for (int k = 0; k < 4; ++k) {
+      CHECK_THAT(factors.jacobian(p, k),
+                 WithinAbs(j[k / 2][k % 2], 100 * SplineTol));
+    }
+    // g = diag(0.25, 4 rho^2)
+    CHECK_THAT(factors.metric(p, 0), WithinAbs(0.25, 100 * SplineTol));
+    CHECK_THAT(factors.metric(p, 3), WithinAbs(4 * rho * rho, 100 * SplineTol));
+    CHECK_THAT(factors.metric(p, 1), WithinAbs(0.0, 100 * SplineTol));
+    // sqrt(det g) = rho, times the volume factor of (R, Z), R
+    CHECK_THAT(factors.volume(p), WithinAbs(rho * x[0], 100 * SplineTol));
+  }
+}
+
+TEST_CASE("Parameter-system vectors and covectors of an embedded space are "
+          "refused",
+          "[embedding][embedded_geometry]")
+{
+  const EmbeddedFixture f;
+  const auto space = pcms::CreateEmbeddedSpace(
+    f.embedded, pcms::CreateLagrangeSpace(f.grid, 1, 2));
+  const auto bound =
+    f.embedded->Bind(pcms::test::CreateDeviceCoordinateView(
+                       Params, f.embedded->GetParameterSystem(), 2)
+                       .coordinate_view);
+  const auto evaluator = space->CreatePointEvaluator<Real>(bound);
+  for (const auto variance : {pcms::values::Vector, pcms::values::Covector}) {
+    const auto field = space->CreateFunction<Real>(
+      "e1", {.system = f.embedded->GetParameterSystem(),
+             .scaling = pcms::ComponentScaling::Natural,
+             .variance = variance});
+    CHECK_THROWS_WITH(evaluator->OutputBasis(field.GetData().GetValueBasis()),
+                      ContainsSubstring("not yet supported"));
+  }
+}
+
+namespace
+{
+
+// The evaluation at point p is the DOFs of holder p: a linear map with a
+// transpose, on any geometry with as many DOF holders as points.
+class SampleEvaluator final : public pcms::PointEvaluator<Real>
+{
+public:
+  SampleEvaluator(std::shared_ptr<const pcms::BoundPoints> bound,
+                  std::shared_ptr<const pcms::FieldLayout> layout)
+    : PointEvaluator(std::move(bound), pcms::DifferentialOperator::Value,
+                     std::move(layout))
+  {
+  }
+
+  [[nodiscard]] bool SupportsTranspose() const noexcept override
+  {
+    return true;
+  }
+
+  void EvaluateImpl(
+    const pcms::Field<Real>& field,
+    pcms::ValueView<Real, DeviceMemorySpace> values) const override
+  {
+    const auto dofs = field.GetDOFHolderData().GetValues();
+    const auto out = values.GetValues();
+    const int nc = static_cast<int>(out.extent(1));
+    pcms::detail::ForEach(
+      "sample", NumPoints(), KOKKOS_LAMBDA(const pcms::LO p) {
+        for (int c = 0; c < nc; ++c) {
+          out(p, c) = dofs(p, c);
+        }
+      });
+  }
+
+  void EvaluateTransposeImpl(
+    pcms::Rank2View<const Real, DeviceMemorySpace> values,
+    pcms::Field<Real>& functional) const override
+  {
+    const auto current = functional.GetDOFHolderData();
+    const auto old = current.GetValues();
+    Kokkos::View<Real**, DeviceMemorySpace> sum("sum", old.extent(0),
+                                                old.extent(1));
+    const int nc = static_cast<int>(old.extent(1));
+    const pcms::LO np = NumPoints();
+    pcms::detail::ForEach(
+      "sample_transpose", static_cast<pcms::LO>(old.extent(0)),
+      KOKKOS_LAMBDA(const pcms::LO h) {
+        for (int c = 0; c < nc; ++c) {
+          sum(h, c) = old(h, c) + (h < np ? values(h, c) : 0.0);
+        }
+      });
+    functional.SetDOFHolderData(pcms::ValueView<const Real, DeviceMemorySpace>(
+      current.GetBasis(), pcms::MakeConstRank2View(sum)));
+  }
+};
+
+class SampleFactory final : public pcms::PointEvaluatorFactory
+{
+public:
+  explicit SampleFactory(std::shared_ptr<const pcms::FunctionSpace> space)
+    : space_(std::move(space))
+  {
+  }
+  std::shared_ptr<const pcms::Geometry> GetGeometry() const noexcept override
+  {
+    return space_->GetGeometry();
+  }
+  bool Supports(pcms::DifferentialOperator op) const noexcept override
+  {
+    return op == pcms::DifferentialOperator::Value;
+  }
+
+protected:
+  pcms::PointEvaluatorVariant CreatePointEvaluatorImpl(
+    pcms::Type, std::shared_ptr<const pcms::BoundPoints> bound,
+    pcms::DifferentialOperator) const override
+  {
+    return std::unique_ptr<pcms::PointEvaluator<Real>>(
+      std::make_unique<SampleEvaluator>(std::move(bound), space_->GetLayout()));
+  }
+
+private:
+  std::shared_ptr<const pcms::FunctionSpace> space_;
+};
+
+// Random values, on the device.
+Kokkos::View<Real**, DeviceMemorySpace> RandomDeviceValues(std::size_t rows,
+                                                           std::size_t cols,
+                                                           std::mt19937& rng)
+{
+  std::uniform_real_distribution<Real> uniform(-1.0, 1.0);
+  Kokkos::View<Real**, DeviceMemorySpace> values("random", rows, cols);
+  auto host = Kokkos::create_mirror_view(values);
+  for (std::size_t i = 0; i < rows; ++i) {
+    for (std::size_t c = 0; c < cols; ++c) {
+      host(i, c) = uniform(rng);
+    }
+  }
+  Kokkos::deep_copy(values, host);
+  return values;
+}
+
+// The plain pairing of two host views of the same shape.
+template <typename A, typename B>
+Real Pairing(const A& a, const B& b)
+{
+  Real sum = 0;
+  for (std::size_t i = 0; i < a.extent(0); ++i) {
+    for (std::size_t c = 0; c < a.extent(1); ++c) {
+      sum += a(i, c) * b(i, c);
+    }
+  }
+  return sum;
+}
+
+} // namespace
+
+TEST_CASE("EvaluateTranspose through an embedded space is the transpose of "
+          "Evaluate",
+          "[embedding][embedded_geometry][adjoint]")
+{
+  const EmbeddedFixture f;
+  const auto grid_space = pcms::CreateLagrangeSpace(f.grid, 1, 2);
+  const auto sampled = std::make_shared<pcms::FunctionSpace>(
+    grid_space->GetLayout(), std::make_shared<SampleFactory>(grid_space),
+    f.grid);
+  const auto space = pcms::CreateEmbeddedSpace(f.embedded, sampled);
+  const auto bound =
+    f.embedded->Bind(pcms::test::CreateDeviceCoordinateView(
+                       Params, f.embedded->GetParameterSystem(), 2)
+                       .coordinate_view);
+  const auto evaluator = space->CreatePointEvaluator<Real>(bound);
+  REQUIRE(evaluator->SupportsTranspose());
+  std::mt19937 rng(23);
+  // a scalar field of two components
+  const pcms::ValueBasis basis_in{.kind = pcms::ValueKind::Array};
+  auto x = space->CreateFunction<Real>("x", basis_in);
+  auto functional = space->CreateFunction<Real>("functional", basis_in);
+  const auto basis = evaluator->OutputBasis(x.GetData().GetValueBasis());
+  const auto dofs =
+    RandomDeviceValues(grid_space->GetLayout()->GetNumDofHolder(), 2, rng);
+  x.SetDOFHolderData(pcms::ValueView<const Real, DeviceMemorySpace>(
+    x.GetData().GetValueBasis(), pcms::MakeConstRank2View(dofs)));
+  const auto y = RandomDeviceValues(4, 2, rng);
+  Kokkos::View<Real**, DeviceMemorySpace> ex("Ex", 4, 2);
+  evaluator->Evaluate(x, pcms::ValueView<Real, DeviceMemorySpace>(
+                           basis, pcms::MakeRank2View(ex)));
+  evaluator->EvaluateTranspose(pcms::ValueView<const Real, DeviceMemorySpace>(
+                                 basis, pcms::MakeConstRank2View(y)),
+                               functional);
+  const auto host = [](const Kokkos::View<Real**, DeviceMemorySpace>& v) {
+    return Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(), v);
+  };
+  const Real lhs = Pairing(host(ex), host(y));
+  const Real rhs =
+    Pairing(host(dofs), functional.GetDOFHolderDataHost().GetValues());
+  CAPTURE(lhs, rhs);
+  CHECK_THAT(lhs, WithinAbs(rhs, 1e-12 * (1 + std::abs(rhs))));
+}
+
+TEST_CASE("An embedded geometry binds points of its parameter system without "
+          "a search",
+          "[embedding][embedded_geometry]")
+{
+  const EmbeddedFixture f;
+  const auto coords = pcms::test::CreateDeviceCoordinateView(
+    Params, f.embedded->GetParameterSystem(), 2);
+  const auto bound = f.embedded->Bind(coords.coordinate_view);
+  // the field is evaluated at exactly the parameters given
+  const auto values = EvaluateLinearInParameters(f, bound);
+  for (int i = 0; i < 4; ++i) {
+    CHECK_THAT(values[i], WithinAbs(Params[std::size_t{2} * i] +
+                                      2 * Params[std::size_t{2} * i + 1],
+                                    pcms::test::ExactTol));
+  }
+  // outside the parameter grid
+  const auto outside = pcms::test::CreateDeviceCoordinateView(
+    {1.5, 0.5}, f.embedded->GetParameterSystem(), 2);
+  CHECK_THROWS(f.embedded->Bind(outside.coordinate_view));
+  const auto missing = f.embedded->Bind(
+    outside.coordinate_view,
+    pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::FILL, -7.0});
+  CHECK(missing->MissingPoints().extent(0) == 1);
+  CHECK(EvaluateLinearInParameters(f, missing)[0] == -7.0);
+}
+
+TEST_CASE("An embedded geometry applies the out-of-bounds policy to points "
+          "outside its image",
+          "[embedding][embedded_geometry]")
+{
+  const EmbeddedFixture f;
+  // inside the sector, the hole of the annulus, and outside
+  const std::vector<Real> points = {
+    Annulus::Rc + 0.75, 0.3, Annulus::Rc, 0.0, 5.0, 5.0};
+  CHECK_THROWS_AS(pcms::test::Bind(*f.embedded, points), pcms::pcms_error);
+  CHECK_THROWS_AS(pcms::test::Bind(*f.embedded, points,
+                                   pcms::OutOfBoundsPolicy{
+                                     pcms::OutOfBoundsMode::NEAREST_BOUNDARY}),
+                  pcms::pcms_error);
+  const auto bound = pcms::test::Bind(
+    *f.embedded, points,
+    pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::FILL, -7.0});
+  CHECK(bound->FoundPoints().extent(0) == 1);
+  CHECK(bound->MissingPoints().extent(0) == 2);
+  const auto values = EvaluateLinearInParameters(f, bound);
+  CHECK(values[1] == -7.0);
+  CHECK(values[2] == -7.0);
+  // far beyond the bins of the search
+  const auto far = pcms::test::Bind(
+    *f.embedded, {1e12, 0.0, 0.0, 1e300},
+    pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::FILL, -7.0});
+  CHECK(far->MissingPoints().extent(0) == 2);
+}
+
+TEST_CASE("The search of an embedded geometry sampled in batches binds as in "
+          "one batch",
+          "[embedding][embedded_geometry]")
+{
+  const std::vector<Real> points = {Annulus::Rc + 0.75,
+                                    0.3,
+                                    Annulus::Rc - 0.2,
+                                    0.6,
+                                    Annulus::Rc,
+                                    0.0,
+                                    5.0,
+                                    5.0};
+  const pcms::OutOfBoundsPolicy fill{pcms::OutOfBoundsMode::FILL, -7.0};
+  const EmbeddedFixture whole;
+  const auto expected = EvaluateLinearInParameters(
+    whole, pcms::test::Bind(*whole.embedded, points, fill));
+  const auto batch = pcms::detail::EmbeddingSampleBatch;
+  pcms::detail::EmbeddingSampleBatch = 7;
+  const EmbeddedFixture batched;
+  pcms::detail::EmbeddingSampleBatch = batch;
+  const auto bound = pcms::test::Bind(*batched.embedded, points, fill);
+  CHECK(bound->MissingPoints().extent(0) == 2);
+  CHECK(EvaluateLinearInParameters(batched, bound) == expected);
+}
+
+TEST_CASE("The quadrature of an embedded geometry integrates in the physical "
+          "measure",
+          "[embedding][embedded_geometry][quadrature]")
+{
+  const EmbeddedFixture f;
+  const auto quadrature = pcms::CreateGaussQuadrature(f.embedded, 4);
+  CHECK(quadrature.points->NumPoints() == 32 * 32 * 9);
+  const auto weights = Kokkos::create_mirror_view_and_copy(
+    pcms::HostMemorySpace(), quadrature.weights);
+  Real sum = 0;
+  for (size_t i = 0; i < weights.extent(0); ++i) {
+    sum += weights(i);
+  }
+  // the area of the sector times the R of the volume of revolution
+  CHECK_THAT(sum, WithinAbs(Annulus::MomentOfR(), 1e-5));
+  CHECK_THROWS(pcms::CreateMonteCarloQuadrature(f.embedded, 3));
+  // the points are bound on the embedded geometry
+  CHECK(quadrature.points->GetGeometry() == f.embedded);
+}
+
+TEST_CASE("An embedded geometry survives a singular point of the position",
+          "[embedding][embedded_geometry]")
+{
+  // a disc of radius 1 around (2, 0) with the center a pole: rho = xi1,
+  // theta = 2 pi xi2, J has the determinant 2 pi rho, zero on the edge xi1 = 0
+  const auto position = [](Real xi1, Real xi2) {
+    const Real theta = 2 * std::numbers::pi * xi2;
+    return std::array<Real, 2>{2.0 + xi1 * std::cos(theta),
+                               xi1 * std::sin(theta)};
+  };
+  const auto grid = pcms::test::MakeUnitSquareGrid(32);
+  const auto embedded = pcms::CreateEmbeddedGeometry(
+    grid, pcms::test::MakeSplinePosition(grid, position));
+  // the pole and a regular point; the policy fills what is not found
+  const auto bound = pcms::test::Bind(
+    *embedded, {2.0, 0.0, 2.0, 0.5},
+    pcms::OutOfBoundsPolicy{pcms::OutOfBoundsMode::FILL, -7.0});
+  CHECK(bound->NumPoints() == 2);
+  // the regular point, xi = (0.5, 0.25), is found
+  const auto found = Kokkos::create_mirror_view_and_copy(
+    pcms::HostMemorySpace(), bound->FoundPoints());
+  bool regular_found = false;
+  for (size_t i = 0; i < found.extent(0); ++i) {
+    regular_found = regular_found || found(i) == 1;
+  }
+  CHECK(regular_found);
+}
+
+TEST_CASE("Embedded geometries refuse what they cannot do",
+          "[embedding][embedded_geometry]")
+{
+  const EmbeddedFixture f;
+  CHECK_THROWS_WITH(pcms::CreateEmbeddedGeometry(nullptr, f.position),
+                    ContainsSubstring("a Function on the parameter geometry"));
+  // a position on another geometry
+  CHECK_THROWS_WITH(
+    pcms::CreateEmbeddedGeometry(pcms::test::MakeUnitSquareGrid(4), f.position),
+    ContainsSubstring("a Function on the parameter geometry"));
+  // the parameter system is the position's coordinate system
+  const auto plane =
+    pcms::test::MakeUnitSquareGrid(4, pcms::csys::CreateCylindricalRZ());
+  CHECK_THROWS_WITH(
+    pcms::CreateEmbeddedGeometry(
+      plane, pcms::test::MakeSplinePosition(plane, Annulus::Position)),
+    ContainsSubstring("must differ"));
+  CHECK_THROWS_WITH(pcms::CreateEmbeddedSpace(
+                      f.embedded, pcms::CreateLagrangeSpace(
+                                    pcms::test::MakeUnitSquareGrid(4), 1, 1)),
+                    ContainsSubstring("embedded geometry of the space"));
+  const auto bound = pcms::test::Bind(*f.embedded, {Annulus::Rc + 0.75, 0.3});
+  CHECK_FALSE(f.space->Supports(pcms::DifferentialOperator::Gradient));
+  // Rebind locates new points
+  const auto again = f.embedded->Rebind(
+    bound, pcms::test::CreateDeviceCoordinateView(
+             {Annulus::Rc + 0.8, 0.2}, f.embedded->GetCoordinateSystem(), 2)
+             .coordinate_view);
+  CHECK(again->NumPoints() == 1);
+}
+
+namespace
+{
+
+// The affine map x = A xi + b into Cartesian (x, y): its induced metric is
+// A^T A, constant, so a P1 metric Function represents it exactly.
+constexpr Real A[2][2] = {{2.0, 0.5}, {0.3, 1.5}};
+
+std::array<Real, 2> Affine(Real xi1, Real xi2)
+{
+  return {1.0 + A[0][0] * xi1 + A[0][1] * xi2,
+          -2.0 + A[1][0] * xi1 + A[1][1] * xi2};
+}
+
+// A^T A, scaled
+std::array<Real, 4> InducedMetric(Real scale)
+{
+  std::array<Real, 4> g{};
+  for (int a = 0; a < 2; ++a) {
+    for (int b = 0; b < 2; ++b) {
+      g[2 * a + b] = scale * (A[0][a] * A[0][b] + A[1][a] * A[1][b]);
+    }
+  }
+  return g;
+}
+
+// A constant metric Function on the grid: `g` (covariant) or its inverse
+// (contravariant).
+std::shared_ptr<const pcms::Function<Real>> ConstantMetric(
+  const std::shared_ptr<const pcms::Geometry>& grid, std::array<Real, 4> g,
+  bool contravariant)
+{
+  const auto space = pcms::CreateLagrangeSpace(grid, 1, 4);
+  const auto variance =
+    contravariant ? pcms::VarianceSignature{pcms::Variance::Contravariant,
+                                            pcms::Variance::Contravariant}
+                  : pcms::VarianceSignature{pcms::Variance::Covariant,
+                                            pcms::Variance::Covariant};
+  if (contravariant) {
+    const Real det = g[0] * g[3] - g[1] * g[2];
+    g = {g[3] / det, -g[1] / det, -g[2] / det, g[0] / det};
+  }
+  auto metric =
+    std::make_shared<pcms::Function<Real>>(space->CreateFunction<Real>(
+      "g", {.scaling = pcms::ComponentScaling::Natural, .variance = variance}));
+  pcms::test::SetFieldComponents(*metric, [g](Real, Real, Real* out) {
+    for (int k = 0; k < 4; ++k) {
+      out[k] = g[k];
+    }
+  });
+  return metric;
+}
+
+std::vector<Real> QuadratureWeights(
+  const std::shared_ptr<const pcms::Geometry>& geometry)
+{
+  const auto weights = Kokkos::create_mirror_view_and_copy(
+    pcms::HostMemorySpace(), pcms::CreateGaussQuadrature(geometry, 2).weights);
+  return std::vector<Real>(weights.data(), weights.data() + weights.size());
+}
+
+} // namespace
+
+TEST_CASE("An embedded geometry uses a given metric",
+          "[embedding][embedded_geometry][metric]")
+{
+  const auto grid = pcms::test::MakeUnitSquareGrid(4);
+  const auto position = pcms::test::MakeSplinePosition(
+    grid, Affine, pcms::csys::CreateCartesian(2));
+  const auto induced = pcms::CreateEmbeddedGeometry(grid, position);
+  const auto induced_weights = QuadratureWeights(induced);
+  Real area = 0;
+  for (const Real w : induced_weights) {
+    area += w;
+  }
+  // |det A|
+  CHECK_THAT(area, WithinAbs(2.85, 1e-12));
+
+  for (const bool contravariant : {false, true}) {
+    CAPTURE(contravariant);
+    // the induced metric, given, reproduces the induced weights
+    const auto metric = ConstantMetric(grid, InducedMetric(1.0), contravariant);
+    const auto same =
+      pcms::CreateEmbeddedGeometry(grid, position, {.metric = metric});
+    CHECK(same->GetMetric() == metric);
+    const auto same_weights = QuadratureWeights(same);
+    REQUIRE(same_weights.size() == induced_weights.size());
+    for (std::size_t i = 0; i < same_weights.size(); ++i) {
+      CHECK_THAT(same_weights[i], WithinAbs(induced_weights[i], 1e-12));
+    }
+    // another metric is the one used: four times the metric, twice the
+    // lengths, four times the areas
+    const auto other = pcms::CreateEmbeddedGeometry(
+      grid, position,
+      {.metric = ConstantMetric(grid, InducedMetric(4.0), contravariant)});
+    const auto weights = QuadratureWeights(other);
+    for (std::size_t i = 0; i < weights.size(); ++i) {
+      CHECK_THAT(weights[i], WithinAbs(4 * induced_weights[i], 1e-12));
+    }
+    const auto bound = other->Bind(pcms::test::CreateDeviceCoordinateView(
+                                     {0.3, 0.6}, other->GetParameterSystem(), 2)
+                                     .coordinate_view);
+    const auto factors = FactorsOnHost(*bound);
+    const auto expected = InducedMetric(4.0);
+    for (int k = 0; k < 4; ++k) {
+      CHECK_THAT(factors.metric(0, k), WithinAbs(expected[k], 1e-12));
+    }
+  }
+  SECTION("a metric that is not one of the parameter system is refused")
+  {
+    const auto space = pcms::CreateLagrangeSpace(grid, 1, 4);
+    const auto mixed =
+      std::make_shared<pcms::Function<Real>>(space->CreateFunction<Real>(
+        "g", {.scaling = pcms::ComponentScaling::Natural,
+              .variance = pcms::VarianceSignature{pcms::Variance::Contravariant,
+                                                  pcms::Variance::Covariant}}));
+    CHECK_THROWS_WITH(
+      pcms::CreateEmbeddedGeometry(grid, position, {.metric = mixed}),
+      ContainsSubstring("rank 2 in the parameter system"));
+    const auto other = ConstantMetric(pcms::test::MakeUnitSquareGrid(2),
+                                      InducedMetric(1.0), false);
+    CHECK_THROWS_WITH(
+      pcms::CreateEmbeddedGeometry(grid, position, {.metric = other}),
+      ContainsSubstring("rank 2 in the parameter system"));
+  }
+}
+
+TEST_CASE("Physical components on a sheared parameter system scale by the "
+          "metric diagonal",
+          "[embedding][embedded_geometry][metric]")
+{
+  using pcms::ComponentScaling;
+  const auto grid = pcms::test::MakeUnitSquareGrid(4);
+  const auto embedded = pcms::CreateEmbeddedGeometry(
+    grid, pcms::test::MakeSplinePosition(grid, Affine,
+                                         pcms::csys::CreateCartesian(2)));
+  const auto xi = embedded->GetParameterSystem();
+  const auto bound = embedded->Bind(
+    pcms::test::CreateDeviceCoordinateView({0.3, 0.6}, xi, 2).coordinate_view);
+  // sqrt(g_ii) and sqrt(g^ii) of g = A^T A
+  const auto g = InducedMetric(1.0);
+  const Real det = g[0] * g[3] - g[1] * g[2];
+  const std::array<Real, 2> vector_factors{std::sqrt(g[0]), std::sqrt(g[3])};
+  const std::array<Real, 2> covector_factors{std::sqrt(g[3] / det),
+                                             std::sqrt(g[0] / det)};
+  const auto to_physical = pcms::detail::ToPhysical(xi, bound->Metric());
+  const auto to_natural = pcms::detail::ToNatural(xi, bound->Metric());
+  for (const bool covariant : {false, true}) {
+    CAPTURE(covariant);
+    const auto variance =
+      covariant ? pcms::values::Covector : pcms::values::Vector;
+    const auto& factors = covariant ? covector_factors : vector_factors;
+    const pcms::ValueBasis natural{xi, ComponentScaling::Natural, variance};
+    const pcms::ValueBasis physical{xi, ComponentScaling::Physical, variance};
+    REQUIRE(to_physical.OutputBasis(natural) == physical);
+
+    // natural (1, 1) to physical and back
+    Kokkos::View<Real**, DeviceMemorySpace> values("values", 1, 2);
+    Kokkos::deep_copy(values, 1.0);
+    to_physical.Apply(pcms::ValueView<Real, DeviceMemorySpace>(
+                        natural, pcms::MakeRank2View(values)),
+                      pcms::ValueView<Real, DeviceMemorySpace>(
+                        physical, pcms::MakeRank2View(values)));
+    auto host =
+      Kokkos::create_mirror_view_and_copy(pcms::HostMemorySpace(), values);
+    CHECK_THAT(host(0, 0), WithinAbs(factors[0], 1e-12));
+    CHECK_THAT(host(0, 1), WithinAbs(factors[1], 1e-12));
+    to_natural.Apply(pcms::ValueView<Real, DeviceMemorySpace>(
+                       physical, pcms::MakeRank2View(values)),
+                     pcms::ValueView<Real, DeviceMemorySpace>(
+                       natural, pcms::MakeRank2View(values)));
+    Kokkos::deep_copy(host, values);
+    CHECK_THAT(host(0, 0), WithinAbs(1.0, 1e-12));
+    CHECK_THAT(host(0, 1), WithinAbs(1.0, 1e-12));
+  }
 }
 
 TEST_CASE("Coordinates on an identified axis interpolate through the nearest "
