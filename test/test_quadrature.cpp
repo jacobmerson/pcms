@@ -128,6 +128,8 @@ TEST_CASE("CreateQuadrature: Monte Carlo weights sum to the area and the "
   CHECK(Integrate(first, square) == Integrate(second, square));
   const auto third = pcms::CreateMonteCarloQuadrature(geometry, 8, 8);
   CHECK(Integrate(first, square) != Integrate(third, square));
+  // the rule of a seed does not change between builds
+  CHECK(Integrate(first, square) == 0.32930288482711945);
 }
 
 TEST_CASE("CreateQuadrature: unsupported rules throw", "[quadrature]")
@@ -164,11 +166,11 @@ TEST_CASE("CreateIntersectionQuadrature: weights sum to the domain, the rule "
     pcms::omega_h::CreateIntersectionQuadrature(source, target, order);
   CHECK(quadrature.points->GetGeometry() == target);
   CHECK(quadrature.points->MissingPoints().extent(0) == 0);
-  CHECK(quadrature.other.geometry == source);
-  CHECK(quadrature.degree == order);
-  CHECK(quadrature.other.entities.extent(0) ==
-        static_cast<std::size_t>(quadrature.points->NumPoints()));
+  REQUIRE(quadrature.also.size() == 1);
+  CHECK(quadrature.also[0]->GetGeometry() == source);
+  CHECK(quadrature.also[0]->MissingPoints().extent(0) == 0);
   CHECK(WeightSum(quadrature) == Catch::Approx(1.0).margin(1e-12));
+  CHECK(quadrature.degree == order);
   for (int a = 0; a <= order; ++a) {
     for (int b = 0; a + b <= order; ++b) {
       const int c = dim == 3 ? std::max(0, order - a - b) : 0;
@@ -180,12 +182,6 @@ TEST_CASE("CreateIntersectionQuadrature: weights sum to the domain, the rule "
             Catch::Approx(ExactMonomial(a, b, c, dim)).margin(1e-12));
     }
   }
-  // the source binds to the points in the elements they were generated in
-  const pcms::CoordinateView<pcms::DeviceMemorySpace> points(
-    quadrature.points->GetCoordinateSystem(),
-    quadrature.points->LocatedPoints().GetValues());
-  const auto bound = source->Bind(points, quadrature.other);
-  CHECK(bound->MissingPoints().extent(0) == 0);
 }
 
 namespace

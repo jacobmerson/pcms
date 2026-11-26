@@ -772,6 +772,34 @@ TEST_CASE("Product space: at a tensor quadrature, mode by mode as at the "
   }
 }
 
+TEST_CASE("Product space: a tensor product over a scattered nested product "
+          "evaluates as at scattered points",
+          "[product][quadrature]")
+{
+  const auto lagrange = pcms::CreateLagrangeSpace(Periodic(6), 1, 1);
+  const auto fourier = pcms::CreateFourierSpace(Periodic(5, 3.0), {0, 1, 2});
+  const auto hermite = pcms::CreatePeriodicHermiteSpace(Periodic(4, 2.0));
+  const auto inner = pcms::CreateProductSpace(lagrange, fourier);
+  const auto space = pcms::CreateProductSpace(inner, hermite);
+  const pcms::Quadrature scattered{
+    BindPoints(*inner, Points(7, 2, -4.0, 8.0)),
+    Kokkos::View<Real*, pcms::DeviceMemorySpace>("weights", 7)};
+  const auto quadrature = pcms::CreateTensorQuadrature(
+    space->GetGeometry(), scattered,
+    pcms::CreateGaussQuadrature(hermite->GetGeometry(), 3));
+  auto u = space->CreateFunction<Real>();
+  SetDofs(
+    u, pcms::test::Pseudo(
+         static_cast<std::size_t>(space->GetLayout()->GetNumDofHolder()), 8));
+  const auto at = BindPoints(*space, HostPoints(*quadrature.points));
+  CheckClose(EvaluateBound(*space, u, quadrature.points),
+             EvaluateBound(*space, u, at), 1e-12);
+  CheckClose(EvaluateBound(*space, u, quadrature.points,
+                           pcms::DifferentialOperator::Gradient),
+             EvaluateBound(*space, u, at, pcms::DifferentialOperator::Gradient),
+             1e-11);
+}
+
 TEST_CASE("Product space: four factors in 5D on their tensor quadrature",
           "[product][quadrature]")
 {

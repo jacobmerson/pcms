@@ -273,25 +273,20 @@ class NoOperationsSpace final : public pcms::FunctionSpace
 {
 public:
   explicit NoOperationsSpace(std::shared_ptr<const pcms::FunctionSpace> space)
-    : FunctionSpace(space->GetLayout(), space, space->GetGeometry()),
-      space_(std::move(space))
+    : FunctionSpace(space->GetLayout(), space, space->GetGeometry(),
+                    [space](const std::shared_ptr<const pcms::Geometry>&) {
+                      return space->GetQuadrature();
+                    })
   {
   }
 
 protected:
-  pcms::Quadrature CreateQuadrature() const override
-  {
-    return space_->GetQuadrature();
-  }
   pcms::FieldDataVariant CreateFieldData(pcms::Type /*storage_type*/,
                                          pcms::ValueBasis basis) const override
   {
     return std::unique_ptr<pcms::FieldData<pcms::Real>>(
       std::make_unique<NoOperationsData>(std::move(basis)));
   }
-
-private:
-  std::shared_ptr<const pcms::FunctionSpace> space_;
 };
 
 } // namespace

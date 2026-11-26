@@ -554,6 +554,19 @@ TEST_CASE("Periodic spaces: Fourier projection reproduces the analytic "
   }
 }
 
+TEST_CASE("Periodic spaces: a projection onto a spline throws",
+          "[periodic][projection][spline]")
+{
+  const auto fourier = pcms::CreateFourierSpace(Periodic(6), {0, 1});
+  auto source = fourier->CreateFunction<Real>();
+  SetDofs(source, {1.0, 0.5, -0.5});
+  const auto spline = pcms::CreateSplineSpace(Periodic(16));
+  auto target = spline->CreateFunction<Real>();
+  CHECK_THROWS_WITH(
+    pcms::detail::CreateProjection(fourier, spline, {})->Apply(source, target),
+    Catch::Matchers::ContainsSubstring("transpose"));
+}
+
 TEST_CASE("Periodic spaces: a projection onto Fourier modes with an inexact "
           "quadrature and a control variate is exact for a function of the "
           "space",
