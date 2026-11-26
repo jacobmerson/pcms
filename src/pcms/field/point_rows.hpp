@@ -255,19 +255,27 @@ public:
 
   /// @param supported operators besides Value
   /// @param nodal whether a DOF is the value of the function at its DOF holder
+  /// @param reproduced_degree ReproducedPolynomialDegree()
   RowsEvaluatorFactory(std::shared_ptr<const Geometry> geometry,
                        std::shared_ptr<const FieldLayout> layout,
                        std::set<DifferentialOperator> supported,
-                       MakeRows make_rows, bool nodal)
+                       MakeRows make_rows, bool nodal,
+                       int reproduced_degree = -1)
     : TypedPointEvaluatorFactory<Real, Bound>(std::move(geometry),
                                               std::move(supported)),
       layout_(std::move(layout)),
       make_rows_(std::move(make_rows)),
-      nodal_(nodal)
+      nodal_(nodal),
+      reproduced_degree_(reproduced_degree)
   {
   }
 
   [[nodiscard]] bool HasNodalDOFs() const noexcept override { return nodal_; }
+
+  [[nodiscard]] int ReproducedPolynomialDegree() const noexcept override
+  {
+    return reproduced_degree_;
+  }
 
 protected:
   std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
@@ -282,6 +290,7 @@ private:
   std::shared_ptr<const FieldLayout> layout_;
   MakeRows make_rows_;
   bool nodal_;
+  int reproduced_degree_;
 };
 
 } // namespace pcms::detail

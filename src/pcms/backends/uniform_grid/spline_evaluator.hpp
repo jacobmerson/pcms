@@ -222,6 +222,12 @@ public:
 
   [[nodiscard]] bool HasNodalDOFs() const noexcept override { return true; }
 
+  [[nodiscard]] int ReproducedPolynomialDegree() const noexcept override
+  {
+    // a periodic axis holds only the constants
+    return wrapped_ == 0 ? 3 : 0;
+  }
+
 protected:
   std::unique_ptr<PointEvaluator<Real>> CreateEvaluator(
     std::shared_ptr<const Bound> bound, DifferentialOperator op) const override

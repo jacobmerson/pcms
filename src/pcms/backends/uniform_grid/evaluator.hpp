@@ -118,15 +118,18 @@ std::shared_ptr<const PointEvaluatorFactory> CreateLagrangeEvaluatorFactory(
 {
   using Bound = pcms::detail::UniformGridBinding<Dim>;
   const unsigned wrapped = geometry->WrappedAxes();
+  const int order = layout->GetOrder();
   return std::make_shared<pcms::detail::RowsEvaluatorFactory<Bound>>(
     std::move(geometry), layout, std::set{DifferentialOperator::Gradient},
-    [grid = layout->GetGrid(), wrapped,
-     order = layout->GetOrder()](const Bound& bound, DifferentialOperator op) {
+    [grid = layout->GetGrid(), wrapped, order](const Bound& bound,
+                                               DifferentialOperator op) {
       return detail::BuildGridRows<Dim>(
         grid, wrapped, order, op == DifferentialOperator::Gradient,
         bound.CellIndices(), bound.Parametric(), bound.MissingPoints());
     },
-    true);
+    true,
+    // a periodic axis holds only the constants
+    wrapped == 0 ? order : 0);
 }
 
 } // namespace pcms::uniform_grid

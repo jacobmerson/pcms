@@ -39,6 +39,13 @@ public:
   /// @return whether a DOF is the value of the function at its DOF holder
   [[nodiscard]] virtual bool HasNodalDOFs() const noexcept { return false; }
 
+  /// @return the highest total degree of the polynomials the basis contains
+  ///         exactly, or -1 if it contains none (not even constants)
+  [[nodiscard]] virtual int ReproducedPolynomialDegree() const noexcept
+  {
+    return -1;
+  }
+
   /// @brief Creates an evaluator at the points of a BoundPoints.
   ///
   /// If the bind had a coordinate map, the evaluator evaluates at the mapped

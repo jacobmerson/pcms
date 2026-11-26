@@ -141,9 +141,10 @@ std::shared_ptr<const FunctionSpace> MakeSpace(
   std::function<Quadrature(const std::shared_ptr<const Geometry>&)> natural,
   bool nodal)
 {
+  // periodic: only the constants
   auto evaluator = std::make_shared<RowsFactory>(
     geometry, layout, std::set{DifferentialOperator::Gradient},
-    std::move(make_rows), nodal);
+    std::move(make_rows), nodal, 0);
   return std::make_shared<FunctionSpace>(
     std::move(layout), std::move(evaluator), std::move(geometry),
     std::move(natural));

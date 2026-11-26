@@ -56,20 +56,22 @@ LO CountWrapped(Kokkos::View<const LO*, DeviceMemorySpace> missing,
 class TwistShiftTransform final : public PeriodicTransform
 {
 public:
-  TwistShiftTransform(int shift_axis,
-                      std::shared_ptr<const Function<Real>> shift,
-                      const std::vector<int>& input_axes)
-    : shift_axis_(shift_axis),
-      shift_(std::move(shift)),
-      input_axes_("twist_shift_axes", input_axes.size()),
-      max_axis_(shift_axis)
+  explicit TwistShiftTransform(detail::TwistShiftArguments arguments)
+    : arguments_(std::move(arguments)),
+      input_axes_("twist_shift_axes", arguments_.input_axes.size()),
+      max_axis_(arguments_.shift_axis)
   {
     const auto host = Kokkos::create_mirror_view(input_axes_);
-    for (std::size_t k = 0; k < input_axes.size(); ++k) {
-      host(k) = input_axes[k];
-      max_axis_ = std::max(max_axis_, input_axes[k]);
+    for (std::size_t k = 0; k < arguments_.input_axes.size(); ++k) {
+      host(k) = arguments_.input_axes[k];
+      max_axis_ = std::max(max_axis_, arguments_.input_axes[k]);
     }
     Kokkos::deep_copy(input_axes_, host);
+  }
+
+  [[nodiscard]] const detail::TwistShiftArguments& GetArguments() const noexcept
+  {
+    return arguments_;
   }
 
   void Apply(Rank2View<Real, DeviceMemorySpace> points,
@@ -79,8 +81,9 @@ public:
       throw pcms_error("twist-shift: an axis of the map is not an axis of the "
                        "coordinate system");
     }
+    const auto& shift_function = *arguments_.shift;
     const auto inputs = Columns(points, input_axes_);
-    const auto geometry = shift_->GetSpace().GetGeometry();
+    const auto geometry = shift_function.GetSpace().GetGeometry();
     // S is needed only at the points that wrapped
     const auto bound = geometry->Bind(
       CoordinateView<DeviceMemorySpace>(geometry->GetCoordinateSystem(),
@@ -90,19 +93,20 @@ public:
       throw pcms_error("twist-shift: a point crosses the periodic axis "
                        "outside the domain of the shift");
     }
-    const auto evaluator = shift_->GetSpace().CreatePointEvaluator<Real>(bound);
+    const auto evaluator =
+      shift_function.GetSpace().CreatePointEvaluator<Real>(bound);
     Kokkos::View<Real**, DeviceMemorySpace> shift("twist_shift",
                                                   points.extent(0), 1);
     evaluator->Evaluate(
-      *shift_, ValueView<Real, DeviceMemorySpace>(
-                 evaluator->OutputBasis(shift_->GetData().GetValueBasis()),
-                 MakeRank2View(shift)));
-    AddShift(points, wraps, shift_axis_, shift);
+      shift_function,
+      ValueView<Real, DeviceMemorySpace>(
+        evaluator->OutputBasis(shift_function.GetData().GetValueBasis()),
+        MakeRank2View(shift)));
+    AddShift(points, wraps, arguments_.shift_axis, shift);
   }
 
 private:
-  int shift_axis_;
-  std::shared_ptr<const Function<Real>> shift_;
+  detail::TwistShiftArguments arguments_;
   Kokkos::View<int*, DeviceMemorySpace> input_axes_;
   int max_axis_;
 };
@@ -125,7 +129,15 @@ std::shared_ptr<const PeriodicTransform> CreateTwistShiftTransform(
       "input axis");
   }
   return std::make_shared<const TwistShiftTransform>(
-    shift_axis, std::move(shift), input_axes);
+    detail::TwistShiftArguments{shift_axis, std::move(shift),
+                                std::move(input_axes)});
+}
+
+const detail::TwistShiftArguments* detail::GetTwistShiftArguments(
+  const PeriodicTransform& map) noexcept
+{
+  const auto* twist_shift = dynamic_cast<const TwistShiftTransform*>(&map);
+  return twist_shift == nullptr ? nullptr : &twist_shift->GetArguments();
 }
 
 } // namespace pcms

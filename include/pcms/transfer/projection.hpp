@@ -21,9 +21,12 @@ namespace pcms
 /// Galerkin L2 projection of any evaluable source onto target_space: solves
 /// the mass system M x = b with b = E^T W f, where E evaluates the target
 /// space at the points of a quadrature, W holds its weights and f is the
-/// source at the points. The right-hand side uses a Gauss rule on the target
-/// space's geometry exact for its natural quadrature's degree (at least 2),
-/// the mass matrix the target space's natural quadrature. A field with several
+/// source at the points. The right-hand side uses the target space's natural
+/// quadrature if it is exact for the product of a source and a target function
+/// (degree at least 2; 2 if either reproduces no polynomials), else a Gauss
+/// rule of that degree on the target space's geometry (on an embedded one,
+/// mapped from its parameter geometry); the mass matrix the target space's
+/// natural quadrature. A field with several
 /// components is projected jointly (the components do not couple). The source
 /// is evaluated at the target's points in the target's coordinate system: a
 /// source in another frame needs a target geometry embedded in that frame.
