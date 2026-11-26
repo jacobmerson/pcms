@@ -1,0 +1,18 @@
+@PACKAGE_INIT@
+
+# Components: Wrapped, Native and Nimrod, as built (the options
+# FUSIONIO_ENABLE_WRAPPED, ...). Requiring one that was not built fails.
+set(fusionio2_Wrapped_FOUND @FUSIONIO_ENABLE_WRAPPED@)
+set(fusionio2_Native_FOUND @FUSIONIO_ENABLE_NATIVE@)
+set(fusionio2_Nimrod_FOUND @FUSIONIO_ENABLE_NIMROD@)
+
+include(CMakeFindDependencyMacro)
+find_dependency(pcms CONFIG)
+if(fusionio2_Wrapped_FOUND)
+  # Fusion-IO 1.x (CMake package fusionio) reads the files; prefer the one this
+  # package was built with.
+  find_dependency(fusionio CONFIG HINTS "@fusionio_DIR@")
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/fusionio2-targets.cmake")
+check_required_components(fusionio2)
