@@ -14,10 +14,10 @@
 namespace pcms
 {
 
-/// @brief Integrals of the fields of a space by quadrature. The components
-///        of a vector field are paired by the Euclidean product. The integrals
-///        are over the ranks the quadrature's geometry is partitioned over,
-///        and collective over them.
+/// @brief Integrals of the fields of a space by quadrature. Vectors and
+///        covectors are paired by the metric of their coordinate system. The
+///        integrals are over the ranks the quadrature's geometry is
+///        partitioned over, and collective over them.
 class L2Integral
 {
 public:

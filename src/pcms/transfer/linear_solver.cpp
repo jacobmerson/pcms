@@ -81,6 +81,7 @@ bool CanAssemble([[maybe_unused]] const BilinearForm& form)
 {
 #ifdef PCMS_ENABLE_PETSC
   return !form.TestSpace()->GetLayout()->IsDistributed() &&
+         !form.UsesMetric() &&
          pcms::detail::AsRowsSource(form.TestEvaluator()) != nullptr;
 #else
   return false;

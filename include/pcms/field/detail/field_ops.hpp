@@ -4,6 +4,7 @@
 #include "pcms/field/field.hpp"
 #include "pcms/utility/assert.hpp"
 #include <cmath>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <typeinfo>
@@ -121,6 +122,26 @@ template <typename T>
 [[nodiscard]] T Apply(const Field<T>& functional, const Function<T>& u)
 {
   return DotProd(functional, static_cast<const Field<T>&>(u));
+}
+
+/// @brief op(x, y) elementwise over values of the same shape
+template <typename T, typename Op>
+Kokkos::View<T**, DeviceMemorySpace> MapOwned(
+  Rank2View<const T, DeviceMemorySpace> x,
+  Rank2View<const T, DeviceMemorySpace> y, Op op)
+{
+  Kokkos::View<T**, DeviceMemorySpace> out(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "pcms::MapOwned"),
+    x.extent(0), x.extent(1));
+  Kokkos::parallel_for(
+    "pcms::MapOwned",
+    Kokkos::MDRangePolicy<DeviceMemorySpace::execution_space, Kokkos::Rank<2>>(
+      {0, 0},
+      {static_cast<int64_t>(x.extent(0)), static_cast<int64_t>(x.extent(1))}),
+    KOKKOS_LAMBDA(const int64_t i, const int64_t c) {
+      out(i, c) = op(x(i, c), y(i, c));
+    });
+  return out;
 }
 
 } // namespace pcms::detail

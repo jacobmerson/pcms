@@ -2,20 +2,24 @@
 #define PCMS_TRANSFER_FORMS_HPP
 
 #include "pcms/field/coordinate_map.hpp"
+#include "pcms/field/detail/transform_chain.hpp"
 #include "pcms/field/field.hpp"
 #include "pcms/field/function_space.hpp"
 #include "pcms/field/point_evaluator.hpp"
 #include "pcms/field/point_evaluator_factory.hpp"
+#include "pcms/field/value_transform.hpp"
 #include "pcms/geometry/quadrature.hpp"
 #include "pcms/utility/types.hpp"
 #include <Kokkos_Core.hpp>
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace pcms::transfer::detail
 {
 
-/// @brief The quadrature of a BilinearForm and the map to its trial.
+/// @brief The quadrature, the map to the trial and the pointwise operator G
+///        of a BilinearForm.
 struct FormOptions
 {
   /// the quadrature, on the test space's geometry; unset: the test space's
@@ -23,12 +27,16 @@ struct FormOptions
   std::optional<Quadrature> quadrature;
   /// map from the test space's geometry to the trial's, or null
   std::shared_ptr<const CoordinateMap> to_trial;
+  /// whether vectors and covectors pair through the metric of their
+  /// coordinate system
+  bool metric = false;
 };
 
-/// @brief B = E_test^T W E_trial: the trial evaluated at the points of a
-///        quadrature on the test space, weighted, then the transpose of the
-///        test evaluation. The evaluations return views of scratch the form
-///        owns, valid until the next evaluation of the same side.
+/// @brief B = E_test^T W G E_trial: the trial evaluated at the points of a
+///        quadrature on the test space, a pointwise operator G, the weights,
+///        then the transpose of the test evaluation. The evaluations return
+///        views of scratch the form owns, valid until the next evaluation of
+///        the same side.
 class BilinearForm
 {
 public:
@@ -90,6 +98,9 @@ public:
     return trial_evaluator_ == nullptr;
   }
 
+  /// @return whether G may differ from the identity
+  [[nodiscard]] bool UsesMetric() const noexcept { return options_.metric; }
+
   [[nodiscard]] const std::shared_ptr<const FunctionSpace>& TestSpace()
     const noexcept
   {
@@ -127,14 +138,27 @@ private:
   [[nodiscard]] ValueView<const Real, DeviceMemorySpace> Weight(
     ValueView<const Real, DeviceMemorySpace> samples) const;
 
+  /// @return G for trial values in `basis`
+  [[nodiscard]] const pcms::detail::TransformChain& G(
+    const ValueBasis& basis) const;
+
   std::shared_ptr<const Test> test_;
   std::shared_ptr<const PointEvaluatorFactory> trial_;
   FormOptions options_;
   // null when the trial is the test space without a map
   std::unique_ptr<PointEvaluator<Real>> trial_evaluator_;
+  /// G for the trial values of one basis
+  struct Operator
+  {
+    std::optional<ValueTransform> lower;
+    pcms::detail::TransformChain chain;
+  };
+  mutable std::vector<std::unique_ptr<Operator>> g_;
+  mutable std::unique_ptr<BoundCoordinateSystem> metric_;
   mutable Kokkos::View<Real**, DeviceMemorySpace> test_values_;
   mutable Kokkos::View<Real**, DeviceMemorySpace> trial_values_;
   mutable Kokkos::View<Real**, DeviceMemorySpace> weighted_;
+  mutable Kokkos::View<Real**, DeviceMemorySpace> g_values_;
 };
 
 } // namespace pcms::transfer::detail

@@ -83,8 +83,7 @@ public:
     return dim_ == 0 ? "cartesian (dimension deferred)" : "cartesian";
   }
   [[nodiscard]] int Dimension() const noexcept override { return dim_; }
-  [[nodiscard]] bool IsOrthogonal() const noexcept override { return true; }
-  [[nodiscard]] bool IsNormalized() const noexcept override { return true; }
+  [[nodiscard]] bool IsOrthonormal() const noexcept override { return true; }
   [[nodiscard]] std::unique_ptr<BoundCoordinateSystem> Bind(
     Rank2View<const Real, DeviceMemorySpace> points) const override
   {
@@ -109,8 +108,7 @@ public:
     return "cylindrical_rthetaz";
   }
   [[nodiscard]] int Dimension() const noexcept override { return 3; }
-  [[nodiscard]] bool IsOrthogonal() const noexcept override { return true; }
-  [[nodiscard]] bool IsNormalized() const noexcept override { return false; }
+  [[nodiscard]] bool IsOrthonormal() const noexcept override { return false; }
   [[nodiscard]] std::optional<Real> Period(int axis) const noexcept override
   {
     return axis == 1 ? std::optional<Real>(2.0 * std::numbers::pi)
@@ -139,8 +137,7 @@ public:
     return "cylindrical_rz";
   }
   [[nodiscard]] int Dimension() const noexcept override { return 2; }
-  [[nodiscard]] bool IsOrthogonal() const noexcept override { return true; }
-  [[nodiscard]] bool IsNormalized() const noexcept override { return true; }
+  [[nodiscard]] bool IsOrthonormal() const noexcept override { return true; }
   [[nodiscard]] std::unique_ptr<BoundCoordinateSystem> Bind(
     Rank2View<const Real, DeviceMemorySpace> points) const override
   {
@@ -169,8 +166,7 @@ public:
     return name_;
   }
   [[nodiscard]] int Dimension() const noexcept override { return dimension_; }
-  [[nodiscard]] bool IsOrthogonal() const noexcept override { return false; }
-  [[nodiscard]] bool IsNormalized() const noexcept override { return false; }
+  [[nodiscard]] bool IsOrthonormal() const noexcept override { return false; }
   [[nodiscard]] bool HasMetric() const noexcept override { return false; }
   [[nodiscard]] std::optional<Real> Period(int axis) const noexcept override
   {

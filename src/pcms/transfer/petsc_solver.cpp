@@ -169,6 +169,9 @@ public:
       throw pcms_error("PetscSolver: the assembled solve is serial; the "
                        "layout is distributed");
     }
+    if (form.UsesMetric()) {
+      throw pcms_error("PetscSolver: the assembled solve needs G = I");
+    }
     const auto* source = pcms::detail::AsRowsSource(form.TestEvaluator());
     if (source == nullptr) {
       throw pcms_error("PetscSolver: the assembled solve needs an evaluator "
