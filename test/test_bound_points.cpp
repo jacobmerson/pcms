@@ -135,6 +135,26 @@ TEST_CASE("A BoundPoints is accepted only by sources on its geometry")
                       ContainsSubstring("Divergence is not supported"));
 }
 
+TEST_CASE("BoundPoints::On reuses a bind while it is alive")
+{
+  auto lib = Omega_h::Library{};
+  auto mesh = pcms::test::BuildSquareMesh(lib, 4);
+  const auto own = pcms::test::MakeP1Space(mesh)->GetGeometry();
+  const auto other = pcms::test::MakeP1Space(mesh)->GetGeometry();
+  const auto points =
+    pcms::test::Bind(*own, pcms::test::StandardEvalCoords2D());
+  REQUIRE(points->On(*own) == points);
+  auto on_other = points->On(*other);
+  REQUIRE(on_other->GetGeometry() == other);
+  REQUIRE(on_other->NumPoints() == points->NumPoints());
+  REQUIRE(points->On(*other) == on_other);
+  // the memo does not keep a bind alive
+  const std::weak_ptr<const BoundPoints> weak = on_other;
+  on_other.reset();
+  REQUIRE(weak.expired());
+  REQUIRE(points->On(*other)->GetGeometry() == other);
+}
+
 TEST_CASE("Binding checks the query coordinate system")
 {
   auto lib = Omega_h::Library{};

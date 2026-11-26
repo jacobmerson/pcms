@@ -665,3 +665,20 @@ TEST_CASE("ApplyValueTransforms applies a bound map's transforms in one call")
     }
   }
 }
+
+TEST_CASE("BoundPoints::On binds through a map, reused for that map")
+{
+  auto lib = Omega_h::Library{};
+  Omega_h::Mesh src_mesh(&lib);
+  Omega_h::Mesh tgt_mesh(&lib);
+  auto src = BuildCylindricalSource(lib, src_mesh, 1);
+  auto tgt = BuildCartesianTarget(lib, tgt_mesh, 1);
+  const auto points =
+    tgt->GetGeometry()->Bind(tgt->GetLayout()->GetDOFHolderCoordinates());
+  const auto map = CartToCyl();
+  const auto on = points->On(*src->GetGeometry(), map);
+  REQUIRE(on->GetCoordinateMap() == map);
+  REQUIRE(on->GetBoundMap() != nullptr);
+  REQUIRE(points->On(*src->GetGeometry(), map) == on);
+  REQUIRE(points->On(*src->GetGeometry(), CartToCyl()) != on);
+}
