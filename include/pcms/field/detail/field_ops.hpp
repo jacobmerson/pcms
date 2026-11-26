@@ -28,7 +28,7 @@ void CheckSameLayout(const Field<T>& a, const Field<T>& b, const char* what)
 }
 
 /// @throws pcms_error unless `a` and `b` have the same layout, value basis and
-///         kind of field data
+///         kind of field data, and a linear value kind (not coordinates)
 template <typename T>
 void CheckOperands(const Field<T>& a, const Field<T>& b, const char* what)
 {
@@ -36,6 +36,11 @@ void CheckOperands(const Field<T>& a, const Field<T>& b, const char* what)
   if (!SameValueBasis(a.GetData().GetValueBasis(),
                       b.GetData().GetValueBasis())) {
     throw pcms_error(std::string(what) + ": the fields' value bases differ");
+  }
+  if (a.GetData().GetValueBasis().kind == ValueKind::Coordinates ||
+      b.GetData().GetValueBasis().kind == ValueKind::Coordinates) {
+    throw pcms_error(std::string(what) +
+                     ": coordinates are not a linear value kind");
   }
   if (typeid(a.GetData()) != typeid(b.GetData())) {
     throw pcms_error(std::string(what) +

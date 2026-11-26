@@ -18,6 +18,17 @@
 namespace pcms::transfer::detail
 {
 
+/// @brief A Real function of `space` whose basis is a scalar, or an array of
+///        its components if it has several.
+inline Function<Real> ScratchFunction(const FunctionSpace& space)
+{
+  ValueBasis basis;
+  if (space.GetLayout()->GetNumComponents() > 1) {
+    basis.kind = ValueKind::Array;
+  }
+  return space.CreateFunction<Real>("", std::move(basis));
+}
+
 /// @brief The quadrature, the map to the trial and the pointwise operator G
 ///        of a BilinearForm.
 struct FormOptions

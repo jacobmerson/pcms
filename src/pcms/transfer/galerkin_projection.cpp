@@ -40,9 +40,9 @@ GalerkinProjection::GalerkinProjection(
       detail::FormOptions{.quadrature = MakeQuadrature(*target_space_, options),
                           .to_trial = options.to_source}),
     mass_(target_space_),
-    functional_(target_space_->CreateFunction<Real>()),
-    coefficients_(target_space_->CreateFunction<Real>()),
-    correction_(target_space_->CreateFunction<Real>())
+    functional_(detail::ScratchFunction(*target_space_)),
+    coefficients_(detail::ScratchFunction(*target_space_)),
+    correction_(detail::ScratchFunction(*target_space_))
 {
   detail::RequireCoefficientOperations(target_space_, "GalerkinProjection");
   if (!mass_.TestEvaluator().SupportsTranspose()) {

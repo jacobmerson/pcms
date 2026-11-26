@@ -104,7 +104,7 @@ public:
   /// @throws pcms_error if the space is not owned by a std::shared_ptr
   template <typename T>
   [[nodiscard]] Function<T> CreateFunction(
-    std::string name = "", VarianceSignature variance = values::Scalar,
+    std::string name, VarianceSignature variance,
     std::optional<ComponentScaling> scaling = std::nullopt) const;
 
   /// @throws pcms_error if the space is not owned by a std::shared_ptr
@@ -114,7 +114,8 @@ public:
     std::shared_ptr<const CoordinateSystem> system,
     std::optional<ComponentScaling> scaling = std::nullopt) const;
 
-  /// @brief Creates a Function of scalar values.
+  /// @brief Creates a Function of scalar values, or of independent
+  ///        components (ValueKind::Array) for a space of several components.
   /// @param metadata its name and duality
   /// @throws pcms_error if the space is not owned by a std::shared_ptr
   template <typename T>
@@ -126,6 +127,10 @@ public:
   template <typename T>
   [[nodiscard]] Function<T> CreateFunction(std::string name,
                                            ValueBasis basis) const;
+
+  /// @brief Creates a Function named `name` in the default basis.
+  template <typename T>
+  [[nodiscard]] Function<T> CreateFunction(std::string name = "") const;
 
   // Expert API: wrap externally constructed field data into a Function for this
   // space. The space validates backend-specific field-data type and storage
@@ -218,13 +223,18 @@ Function<T> FunctionSpace::CreateFunction(
 }
 
 template <typename T>
+Function<T> FunctionSpace::CreateFunction(std::string name) const
+{
+  return CreateFunction<T>(FieldMetadata{.name = std::move(name)});
+}
+
+template <typename T>
 Function<T> FunctionSpace::CreateFunction(FieldMetadata metadata) const
 {
   static_assert(detail::is_supported_field_type_v<T>,
                 "T is not a supported field type");
   auto owner = Owner();
-  ValueBasis basis = detail::MakeValueBasis(
-    GetCoordinateSystem(), values::Scalar, nullptr, std::nullopt);
+  ValueBasis basis = detail::DefaultValueBasis(GetLayout()->GetNumComponents());
   detail::ValidateValueSemantics(basis, GetLayout()->GetNumComponents());
   Field<T> field = std::get<Field<T>>(
     CreateFieldImpl(detail::TypeEnumFromType<T>(), std::move(basis)));

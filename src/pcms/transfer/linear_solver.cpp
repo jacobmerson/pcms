@@ -27,8 +27,7 @@ bool AllPositive(const Field<Real>& values)
 Function<Real> CreateInBasis(const FunctionSpace& space,
                              const ValueBasis& basis)
 {
-  return space.CreateFunction<Real>("", basis.variance, basis.system,
-                                    basis.scaling);
+  return space.CreateFunction<Real>("", basis);
 }
 
 // lumped = B 1 in `basis`; whether it is positive
@@ -47,8 +46,7 @@ class LumpedSolver final : public LinearSolver
 public:
   explicit LumpedSolver(const BilinearForm& form) : form_(form)
   {
-    InBasis(
-      form_.TestSpace()->CreateFunction<Real>().GetData().GetValueBasis());
+    InBasis(ScratchFunction(*form_.TestSpace()).GetData().GetValueBasis());
   }
 
   void Solve(const Field<Real>& functional,
@@ -93,7 +91,7 @@ bool CanAssemble([[maybe_unused]] const BilinearForm& form)
 void RequireCoefficientOperations(
   const std::shared_ptr<const FunctionSpace>& space, const std::string& caller)
 {
-  auto probe = space->CreateFunction<Real>();
+  auto probe = ScratchFunction(*space);
   try {
     pcms::detail::Const(Real(0), probe);
   } catch (const pcms_error&) {
