@@ -613,7 +613,7 @@ public:
                        });
   }
 
-  /// @throws pcms_error for Coordinates values on a periodic axis
+  /// @throws pcms_error for wrapped Coordinates values on a periodic axis
   void EvaluateImpl(const Field<Real>& field,
                     ValueView<Real, DeviceMemorySpace> values) const override
   {
@@ -621,7 +621,7 @@ public:
       detail::CoordinatePeriods(field.GetData().GetValueBasis());
     if (periods[0] > 0 || periods[1] > 0 || periods[2] > 0) {
       throw pcms_error("PointEvaluator::Evaluate: a product space does not "
-                       "evaluate Coordinates on a periodic axis");
+                       "evaluate wrapped Coordinates on a periodic axis");
     }
     const auto dofs = field.GetDOFHolderData().GetValues();
     const auto out = values.GetValues();
