@@ -35,13 +35,16 @@ void CheckBindArguments(const Geometry& geometry,
         "'; it must take the query coordinate system to the geometry's '" +
         std::string(system->Kind()) + "'");
     }
-  } else if (!pcms::detail::SameCoordinateSystem(query_system, system)) {
+  } else if (!pcms::detail::SameCoordinateSystem(query_system, system) &&
+             !pcms::detail::SameCoordinateSystem(
+               query_system, geometry.GetParameterSystem())) {
     throw pcms_error("Geometry::Bind: query coordinate system '" +
                      std::string(query_system->Kind()) +
                      "' is not the geometry's coordinate system '" +
                      std::string(system->Kind()) +
                      "'; pass a CoordinateMap from one to the other as "
-                     "Bind's map argument");
+                     "Bind's map argument, or points in the geometry's "
+                     "parameter system");
   }
   if (policy.mode == OutOfBoundsMode::NEAREST_BOUNDARY &&
       !geometry.SupportsNearestBoundary()) {
@@ -289,12 +292,14 @@ void detail::CheckNeighbourhoodArguments(
 }
 
 void detail::ScaleByVolumeFactor(Kokkos::View<Real*, DeviceMemorySpace> weights,
-                                 const BoundPoints& bound)
+                                 const BoundPoints& bound, bool divide)
 {
   const auto volume = bound.VolumeFactor();
   pcms::detail::ForEach(
     "ScaleByVolumeFactor", static_cast<LO>(weights.extent(0)),
-    KOKKOS_LAMBDA(const LO i) { weights(i) *= volume(i); });
+    KOKKOS_LAMBDA(const LO i) {
+      weights(i) = divide ? weights(i) / volume(i) : weights(i) * volume(i);
+    });
   Kokkos::fence("ScaleByVolumeFactor");
 }
 

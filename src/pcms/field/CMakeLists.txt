@@ -7,6 +7,7 @@ set(PCMS_FIELD_HEADERS
         ../../../include/pcms/field/coordinate_map.hpp
         ../../../include/pcms/field/embedding.hpp
         ../../../include/pcms/field/periodic_axis.hpp
+        ../../../include/pcms/field/detail/embedding.hpp
         ../../../include/pcms/field/value_transform.hpp
         ../../../include/pcms/field/value_view.hpp
         element_dispatch.hpp

@@ -18,6 +18,19 @@ bool FieldLayout::IsDistributed() const
   return size > 1;
 }
 
+const std::shared_ptr<const CoordinateSystem>&
+FieldLayout::GetCoordinateSystem() const
+{
+  if (geometry_ != nullptr) {
+    return geometry_->GetCoordinateSystem();
+  }
+  if (system_ == nullptr) {
+    throw pcms_error("FieldLayout::GetCoordinateSystem: layout has no "
+                     "coordinate system set");
+  }
+  return system_;
+}
+
 OwnerHints DOFHolderOwners(const FieldLayout& layout)
 {
   const int entity_dim = layout.GetDOFHolderEntityDim();

@@ -1,8 +1,22 @@
 #include "pcms/field/embedding.hpp"
+#include "pcms/backends/uniform_grid/uniform_grid_geometry.hpp"
+#include "pcms/field/detail/transformed_point_evaluator.hpp"
+#include "pcms/geometry/detail/geometry.hpp"
+#include "pcms/localization/candidate_map.hpp"
 #include "pcms/utility/assert.hpp"
+#include "pcms/utility/detail/arrays.hpp"
 #include "pcms/utility/detail/memory_spaces.hpp"
+#include "pcms/utility/detail/periodic.hpp"
+#include "pcms/utility/detail/small_matrix.hpp"
+#include <algorithm>
+#include <array>
 #include <cmath>
+#include <limits>
+#include <optional>
 #include <string>
+#include <utility>
+#include <variant>
+#include <vector>
 
 namespace pcms
 {
@@ -31,6 +45,64 @@ void ReshapeJacobian(DeviceView<const Real**> gradient,
     });
 }
 
+// The volume factor of the metric g induced in the parameter system: the
+// physical volume element per unit of parameter volume, sqrt(det g) times the
+// factor of the coordinate system's volume element relative to its metric.
+template <int Dp, int Dt>
+void InducedVolume(DeviceView<const Real***> metric,
+                   const BoundCoordinateSystem& target,
+                   DeviceView<Real*> volume)
+{
+  const auto g_target = target.Metric();
+  const auto volume_target = target.VolumeFactor();
+  detail::ForEach(
+    "embedding_induced_volume", static_cast<LO>(metric.extent(0)),
+    KOKKOS_LAMBDA(const LO p) {
+      detail::SquareMatrix<Dp> g;
+      detail::SquareMatrix<Dt> g_t;
+      for (int a = 0; a < Dp; ++a) {
+        for (int b = 0; b < Dp; ++b) {
+          g[b][a] = metric(p, a, b);
+        }
+      }
+      for (int j = 0; j < Dt; ++j) {
+        for (int k = 0; k < Dt; ++k) {
+          g_t[k][j] = g_target(p, j, k);
+        }
+      }
+      volume(p) = Kokkos::sqrt(detail::Determinant<Dp>(g)) * volume_target(p) /
+                  Kokkos::sqrt(detail::Determinant<Dt>(g_t));
+    });
+}
+
+// The covariant metric g_ab of the parameter system from the values of a
+// given metric, [point][a * dp + b] (g^ab, inverted, if `contravariant`), and
+// its volume factor sqrt(det g).
+template <int Dim>
+void GivenMetric(DeviceView<const Real**> values, bool contravariant,
+                 DeviceView<Real***> metric, DeviceView<Real*> volume)
+{
+  detail::ForEach(
+    "embedding_given_metric", static_cast<LO>(metric.extent(0)),
+    KOKKOS_LAMBDA(const LO p) {
+      detail::SquareMatrix<Dim> g;
+      for (int a = 0; a < Dim; ++a) {
+        for (int b = 0; b < Dim; ++b) {
+          g[b][a] = values(p, a * Dim + b);
+        }
+      }
+      if (contravariant) {
+        g = detail::Invert<Dim>(g);
+      }
+      for (int a = 0; a < Dim; ++a) {
+        for (int b = 0; b < Dim; ++b) {
+          metric(p, a, b) = g[b][a];
+        }
+      }
+      volume(p) = Kokkos::sqrt(detail::Determinant<Dim>(g));
+    });
+}
+
 struct Evaluation
 {
   DeviceView<Real**> mapped;    // [point][coordinate system dimension]
@@ -41,23 +113,24 @@ struct Evaluation
 class Position
 {
 public:
-  explicit Position(std::shared_ptr<const Function<Real>> position)
+  /// @param who the caller, for the messages
+  Position(std::shared_ptr<const Function<Real>> position, const char* who)
     : position_(std::move(position))
   {
+    const std::string prefix = std::string(who) + ": ";
     if (position_ == nullptr) {
-      throw pcms_error("CreateCoordinateMap: the position must not be null");
+      throw pcms_error(prefix + "the position must not be null");
     }
     if (position_->GetData().GetValueBasis().kind != ValueKind::Coordinates) {
-      throw pcms_error("CreateCoordinateMap: the position's values must be "
-                       "coordinates (ValueBasis::Coordinates)");
+      throw pcms_error(prefix + "the position's values must be coordinates "
+                                "(ValueBasis::Coordinates)");
     }
     if (!position_->GetSpace().Supports(DifferentialOperator::Gradient)) {
-      throw pcms_error("CreateCoordinateMap: the position's space does not "
-                       "evaluate gradients");
+      throw pcms_error(prefix +
+                       "the position's space does not evaluate gradients");
     }
     if (ParameterSystem()->Dimension() > 3 || System()->Dimension() > 3) {
-      throw pcms_error("CreateCoordinateMap: dimensions above 3 are not "
-                       "supported");
+      throw pcms_error(prefix + "dimensions above 3 are not supported");
     }
   }
 
@@ -135,12 +208,719 @@ private:
   Position position_;
 };
 
+// ---------------------------------------------------------------------------
+// The embedded geometry
+// ---------------------------------------------------------------------------
+
+// Newton iterations of one candidate cell, the residual that counts as
+// converged (relative to the extent of the image), the fraction of a cell
+// extent the image bounding boxes are padded by (the image of a cell bulges
+// beyond its sampled points), and the sample lattice per cell axis.
+constexpr int MaxNewtonIterations = 30;
+constexpr Real ResidualTol = 1e-10;
+constexpr Real BoxPadding = 0.1;
+constexpr int SamplesPerAxis = 4;
+
+// Starts candidate round `round` at the points that are not found and have
+// that many candidates: they become active at the center of the candidate
+// cell.
+// @return the number of active points
+template <unsigned Dim>
+LO StartRound(int round, UniformGrid<Dim> grid,
+              detail::CandidateBins candidates, DeviceView<const bool*> found,
+              DeviceView<bool*> active, DeviceView<bool*> converged,
+              DeviceView<LO*> cell, DeviceView<Real**> xi)
+{
+  LO started = 0;
+  Kokkos::parallel_reduce(
+    "embedded_start_round",
+    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(
+      0, static_cast<LO>(found.extent(0))),
+    KOKKOS_LAMBDA(const LO p, LO& count) {
+      const LO begin = candidates.row_map(p);
+      active(p) = !found(p) && candidates.row_map(p + 1) - begin > round;
+      converged(p) = false;
+      if (active(p)) {
+        cell(p) = candidates.entries(begin + round);
+        const auto box = grid.GetCellBBOX(cell(p));
+        for (unsigned d = 0; d < Dim; ++d) {
+          xi(p, d) = box.center[d];
+        }
+        ++count;
+      }
+    },
+    started);
+  return started;
+}
+
+// One Gauss-Newton step of the active points that have not converged: the
+// residual r = target - x(xi), to the nearest image along the axes with a
+// `period`, is reduced by the step solving
+// (J J^T) delta = J r, which is Newton's for a square J. The step is
+// regularized where J is singular (a pole of the map): J J^T + eps I.
+// @return the number of points that took a step
+template <unsigned Dim>
+LO NewtonStep(UniformGrid<Dim> grid, Kokkos::Array<Real, 3> period,
+              Real residual_tolerance, bool update,
+              Rank2View<const Real, DeviceMemorySpace> target,
+              DeviceView<const Real**> mapped,
+              View<3, const Real, DeviceMemorySpace> jacobian,
+              DeviceView<const bool*> active, DeviceView<bool*> converged,
+              DeviceView<const LO*> cell, DeviceView<Real**> xi)
+{
+  const int dt = target.extent(1);
+  LO stepped = 0;
+  Kokkos::parallel_reduce(
+    "embedded_newton_step",
+    Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(
+      0, static_cast<LO>(target.extent(0))),
+    KOKKOS_LAMBDA(const LO p, LO& count) {
+      if (!active(p) || converged(p)) {
+        return;
+      }
+      Real r[3] = {};
+      Real norm2 = 0;
+      for (int j = 0; j < dt; ++j) {
+        r[j] =
+          pcms::detail::NearestImage(target(p, j) - mapped(p, j), period[j]);
+        norm2 += r[j] * r[j];
+      }
+      // a point within the tolerance still takes this step, which puts it
+      // within roundoff of the solution (Newton converges quadratically):
+      // otherwise a point on the face of a cell can be rejected by its cell
+      const bool close = Kokkos::sqrt(norm2) <= residual_tolerance;
+      if (!update) {
+        converged(p) = close;
+        return;
+      }
+      constexpr int D = Dim;
+      detail::SquareMatrix<D> m = {};
+      Kokkos::Array<Real, D> b = {};
+      Real trace = 0;
+      for (int a = 0; a < D; ++a) {
+        for (int c = 0; c < D; ++c) {
+          for (int j = 0; j < dt; ++j) {
+            m[c][a] += jacobian(p, j, a) * jacobian(p, j, c);
+          }
+        }
+        for (int j = 0; j < dt; ++j) {
+          b[a] += jacobian(p, j, a) * r[j];
+        }
+        trace += m[a][a];
+      }
+      const Real scale = trace / D;
+      Real reference = 1;
+      for (int a = 0; a < D; ++a) {
+        reference *= scale;
+      }
+      auto regular = m;
+      if (detail::Determinant<D>(m) <= 1e-12 * reference) {
+        for (int a = 0; a < D; ++a) {
+          regular[a][a] += 1e-6 * scale + 1e-300;
+        }
+      }
+      b = detail::Solve<D>(regular, b);
+      const auto box = grid.GetCellBBOX(cell(p));
+      for (unsigned d = 0; d < Dim; ++d) {
+        // stay within a cell of the candidate: the position function is
+        // evaluated by extrapolation outside the grid
+        xi(p, d) =
+          Kokkos::clamp(xi(p, d) + b[d], box.center[d] - 2 * box.half_width[d],
+                        box.center[d] + 2 * box.half_width[d]);
+      }
+      converged(p) = close;
+      ++count;
+    },
+    stepped);
+  return stepped;
+}
+
+// A converged point whose parameter coordinates are in its candidate cell is
+// found there.
+template <unsigned Dim>
+void AcceptRound(UniformGrid<Dim> grid, Real slack,
+                 DeviceView<const bool*> active,
+                 DeviceView<const bool*> converged, DeviceView<const LO*> cell,
+                 DeviceView<const Real**> xi, DeviceView<bool*> found)
+{
+  detail::ForEach(
+    "embedded_accept_round", static_cast<LO>(active.extent(0)),
+    KOKKOS_LAMBDA(const LO p) {
+      if (!active(p) || !converged(p)) {
+        return;
+      }
+      const auto box = grid.GetCellBBOX(cell(p));
+      bool inside = true;
+      for (unsigned d = 0; d < Dim; ++d) {
+        inside = inside && Kokkos::fabs(xi(p, d) - box.center[d]) <=
+                             box.half_width[d] * (1 + slack);
+      }
+      found(p) = inside;
+    });
+}
+
+// The bounding boxes of the images of the cells under the position: of a
+// lattice of sample points of each cell, evaluated in batches of at most
+// detail::EmbeddingSampleBatch samples.
+template <unsigned Dim>
+void SampleCellImages(const Position& position, const UniformGrid<Dim>& grid,
+                      std::vector<std::array<Real, 3>>& lo,
+                      std::vector<std::array<Real, 3>>& hi)
+{
+  const int dt = position.System()->Dimension();
+  const LO num_cells = grid.GetNumCells();
+  std::size_t per_cell = 1;
+  for (unsigned d = 0; d < Dim; ++d) {
+    per_cell *= SamplesPerAxis + 1;
+  }
+  const auto batch = static_cast<LO>(
+    std::max<std::size_t>(1, detail::EmbeddingSampleBatch / per_cell));
+  std::array<Real, 3> empty_lo, empty_hi;
+  empty_lo.fill(std::numeric_limits<Real>::max());
+  empty_hi.fill(std::numeric_limits<Real>::lowest());
+  lo.assign(num_cells, empty_lo);
+  hi.assign(num_cells, empty_hi);
+  for (LO first = 0; first < num_cells; first += batch) {
+    const LO count = std::min(batch, num_cells - first);
+    DeviceView<Real**> device("embedded_samples", count * per_cell, Dim);
+    const auto samples = Kokkos::create_mirror_view(device);
+    for (LO c = 0; c < count; ++c) {
+      const auto box = grid.GetCellBBOX(first + c);
+      for (std::size_t q = 0; q < per_cell; ++q) {
+        std::size_t digits = q;
+        for (unsigned d = 0; d < Dim; ++d) {
+          const auto digit = static_cast<Real>(digits % (SamplesPerAxis + 1));
+          digits /= SamplesPerAxis + 1;
+          samples(c * per_cell + q, d) =
+            box.center[d] +
+            (2 * digit / SamplesPerAxis - 1) * box.half_width[d];
+        }
+      }
+    }
+    Kokkos::deep_copy(device, samples);
+    const auto images = Kokkos::create_mirror_view_and_copy(
+      HostMemorySpace(), position.Evaluate(MakeConstRank2View(device)).mapped);
+    for (LO c = 0; c < count; ++c) {
+      for (std::size_t q = 0; q < per_cell; ++q) {
+        for (int j = 0; j < dt; ++j) {
+          const Real x = images(c * per_cell + q, j);
+          lo[first + c][j] = std::min(lo[first + c][j], x);
+          hi[first + c][j] = std::max(hi[first + c][j], x);
+        }
+      }
+    }
+  }
+}
+
+// The candidate map of the boxes [lo, hi] of the target system, on `count`
+// cells per axis over them, modulo the periods `period` (0: not periodic).
+template <int N>
+CandidateMap<N> CreateBoxMap(const std::vector<std::array<Real, 3>>& lo,
+                             const std::vector<std::array<Real, 3>>& hi,
+                             LO count, const Kokkos::Array<Real, 3>& period)
+{
+  Kokkos::View<AABBox<N>*> boxes("embedded_boxes", lo.size());
+  const auto host = Kokkos::create_mirror_view(boxes);
+  std::array<Real, 3> grid_lo, grid_hi;
+  grid_lo.fill(std::numeric_limits<Real>::max());
+  grid_hi.fill(std::numeric_limits<Real>::lowest());
+  for (std::size_t c = 0; c < lo.size(); ++c) {
+    for (int j = 0; j < N; ++j) {
+      host(c).center[j] = (lo[c][j] + hi[c][j]) / 2;
+      host(c).half_width[j] = (hi[c][j] - lo[c][j]) / 2;
+      grid_lo[j] = std::min(grid_lo[j], lo[c][j]);
+      grid_hi[j] = std::max(grid_hi[j], hi[c][j]);
+    }
+  }
+  Kokkos::deep_copy(boxes, host);
+  UniformGrid<N> grid{};
+  Kokkos::Array<bool, N> periodic{};
+  for (int j = 0; j < N; ++j) {
+    periodic[j] = period[j] > 0;
+    grid.bot_left[j] = grid_lo[j];
+    grid.edge_length[j] =
+      periodic[j] ? period[j] : std::max(grid_hi[j] - grid_lo[j], 1e-300);
+    grid.divisions[j] = count;
+  }
+  return CreateCandidateMap(Kokkos::View<const AABBox<N>*>(boxes), grid, 0,
+                            periodic);
+}
+
+// ---------------------------------------------------------------------------
+
+// What the BoundPoints of an embedded geometry hold: the parameter
+// coordinates of the points, bound on the parameter geometry, and the
+// geometric factors there (computed on first use).
+class EmbeddedBound : public BoundPoints
+{
+public:
+  /// @return the points bound on the parameter geometry, at the parameter
+  ///         coordinates: what the evaluators of its spaces take
+  [[nodiscard]] const std::shared_ptr<const BoundPoints>& Inner() const noexcept
+  {
+    return inner_;
+  }
+
+protected:
+  EmbeddedBound(std::shared_ptr<const Geometry> geometry,
+                const BindRequest& request, Position position,
+                std::shared_ptr<const Function<Real>> metric)
+    : BoundPoints(std::move(geometry), request),
+      position_(std::move(position)),
+      metric_(std::move(metric))
+  {
+  }
+
+  // Takes the parameter coordinates of the points: `xi`, bound on `parameter`.
+  void SetParameters(const Geometry& parameter, DeviceView<Real**> xi,
+                     OutOfBoundsPolicy policy)
+  {
+    xi_ = std::move(xi);
+    inner_ = parameter.Bind(
+      CoordinateView<DeviceMemorySpace>(parameter.GetCoordinateSystem(),
+                                        MakeConstRank2View(xi_)),
+      policy);
+  }
+
+  // J from the Gradient of the position at the parameter coordinates of the
+  // points, and the given metric there or the metric J^T G J the position
+  // induces
+  [[nodiscard]] detail::GeometricFactors ComputeFactors() const override
+  {
+    auto e = position_.Evaluate(MakeConstRank2View(xi_));
+    const auto n = xi_.extent(0);
+    const int dp = position_.ParameterSystem()->Dimension();
+    const int dt = position_.System()->Dimension();
+    DeviceView<Real***> metric;
+    DeviceView<Real*> volume("parameter_volume_factor", n);
+    if (metric_ != nullptr) {
+      metric = DeviceView<Real***>("parameter_metric", n, dp, dp);
+      const ValueBasis basis = metric_->GetData().GetValueBasis();
+      DeviceView<Real**> values("given_metric", n,
+                                static_cast<std::size_t>(dp) * dp);
+      metric_->GetSpace().CreatePointEvaluator<Real>(inner_)->Evaluate(
+        *metric_,
+        ValueView<Real, DeviceMemorySpace>(basis, MakeRank2View(values)));
+      detail::VisitDimension(dp, [&](auto d) {
+        GivenMetric<decltype(d)::value>(
+          values, basis.variance[0] == Variance::Contravariant, metric, volume);
+      });
+    } else {
+      const auto target =
+        position_.System()->Bind(MakeConstRank2View(e.mapped));
+      metric = detail::PullbackMetric(
+        View<3, const Real, DeviceMemorySpace>(e.jacobian.data(), n, dt, dp),
+        target->Metric());
+      detail::VisitDimension(dp, [&](auto d) {
+        detail::VisitDimension(dt, [&](auto t) {
+          InducedVolume<decltype(d)::value, decltype(t)::value>(metric, *target,
+                                                                volume);
+        });
+      });
+      Kokkos::fence("embedding_induced_volume");
+    }
+    return detail::GeometricFactors(
+      static_cast<LO>(n), e.jacobian,
+      std::make_shared<const BoundCoordinateSystem>(static_cast<LO>(n), metric,
+                                                    volume));
+  }
+
+private:
+  Position position_;
+  std::shared_ptr<const Function<Real>> metric_;
+  std::shared_ptr<const BoundPoints> inner_;
+  DeviceView<Real**> xi_;
+};
+
 } // namespace
+
+// The search of an embedded geometry: the images of the parameter cells,
+// binned modulo the plain periodic axes of the coordinate system, and the
+// position.
+struct detail::EmbeddedSearch
+{
+  Position position;
+  std::variant<CandidateMap<1>, CandidateMap<2>, CandidateMap<3>> map;
+  Kokkos::Array<Real, 3> period = {};
+  Real residual_tolerance = 0;
+  Real tolerance = 0;
+};
+
+namespace
+{
+
+// The search over the cells of `grid`: the bounding boxes of their images,
+// from a lattice of sample points of each cell, padded.
+template <unsigned Dim>
+std::shared_ptr<const detail::EmbeddedSearch> CreateSearch(
+  const UniformGrid<Dim>& grid, Position position,
+  const EmbeddingOptions& options)
+{
+  const auto& system = position.System();
+  const int dt = system->Dimension();
+  const LO num_cells = grid.GetNumCells();
+  std::vector<std::array<Real, 3>> lo, hi;
+  SampleCellImages<Dim>(position, grid, lo, hi);
+  std::array<Real, 3> image_lo, image_hi;
+  image_lo.fill(std::numeric_limits<Real>::max());
+  image_hi.fill(std::numeric_limits<Real>::lowest());
+  for (LO c = 0; c < num_cells; ++c) {
+    for (int j = 0; j < dt; ++j) {
+      image_lo[j] = std::min(image_lo[j], lo[c][j]);
+      image_hi[j] = std::max(image_hi[j], hi[c][j]);
+    }
+  }
+  Real extent2 = 0;
+  for (int j = 0; j < dt; ++j) {
+    extent2 += (image_hi[j] - image_lo[j]) * (image_hi[j] - image_lo[j]);
+  }
+  const Real extent = std::sqrt(extent2);
+  // pad: the image of a cell bulges beyond its samples
+  for (LO c = 0; c < num_cells; ++c) {
+    for (int j = 0; j < dt; ++j) {
+      const Real pad = BoxPadding * (hi[c][j] - lo[c][j]) + 1e-9 * extent;
+      lo[c][j] -= pad;
+      hi[c][j] += pad;
+    }
+  }
+  Kokkos::Array<Real, 3> period = {};
+  for (const auto& id : system->PeriodicAxes()) {
+    if (id.transform == nullptr) {
+      period[id.axis] = id.length;
+    }
+  }
+  const LO count =
+    options.search.divisions > 0
+      ? options.search.divisions
+      : std::max(1, static_cast<int>(std::ceil(std::pow(num_cells, 1.0 / dt))));
+  auto search = std::make_shared<detail::EmbeddedSearch>(
+    detail::EmbeddedSearch{std::move(position),
+                           {},
+                           period,
+                           ResidualTol * extent,
+                           options.search.tolerance});
+  if (dt == 1) {
+    search->map = CreateBoxMap<1>(lo, hi, count, period);
+  } else if (dt == 2) {
+    search->map = CreateBoxMap<2>(lo, hi, count, period);
+  } else {
+    search->map = CreateBoxMap<3>(lo, hi, count, period);
+  }
+  return search;
+}
+
+struct Located
+{
+  DeviceView<Real**> xi;   // [point][parameter dimension]
+  DeviceView<bool*> found; // [point]
+};
+
+// The parameter coordinates of points of the coordinate system: the candidate
+// cells of each point, modulo the periods, are tried in turn by Gauss-Newton
+// from the cell center.
+template <unsigned Dim>
+Located Search(const detail::EmbeddedSearch& search,
+               const UniformGrid<Dim>& grid,
+               Rank2View<const Real, DeviceMemorySpace> points)
+{
+  const auto n = points.extent(0);
+  DeviceView<Real**> copy("embedded_points", n, points.extent(1));
+  detail::CopyDeviceRank2ViewToDeviceView(copy, points);
+  const auto candidates = std::visit(
+    [&](const auto& map) { return map.GetCandidates(copy); }, search.map);
+  DeviceView<LO*> cell("embedded_cell", n);
+  DeviceView<bool*> active("embedded_active", n);
+  DeviceView<bool*> converged("embedded_converged", n);
+  Located located{DeviceView<Real**>("embedded_xi", n, Dim),
+                  DeviceView<bool*>("embedded_found", n)};
+  for (int round = 0; StartRound<Dim>(round, grid, candidates, located.found,
+                                      active, converged, cell, located.xi) > 0;
+       ++round) {
+    for (int iteration = 0; iteration <= MaxNewtonIterations; ++iteration) {
+      const auto e = search.position.Evaluate(MakeConstRank2View(located.xi));
+      const LO stepped =
+        NewtonStep<Dim>(grid, search.period, search.residual_tolerance,
+                        iteration < MaxNewtonIterations, points, e.mapped,
+                        View<3, const Real, DeviceMemorySpace>(
+                          e.jacobian.data(), e.jacobian.extent(0),
+                          e.jacobian.extent(1), e.jacobian.extent(2)),
+                        active, converged, cell, located.xi);
+      if (stepped == 0) {
+        break;
+      }
+    }
+    AcceptRound<Dim>(grid, search.tolerance, active, converged, cell,
+                     located.xi, located.found);
+  }
+  return located;
+}
+
+class EmbeddedBinding final : public EmbeddedBound
+{
+public:
+  EmbeddedBinding(std::shared_ptr<const EmbeddedGeometry> geometry,
+                  const detail::EmbeddedSearch& search,
+                  const BindRequest& request)
+    : EmbeddedBound(geometry, request, search.position, geometry->GetMetric()),
+      geometry_(std::move(geometry)),
+      search_(search)
+  {
+    Locate();
+  }
+
+protected:
+  void RebindImpl() override { Locate(); }
+
+private:
+  // Points in the parameter system are bound on the parameter geometry as
+  // they are; points of the target system are searched for first. The
+  // parameter geometry gets all the points (a missing one at its last
+  // iterate, clamped): the evaluators fill the rows of the missing points.
+  void Locate()
+  {
+    const auto points = LocatedPointValues();
+    const auto n = NumPoints();
+    const bool parametric =
+      GetBoundMap() == nullptr &&
+      pcms::detail::SameCoordinateSystem(GetCoordinateSystem(),
+                                         geometry_->GetParameterSystem());
+    DeviceView<bool*> found;
+    if (parametric) {
+      DeviceView<Real**> xi("embedded_xi", n, points.extent(1));
+      Kokkos::deep_copy(xi, points);
+      SetParameters(*geometry_->GetParameterGeometry(), xi, Policy());
+      found = detail::FoundMask(n, {Inner()->MissingPoints()});
+    } else {
+      const auto located = uniform_grid::VisitUniformGrid(
+        geometry_->GetParameterGeometry(),
+        [&]<unsigned Dim>(
+          const std::shared_ptr<const uniform_grid::UniformGridGeometry<Dim>>&
+            grid) {
+          return Search<Dim>(search_, grid->GetGrid(),
+                             MakeConstRank2View(points));
+        });
+      SetParameters(*geometry_->GetParameterGeometry(), located.xi,
+                    OutOfBoundsPolicy{OutOfBoundsMode::NEAREST_BOUNDARY});
+      found = located.found;
+    }
+    SetFound(found);
+  }
+
+  std::shared_ptr<const EmbeddedGeometry> geometry_;
+  const detail::EmbeddedSearch& search_;
+};
+
+// Evaluates the fields of a space on the parameter geometry at the points of
+// an embedded geometry: at their parameter coordinates.
+class EmbeddedEvaluatorFactory final : public PointEvaluatorFactory
+{
+public:
+  EmbeddedEvaluatorFactory(std::shared_ptr<const EmbeddedGeometry> embedded,
+                           std::shared_ptr<const FunctionSpace> space)
+    : embedded_(std::move(embedded)), space_(std::move(space))
+  {
+  }
+
+  [[nodiscard]] std::shared_ptr<const Geometry> GetGeometry()
+    const noexcept override
+  {
+    return embedded_;
+  }
+  [[nodiscard]] bool Supports(DifferentialOperator op) const noexcept override
+  {
+    return op == DifferentialOperator::Value;
+  }
+  [[nodiscard]] bool HasNodalDOFs() const noexcept override
+  {
+    return space_->HasNodalDOFs();
+  }
+
+protected:
+  PointEvaluatorVariant CreatePointEvaluatorImpl(
+    Type value_type, std::shared_ptr<const BoundPoints> bound,
+    DifferentialOperator op) const override
+  {
+    const auto embedded = std::dynamic_pointer_cast<const EmbeddedBound>(bound);
+    if (value_type != Type::Real || embedded == nullptr) {
+      throw pcms_error("CreatePointEvaluator: an embedded space evaluates "
+                       "Real fields at the points of its embedded geometry");
+    }
+    return std::unique_ptr<PointEvaluator<Real>>(
+      std::make_unique<detail::TransformedPointEvaluator<Real>>(
+        embedded,
+        CreateUntransformedPointEvaluator<Real>(*space_, embedded->Inner(), op),
+        [parameter = embedded_->GetParameterSystem()](
+          const ValueBasis& basis) -> std::vector<const ValueTransform*> {
+          if (basis.Rank() > 0 &&
+              detail::SameCoordinateSystem(basis.system, parameter)) {
+            throw pcms_error("CreatePointEvaluator: vectors and covectors in "
+                             "the parameter system of an embedded geometry "
+                             "are not yet supported");
+          }
+          return {};
+        }));
+  }
+
+private:
+  std::shared_ptr<const EmbeddedGeometry> embedded_;
+  std::shared_ptr<const FunctionSpace> space_;
+};
+
+/// @brief A space on the parameter geometry evaluated on an embedded
+///        geometry; its quadrature is the space's, in the physical measure.
+class EmbeddedSpace final : public FunctionSpace
+{
+public:
+  EmbeddedSpace(std::shared_ptr<const EmbeddedGeometry> embedded,
+                std::shared_ptr<const FunctionSpace> space)
+    : FunctionSpace(space->GetLayout(),
+                    std::make_shared<EmbeddedEvaluatorFactory>(embedded, space),
+                    embedded),
+      embedded_(std::move(embedded)),
+      space_(std::move(space))
+  {
+  }
+
+  [[nodiscard]] Quadrature CreateQuadrature() const override
+  {
+    const auto parameter = space_->GetQuadrature();
+    DeviceView<Real*> weights(
+      Kokkos::view_alloc(Kokkos::WithoutInitializing, "embedded_weights"),
+      parameter.weights.extent(0));
+    Kokkos::deep_copy(weights, parameter.weights);
+    if (embedded_->GetParameterSystem()->HasMetric()) {
+      detail::ScaleByVolumeFactor(weights, *parameter.points, true);
+    }
+    return detail::BindQuadrature(*embedded_, parameter.points->LocatedPoints(),
+                                  weights);
+  }
+
+private:
+  std::shared_ptr<const EmbeddedGeometry> embedded_;
+  std::shared_ptr<const FunctionSpace> space_;
+};
+
+} // namespace
+
+EmbeddedGeometry::EmbeddedGeometry(
+  std::shared_ptr<const Geometry> parameter,
+  std::shared_ptr<const Function<Real>> position,
+  std::shared_ptr<const Function<Real>> metric,
+  std::shared_ptr<const detail::EmbeddedSearch> search)
+  : parameter_(std::move(parameter)),
+    position_(std::move(position)),
+    metric_(std::move(metric)),
+    system_(position_->GetData().GetValueBasis().system),
+    search_(std::move(search))
+{
+}
+
+EmbeddedGeometry::~EmbeddedGeometry() noexcept = default;
+
+int EmbeddedGeometry::TopologicalDimension() const noexcept
+{
+  return parameter_->GetCoordinateSystem()->Dimension();
+}
+
+std::shared_ptr<const CoordinateSystem> EmbeddedGeometry::GetParameterSystem()
+  const noexcept
+{
+  return parameter_->GetCoordinateSystem();
+}
+
+std::shared_ptr<BoundPoints> EmbeddedGeometry::BindImpl(
+  const BindRequest& request) const
+{
+  return std::make_shared<EmbeddedBinding>(
+    std::static_pointer_cast<const EmbeddedGeometry>(shared_from_this()),
+    *search_, request);
+}
+
+Quadrature EmbeddedGeometry::CreateQuadrature(
+  const detail::QuadratureRule& rule) const
+{
+  const auto* gauss = std::get_if<detail::GaussRule>(&rule);
+  if (gauss == nullptr) {
+    throw pcms_error("CreateQuadrature: an embedded geometry has only the "
+                     "Gauss rule");
+  }
+  return uniform_grid::VisitUniformGrid(parameter_, [&](const auto& grid) {
+    auto [xi, weights] = grid->CellRule(gauss->order);
+    return detail::BindQuadrature(
+      *this,
+      CoordinateView<DeviceMemorySpace>(GetParameterSystem(),
+                                        MakeConstRank2View(xi)),
+      weights);
+  });
+}
 
 std::shared_ptr<const CoordinateMap> CreateCoordinateMap(
   std::shared_ptr<const Function<Real>> position)
 {
-  return std::make_shared<const PositionMap>(Position(std::move(position)));
+  return std::make_shared<const PositionMap>(
+    Position(std::move(position), "CreateCoordinateMap"));
+}
+
+std::shared_ptr<const EmbeddedGeometry> CreateEmbeddedGeometry(
+  std::shared_ptr<const Geometry> parameter_geometry,
+  std::shared_ptr<const Function<Real>> position, EmbeddingOptions options)
+{
+  Position checked(std::move(position), "CreateEmbeddedGeometry");
+  if (parameter_geometry == nullptr ||
+      checked.Get()->GetSpace().GetGeometry() != parameter_geometry) {
+    throw pcms_error("CreateEmbeddedGeometry: the position must be a Function "
+                     "on the parameter geometry");
+  }
+  if (const auto& metric = options.metric) {
+    const ValueBasis& basis = metric->GetData().GetValueBasis();
+    if (metric->GetSpace().GetGeometry() != parameter_geometry ||
+        basis.Rank() != 2 ||
+        !detail::SameCoordinateSystem(basis.system,
+                                      checked.ParameterSystem()) ||
+        basis.variance[0] != basis.variance[1]) {
+      throw pcms_error("CreateEmbeddedGeometry: the metric must be a Function "
+                       "on the parameter geometry of rank 2 in the parameter "
+                       "system, with both indices covariant (g_ij) or both "
+                       "contravariant (g^ij)");
+    }
+  }
+  if (detail::SameCoordinateSystem(checked.ParameterSystem(),
+                                   checked.System())) {
+    throw pcms_error(
+      "CreateEmbeddedGeometry: the parameter geometry's coordinate system "
+      "must differ from the coordinate system of the position (give the "
+      "parameter geometry a parameter system)");
+  }
+  auto search = uniform_grid::VisitUniformGrid(
+    parameter_geometry,
+    [&]<unsigned Dim>(
+      const std::shared_ptr<const uniform_grid::UniformGridGeometry<Dim>>& grid)
+      -> std::shared_ptr<const detail::EmbeddedSearch> {
+      if constexpr (Dim == 1) {
+        return nullptr;
+      } else {
+        return CreateSearch<Dim>(grid->GetGrid(), checked, options);
+      }
+    });
+  if (search == nullptr) {
+    throw pcms_error("CreateEmbeddedGeometry: only 2D and 3D uniform-grid "
+                     "parameter geometries are supported");
+  }
+  return std::shared_ptr<const EmbeddedGeometry>(
+    new EmbeddedGeometry(std::move(parameter_geometry), checked.Get(),
+                         std::move(options.metric), std::move(search)));
+}
+
+std::shared_ptr<const FunctionSpace> CreateEmbeddedSpace(
+  std::shared_ptr<const EmbeddedGeometry> embedded,
+  std::shared_ptr<const FunctionSpace> space)
+{
+  if (space == nullptr || embedded == nullptr ||
+      embedded->GetParameterGeometry() != space->GetGeometry()) {
+    throw pcms_error("CreateEmbeddedSpace: the geometry must be an embedded "
+                     "geometry of the space's geometry");
+  }
+  return std::make_shared<EmbeddedSpace>(std::move(embedded), std::move(space));
 }
 
 } // namespace pcms
