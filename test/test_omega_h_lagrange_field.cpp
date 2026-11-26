@@ -16,6 +16,9 @@
 #include <optional>
 #include <stdexcept>
 #include "pcms/utility/coordinate_systems/cartesian.hpp"
+#include "pcms/utility/coordinate_systems/parameter.hpp"
+#include <cmath>
+#include <numbers>
 
 namespace pcms
 {
@@ -335,4 +338,42 @@ TEST_CASE("OmegaHLagrangeField: field valid after layout destruction")
   // test)
   auto data = field->GetDOFHolderDataHost();
   REQUIRE(data.size() > 0);
+}
+
+TEST_CASE("OmegaHLagrangeField order-1: periodic coordinate values "
+          "interpolate through the nearest image")
+{
+  // theta = 2 pi (0.8 + 0.4 y + 0.1 x) stored modulo 2 pi: it wraps inside
+  // the mesh
+  constexpr Real TwoPi = 2 * std::numbers::pi;
+  auto lib = Omega_h::Library{};
+  auto mesh = MakeBox2D(lib.world());
+  auto geometry = pcms::CreateGeometry(mesh, pcms::detail::DeferredCartesian());
+  auto space = pcms::CreateLagrangeSpace(geometry, 1, 2);
+  const auto basis = pcms::ValueBasis::Coordinates(
+    pcms::csys::CreateParameterSystem("u", 2, {{1, 0.0, TwoPi}}));
+  auto field = space->CreateFunction<Real>("theta", basis);
+  const auto xy = pcms::test::CopyCoordinatesToHost(
+    space->GetLayout()->GetDOFHolderCoordinates().GetValues());
+  Kokkos::View<Real**, pcms::HostMemorySpace> values("values", xy.extent(0), 2);
+  for (size_t i = 0; i < xy.extent(0); ++i) {
+    values(i, 0) = xy(i, 0);
+    values(i, 1) =
+      std::fmod(TwoPi * (0.8 + 0.4 * xy(i, 1) + 0.1 * xy(i, 0)), TwoPi);
+  }
+  field.SetDOFHolderDataHost(pcms::ValueView<const Real, pcms::HostMemorySpace>(
+    basis, pcms::MakeConstRank2View(values)));
+  const auto pts = pcms::test::StandardEvalCoords2D();
+  const auto evaluator =
+    space->CreatePointEvaluator<Real>(pcms::test::Bind(*geometry, pts));
+  const auto out = pcms::test::EvaluateToHost(*evaluator, field,
+                                              evaluator->OutputBasis(basis), 2);
+  for (size_t p = 0; p < pts.size() / 2; ++p) {
+    CAPTURE(p);
+    const Real x = pts[2 * p];
+    const Real y = pts[2 * p + 1];
+    CHECK(out(p, 0) == Catch::Approx(x));
+    CHECK(std::remainder(out(p, 1) - TwoPi * (0.8 + 0.4 * y + 0.1 * x),
+                         TwoPi) == Catch::Approx(0.0).margin(1e-9));
+  }
 }
