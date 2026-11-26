@@ -16,6 +16,7 @@ the names in the last column and fails for one that was not built.
 | `FUSIONIO_ENABLE_WRAPPED` | on | Fusion-IO 1.x (CMake package `fusionio`) | `Wrapped` |
 | `FUSIONIO_ENABLE_NATIVE` | on with `WRAPPED` and Omega_h in PCMS | `WRAPPED` (1.x reads the M3D-C1 files), PCMS with `PCMS_ENABLE_OMEGA_H` | `Native` |
 | `FUSIONIO_ENABLE_NIMROD` | off | NIMROD's `nimeval` library (`NIMROD_DIR`) | `Nimrod` |
+| `FUSIONIO_ENABLE_GNET` | off | PCMS with `PCMS_ENABLE_POLYNOMIAL_RECONSTRUCTION`, HDF5 | `Gnet` |
 
 Without `WRAPPED`, `Open` throws and `fio_trace` is not built; nothing else
 needs Fusion-IO 1.x.
@@ -52,3 +53,68 @@ batched evaluation per iteration where 1.x evaluates point by point.
 | `fio_surface_average(f, n, x, &a, bpol)` (defined, not declared in `isosurface.h`) | `SurfaceAverage(f, x, bpol)` |
 | `fio_isosurface_jacobian(ns, nphi, ntheta, x, jac)` | `IsosurfaceJacobian(ns, nphi, ntheta, x, jac)`: `false` if the Jacobian changes sign |
 | `fio_eval_on_path(f, n, x, fout)`, `fio_eval_on_surface(f, n, x, a)` | `pcms::Evaluate(function, points, out)` (`pcms/field/query_points.hpp`), or `pcms::QueryPoints` to evaluate several functions at the same points |
+
+## Sampling markers
+
+`include/fusionio/sampling.hpp`: `SampleMarkers(f, domain, options)` draws
+candidates in a box (`Domain`, one `Range` per coordinate of the function's
+coordinate system, drawn uniformly or, for a radial axis, as `sqrt(u)`) and
+keeps those where the scalar function `f` is at least `options.threshold`,
+until `options.samples` are kept. The result is `Markers::rows`, a device
+array `samples x (dimension + 1)` of coordinates and value.
+
+Memory is one batch of candidates and values (`options.batch`) plus the
+markers. Each round fills the candidates in place (a function of the seed and
+the index of the candidate alone, so any number of threads or devices gives
+the same markers), locates and evaluates them with one `pcms::QueryPoints`
+(`FILL`, so points outside the function's domain are rejected), and writes the
+accepted ones at the slots of a deterministic exclusive scan, clipping the last
+round at `samples`. The overload with a `MarkerSink` hands each round's markers
+to the caller instead (`gnet2gtc --stream` writes them to the file), so memory
+does not grow with `samples`.
+
+## GNET
+
+With `FUSIONIO_ENABLE_GNET`, `include/fusionio/gnet.hpp`:
+
+- `OpenGnet(path, options)` reads a GNET HDF5 file (the layout of
+  `distribution5D` of the GNET output: `dimensions/{mxrho, mxzeta, mxenergy,
+  mxpitch}`, `range/{engmax_eV, zetamax_rad}`, `data/f5d` of (cell, energy,
+  pitch) and `data/volume3d` of (cell)) and returns the number density
+  `f5d / volume3d` of the bin centres as a function of (rho, theta, zeta,
+  energy, pitch): polynomial reconstruction (`degree` 1, `lambda` 1e-4, no
+  weights, as GNET's tool) on a point cloud in the parameter system
+  `"gnet_phase"`, whose supports are GNET's analytic bin search (the bins
+  below and above the point in each coordinate, `floor(basis size^(1/5)) +
+  1` of each; theta and zeta bins wrap).
+- `GnetOptions::periodic` (default on) declares theta (2 pi) and zeta (the
+  file's `zetamax_rad`) periodic, so the supports across a seam are fit at
+  their images nearest the point. Off, they are fit at their raw coordinates,
+  as the original tool does; the two differ only for points whose supports
+  wrap a bin: above the centre of the last poloidal bin of the radial bins
+  around the point and of the last toroidal bin.
+- `GTCDomain()` is GTC's box (rho [0, 1] drawn as `sqrt`, theta [0, 2 pi],
+  zeta [0, 2 pi / 5], energy [2000, 200000] eV, pitch [-1, 1]) and
+  `GTCMarkerWriter` / `WriteGTCMarkers` write `/gtc_n6d` (N x 6).
+
+`gnet2gtc` (built with the component) maps a file to GTC markers:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--input <file>` | required | GNET HDF5 file |
+| `--output <file>` | required | GTC output HDF5 file (overwritten) |
+| `--samples <n>` | 30000000 | number of GTC markers (max 400000000) |
+| `--batch <n>` | 1000000 | candidate points per sampling round |
+| `--seed <n>` | 14000 | random seed |
+| `--degree <n>` | 1 | polynomial degree |
+| `--lambda <x>` | 1e-4 | regularization |
+| `--threshold-scale <x>` | 1e10 | threshold = scale / max(`volume3d`) |
+| `--no-periodic` | | fit theta and zeta at their raw coordinates |
+| `--stream` | | write each round's markers as accepted |
+| `--help` | | show the options |
+
+Differences from the original tool (`tools/gnet` of PCMS's `gnet-gtc-coupling`
+branch): the candidates are a function of (seed, candidate index), not of a
+Kokkos random pool, so the markers differ from the original's for the same
+seed but do not depend on the number of threads; the markers are in the order
+of the candidates; periodic theta and zeta by default.
