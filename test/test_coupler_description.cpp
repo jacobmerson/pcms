@@ -83,13 +83,12 @@ TEST_CASE("coordinate systems, value bases and metadata are described and "
     pcms::Parity::Even};
   const pcms::ValueBasis metric{parameter, std::nullopt, pcms::values::Tensor};
   const pcms::ValueBasis array{.kind = pcms::ValueKind::Array};
-  const std::vector<pcms::ValueBasis> bases{
-    scalar,
-    covector,
-    tensor,
-    metric,
-    array,
-    pcms::ValueBasis::Coordinates(pcms::csys::CreateCylindricalRThetaZ())};
+  const auto coordinates =
+    pcms::ValueBasis::Coordinates(pcms::csys::CreateCylindricalRThetaZ());
+  auto wrapped = coordinates;
+  wrapped.wrapped = true;
+  const std::vector<pcms::ValueBasis> bases{scalar, covector,    tensor, metric,
+                                            array,  coordinates, wrapped};
   for (size_t i = 0; i < bases.size(); ++i) {
     detail::DescribeValueBasis(bases[i], "basis." + std::to_string(i), systems,
                                description);
@@ -107,6 +106,7 @@ TEST_CASE("coordinate systems, value bases and metadata are described and "
     CHECK(rebuilt.parity == bases[i].parity);
     CHECK(rebuilt.kind == bases[i].kind);
     CHECK(rebuilt.units.has_value() == bases[i].units.has_value());
+    CHECK(rebuilt.wrapped == bases[i].wrapped);
     if (bases[i].system != parameter) {
       CHECK(detail::SameCoordinateSystem(rebuilt.system, bases[i].system));
     }
