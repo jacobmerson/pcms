@@ -1364,7 +1364,7 @@ struct Torus
         x[1] = u[2];
         x[2] = u[0] * std::sin(u[1]);
       },
-      pcms::csys::CreateCylindricalRThetaZ());
+      pcms::csys::CreateCylindricalRThetaZ(), true);
   std::shared_ptr<const pcms::EmbeddedGeometry> u =
     pcms::CreateEmbeddedGeometry(u_grid, position);
   std::shared_ptr<const pcms::Geometry> xi_grid =
