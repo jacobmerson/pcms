@@ -10,7 +10,9 @@
 #include "pcms/field/point_evaluator.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/detail/memory_spaces.hpp"
+#include "pcms/utility/detail/periodic.hpp"
 #include <Kokkos_Core.hpp>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <set>
@@ -29,6 +31,11 @@ struct PointRows
   Kokkos::View<const LO*, DeviceMemorySpace> holders;
   Kokkos::View<const Real*, DeviceMemorySpace> values;
   int num_out = 1;
+  /// per entry, entries back to the one it is unwrapped against (0: its row's
+  /// first); empty: every entry against its row's first. Neighbours along a
+  /// chain must be less than half a period apart, else the difference reads
+  /// as a wrap.
+  Kokkos::View<const std::uint8_t*, DeviceMemorySpace> parents;
 };
 
 /// @brief The offsets of `num_rows` rows of `stride` entries each.
@@ -44,14 +51,66 @@ inline Kokkos::View<LO*, DeviceMemorySpace> StrideOffsets(LO num_rows,
   return offsets;
 }
 
+/// @brief The lengths of the plain periodic axes of the coordinate
+///        axes of Coordinates values, per component (0: none).
+using Periods = Kokkos::Array<Real, 3>;
+
+/// @return the Periods of values in `basis`: none unless they are coordinates
+inline Periods CoordinatePeriods(const ValueBasis& basis)
+{
+  Periods periods = {};
+  if (basis.kind == ValueKind::Coordinates) {
+    for (const auto& id : basis.system->PeriodicAxes()) {
+      if (id.transform == nullptr &&
+          id.axis < static_cast<int>(periods.size())) {
+        periods[id.axis] = id.length;
+      }
+    }
+  }
+  return periods;
+}
+
+/// @brief The shift that takes the DOF of entry `k` of the row starting at
+///        `first` to its image unwrapped along the parent chain to `first`.
+template <typename Dofs>
+KOKKOS_INLINE_FUNCTION Real
+UnwrapShift(const Kokkos::View<const LO*, DeviceMemorySpace>& holders,
+            const Kokkos::View<const std::uint8_t*, DeviceMemorySpace>& parents,
+            const Dofs& dofs, LO first, LO k, int c, Real period)
+{
+  Real shift = 0;
+  while (k != first) {
+    const LO parent =
+      parents.extent(0) > 0 && parents(k) != 0 ? k - parents(k) : first;
+    const Real step = dofs(holders(k), c) - dofs(holders(parent), c);
+    shift += NearestImage(step, period) - step;
+    k = parent;
+  }
+  return shift;
+}
+
+/// @throws pcms_error for values with Periods, whose evaluation is not linear
+inline void CheckLinear(const ValueBasis& basis)
+{
+  const auto periods = CoordinatePeriods(basis);
+  if (periods[0] > 0 || periods[1] > 0 || periods[2] > 0) {
+    throw pcms_error("PointEvaluator::EvaluateTranspose: Coordinates on a "
+                     "periodic axis evaluate through their nearest image, "
+                     "which is not linear");
+  }
+}
+
 /// @brief out(p, c * num_out + r) = row (p, r) times component c of the DOFs.
 /// @param dofs dofs(holder, c)
+/// @param periods per component: each DOF is taken at its image unwrapped
+///        along its parent chain to the row's first entry
 template <typename Dofs, typename Out>
-void Apply(const PointRows& rows, Dofs dofs, Out out)
+void Apply(const PointRows& rows, Dofs dofs, Out out, Periods periods = {})
 {
   const auto offsets = rows.offsets;
   const auto holders = rows.holders;
   const auto values = rows.values;
+  const auto parents = rows.parents;
   const int num_out = rows.num_out;
   const int num_components = static_cast<int>(out.extent(1)) / num_out;
   ForEach(
@@ -60,9 +119,16 @@ void Apply(const PointRows& rows, Dofs dofs, Out out)
       for (int r = 0; r < num_out; ++r) {
         const LO row = p * num_out + r;
         for (int c = 0; c < num_components; ++c) {
+          const Real period =
+            c < static_cast<int>(periods.size()) ? periods[c] : 0;
           Real sum = 0;
           for (LO j = offsets(row); j < offsets(row + 1); ++j) {
-            sum += values(j) * dofs(holders(j), c);
+            Real dof = dofs(holders(j), c);
+            if (period > 0) {
+              dof +=
+                UnwrapShift(holders, parents, dofs, offsets(row), j, c, period);
+            }
+            sum += values(j) * dof;
           }
           out(p, c * num_out + r) = sum;
         }
@@ -141,12 +207,14 @@ public:
   void EvaluateImpl(const Field<Real>& field,
                     ValueView<Real, DeviceMemorySpace> values) const override
   {
-    Apply(rows_, field.GetDOFHolderData().GetValues(), values.GetValues());
+    Apply(rows_, field.GetDOFHolderData().GetValues(), values.GetValues(),
+          CoordinatePeriods(field.GetData().GetValueBasis()));
   }
 
   void EvaluateTransposeImpl(Rank2View<const Real, DeviceMemorySpace> values,
                              Field<Real>& functional) const override
   {
+    CheckLinear(functional.GetData().GetValueBasis());
     const auto& layout = functional.GetLayout();
     Kokkos::View<Real**, DeviceMemorySpace> total("point_rows_transpose",
                                                   layout.GetNumDofHolder(),

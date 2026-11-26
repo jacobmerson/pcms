@@ -3,7 +3,6 @@
 
 #include <pcms/configuration.hpp>
 #include <pcms/backends/omega_h/omega_h_geometry.hpp>
-#include <pcms/backends/omega_h/queue_visited.hpp>
 #include <Omega_h_fail.hpp>
 #include <Omega_h_int_scan.hpp>
 // r3d's kernels are called from Kokkos kernels: R3D_USE_KOKKOS makes them
@@ -135,62 +134,16 @@ struct IntersectionResults
   Omega_h::LOs tgt2src_indices;
 };
 
-class FindIntersections
-{
-private:
-  Omega_h::Mesh& source_mesh_;
-  Omega_h::Mesh& target_mesh_;
-
-public:
-  FindIntersections(Omega_h::Mesh& source_mesh, Omega_h::Mesh& target_mesh)
-    : source_mesh_(source_mesh), target_mesh_(target_mesh)
-  {
-  }
-
-  /**
-   * @brief Performs adjacency-based intersection search between target and
-   * source elements.
-   *
-   * For each target element, starting from the source element that contains its
-   * centroid, a queue-based BFS traversal is used over the adjacency graph of
-   * source elements. If an element intersects the target triangle (based on
-   * area tolerance), it is included.
-   *
-   * @param start_elements For each target element, the source element
-   * containing its centroid (from a point search over the source mesh)
-   * @param tgt2src_offsets Offsets array (only used when writing indices).
-   * @param[out] nIntersections Number of intersecting source elements per
-   * target element.
-   * @param[out] tgt2src_indices Indices of intersecting source elements.
-   * @param is_count_only If true, only counts intersections; if false, also
-   * fills tgt2src_indices.
-   * @param use_prefilter if true, skip degenerate clips
-   *
-   * @note Templated on spatial dimension `Dim`: linear triangles (Dim==2) or
-   * linear tetrahedra (Dim==3), using `r3d::intersect_simplices` for geometric
-   * intersection.
-   *
-   * @see r3d::intersect_simplices, intersectTargets
-   */
-  template <int Dim>
-  void adjBasedIntersectSearch(const Kokkos::View<const LO*>& start_elements,
-                               const Omega_h::LOs& tgt2src_offsets,
-                               Omega_h::Write<Omega_h::LO>& nIntersections,
-                               Omega_h::Write<Omega_h::LO>& tgt2src_indices,
-                               bool is_count_only, bool use_prefilter = true);
-};
-
 /**
  * @brief Computes source-target element intersections for conservative
  * projection.
  *
  * For each target element in the target mesh, this function identifies source
- * elements from the source mesh that geometrically intersect with it using an
- * adjacency-based breadth-first search strategy. The result is returned as a
- * compact mapping.
+ * elements from the source mesh that geometrically intersect with it: the
+ * candidates of its bounding box on a candidate map of the source elements,
+ * in ascending order. The result is returned as a compact mapping.
  *
- * @param source geometry of the source mesh; its search locates the source
- * element containing each target centroid
+ * @param source geometry of the source mesh
  * @param target_mesh The target Omega_h mesh.
  * @param use_prefilter if true, skip degenerate clips
  * @return An IntersectionResults struct containing target-to-source mapping
@@ -201,7 +154,6 @@ public:
  * @note The intersection test is done using 2D polygon intersection routines
  * from r3d. Only valid (non-degenerate) polygonal intersections are included.
  *
- * @see FindIntersections::adjBasedIntersectSearch
  */
 IntersectionResults intersectTargets(const OmegaHGeometry& source,
                                      Omega_h::Mesh& target_mesh,

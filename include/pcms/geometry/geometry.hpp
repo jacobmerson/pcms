@@ -82,7 +82,8 @@ public:
     return false;
   }
 
-  /// @brief Localizes physical query points.
+  /// @brief Localizes physical query points, reduced by the periodic axes
+  ///        of the coordinate system they are located in.
   /// @param coords query points, in GetCoordinateSystem() or, with `map`, in
   ///        its source coordinate system; may be released after
   /// @param policy what to do with points outside the geometry

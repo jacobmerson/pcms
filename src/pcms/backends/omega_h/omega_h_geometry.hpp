@@ -344,8 +344,7 @@ public:
   /// verified and do not change the result. An outside point uses
   /// the nearest entity reported by the grid search, lifted to an element;
   /// -1 means the search cell has no candidate. Unlike Bind, this preserves
-  /// outside-point seeds: an outside target centroid can still belong to an
-  /// element that overlaps the mesh.
+  /// outside-point seeds.
   [[nodiscard]] Kokkos::View<const LO*, DeviceMemorySpace> FindElementSeeds(
     Kokkos::View<const Real**, DeviceMemorySpace> points,
     Kokkos::View<const LO*, DeviceMemorySpace> guesses = {}) const;

@@ -43,7 +43,15 @@ struct LagrangeOptions
 /// A Lagrange space of order `order` with `num_components` components on
 /// `geometry`: an Omega_h geometry (backend OmegaH: orders 0 and 1; MeshFields:
 /// orders 1 and 2) or a uniform-grid geometry (orders 0 and 1, backend
-/// ignored). Spaces on one geometry accept each other's BoundPoints.
+/// ignored).
+/// On a uniform grid and with backend OmegaH, Coordinates values (and their
+/// Gradient) along the axes of their system with a plain periodic axis
+/// interpolate through the image of each node nearest a neighbour in its
+/// cell, back to the cell's first node; for them, EvaluateTranspose throws and
+/// GetMatrix is the derivative of the evaluation.
+/// Neighbouring nodes must be less than half a period apart; a larger
+/// difference reads as a wrap.
+/// Spaces on one geometry accept each other's BoundPoints.
 /// @throws pcms_error for another geometry kind, a null geometry, or an order
 ///         the backend does not support
 [[nodiscard]] std::shared_ptr<const FunctionSpace> CreateLagrangeSpace(

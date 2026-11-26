@@ -7,6 +7,7 @@
 #include "pcms/utility/types.hpp"
 #include <Kokkos_Core.hpp>
 
+#include <cstdint>
 #include <memory>
 #include <set>
 
@@ -21,7 +22,8 @@ namespace detail
 /// @param cells the cell of each point
 /// @param t the position of each point in its cell
 /// @param missing points whose rows are zero
-/// @return the rows
+/// @return the rows; for order 1 and Dim >= 2, each entry's parent is the
+///         corner without its highest set bit
 template <unsigned Dim>
 pcms::detail::PointRows BuildGridRows(
   UniformGrid<Dim> grid, int order, bool gradient,
@@ -39,6 +41,8 @@ pcms::detail::PointRows BuildGridRows(
   Kokkos::View<Real*, DeviceMemorySpace> weights(
     Kokkos::view_alloc(Kokkos::WithoutInitializing, "uniform_grid_weights"),
     size);
+  Kokkos::View<std::uint8_t*, DeviceMemorySpace> parents(
+    "uniform_grid_parents", order == 1 && Dim >= 2 ? size : 0);
   pcms::detail::ForEach(
     "uniform_grid_rows", num_points, KOKKOS_LAMBDA(const LO i) {
       if (order == 0) {
@@ -51,20 +55,25 @@ pcms::detail::PointRows BuildGridRows(
       // cell indices in axis order (GetDimensionedIndex gives them reversed),
       // and the vertex numbering with the first axis fastest
       const auto reversed = grid.GetDimensionedIndex(cells(i));
-      LO first_vertex = 0;
+      LO nodes[Dim];
       LO vertex_stride[Dim];
       Real h[Dim];
       LO next = 1;
       for (unsigned d = 0; d < Dim; ++d) {
+        nodes[d] = grid.divisions[d] + 1;
         vertex_stride[d] = next;
-        next *= grid.divisions[d] + 1;
+        next *= nodes[d];
         h[d] = grid.edge_length[d] / grid.divisions[d];
-        first_vertex += reversed[Dim - 1 - d] * vertex_stride[d];
       }
       for (int corner = 0; corner < stride; ++corner) {
-        LO vertex = first_vertex;
+        LO vertex = 0;
+        int high = 0;
         for (unsigned d = 0; d < Dim; ++d) {
-          vertex += ((corner >> d) & 1) * vertex_stride[d];
+          const LO node = reversed[Dim - 1 - d] + ((corner >> d) & 1);
+          vertex += (node % nodes[d]) * vertex_stride[d];
+          if ((corner >> d) & 1) {
+            high = 1 << d;
+          }
         }
         for (int r = 0; r < num_out; ++r) {
           Real weight = 1;
@@ -78,6 +87,9 @@ pcms::detail::PointRows BuildGridRows(
             (static_cast<std::size_t>(i) * num_out + r) * stride + corner;
           holders(k) = vertex;
           weights(k) = weight;
+          if (parents.extent(0) > 0) {
+            parents(k) = static_cast<std::uint8_t>(high);
+          }
         }
       }
     });
@@ -91,7 +103,7 @@ pcms::detail::PointRows BuildGridRows(
       }
     });
   return {pcms::detail::StrideOffsets(num_points * num_out, stride), holders,
-          weights, num_out};
+          weights, num_out, parents};
 }
 
 } // namespace detail
