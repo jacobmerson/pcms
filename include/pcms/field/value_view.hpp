@@ -134,6 +134,10 @@ struct ValueBasis
   ValueKind kind = ValueKind::Tensor;
   /// units of the physical components, whatever the scaling; unset matches any
   std::optional<Units> units = std::nullopt;
+  /// Coordinates only: stored reduced to one period along the plain periodic
+  /// axes of `system`; they interpolate through the nearest image, neighbours
+  /// less than half a period apart. Unset: interpolated as stored.
+  bool wrapped = false;
 
   [[nodiscard]] int Rank() const noexcept { return variance.Rank(); }
 

@@ -51,13 +51,16 @@ inline std::shared_ptr<const Geometry> MakeUnitSquareGrid(
 /// The position Function of a map xi -> x on `space`, whose values are points
 /// of `system` (one component per coordinate of the coordinate system):
 /// `map(xi, x)` writes the image x of the parameters xi.
+/// @param wrapped ValueBasis::wrapped
 template <typename Map>
 std::shared_ptr<const Function<Real>> MakePositionFunction(
   const std::shared_ptr<const FunctionSpace>& space, Map map,
-  std::shared_ptr<const CoordinateSystem> system)
+  std::shared_ptr<const CoordinateSystem> system, bool wrapped = false)
 {
-  auto function = std::make_shared<Function<Real>>(space->CreateFunction<Real>(
-    "position", ValueBasis::Coordinates(std::move(system))));
+  auto basis = ValueBasis::Coordinates(std::move(system));
+  basis.wrapped = wrapped;
+  auto function = std::make_shared<Function<Real>>(
+    space->CreateFunction<Real>("position", std::move(basis)));
   const auto xi = CopyCoordinatesToHost(
     space->GetLayout()->GetDOFHolderCoordinates().GetValues());
   const int dim = space->GetLayout()->GetNumComponents();
