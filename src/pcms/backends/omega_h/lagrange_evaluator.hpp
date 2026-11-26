@@ -132,7 +132,8 @@ public:
         Layout().GetMesh().get_array<TagValue>(Layout().GetDOFHolderEntityDim(),
                                                data.GetTagName()),
         Layout().GetNumComponents()},
-      out.GetValues());
+      out.GetValues(),
+      pcms::detail::CoordinatePeriods(field.GetData().GetValueBasis()));
   }
 
   // Public for the same reason as EvaluateImpl.
@@ -140,6 +141,7 @@ public:
                              Field<Real>& functional, Real beta) const override
   {
     PCMS_FUNCTION_TIMER;
+    pcms::detail::CheckLinear(functional.GetData().GetValueBasis());
     using TagValue = utility::OmegaHValue_t<Real>;
     const auto& layout = Layout();
     const int n_comp = layout.GetNumComponents();

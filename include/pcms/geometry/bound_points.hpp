@@ -126,7 +126,8 @@ public:
     return coordinate_map_;
   }
 
-  /// @return the bound points in the geometry's coordinate system
+  /// @return the bound points in the geometry's coordinate system, reduced
+  ///         by the periodic axes of their coordinate system
   [[nodiscard]] CoordinateView<DeviceMemorySpace> LocatedPoints() const;
 
   /// @return g(p, a, b), the metric of the geometry at each point in its

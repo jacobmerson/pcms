@@ -27,10 +27,10 @@ struct AxisPeriods
   }
 };
 
-/// @brief The axis periods of `system`, whose distances are coordinate
-///        differences.
-/// @throws pcms_error if the system has more than 6 dimensions or a metric
-///         that is not the identity
+/// @brief The axis periods of `system` (its plain periodic axes),
+///        whose distances are coordinate differences.
+/// @throws pcms_error if the system has more than 6 dimensions, a metric
+///         that is not the identity or a periodic axis with a transform
 [[nodiscard]] AxisPeriods MakeAxisPeriods(const CoordinateSystem& system);
 
 // Returns true when both the minimum and maximum support counts fall within

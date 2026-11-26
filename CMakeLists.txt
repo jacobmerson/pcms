@@ -128,14 +128,14 @@ macro(pcms_find_package capability package)
   endif()
 endmacro()
 
-# Per-thread on-stack ring-buffer capacities for the adjacency-based
-# intersection/adjacency BFS (queue_visited.hpp). Defaults are sized for 3D
+# Per-thread on-stack ring-buffer capacities for the adjacency BFS of the
+# Omega_h MLS supports (queue_visited.hpp). Defaults are sized for 3D
 # tetrahedral meshes on the serial/OpenMP backends. Lower them for device
 # (GPU) builds, where each search thread's stack must hold these arrays.
 set(PCMS_INTERSECTION_QUEUE_SIZE 1024 CACHE STRING
-    "Max BFS queue size per target element in the intersection search")
+    "Max BFS queue size per point in the adjacency search")
 set(PCMS_INTERSECTION_TRACK_SIZE 2048 CACHE STRING
-    "Max visited-set size per target element in the intersection search")
+    "Max visited-set size per point in the adjacency search")
 set(PCMS_INTERSECTION_ABS_TOL 1e-18 CACHE STRING
     "Absolute measure tolerance for accepting a clipped intersection")
 set(PCMS_INTERSECTION_REL_TOL 1e-12 CACHE STRING

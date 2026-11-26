@@ -6,7 +6,7 @@
 #include "pcms/utility/types.hpp"
 #include <Kokkos_Core.hpp>
 #include <memory>
-#include <optional>
+#include <span>
 #include <string_view>
 
 namespace pcms
@@ -55,11 +55,42 @@ private:
   Kokkos::View<const Real*, DeviceMemorySpace> volume_factor_;
 };
 
+class CoordinateSystem;
+
+/// @brief The transform of a periodic axis that is not a translation
+///        (CreateTwistShiftTransform)
+class PeriodicTransform
+{
+public:
+  /// @brief Applies the map `wraps(p)` times to point p.
+  /// @param points [points][dimension], the identified axis already reduced
+  /// @param wraps the number of lengths each point was moved down the
+  ///        identified axis
+  virtual void Apply(Rank2View<Real, DeviceMemorySpace> points,
+                     Rank1View<const Real, DeviceMemorySpace> wraps) const = 0;
+
+  virtual ~PeriodicTransform() = default;
+};
+
+/// @brief Points of a coordinate system that are one point: x and x + length
+///        along `axis`, after `map` for a twist-shift.
+struct PeriodicAxis
+{
+  int axis = 0;
+  /// the fundamental interval [lower, lower + length) of the axis
+  Real lower = 0;
+  Real length = 0;
+  /// what else changes per length crossed; null for a translation
+  std::shared_ptr<const PeriodicTransform> transform;
+
+  [[nodiscard]] bool operator==(const PeriodicAxis&) const = default;
+};
+
 /// @brief A coordinate system: labels and closed forms, never data.
 ///
-/// A coordinate system says what its coordinates are (kind, dimension, periodic
-/// axes) and, when it has one, its closed-form metric (Bind); per-point values
-/// come only from bound objects. A parameter system
+/// A coordinate system says what its coordinates are (kind, dimension,
+/// periodic axes) and, when it has one, its closed-form metric (Bind);
+/// per-point values come only from bound objects. A parameter system
 /// (csys::CreateParameterSystem) has no metric: the metric of a geometry over
 /// it belongs to the geometry.
 class CoordinateSystem
@@ -73,12 +104,11 @@ public:
   ///         physical and natural components coincide
   [[nodiscard]] virtual bool IsOrthonormal() const noexcept = 0;
 
-  /// @return the period of coordinate `axis` if the system is periodic along
-  ///         it (a point and its image a period away are the same point)
-  [[nodiscard]] virtual std::optional<Real> Period(int axis) const noexcept
+  /// @return the periodic axes, applied in order by Geometry::Bind
+  [[nodiscard]] virtual std::span<const PeriodicAxis> PeriodicAxes()
+    const noexcept
   {
-    (void)axis;
-    return std::nullopt;
+    return {};
   }
 
   /// @return whether the coordinate system has a closed-form metric, so that
