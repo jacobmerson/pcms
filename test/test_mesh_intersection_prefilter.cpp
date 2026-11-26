@@ -1,9 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include <Omega_h_build.hpp>
-#include <Omega_h_for.hpp>
 #include <Omega_h_library.hpp>
 #include <Omega_h_mesh.hpp>
+#include <Omega_h_shape.hpp>
 
 #include <pcms/utility/coordinate_systems/cartesian.hpp>
 #include <pcms/backends/omega_h/omega_h_geometry.hpp>
@@ -45,81 +45,62 @@ void require_intersections_identical(const pcms::IntersectionResults& filtered,
     REQUIRE(filtered_indices[i] == exact_indices[i]);
   }
 }
-
-/// Assert the two intersection maps hold the same source elements per target,
-/// ignoring order. The order of a row is seed-then-BFS, and the seed is
-/// whichever containing element the point search reports first; a centroid
-/// lying on a shared face can legitimately be located in either neighbor.
-void require_intersections_equivalent(const pcms::IntersectionResults& a,
-                                      const pcms::IntersectionResults& b)
-{
-  const auto a_offsets = Omega_h::HostRead(a.tgt2src_offsets);
-  const auto b_offsets = Omega_h::HostRead(b.tgt2src_offsets);
-  REQUIRE(a_offsets.size() == b_offsets.size());
-  const auto a_indices = Omega_h::HostRead(a.tgt2src_indices);
-  const auto b_indices = Omega_h::HostRead(b.tgt2src_indices);
-  for (int row = 0; row + 1 < a_offsets.size(); ++row) {
-    REQUIRE(a_offsets[row] == b_offsets[row]);
-    std::vector<int> a_row(a_indices.data() + a_offsets[row],
-                           a_indices.data() + a_offsets[row + 1]);
-    std::vector<int> b_row(b_indices.data() + b_offsets[row],
-                           b_indices.data() + b_offsets[row + 1]);
-    std::sort(a_row.begin(), a_row.end());
-    std::sort(b_row.begin(), b_row.end());
-    REQUIRE(a_row == b_row);
-  }
-}
 } // namespace
 
 namespace
 {
-template <int Dim>
-void check_outside_centroid_overlap(Omega_h::Library& lib)
+/// Rotates the vertices by `angle` about the z axis through (0.5, 0.5), then
+/// moves them by `shift` along x.
+void Move(Omega_h::Mesh& mesh, double angle, double shift)
 {
-  const auto build_mesh = [&](int divisions) {
-    if constexpr (Dim == 3) {
-      return pcms::test::BuildReferenceTet(lib);
-    } else {
-      return Omega_h::build_box(lib.world(), OMEGA_H_SIMPLEX, 1, 1, 0,
-                                divisions, divisions, 0, false);
-    }
-  };
-  auto source = build_mesh(2);
-  auto target = build_mesh(1);
-  // 2D: overlap is the slab [0.9, 1] x [0, 1], area 0.1.
-  // 3D: two reference tets shifted along x overlap in a tet of volume 0.1^3/6.
-  // Every target centroid is outside the source, but real overlaps remain.
-  const auto original = target.coords();
-  Omega_h::Write<Omega_h::Real> shifted(original.size());
-  Omega_h::parallel_for(
-    original.size(), OMEGA_H_LAMBDA(int i) {
-      shifted[i] = original[i] + (i % Dim == 0 ? 0.9 : 0.0);
-    });
-  target.set_coords(shifted);
+  const int dim = mesh.dim();
+  const auto coords = Omega_h::HostRead(mesh.coords());
+  Omega_h::HostWrite<Omega_h::Real> moved(coords.size());
+  for (int i = 0; i < coords.size(); ++i) {
+    moved[i] = coords[i];
+  }
+  for (int v = 0; v < mesh.nverts(); ++v) {
+    const double x = coords[v * dim] - 0.5;
+    const double y = coords[v * dim + 1] - 0.5;
+    moved[v * dim] = 0.5 + std::cos(angle) * x - std::sin(angle) * y + shift;
+    moved[v * dim + 1] = 0.5 + std::sin(angle) * x + std::cos(angle) * y;
+  }
+  mesh.set_coords(Omega_h::Reals(moved.write()));
+}
+
+/// Requires each row of the intersection, with and without the prefilter, to
+/// be the source elements whose clip with the target element has volume (by
+/// the intersection's tolerances), ascending.
+/// @return the total overlap volume
+template <int Dim>
+double RequireExhaustiveRows(Omega_h::Mesh& source, Omega_h::Mesh& target)
+{
   const auto geometry = std::make_shared<pcms::OmegaHGeometry>(
     source, pcms::csys::CreateCartesian(Dim));
   const auto source_coords = Omega_h::HostRead(source.coords());
   const auto target_coords = Omega_h::HostRead(target.coords());
   const auto source_nodes = Omega_h::HostRead(source.ask_elem_verts());
   const auto target_nodes = Omega_h::HostRead(target.ask_elem_verts());
+  const auto source_measures =
+    Omega_h::HostRead(Omega_h::measure_elements_real(&source));
+  const auto target_measures =
+    Omega_h::HostRead(Omega_h::measure_elements_real(&target));
 
+  double total_measure = 0;
   for (bool prefilter : {false, true}) {
     CAPTURE(Dim, prefilter);
     const auto result = pcms::intersectTargets(*geometry, target, prefilter);
     const auto offsets = Omega_h::HostRead(result.tgt2src_offsets);
     const auto indices = Omega_h::HostRead(result.tgt2src_indices);
-    double total_measure = 0;
+    total_measure = 0;
     for (int t = 0; t < target.nelems(); ++t) {
       r3d::Few<r3d::Vector<Dim>, Dim + 1> tgt;
-      double centroid_x = 0;
       for (int v = 0; v <= Dim; ++v) {
         for (int d = 0; d < Dim; ++d) {
           tgt[v][d] = target_coords[target_nodes[t * (Dim + 1) + v] * Dim + d];
         }
-        centroid_x += tgt[v][0] / (Dim + 1);
       }
-      REQUIRE(centroid_x > 1.0);
-      // Exhaustive clipping is independent of centroid seeds and BFS.
+      std::vector<int> expected;
       for (int s = 0; s < source.nelems(); ++s) {
         r3d::Few<r3d::Vector<Dim>, Dim + 1> src;
         for (int v = 0; v <= Dim; ++v) {
@@ -131,33 +112,68 @@ void check_outside_centroid_overlap(Omega_h::Library& lib)
         r3d::Polytope<Dim> intersection;
         r3d::intersect_simplices(intersection, tgt, src);
         const double measure = std::abs(r3d::measure(intersection));
-        if (measure <= 1e-12) {
-          continue;
+        const double eps =
+          std::max(PCMS_INTERSECTION_ABS_TOL,
+                   PCMS_INTERSECTION_REL_TOL *
+                     std::max(target_measures[t], source_measures[s]));
+        if (intersection.nverts >= Dim + 1 && measure >= eps) {
+          expected.push_back(s);
+          total_measure += measure;
         }
-        const auto begin = indices.data() + offsets[t];
-        const auto end = indices.data() + offsets[t + 1];
-        CAPTURE(t, s, measure);
-        REQUIRE(std::count(begin, end, s) == 1);
-        total_measure += measure;
       }
+      const std::vector<int> row(indices.data() + offsets[t],
+                                 indices.data() + offsets[t + 1]);
+      CAPTURE(t);
+      REQUIRE(row == expected);
     }
-    const double expected = Dim == 3 ? 0.001 / 6 : 0.1;
-    REQUIRE(total_measure == Catch::Approx(expected).margin(1e-12));
   }
+  return total_measure;
 }
 } // namespace
 
-TEST_CASE("intersection preserves overlaps with outside target centroids",
+TEST_CASE("intersection rows are the overlapping source elements, ascending",
           "[intersection]")
 {
   Omega_h::Library lib;
-  SECTION("2D")
+  auto world = lib.world();
+  // Every target centroid is outside the source, but real overlaps remain.
+  SECTION("2D, target centroids outside")
   {
-    check_outside_centroid_overlap<2>(lib);
+    auto source =
+      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 2, 2, 0, false);
+    auto target =
+      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 1, 1, 0, false);
+    Move(target, 0, 0.9);
+    // the slab [0.9, 1] x [0, 1]
+    REQUIRE(RequireExhaustiveRows<2>(source, target) ==
+            Catch::Approx(0.1).margin(1e-12));
   }
-  SECTION("3D")
+  SECTION("3D, target centroids outside")
   {
-    check_outside_centroid_overlap<3>(lib);
+    auto source = pcms::test::BuildReferenceTet(lib);
+    auto target = pcms::test::BuildReferenceTet(lib);
+    Move(target, 0, 0.9);
+    // a tet of edge 0.1
+    REQUIRE(RequireExhaustiveRows<3>(source, target) ==
+            Catch::Approx(0.001 / 6).margin(1e-12));
+  }
+  SECTION("2D, rotated target partly outside")
+  {
+    auto source =
+      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 8, 8, 0, false);
+    auto target =
+      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 0, 5, 5, 0, false);
+    Move(target, 0.5236, 0.3);
+    RequireExhaustiveRows<2>(source, target);
+  }
+  SECTION("3D, rotated target partly outside")
+  {
+    auto source =
+      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 4, 4, 4, false);
+    auto target =
+      Omega_h::build_box(world, OMEGA_H_SIMPLEX, 1, 1, 1, 3, 3, 3, false);
+    Move(target, 0.4363, 0.3);
+    RequireExhaustiveRows<3>(source, target);
   }
 }
 
@@ -282,11 +298,8 @@ TEST_CASE("intersection prefilter preserves the intersection map",
   }
 }
 
-// The conservative transfer hands the intersection the source space's
-// geometry, which locates the target centroids with its own point search. The
-// set of source elements per target is a property of the two meshes: at what
-// grid resolution the geometry searches must not show in it. Row order can
-// (see require_intersections_equivalent), so this compares rows as sets.
+// The source elements per target are a property of the two meshes: at what
+// grid resolution the source geometry searches must not show in them.
 TEST_CASE("intersection map is independent of the source search resolution",
           "[intersection]")
 {
@@ -304,8 +317,8 @@ TEST_CASE("intersection map is independent of the source search resolution",
       pcms::omega_h::OmegaHGeometryOptions{.search = pcms::SearchOptions{3}});
     const auto geometry = std::make_shared<pcms::OmegaHGeometry>(
       source, pcms::csys::CreateCartesian(2));
-    require_intersections_equivalent(pcms::intersectTargets(*coarse, target),
-                                     pcms::intersectTargets(*geometry, target));
+    require_intersections_identical(pcms::intersectTargets(*coarse, target),
+                                    pcms::intersectTargets(*geometry, target));
   }
   SECTION("3D, coarse geometry search grid")
   {
@@ -318,8 +331,8 @@ TEST_CASE("intersection map is independent of the source search resolution",
       pcms::omega_h::OmegaHGeometryOptions{.search = pcms::SearchOptions{2}});
     const auto geometry = std::make_shared<pcms::OmegaHGeometry>(
       source, pcms::csys::CreateCartesian(3));
-    require_intersections_equivalent(pcms::intersectTargets(*coarse, target),
-                                     pcms::intersectTargets(*geometry, target));
+    require_intersections_identical(pcms::intersectTargets(*coarse, target),
+                                    pcms::intersectTargets(*geometry, target));
   }
   SECTION("a 2D geometry cannot intersect a 3D target")
   {
