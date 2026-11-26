@@ -306,7 +306,7 @@ snake_case form of the C++ method (`GetDOFHolderData` is
 ### Out-of-Bounds Modes
 - `OutOfBoundsMode.ERROR` - Raise error when points are outside mesh
 - `OutOfBoundsMode.FILL` - Fill with specified value when points are outside mesh
-- `OutOfBoundsMode.NEAREST_BOUNDARY` - Clamp to nearest boundary cell (extrapolate)
+- `OutOfBoundsMode.NEAREST_BOUNDARY` - Extend the nearest boundary cell: evaluate its polynomial there
 
 ### Mesh Tags
 - `mesh.ntags(dim)` - Number of tags on entities of dimension `dim`
