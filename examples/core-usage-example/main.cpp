@@ -42,7 +42,7 @@ int EvaluateLinear(const std::shared_ptr<const pcms::FunctionSpace>& space,
                    pcms::Real tol)
 {
   auto source = space->CreateFunction<pcms::Real>("source");
-  const auto dof_coords = source.GetLayout().GetDOFHolderCoordinates();
+  const auto dof_coords = space->GetDOFHolderCoordinates();
   const auto num_dofs = dof_coords.GetValues().extent(0);
   Kokkos::View<pcms::Real**, pcms::HostMemorySpace> coords_host("coords_host",
                                                                 num_dofs, 2);

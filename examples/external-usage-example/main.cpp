@@ -46,7 +46,7 @@ int main(int argc, char** argv)
 
     // source(x, y) = 1 + 2x + 3y at the DOF holders: linear interpolation
     // reproduces it exactly.
-    const auto dof_coords = source.GetLayout().GetDOFHolderCoordinates();
+    const auto dof_coords = space->GetDOFHolderCoordinates();
     const auto num_dofs = dof_coords.GetValues().extent(0);
     Kokkos::View<pcms::Real**, pcms::HostMemorySpace> coords_host("coords_host",
                                                                   num_dofs, 2);
@@ -106,7 +106,7 @@ int main(int argc, char** argv)
       pcms::CreateInterpolator<pcms::Real>(space, target_space);
     interpolate->Apply(source, target);
 
-    const auto target_coords = target.GetLayout().GetDOFHolderCoordinates();
+    const auto target_coords = target_space->GetDOFHolderCoordinates();
     const auto num_target = target_coords.GetValues().extent(0);
     Kokkos::View<pcms::Real**, pcms::HostMemorySpace> target_coords_host(
       "target_coords_host", num_target, 2);

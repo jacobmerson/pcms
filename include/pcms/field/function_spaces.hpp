@@ -62,7 +62,8 @@ struct LagrangeOptions
 /// @brief A cubic (1D) or bicubic (2D) spline space on a uniform-grid
 ///        geometry; each component is splined on its own, periodic along the
 ///        axes the grid is identified over. Evaluation only: no
-///        EvaluateTranspose or GetMatrix.
+///        EvaluateTranspose or GetMatrix. Its quadrature is the grid's Gauss
+///        rule of degree 6.
 /// @throws pcms_error if `geometry` is null or not a 1D or 2D uniform-grid
 ///         geometry, has a periodic axis with a transform (twist-shift), or
 ///         has fewer than 3 cells on an identified axis

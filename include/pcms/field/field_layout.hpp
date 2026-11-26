@@ -117,6 +117,10 @@ public:
   [[nodiscard]] const std::shared_ptr<const CoordinateSystem>&
   GetCoordinateSystem() const;
 
+  /// @brief The DOF holders' coordinates in the coordinate system of the
+  ///        geometry the layout was built on
+  ///        (FunctionSpace::GetDOFHolderCoordinates gives them in the space's
+  ///        geometry)
   virtual CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates() const = 0;
 
   virtual int GetDimension() const = 0;

@@ -9,7 +9,6 @@
 #include "pcms/utility/detail/memory_spaces.hpp"
 #include "pcms/field/layout/serial.hpp"
 #include "pcms/field/point_rows.hpp"
-#include "quadrature_space.hpp"
 #include <numbers>
 #include <set>
 #include <vector>
@@ -145,9 +144,9 @@ std::shared_ptr<const FunctionSpace> MakeSpace(
   auto evaluator = std::make_shared<RowsFactory>(
     geometry, layout, std::set{DifferentialOperator::Gradient},
     std::move(make_rows), nodal);
-  return std::make_shared<pcms::detail::QuadratureSpace>(
-    std::move(layout), std::move(evaluator), geometry,
-    [natural = std::move(natural), geometry] { return natural(geometry); });
+  return std::make_shared<FunctionSpace>(
+    std::move(layout), std::move(evaluator), std::move(geometry),
+    std::move(natural));
 }
 
 } // namespace

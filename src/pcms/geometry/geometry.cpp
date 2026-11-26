@@ -242,6 +242,27 @@ Quadrature CreateMonteCarloQuadrature(
     *geometry, detail::MonteCarloRule{samples_per_cell, seed});
 }
 
+Quadrature MapQuadrature(const std::shared_ptr<const Geometry>& geometry,
+                         const Quadrature& quadrature)
+{
+  const auto& system = quadrature.points->GetGeometry()->GetCoordinateSystem();
+  const auto parameter = geometry->GetParameterSystem();
+  if (parameter == nullptr ||
+      !detail::SameCoordinateSystem(system, parameter)) {
+    throw pcms_error("MapQuadrature: the quadrature is on a geometry in '" +
+                     std::string(system->Kind()) +
+                     "', not in the geometry's parameter system");
+  }
+  const auto points = quadrature.points->LocatedPoints();
+  Kokkos::View<Real*, DeviceMemorySpace> weights(
+    Kokkos::view_alloc(Kokkos::WithoutInitializing, "mapped_weights"),
+    quadrature.weights.extent(0));
+  Kokkos::deep_copy(weights, quadrature.weights);
+  auto mapped = detail::WeightedQuadrature(*geometry, points, weights);
+  mapped.degree = quadrature.degree;
+  return mapped;
+}
+
 void detail::GaussLegendre(int order, std::vector<Real>& nodes,
                            std::vector<Real>& weights)
 {
@@ -292,25 +313,35 @@ void detail::CheckNeighbourhoodArguments(
 }
 
 void detail::ScaleByVolumeFactor(Kokkos::View<Real*, DeviceMemorySpace> weights,
-                                 const BoundPoints& bound, bool divide)
+                                 const BoundPoints& bound)
 {
   const auto volume = bound.VolumeFactor();
+  if (volume.extent(0) == 0) {
+    return;
+  }
+  // a constant factor 1 leaves the weights as they are
+  if (volume.stride(0) == 0) {
+    Real factor = 0;
+    Kokkos::deep_copy(factor,
+                      Kokkos::View<const Real, DeviceMemorySpace,
+                                   Kokkos::MemoryTraits<Kokkos::Unmanaged>>(
+                        volume.data_handle()));
+    if (factor == 1) {
+      return;
+    }
+  }
   pcms::detail::ForEach(
     "ScaleByVolumeFactor", static_cast<LO>(weights.extent(0)),
-    KOKKOS_LAMBDA(const LO i) {
-      weights(i) = divide ? weights(i) / volume(i) : weights(i) * volume(i);
-    });
+    KOKKOS_LAMBDA(const LO i) { weights(i) *= volume(i); });
   Kokkos::fence("ScaleByVolumeFactor");
 }
 
-Quadrature detail::BindQuadrature(
+Quadrature detail::WeightedQuadrature(
   const Geometry& geometry, const CoordinateView<DeviceMemorySpace>& points,
   Kokkos::View<Real*, DeviceMemorySpace> weights, const OwnerHints& owners)
 {
   auto bound = geometry.Bind(points, owners);
-  if (geometry.GetCoordinateSystem()->HasMetric()) {
-    ScaleByVolumeFactor(weights, *bound);
-  }
+  ScaleByVolumeFactor(weights, *bound);
   return Quadrature{std::move(bound), weights, {}};
 }
 

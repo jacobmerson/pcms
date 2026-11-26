@@ -4,6 +4,7 @@
 #include "pcms/geometry/detail/geometry.hpp"
 #include "pcms/utility/arrays.hpp"
 #include "pcms/utility/assert.hpp"
+#include "pcms/utility/detail/random.hpp"
 #include <Kokkos_Random.hpp>
 #include <Omega_h_for.hpp>
 #include <Omega_h_map.hpp>
@@ -19,17 +20,6 @@ namespace
 {
 
 using Generator = Kokkos::Random_XorShift64<DefaultExecutionSpace>;
-
-// The state of the generator of the cell with global id `gid` (splitmix64)
-KOKKOS_INLINE_FUNCTION std::uint64_t CellState(std::uint64_t seed,
-                                               Omega_h::GO gid)
-{
-  std::uint64_t z = seed + 0x9E3779B97F4A7C15ULL * (gid + 1);
-  z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-  z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-  z ^= z >> 31;
-  return z != 0 ? z : 1;
-}
 
 // The global id of each element, from the geometry's global id tag.
 Omega_h::GOs ElementGlobalIds(Omega_h::Mesh& mesh, const std::string& name)
@@ -68,7 +58,15 @@ template <int Dim>
 Quadrature CreateSimplexQuadrature(const OmegaHGeometry& geometry, int order,
                                    int samples, std::uint64_t seed)
 {
-  constexpr Real ReferenceMeasure = Dim == 3 ? 1.0 / 6.0 : 0.5;
+  static_assert(Dim == 2 || Dim == 3, "Omega_h meshes are 2D or 3D");
+  // the measure of the reference simplex, 1 / Dim!
+  constexpr Real ReferenceMeasure = [] {
+    Real factorial = 1;
+    for (int k = 2; k <= Dim; ++k) {
+      factorial *= k;
+    }
+    return 1 / factorial;
+  }();
   const bool random = samples > 0;
   int per_cell = samples;
   Kokkos::View<Real * [Dim + 1], DeviceMemorySpace> bary;
@@ -120,7 +118,7 @@ Quadrature CreateSimplexQuadrature(const OmegaHGeometry& geometry, int order,
         }
       };
       if (random) {
-        Generator gen(CellState(seed, gids[e]));
+        auto gen = pcms::detail::EntityGenerator(seed, gids[e]);
         for (int q = 0; q < per_cell; ++q) {
           fill(q, UniformBarycentric<Dim>(gen), ReferenceMeasure / per_cell);
         }
@@ -134,7 +132,7 @@ Quadrature CreateSimplexQuadrature(const OmegaHGeometry& geometry, int order,
         }
       }
     });
-  auto quadrature = pcms::detail::BindQuadrature(
+  auto quadrature = pcms::detail::WeightedQuadrature(
     geometry,
     CoordinateView<DeviceMemorySpace>(geometry.GetCoordinateSystem(),
                                       MakeConstRank2View(coords)),
@@ -164,9 +162,9 @@ Quadrature OmegaHGeometry::CreateQuadrature(
   } else {
     return Geometry::CreateQuadrature(rule);
   }
-  return mesh_.dim() == 3
-           ? CreateSimplexQuadrature<3>(*this, order, samples, seed)
-           : CreateSimplexQuadrature<2>(*this, order, samples, seed);
+  return detail::VisitMeshDimension(mesh_, [&]<int Dim>() {
+    return CreateSimplexQuadrature<Dim>(*this, order, samples, seed);
+  });
 }
 
 } // namespace pcms::omega_h

@@ -10,6 +10,7 @@
 #include "pcms/utility/assert.hpp"
 #include "product_binding.hpp"
 #include <algorithm>
+#include <functional>
 #include <optional>
 #include <set>
 #include <vector>
@@ -864,21 +865,18 @@ private:
   std::vector<std::shared_ptr<const Geometry>> geometries_;
 };
 
-/// A product space, which keeps its leaf factors; its quadrature is the
-/// tensor product of its factors'.
+/// A product space, which keeps its leaf factors.
 class ProductSpace final : public FunctionSpace
 {
 public:
-  ProductSpace(std::shared_ptr<const FieldLayout> layout,
-               std::shared_ptr<const PointEvaluatorFactory> source,
-               std::shared_ptr<const ProductGeometry> geometry,
-               std::shared_ptr<const FunctionSpace> a,
-               std::shared_ptr<const FunctionSpace> b,
-               std::vector<std::shared_ptr<const FunctionSpace>> leaves)
-    : FunctionSpace(std::move(layout), std::move(source), geometry),
-      geometry_(std::move(geometry)),
-      a_(std::move(a)),
-      b_(std::move(b)),
+  ProductSpace(
+    std::shared_ptr<const FieldLayout> layout,
+    std::shared_ptr<const PointEvaluatorFactory> source,
+    std::shared_ptr<const Geometry> geometry,
+    std::function<Quadrature(const std::shared_ptr<const Geometry>&)> natural,
+    std::vector<std::shared_ptr<const FunctionSpace>> leaves)
+    : FunctionSpace(std::move(layout), std::move(source), std::move(geometry),
+                    std::move(natural)),
       leaves_(std::move(leaves))
   {
   }
@@ -889,17 +887,7 @@ public:
     return leaves_;
   }
 
-protected:
-  [[nodiscard]] Quadrature CreateQuadrature() const override
-  {
-    return geometry_->TensorQuadrature(a_->GetQuadrature(),
-                                       b_->GetQuadrature());
-  }
-
 private:
-  std::shared_ptr<const ProductGeometry> geometry_;
-  std::shared_ptr<const FunctionSpace> a_;
-  std::shared_ptr<const FunctionSpace> b_;
   std::vector<std::shared_ptr<const FunctionSpace>> leaves_;
 };
 
@@ -954,8 +942,12 @@ std::shared_ptr<const FunctionSpace> CreateProductSpace(
   auto layout = std::make_shared<ProductLayout>(geometry, std::move(layouts));
   auto source = std::make_shared<ProductEvaluatorFactory>(
     geometry, layout, leaves, std::move(supported));
-  return std::make_shared<ProductSpace>(std::move(layout), std::move(source),
-                                        product, a, b, std::move(leaves));
+  return std::make_shared<ProductSpace>(
+    std::move(layout), std::move(source), geometry,
+    [a, b](const std::shared_ptr<const Geometry>& g) {
+      return CreateTensorQuadrature(g, a->GetQuadrature(), b->GetQuadrature());
+    },
+    std::move(leaves));
 }
 
 } // namespace pcms

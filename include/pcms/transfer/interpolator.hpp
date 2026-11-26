@@ -41,9 +41,9 @@ template <typename T = Real>
 /// As above, reusing a localization shared with other interpolators of the
 /// same source geometry at the same target sites:
 ///
-///   auto layout = tgt_space->GetLayout();
 ///   auto bound = src_space->GetGeometry()->Bind(
-///     layout->GetDOFHolderCoordinates(), DOFHolderOwners(*layout));
+///     tgt_space->GetDOFHolderCoordinates(),
+///     DOFHolderOwners(*tgt_space->GetLayout()));
 ///   auto values = CreateInterpolator(src_space, tgt_space, bound);
 ///   auto gradient = CreateInterpolator(Gradient(src_space), grad_space,
 ///   bound);

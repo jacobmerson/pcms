@@ -31,8 +31,11 @@ std::shared_ptr<const FunctionSpace> CreateUniformGridSplineSpace(
   auto evaluator_factory =
     std::make_shared<UniformGridSplineEvaluatorFactory<Dim>>(
       std::move(grid_geometry), layout);
-  return std::make_shared<FunctionSpace>(layout, evaluator_factory,
-                                         evaluator_factory->GetGeometry());
+  return std::make_shared<FunctionSpace>(
+    layout, evaluator_factory, evaluator_factory->GetGeometry(),
+    [](const std::shared_ptr<const Geometry>& g) {
+      return CreateGaussQuadrature(g, 6);
+    });
 }
 
 } // namespace

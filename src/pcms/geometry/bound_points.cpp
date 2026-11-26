@@ -87,6 +87,7 @@ void BoundPoints::Reset(const BindRequest& request)
 {
   policy_ = request.policy;
   factors_.reset();
+  binds_.clear();
   map_ = request.map;
   coordinate_map_ = request.coordinate_map;
   system_ = request.query_coords.GetCoordinateSystem();
@@ -109,11 +110,29 @@ void BoundPoints::Reset(const BindRequest& request)
   }
 }
 
+std::shared_ptr<const BoundPoints> BoundPoints::On(
+  const Geometry& geometry, std::shared_ptr<const CoordinateMap> map) const
+{
+  if (map == nullptr && geometry_.get() == &geometry) {
+    return shared_from_this();
+  }
+  std::erase_if(binds_, [](const auto& bind) { return bind.expired(); });
+  for (const auto& weak : binds_) {
+    auto bind = weak.lock();
+    if (bind->GetGeometry().get() == &geometry &&
+        bind->GetCoordinateMap() == map) {
+      return bind;
+    }
+  }
+  auto bind = geometry.Bind(LocatedPoints(), OutOfBoundsPolicy{}, map);
+  binds_.push_back(bind);
+  return bind;
+}
+
 CoordinateView<DeviceMemorySpace> BoundPoints::LocatedPoints() const
 {
   return CoordinateView<DeviceMemorySpace>(
-    map_ != nullptr ? map_->MappedPoints().GetCoordinateSystem() : system_,
-    MakeConstRank2View(LocatedPointValues()));
+    geometry_->GetCoordinateSystem(), MakeConstRank2View(LocatedPointValues()));
 }
 
 Kokkos::View<const Real**, DeviceMemorySpace> BoundPoints::LocatedPointValues()
@@ -121,6 +140,16 @@ Kokkos::View<const Real**, DeviceMemorySpace> BoundPoints::LocatedPointValues()
 {
   return Kokkos::subview(points_, Kokkos::make_pair(LO{0}, num_points_),
                          Kokkos::ALL);
+}
+
+void BoundPoints::ReplaceLocatedPoints(
+  Rank2View<const Real, DeviceMemorySpace> points)
+{
+  PCMS_ALWAYS_ASSERT(static_cast<LO>(points.extent(0)) == num_points_);
+  detail::ReserveRows(points_, "bound_points", num_points_, points.extent(1));
+  CopyPoints(Kokkos::subview(points_, Kokkos::make_pair(LO{0}, num_points_),
+                             Kokkos::ALL),
+             points);
 }
 
 void BoundPoints::Rebind(RebindKey, const BindRequest& request)
@@ -173,7 +202,12 @@ BoundPoints::Jacobian() const
 
 BoundCoordinateSystem::MetricView BoundPoints::Metric() const
 {
-  return Factors().Metric();
+  const auto metric = Factors().Metric();
+  if (metric.extent(1) == 0) {
+    throw pcms_error("BoundPoints::Metric: no metric: only a volume factor is "
+                     "known");
+  }
+  return metric;
 }
 
 BoundCoordinateSystem::FactorView BoundPoints::VolumeFactor() const
@@ -185,11 +219,6 @@ detail::GeometricFactors detail::SystemFactors(
   const CoordinateSystem& system,
   Kokkos::View<const Real**, DeviceMemorySpace> points)
 {
-  if (!system.HasMetric()) {
-    throw pcms_error("BoundPoints: the geometric factors need a metric; the "
-                     "coordinate system '" +
-                     std::string(system.Kind()) + "' has none");
-  }
   const int dim = system.Dimension();
   Kokkos::View<Real***, DeviceMemorySpace> identity("identity_jacobian", 1, dim,
                                                     dim);
@@ -197,8 +226,18 @@ detail::GeometricFactors detail::SystemFactors(
     "identity_jacobian",
     Kokkos::RangePolicy<DeviceMemorySpace::execution_space>(0, dim),
     KOKKOS_LAMBDA(const int i) { identity(0, i, i) = 1.0; });
+  if (system.HasMetric()) {
+    return GeometricFactors(static_cast<LO>(points.extent(0)), identity,
+                            system.Bind(MakeConstRank2View(points)));
+  }
+  // the coordinate measure: no metric, volume factor 1
+  Kokkos::View<Real*, DeviceMemorySpace> unit("unit_volume_factor", 1);
+  Kokkos::deep_copy(unit, 1.0);
   return GeometricFactors(static_cast<LO>(points.extent(0)), identity,
-                          system.Bind(MakeConstRank2View(points)));
+                          std::make_shared<const BoundCoordinateSystem>(
+                            static_cast<LO>(points.extent(0)),
+                            Kokkos::View<const Real***, DeviceMemorySpace>{},
+                            unit));
 }
 
 } // namespace pcms

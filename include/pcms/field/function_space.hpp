@@ -31,9 +31,9 @@ namespace pcms
 //
 // It is concrete: backends differ in the components they hand to its
 // constructor, and the Create* factories (CreateLagrangeSpace, ...) assemble
-// them. A kind with behaviour that is not a component derives from it and
-// overrides the virtuals: the creation of its field data and the validation of
-// wrapped field data. A Function co-owns its space via shared_ptr (obtained
+// them. A kind with its own storage derives from it and overrides the
+// virtuals: the creation of its field data and the validation of wrapped field
+// data. A Function co-owns its space via shared_ptr (obtained
 // through enable_shared_from_this), so spaces are always shared-owned:
 // CreateFunction throws for a space that is not.
 class FunctionSpace
@@ -50,14 +50,20 @@ public:
   ///        points
   /// @param geometry the geometry the space is on: the evaluator source's,
   ///        when there is one
+  /// @param natural the space's quadrature on a geometry (GetQuadrature), or
+  ///        empty for a space without one
   /// @throws pcms_error if `geometry` is null or is not the evaluator
   ///         source's geometry
-  explicit FunctionSpace(std::shared_ptr<const FieldLayout> layout,
-                         std::shared_ptr<const PointEvaluatorFactory> evaluator,
-                         std::shared_ptr<const Geometry> geometry)
+  explicit FunctionSpace(
+    std::shared_ptr<const FieldLayout> layout,
+    std::shared_ptr<const PointEvaluatorFactory> evaluator,
+    std::shared_ptr<const Geometry> geometry,
+    std::function<Quadrature(const std::shared_ptr<const Geometry>&)> natural =
+      {})
     : layout_(std::move(layout)),
       evaluator_(std::move(evaluator)),
-      geometry_(std::move(geometry))
+      geometry_(std::move(geometry)),
+      natural_(std::move(natural))
   {
     if (geometry_ == nullptr) {
       throw pcms_error("FunctionSpace: the geometry must not be null");
@@ -66,6 +72,7 @@ public:
       throw pcms_error("FunctionSpace: the geometry must be the evaluator "
                        "source's geometry");
     }
+    holders_ = BindDOFHolders();
   }
 
   /// @return the geometry the space is created on
@@ -87,16 +94,14 @@ public:
     return geometry_->GetCoordinateSystem();
   }
 
+  /// @brief The DOF holders' positions in the geometry's coordinate system
+  [[nodiscard]] CoordinateView<DeviceMemorySpace> GetDOFHolderCoordinates()
+    const;
+
   /// @brief The space's natural quadrature on its geometry: exact for the
   ///        product of two functions of the space; built on first use.
   /// @throws pcms_error if the space has none
-  [[nodiscard]] const Quadrature& GetQuadrature() const
-  {
-    if (!quadrature_) {
-      quadrature_ = CreateQuadrature();
-    }
-    return *quadrature_;
-  }
+  [[nodiscard]] const Quadrature& GetQuadrature() const;
 
   /// @return whether the space's evaluator source supports `op`; for a space
   ///         without one, whether `op` is Value
@@ -142,14 +147,6 @@ public:
     FieldMetadata metadata, std::unique_ptr<FieldData<T>> data) const;
 
 protected:
-  /// @brief The space's natural quadrature (GetQuadrature).
-  /// @throws pcms_error unless the kind overrides it
-  [[nodiscard]] virtual Quadrature CreateQuadrature() const
-  {
-    throw pcms_error("FunctionSpace::GetQuadrature: this space has no "
-                     "quadrature");
-  }
-
   /// @brief Creates the data of a field of this space.
   /// The default holds the values of the layout's DOF holders in a
   /// SimpleFieldData; kinds with their own storage override it.
@@ -193,6 +190,8 @@ private:
                        std::move(space));
   }
 
+  [[nodiscard]] std::shared_ptr<const BoundPoints> BindDOFHolders() const;
+
   FieldVariant CreateFieldImpl(Type storage_type, ValueBasis basis) const;
 
   FieldVariant CreateFieldImpl(FieldDataVariant data) const;
@@ -200,7 +199,11 @@ private:
   std::shared_ptr<const FieldLayout> layout_;
   std::shared_ptr<const PointEvaluatorFactory> evaluator_;
   std::shared_ptr<const Geometry> geometry_;
+  std::function<Quadrature(const std::shared_ptr<const Geometry>&)> natural_;
   mutable std::optional<Quadrature> quadrature_;
+  // the DOF holders bound on the geometry, when the layout's coordinates are
+  // in another coordinate system
+  std::shared_ptr<const BoundPoints> holders_;
 };
 
 template <typename T>

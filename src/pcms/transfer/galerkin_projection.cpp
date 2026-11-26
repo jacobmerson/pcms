@@ -1,6 +1,7 @@
 #include "pcms/transfer/galerkin_projection.hpp"
 #include "pcms/field/detail/field_ops.hpp"
 #include "pcms/field/field_ops.hpp"
+#include "pcms/transfer/interpolator.hpp"
 
 namespace pcms::transfer
 {
@@ -57,7 +58,7 @@ GalerkinProjection::GalerkinProjection(
     if (target.HasNodalDOFs()) {
       interpolation_ = std::make_unique<pcms::detail::Interpolator<Real>>(
         source, target_space_,
-        source_geometry.Bind(target.GetLayout()->GetDOFHolderCoordinates(),
+        source_geometry.Bind(target.GetDOFHolderCoordinates(),
                              OutOfBoundsPolicy{}, options.to_source));
     } else {
       ProjectionOptions inner = options;
@@ -103,7 +104,7 @@ void GalerkinProjection::ApplyImpl(const Field<Real>& source,
     auto& correction = InBasis(correction_, basis);
     interpolation_->Apply(source, interpolant);
     control_variate_->Apply(interpolant, correction);
-    Axpy(Real(-1), correction, functional);
+    pcms::detail::AxpyValues(Real(-1), correction, functional);
   }
   if (lumped_ != nullptr) {
     detail::Divide(functional, *lumped_, target);
@@ -111,7 +112,7 @@ void GalerkinProjection::ApplyImpl(const Field<Real>& source,
     solver_->Solve(functional, target);
   }
   if (control_variate_) {
-    Axpy(Real(1), coefficients_, target);
+    pcms::detail::AxpyValues(Real(1), coefficients_, target);
   }
 }
 
@@ -145,9 +146,8 @@ void GalerkinProjection::ApplyTransposeImpl(const Field<Real>& source,
     auto& residual = InBasis(functional_, basis);
     auto& correction = InBasis(correction_, basis);
     control_variate_->Apply(z, correction);
-    residual.SetDOFHolderDataUnchecked(source.GetDOFHolderData().GetValues());
-    residual.Synchronize();
-    Axpy(Real(-1), correction, residual);
+    pcms::detail::CopyValues(source, residual);
+    pcms::detail::AxpyValues(Real(-1), correction, residual);
     interpolation_->ApplyTranspose(residual, target);
   } else {
     pcms::detail::SetZero(target);
