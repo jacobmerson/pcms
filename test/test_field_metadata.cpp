@@ -1,7 +1,5 @@
-#include <catch2/catch_test_macros.hpp>
+#include "periodic_test_utils.hpp"
 #include <catch2/matchers/catch_matchers_string.hpp>
-#include <pcms/backends/uniform_grid/geometry.hpp>
-#include <pcms/field/function_spaces.hpp>
 #include <pcms/configuration.hpp>
 #include <pcms/field/detail/simple_field_data.hpp>
 #include <pcms/field/field_metadata.hpp>
@@ -23,26 +21,10 @@ using pcms::Units;
 namespace
 {
 
-// P1 on `cells` cells of [0, 1]: cells + 1 DOFs
 std::shared_ptr<const pcms::FunctionSpace> Space(int cells)
 {
-  pcms::UniformGrid<1> grid;
-  grid.bot_left = {0.0};
-  grid.edge_length = {1.0};
-  grid.divisions = {cells};
-  return pcms::CreateLagrangeSpace(
-    pcms::uniform_grid::CreateGeometry(grid, pcms::csys::CreateCartesian(1)), 1,
-    1);
-}
-
-void SetDofs(pcms::Field<Real>& field, const std::vector<Real>& c)
-{
-  Kokkos::View<Real**, pcms::HostMemorySpace> values("c", c.size(), 1);
-  for (std::size_t i = 0; i < c.size(); ++i) {
-    values(i, 0) = c[i];
-  }
-  field.SetDOFHolderDataHost(pcms::ValueView<const Real, pcms::HostMemorySpace>(
-    field.GetData().GetValueBasis(), pcms::MakeConstRank2View(values)));
+  return pcms::CreateLagrangeSpace(pcms::test::PeriodicGrid(cells, 1.0, 0.0), 1,
+                                   1);
 }
 
 // Every transfer between periodic Lagrange spaces: a copy, an interpolator and
@@ -266,7 +248,7 @@ TEST_CASE("transfers check units", "[metadata]")
         t.units = Units::Parse(target_units);
       }
       auto source = transfers.source_space->CreateFunction<Real>("source", s);
-      SetDofs(source, std::vector<Real>(9, 1.0));
+      pcms::test::SetDofs(source, std::vector<Real>(8, 1.0));
       return std::make_pair(std::move(source),
                             target_space.CreateFunction<Real>("target", t));
     };
@@ -319,7 +301,7 @@ TEST_CASE("transfers check the duality", "[metadata]")
                         std::optional<Duality> target_duality) {
     auto source = transfers.source_space->CreateFunction<Real>(
       FieldMetadata{.name = "source", .duality = source_duality});
-    SetDofs(source, std::vector<Real>(9, 1.0));
+    pcms::test::SetDofs(source, std::vector<Real>(8, 1.0));
     return std::make_pair(
       std::move(source),
       transfers.target_space->CreateFunction<Real>(
@@ -350,7 +332,7 @@ TEST_CASE("transfers check the duality", "[metadata]")
     const auto loads = [&](std::optional<Duality> e) {
       auto f = transfers.target_space->CreateFunction<Real>(
         FieldMetadata{.name = "loads", .duality = e});
-      SetDofs(f, std::vector<Real>(17, 1.0));
+      pcms::test::SetDofs(f, std::vector<Real>(16, 1.0));
       return f;
     };
     const auto functional = [&](std::optional<Duality> e) {
@@ -381,7 +363,7 @@ TEST_CASE("a transfer does not change the target's metadata", "[metadata]")
   auto source = transfers.source_space->CreateFunction<Real>(
     FieldMetadata{.name = "source", .duality = Duality::Primal},
     {.units = Units::Parse("m^-3")});
-  SetDofs(source, std::vector<Real>(9, 1.0));
+  pcms::test::SetDofs(source, std::vector<Real>(8, 1.0));
   auto target = transfers.target_space->CreateFunction<Real>("target");
   op->Apply(source, target);
   REQUIRE(target.GetName() == "target");
@@ -411,7 +393,7 @@ TEST_CASE("ApplyTranspose checks units", "[metadata]")
       auto loads = transfers.target_space->CreateFunction<Real>("loads", l);
       auto functional =
         transfers.source_space->CreateFunction<Real>("functional", f);
-      SetDofs(loads, std::vector<Real>(17, 1.0));
+      pcms::test::SetDofs(loads, std::vector<Real>(16, 1.0));
       op->ApplyTranspose(loads, functional);
     };
 
