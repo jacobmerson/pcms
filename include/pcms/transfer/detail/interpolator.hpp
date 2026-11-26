@@ -27,7 +27,7 @@ namespace pcms::detail
 ///        those coordinates, mapped by the bind's coordinate map if it had
 ///        one.
 /// @return true if it was
-bool SameDOFHolderSites(const BoundPoints& bound, const FieldLayout& layout);
+bool SameDOFHolderSites(const BoundPoints& bound, const FunctionSpace& space);
 
 /// @return `target_space`, an interpolator's target
 /// @throws pcms_error if `target_space` has no nodal DOFs
@@ -190,17 +190,16 @@ private:
     if (geometry == nullptr) {
       throw pcms_error("Interpolator: the source has no geometry");
     }
-    const auto layout = Require(target_space, "target space")->GetLayout();
-    return geometry->Bind(layout->GetDOFHolderCoordinates(),
-                          DOFHolderOwners(*layout), policy);
+    const auto& space = *Require(target_space, "target space");
+    return geometry->Bind(space.GetDOFHolderCoordinates(),
+                          DOFHolderOwners(*space.GetLayout()), policy);
   }
 
   static std::unique_ptr<PointEvaluator<T>> CreateEvaluator(
     const PointEvaluatorFactory& source, const FunctionSpace& target_space,
     std::shared_ptr<const BoundPoints> bound)
   {
-    if (bound == nullptr ||
-        !detail::SameDOFHolderSites(*bound, *target_space.GetLayout())) {
+    if (bound == nullptr || !detail::SameDOFHolderSites(*bound, target_space)) {
       throw pcms_error("Interpolator: the BoundPoints must be bound to a "
                        "space with the target's DOF-holder sites");
     }

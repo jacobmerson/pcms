@@ -8,9 +8,9 @@ namespace pcms
 namespace detail
 {
 
-bool SameDOFHolderSites(const BoundPoints& bound, const FieldLayout& layout)
+bool SameDOFHolderSites(const BoundPoints& bound, const FunctionSpace& space)
 {
-  const auto sites = layout.GetDOFHolderCoordinates();
+  const auto sites = space.GetDOFHolderCoordinates();
   if (!pcms::detail::SameCoordinateSystem(bound.GetCoordinateSystem(),
                                           sites.GetCoordinateSystem())) {
     return false;

@@ -1,11 +1,28 @@
 #include "pcms/field/function_space.hpp"
 #include "pcms/configuration.hpp"
 #include "pcms/utility/assert.hpp"
+#include "pcms/utility/detail/coordinate_system.hpp"
 #include "pcms/utility/detail/common.hpp"
 #include "pcms/field/detail/simple_field_data.hpp"
 
 namespace pcms
 {
+
+std::shared_ptr<const BoundPoints> FunctionSpace::BindDOFHolders() const
+{
+  const auto& on = layout_ != nullptr ? layout_->GetGeometry() : nullptr;
+  if (on == nullptr || detail::SameCoordinateSystem(on->GetCoordinateSystem(),
+                                                    GetCoordinateSystem())) {
+    return nullptr;
+  }
+  return geometry_->Bind(layout_->GetDOFHolderCoordinates());
+}
+
+CoordinateView<DeviceMemorySpace> FunctionSpace::GetDOFHolderCoordinates() const
+{
+  return holders_ != nullptr ? holders_->LocatedPoints()
+                             : layout_->GetDOFHolderCoordinates();
+}
 
 FieldDataVariant FunctionSpace::CreateFieldData(Type storage_type,
                                                 ValueBasis basis) const
@@ -35,6 +52,18 @@ void FunctionSpace::ValidateFieldData(const FieldDataVariant& data) const
       }
     },
     data);
+}
+
+const Quadrature& FunctionSpace::GetQuadrature() const
+{
+  if (!natural_) {
+    throw pcms_error("FunctionSpace::GetQuadrature: this space has no "
+                     "quadrature");
+  }
+  if (!quadrature_) {
+    quadrature_ = natural_(geometry_);
+  }
+  return *quadrature_;
 }
 
 bool FunctionSpace::Supports(DifferentialOperator op) const noexcept

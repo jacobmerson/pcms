@@ -1,5 +1,6 @@
 #include "pcms/transfer/galerkin_projection.hpp"
 #include "pcms/field/detail/field_ops.hpp"
+#include "pcms/transfer/interpolator.hpp"
 #include <algorithm>
 
 namespace pcms::transfer
@@ -58,7 +59,7 @@ GalerkinProjection::GalerkinProjection(
     if (target.HasNodalDOFs()) {
       interpolation_ = std::make_unique<pcms::detail::Interpolator<Real>>(
         source, target_space_,
-        source_geometry.Bind(target.GetLayout()->GetDOFHolderCoordinates(),
+        source_geometry.Bind(target.GetDOFHolderCoordinates(),
                              OutOfBoundsPolicy{}, options.to_source));
     } else {
       pcms::detail::ProjectionOptions inner = options;

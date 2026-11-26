@@ -5,7 +5,6 @@
 #include "pcms/field/function_space.hpp"
 #include "pcms/field/point_evaluator_factory.hpp"
 #include "pcms/transfer/forms.hpp"
-#include "pcms/transfer/interpolator.hpp"
 #include "pcms/transfer/linear_solver.hpp"
 #include "pcms/transfer/detail/projection.hpp"
 #include "pcms/transfer/transfer_operator.hpp"

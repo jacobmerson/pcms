@@ -126,20 +126,13 @@ Kokkos::View<const LO*, DeviceMemorySpace> ElementGuesses(
 GridPointSearchVariant MakeGridSearch(Omega_h::Mesh& mesh,
                                       const SearchOptions& options)
 {
-  if (mesh.dim() == 2) {
+  return detail::VisitMeshDimension(mesh, [&]<int Dim>() {
     const LO n = options.divisions > 0
                    ? options.divisions
-                   : pcms::detail::DivisionsPerAxisForMesh<2>(mesh.nelems());
-    return CreateGridPointSearch(mesh, {n, n}, options.tolerance);
-  }
-  if (mesh.dim() == 3) {
-    const LO n = options.divisions > 0
-                   ? options.divisions
-                   : pcms::detail::DivisionsPerAxisForMesh<3>(mesh.nelems());
-    return CreateGridPointSearch(mesh, {n, n, n}, options.tolerance);
-  }
-  throw std::invalid_argument(
-    "MakeGridSearch: only 2D and 3D meshes are supported");
+                   : pcms::detail::DivisionsPerAxisForMesh<Dim>(mesh.nelems());
+    return CreateGridPointSearch(mesh, std::vector<LO>(Dim, n),
+                                 options.tolerance);
+  });
 }
 
 OmegaHGeometry::OmegaHGeometry(Omega_h::Mesh& mesh,

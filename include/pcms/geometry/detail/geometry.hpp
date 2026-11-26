@@ -38,18 +38,16 @@ void CheckEntityIds(Kokkos::View<const LO*, DeviceMemorySpace> ids,
   const CoordinateView<DeviceMemorySpace>& coords);
 
 /// @brief Multiplies quadrature weights by the volume factor at their bound
-///        points, making parameter-coordinate measures physical, or divides
-///        them by it.
+///        points, making parameter-coordinate measures physical.
 /// @param weights one weight per point of `bound`; scaled in place
 /// @param bound the bound points of the weights
 void ScaleByVolumeFactor(Kokkos::View<Real*, DeviceMemorySpace> weights,
-                         const BoundPoints& bound, bool divide = false);
+                         const BoundPoints& bound);
 
 /// @brief The quadrature of points whose weights are in the parameter measure.
 /// @param weights one weight per point; scaled in place by the volume factor
-///        when the geometry's coordinate system has a metric
 /// @param owners the owners of the points, as for Geometry::Bind
-[[nodiscard]] Quadrature BindQuadrature(
+[[nodiscard]] Quadrature WeightedQuadrature(
   const Geometry& geometry, const CoordinateView<DeviceMemorySpace>& points,
   Kokkos::View<Real*, DeviceMemorySpace> weights,
   const OwnerHints& owners = {});

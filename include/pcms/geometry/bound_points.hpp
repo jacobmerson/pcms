@@ -11,6 +11,7 @@
 #include <memory>
 #include <string>
 #include <type_traits>
+#include <vector>
 #include "pcms/geometry/detail/bound_points.hpp"
 
 namespace pcms
@@ -85,7 +86,7 @@ struct BindRequest
 /// The arrays are allocated with a capacity, the number of points of the
 /// largest bind they have held, and the accessors return the views of their
 /// first NumPoints() (or found, or missing) entries.
-class BoundPoints
+class BoundPoints : public std::enable_shared_from_this<BoundPoints>
 {
 public:
   /// @return the geometry the points were localized on
@@ -128,21 +129,34 @@ public:
     return coordinate_map_;
   }
 
-  /// @return the bound points in the geometry's coordinate system, reduced
-  ///         by the periodic axes of their coordinate system
+  /// @return the bound points where they were located, one row per point:
+  ///         the query points in the geometry's coordinate system (mapped by
+  ///         GetBoundMap() if the bind had a map, by the geometry if they were
+  ///         in its parameter system), reduced by the periodic axes of the
+  ///         coordinate system
   [[nodiscard]] CoordinateView<DeviceMemorySpace> LocatedPoints() const;
 
   /// @return g(p, a, b), the metric of the geometry at each point in its
   ///         parameter coordinates (its coordinate system's own unless the
   ///         geometry is embedded), including the coordinate system's metric;
   ///         computed on first use
-  /// @throws pcms_error if the geometry's coordinate system has no metric and
-  ///         the kind provides none
+  /// @throws pcms_error if the geometry has no metric (only a volume factor)
   [[nodiscard]] BoundCoordinateSystem::MetricView Metric() const;
 
-  /// @return the physical volume per unit of parameter volume at each point
-  /// @throws pcms_error as Metric()
+  /// @return the volume per unit of parameter volume at each point: of the
+  ///         metric, or the coordinate measure (1) of a coordinate system
+  ///         without one
   [[nodiscard]] BoundCoordinateSystem::FactorView VolumeFactor() const;
+
+  /// @return these points on `geometry`: themselves on their own geometry
+  ///         without a map, else the bind of LocatedPoints() through `map`,
+  ///         reused while it is alive
+  /// @param map map from the coordinate system of these points' geometry to
+  ///        `geometry`'s, or null
+  /// @throws pcms_error as Geometry::Bind
+  [[nodiscard]] std::shared_ptr<const BoundPoints> On(
+    const Geometry& geometry,
+    std::shared_ptr<const CoordinateMap> map = nullptr) const;
 
   /// @return indices of the query points the source evaluates, ascending
   [[nodiscard]] Kokkos::View<const LO*, DeviceMemorySpace> FoundPoints()
@@ -196,6 +210,11 @@ protected:
   /// @throws pcms_error in OutOfBoundsMode::ERROR if a point is not found
   void SetFound(Kokkos::View<const bool*, DeviceMemorySpace> found);
 
+  /// @brief Replaces the located points by `points`, the image of points in
+  ///        the geometry's parameter system.
+  /// @param points [points][dimension of the geometry's coordinate system]
+  void ReplaceLocatedPoints(Rank2View<const Real, DeviceMemorySpace> points);
+
   /// @brief Takes the points of a rebind, as the constructor does, into the
   ///        storage of this source when they fit in its capacity.
   /// @param request query points of the rebind, without a map
@@ -210,9 +229,8 @@ protected:
   /// @brief The metric and volume factor at the points, in the parameter
   ///        coordinates: Metric() and VolumeFactor().
   /// @return by default the coordinate system's closed-form metric at the
-  ///         located points
-  /// @throws pcms_error if the geometry's coordinate system has no metric
-  ///         (default)
+  ///         located points, or no metric and volume factor 1 for a
+  ///         coordinate system without one
   [[nodiscard]] virtual std::unique_ptr<BoundCoordinateSystem> ComputeMetric()
     const;
 
@@ -243,6 +261,8 @@ private:
   // the found query points, ascending, followed by the missing ones
   Kokkos::View<LO*, DeviceMemorySpace> point_indices_;
   mutable std::unique_ptr<BoundCoordinateSystem> metric_;
+  // the binds On made, by geometry and map
+  mutable std::vector<std::weak_ptr<const BoundPoints>> binds_;
 };
 
 } // namespace pcms

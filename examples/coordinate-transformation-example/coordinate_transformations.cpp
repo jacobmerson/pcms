@@ -60,9 +60,9 @@ ValueBasis CylindricalVector()
 /// Sets a 3-component field from f(p0, p1, p2, out) at its DOF holders, where
 /// p are the holder coordinates in the field's space.
 template <typename F>
-void FillField(Field<Real>& field, F f)
+void FillField(Function<Real>& field, F f)
 {
-  auto p = ToHost(field.GetLayout().GetDOFHolderCoordinates().GetValues());
+  auto p = ToHost(field.GetSpace().GetDOFHolderCoordinates().GetValues());
   const int n = static_cast<int>(p.extent(0));
   HostView data("data", n, 3);
   for (int i = 0; i < n; ++i)
@@ -72,9 +72,9 @@ void FillField(Field<Real>& field, F f)
 }
 
 /// Max over the field's DOF holders of |b - (x, y, z)|.
-Real MaxErrorFromXYZ(const Field<Real>& b)
+Real MaxErrorFromXYZ(const Function<Real>& b)
 {
-  auto x = ToHost(b.GetLayout().GetDOFHolderCoordinates().GetValues());
+  auto x = ToHost(b.GetSpace().GetDOFHolderCoordinates().GetValues());
   auto v = b.GetDOFHolderDataHost().GetValues();
   Real err = 0.0;
   for (size_t i = 0; i < x.extent(0); ++i)
@@ -151,10 +151,9 @@ void CaseB(Omega_h::Library& lib)
 
   // The values are already in the target's basis, so the map passes them
   // through and only the points are mapped.
-  const auto layout = tgt->GetLayout();
   const auto op = CreateInterpolator<Real>(
     src, tgt,
-    src->GetGeometry()->Bind(layout->GetDOFHolderCoordinates(),
+    src->GetGeometry()->Bind(tgt->GetDOFHolderCoordinates(),
                              OutOfBoundsPolicy{},
                              CreateCartesianToCylindrical()));
   op->Apply(b_src, b_tgt);
@@ -186,10 +185,9 @@ void CaseC(Omega_h::Library& lib)
   // The map given to the bind must end in the source's system: it carries
   // the target's Cartesian points to (r, theta, z), and the source's
   // cylindrical components back to Cartesian.
-  const auto layout = tgt->GetLayout();
   const auto op = CreateInterpolator<Real>(
     src, tgt,
-    src->GetGeometry()->Bind(layout->GetDOFHolderCoordinates(),
+    src->GetGeometry()->Bind(tgt->GetDOFHolderCoordinates(),
                              OutOfBoundsPolicy{},
                              CreateCartesianToCylindrical()));
   op->Apply(b_src, b_tgt);

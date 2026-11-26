@@ -47,17 +47,20 @@ Real WeightedDot(const Kokkos::View<const Real*, DeviceMemorySpace>& weights,
   return sum;
 }
 
-// the points of `quadrature` bound on `geometry`: its own points, else a bind
-// of them that starts from the cells the quadrature names
+// the points of `quadrature` on `geometry`: a binding the quadrature carries,
+// else BoundPoints::On
 std::shared_ptr<const BoundPoints> PointsOn(
   const Quadrature& quadrature, const Geometry& geometry,
   const std::shared_ptr<const CoordinateMap>& map)
 {
-  if (map == nullptr && quadrature.points->GetGeometry().get() == &geometry) {
-    return quadrature.points;
+  if (map == nullptr) {
+    for (const auto& bound : quadrature.also) {
+      if (bound->GetGeometry().get() == &geometry) {
+        return bound;
+      }
+    }
   }
-  return geometry.Bind(quadrature.points->LocatedPoints(), quadrature.other,
-                       OutOfBoundsPolicy{}, map);
+  return quadrature.points->On(geometry, map);
 }
 
 // a view shaped [rows][columns], reallocated only when its shape changes
@@ -168,6 +171,9 @@ const pcms::detail::TransformChain& BilinearForm::G(
         metric_ = basis.system->Bind(points.LocatedPoints().GetValues());
       }
       metric = metric_->Metric();
+    } else if (pcms::detail::SameCoordinateSystem(
+                 basis.system, geometry.GetParameterSystem())) {
+      metric = points.Metric();
     } else {
       throw pcms_error("BilinearForm: the metric of values in '" +
                        std::string(basis.system->Kind()) +
