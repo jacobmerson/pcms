@@ -592,6 +592,72 @@ TEST_CASE("Periodic spaces: a projection onto Fourier modes with an inexact "
   CHECK_THROWS(pcms::detail::CreateProjection(fourier, bare, options));
 }
 
+TEST_CASE("Spaces report the polynomial degree their basis reproduces",
+          "[periodic][degree]")
+{
+  const auto line = [](int cells) {
+    pcms::UniformGrid<1> grid;
+    grid.bot_left = {0.0};
+    grid.edge_length = {1.0};
+    grid.divisions = {cells};
+    return pcms::uniform_grid::CreateGeometry(grid,
+                                              pcms::csys::CreateCartesian(1));
+  };
+  const auto p1 = pcms::CreateLagrangeSpace(line(4), 1, 1);
+  const auto fourier = pcms::CreateFourierSpace(Periodic(4), {0, 1});
+  CHECK(p1->ReproducedPolynomialDegree() == 1);
+  CHECK(
+    pcms::CreateLagrangeSpace(line(4), 0, 1)->ReproducedPolynomialDegree() ==
+    0);
+  CHECK(pcms::CreateLagrangeSpace(Periodic(4), 1, 1)
+          ->ReproducedPolynomialDegree() == 0);
+  CHECK(pcms::CreateSplineSpace(line(4))->ReproducedPolynomialDegree() == 3);
+  CHECK(pcms::CreateSplineSpace(Periodic(4))->ReproducedPolynomialDegree() ==
+        0);
+  CHECK(fourier->ReproducedPolynomialDegree() == 0);
+  CHECK(pcms::CreatePeriodicHermiteSpace(Periodic(4))
+          ->ReproducedPolynomialDegree() == 0);
+  CHECK(pcms::CreateProductSpace(p1, pcms::CreateLagrangeSpace(line(3), 1, 1))
+          ->ReproducedPolynomialDegree() == 1);
+  CHECK(pcms::CreateProductSpace(p1, fourier)->ReproducedPolynomialDegree() ==
+        0);
+  // the natural rules: Gauss, trapezoid and their tensor product
+  CHECK(p1->GetQuadrature().degree == 2);
+  CHECK(fourier->GetQuadrature().degree == -1);
+  CHECK(pcms::CreateProductSpace(p1, fourier)->GetQuadrature().degree == -1);
+  // evaluation only
+  const auto geometry = line(4);
+  const pcms::FunctionSpace bare(
+    pcms::CreateEmptyLayout(geometry->GetCoordinateSystem()), nullptr,
+    geometry);
+  CHECK(bare.ReproducedPolynomialDegree() == -1);
+
+  // the default rule of a cubic spline source onto P1 has degree 4
+  const auto fine = line(8);
+  const auto spline = pcms::CreateSplineSpace(fine);
+  const auto target_space = pcms::CreateLagrangeSpace(fine, 1, 1);
+  auto source = spline->CreateFunction<Real>();
+  std::vector<Real> values;
+  for (int i = 0; i <= 8; ++i) {
+    values.push_back(std::sin(3.0 * i / 8));
+  }
+  SetDofs(source, values);
+  pcms::detail::ProjectionOptions options;
+  options.solve.relative_tolerance = 1e-14;
+  auto by_default = target_space->CreateFunction<Real>();
+  pcms::detail::CreateProjection(spline, target_space, options)
+    ->Apply(source, by_default);
+  options.quadrature = pcms::CreateGaussQuadrature(fine, 4);
+  auto explicitly = target_space->CreateFunction<Real>();
+  pcms::detail::CreateProjection(spline, target_space, options)
+    ->Apply(source, explicitly);
+  const auto a = pcms::test::GetDofs(by_default);
+  const auto b = pcms::test::GetDofs(explicitly);
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    CHECK(a[i] == Catch::Approx(b[i]).epsilon(1e-12).margin(1e-14));
+  }
+}
+
 TEST_CASE("Periodic spaces: a lumped mass needs a non-negative basis",
           "[periodic][projection]")
 {
